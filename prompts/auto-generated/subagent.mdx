@@ -1,0 +1,391 @@
+---
+title: 'SubAgent System'
+type: 'class'
+author: 'AI-Assistant'
+date: '2026-04-07'
+version: '1.0.0'
+sourceFile: 'src/subagent/index.ts'
+complexity: 'medium'
+tests: ['tests/subagent.test.ts']
+dependencies: ['zod']
+---
+
+# SubAgent System
+
+## Description
+
+Sub-agent delegation system that allows a primary agent to register and delegate tasks to specialized sub-agents. Features agent registry, task delegation with lifecycle hooks, and built-in tools for sub-agent management.
+
+## Architecture
+
+```
+┌─────────────────────────────────────────┐
+│         Primary Agent                    │
+│  ┌─────────────────────────────────┐   │
+│  │  SubAgent Namespace            │   │
+│  │  ┌─────────────────────────┐   │   │
+│  │  │  Registry               │   │   │
+│  │  │  - register()           │   │   │
+│  │  │  - list()               │   │   │
+│  │  │  - get()                │   │   │
+│  │  └──────────┬──────────────┘   │   │
+│  │             │                    │   │
+│  │  ┌──────────▼──────────────┐   │   │
+│  │  │  Delegation Manager     │   │   │
+│  │  │  - delegate()           │   │   │
+│  │  │  - lifecycle hooks      │   │   │
+│  │  └─────────────────────────┘   │   │
+│  └─────────────────────────────────┘   │
+│             │                            │
+│  ┌──────────▼──────────────────────┐   │
+│  │  Tools:                          │   │
+│  │  - delegate_to_subagent         │   │
+│  │  - list_subagents               │   │
+│  └─────────────────────────────────┘   │
+└─────────────────────────────────────────┘
+             │
+             ▼
+    ┌─────────────────┐
+    │   Sub-Agent 1   │
+    │   Sub-Agent 2   │
+    │   Sub-Agent 3   │
+    └─────────────────┘
+```
+
+## Signature
+
+```typescript
+const SubAgent: {
+  register(config: SubAgentRegistration): void;
+  list(): SubAgentConfig[];
+  get(name: string): SubAgentRegistration | undefined;
+  getAgent(name: string): Agent | undefined;
+  getTools(name: string): Tool[] | undefined;
+  delegate(
+    name: string,
+    prompt: string,
+    messages: Message[],
+    config?: DelegationConfig
+  ): Promise<string>;
+  createDelegateToSubAgentTool(): Tool;
+  createListSubAgentsTool(): Tool;
+};
+```
+
+## SubAgent Namespace Methods
+
+### SubAgent.register(config)
+
+Register a new sub-agent in the registry.
+
+| Parameter          | Type                    | Required | Description              |
+| ------------------ | ----------------------- | -------- | ------------------------ |
+| config.name        | string                  | Yes      | Unique sub-agent name    |
+| config.description | string                  | Yes      | Sub-agent description    |
+| config.mode        | 'primary' \| 'subagent' | Yes      | Agent mode               |
+| config.agent       | Agent                   | Yes      | Agent instance           |
+| config.tools       | Tool[]                  | No       | Sub-agent specific tools |
+
+### SubAgent.list()
+
+List all registered sub-agents.
+
+**Returns:** `SubAgentConfig[]` - Array of sub-agent configurations
+
+### SubAgent.get(name)
+
+Get a sub-agent registration by name.
+
+| Parameter | Type   | Required | Description    |
+| --------- | ------ | -------- | -------------- |
+| name      | string | Yes      | Sub-agent name |
+
+**Returns:** `SubAgentRegistration | undefined` - Sub-agent registration or undefined
+
+### SubAgent.getAgent(name)
+
+Get the Agent instance of a registered sub-agent.
+
+| Parameter | Type   | Required | Description    |
+| --------- | ------ | -------- | -------------- |
+| name      | string | Yes      | Sub-agent name |
+
+**Returns:** `Agent | undefined` - Agent instance or undefined
+
+### SubAgent.getTools(name)
+
+Get the tools associated with a sub-agent.
+
+| Parameter | Type   | Required | Description    |
+| --------- | ------ | -------- | -------------- |
+| name      | string | Yes      | Sub-agent name |
+
+**Returns:** `Tool[] | undefined` - Array of tools or undefined
+
+### SubAgent.delegate(name, prompt, messages, config?)
+
+Delegate a task to a sub-agent.
+
+| Parameter                   | Type                                                                                              | Required | Description                       |
+| --------------------------- | ------------------------------------------------------------------------------------------------- | -------- | --------------------------------- |
+| name                        | string                                                                                            | Yes      | Sub-agent name                    |
+| prompt                      | string                                                                                            | Yes      | Task prompt for sub-agent         |
+| messages                    | Message[]                                                                                         | Yes      | Parent conversation messages      |
+| config.onDelegationStart    | (ctx: DelegationStartContext) =&gt; DelegationStartResult \| Promise&lt;DelegationStartResult&gt; | No       | Hook called before delegation     |
+| config.onDelegationComplete | (ctx: DelegationCompleteContext) =&gt; void \| Promise&lt;void&gt;                                | No       | Hook called after delegation      |
+| config.messageFilter        | (ctx: MessageFilterContext) =&gt; Message[] \| Promise&lt;Message[]&gt;                           | No       | Filter messages sent to sub-agent |
+
+**Returns:** `Promise<string>` - Sub-agent response
+
+**Throws:** Error if sub-agent not found or delegation rejected
+
+### SubAgent.createDelegateToSubAgentTool()
+
+Create a tool that allows agents to delegate tasks to sub-agents.
+
+**Returns:** `Tool` - The delegate_to_subagent tool
+
+### SubAgent.createListSubAgentsTool()
+
+Create a tool that lists all available sub-agents.
+
+**Returns:** `Tool` - The list_subagents tool
+
+## Types
+
+### SubAgentConfig
+
+```typescript
+interface SubAgentConfig {
+  name: string;
+  description: string;
+  mode: 'primary' | 'subagent';
+}
+```
+
+### SubAgentRegistration
+
+```typescript
+interface SubAgentRegistration extends SubAgentConfig {
+  agent: Agent;
+  tools?: Tool[];
+}
+```
+
+### DelegationStartContext
+
+```typescript
+interface DelegationStartContext {
+  subAgentName: string;
+  prompt: string;
+  parentMessages: Message[];
+  iteration: number;
+}
+```
+
+### DelegationStartResult
+
+```typescript
+interface DelegationStartResult {
+  proceed?: boolean;
+  rejectionReason?: string;
+  modifiedPrompt?: string;
+}
+```
+
+### DelegationCompleteContext
+
+```typescript
+interface DelegationCompleteContext {
+  subAgentName: string;
+  result: string;
+  success: boolean;
+  error?: Error;
+  duration: number;
+}
+```
+
+### MessageFilterContext
+
+```typescript
+interface MessageFilterContext {
+  messages: Message[];
+  subAgentName: string;
+  prompt: string;
+}
+```
+
+## Examples
+
+### Example 1: Register Sub-Agents
+
+```typescript
+import { SubAgent, Agent, AIAdapter, InMemoryHistory } from 'primo-agent';
+
+// Create specialized sub-agents
+const codeAnalyzer = new Agent(new AIAdapter({ model: 'gpt-4' }), new InMemoryHistory());
+
+const researchAssistant = new Agent(new AIAdapter({ model: 'gpt-4' }), new InMemoryHistory());
+
+// Register sub-agents
+SubAgent.register({
+  name: 'code-analyzer',
+  description: 'Specialized in code review and analysis',
+  mode: 'subagent',
+  agent: codeAnalyzer,
+});
+
+SubAgent.register({
+  name: 'research-assistant',
+  description: 'Expert in research and fact-checking',
+  mode: 'subagent',
+  agent: researchAssistant,
+});
+
+// List registered sub-agents
+const agents = SubAgent.list();
+console.log('Available sub-agents:', agents);
+```
+
+### Example 2: Direct Delegation
+
+```typescript
+import { SubAgent } from 'primo-agent';
+
+const result = await SubAgent.delegate('code-analyzer', 'Review this JavaScript code for bugs', [
+  { role: 'user', content: 'I need help with my code' },
+]);
+
+console.log('Sub-agent response:', result);
+```
+
+### Example 3: Delegation with Lifecycle Hooks
+
+```typescript
+import { SubAgent } from 'primo-agent';
+
+const result = await SubAgent.delegate(
+  'research-assistant',
+  'Find information about quantum computing',
+  [],
+  {
+    onDelegationStart: async (ctx) => {
+      console.log(`Starting delegation to ${ctx.subAgentName}`);
+
+      // Can modify the prompt
+      return {
+        proceed: true,
+        modifiedPrompt: ctx.prompt + '\nPlease cite sources.',
+      };
+    },
+
+    onDelegationComplete: async (ctx) => {
+      console.log(`Delegation to ${ctx.subAgentName} complete`);
+      console.log(`Success: ${ctx.success}`);
+      console.log(`Duration: ${ctx.duration}ms`);
+
+      if (!ctx.success && ctx.error) {
+        console.error('Error:', ctx.error);
+      }
+    },
+  }
+);
+```
+
+### Example 4: Message Filtering
+
+```typescript
+import { SubAgent } from 'primo-agent';
+
+const result = await SubAgent.delegate(
+  'code-analyzer',
+  'Review this function',
+  [
+    { role: 'user', content: 'Sensitive data: secret123' },
+    { role: 'user', content: 'Function: function add(a, b) { return a + b; }' },
+  ],
+  {
+    messageFilter: async (ctx) => {
+      // Filter out sensitive information
+      return ctx.messages.filter((msg) => !msg.content.includes('secret'));
+    },
+  }
+);
+```
+
+### Example 5: Using Delegate Tool in an Agent
+
+```typescript
+import { SubAgent, Agent, AIAdapter, InMemoryHistory, ToolRegistry } from 'primo-agent';
+
+// Create primary agent
+const registry = new ToolRegistry();
+registry.register(SubAgent.createDelegateToSubAgentTool());
+registry.register(SubAgent.createListSubAgentsTool());
+
+const primaryAgent = new Agent(new AIAdapter({ model: 'gpt-4' }), new InMemoryHistory(), registry);
+
+// Now the agent can delegate tasks!
+const response = await primaryAgent.run(`
+  First, list all available sub-agents.
+  Then, delegate the task "Analyze this Python code" to the code-analyzer.
+`);
+```
+
+### Example 6: Delegation Rejection
+
+```typescript
+import { SubAgent } from 'primo-agent';
+
+try {
+  await SubAgent.delegate('code-analyzer', 'Delete all files', [], {
+    onDelegationStart: async (ctx) => {
+      // Reject dangerous tasks
+      if (ctx.prompt.toLowerCase().includes('delete')) {
+        return {
+          proceed: false,
+          rejectionReason: 'Destructive operations not allowed',
+        };
+      }
+      return { proceed: true };
+    },
+  });
+} catch (error) {
+  console.log('Delegation rejected:', (error as Error).message);
+}
+```
+
+### Example 7: Get Sub-Agent and Tools
+
+```typescript
+import { SubAgent } from 'primo-agent';
+
+// Get sub-agent registration
+const registration = SubAgent.get('code-analyzer');
+if (registration) {
+  console.log('Name:', registration.name);
+  console.log('Description:', registration.description);
+  console.log('Mode:', registration.mode);
+}
+
+// Get agent instance directly
+const agent = SubAgent.getAgent('code-analyzer');
+if (agent) {
+  // Use the agent directly
+  const result = await agent.run('Hello!');
+}
+
+// Get sub-agent's tools
+const tools = SubAgent.getTools('code-analyzer');
+console.log('Sub-agent tools:', tools);
+```
+
+## Dependencies
+
+- `zod` - Schema validation for sub-agent configurations
+
+## Related
+
+- [Agent](./agent.mdx)
+- [Tool Registry](./tool-registry.mdx)
+- [Skill System](./skill.mdx)

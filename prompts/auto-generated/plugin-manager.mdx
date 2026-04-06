@@ -1,0 +1,198 @@
+---
+title: "PluginManager"
+type: "class"
+author: "AI-Assistant"
+date: "2026-04-06"
+version: "1.0.0"
+sourceFile: "src/plugin/manager.ts"
+complexity: "medium"
+tests: []
+dependencies: ["rxjs", "zod"]
+---
+
+# PluginManager
+
+## Description
+
+Event-driven plugin system for extending agent behavior. Uses RxJS for reactive event handling, supports hook registration, observable streams, and runtime plugin lifecycle management.
+
+## Signature
+
+```typescript
+class PluginManager {
+  constructor(config?: PluginManagerConfig, directory?: string)
+  register(plugin: Plugin): void
+  unregister(name: string): void
+  list(): Plugin[]
+  get(name: string): Plugin | undefined
+  on(event: string, handler: Function): Subscription
+  async trigger(event: string, input: any, output: any): Promise<any>
+  observable(event: string): Observable<{ input: any; output: any }>
+  destroy(): void
+}
+
+function createPluginManager(config?: PluginManagerConfig, directory?: string): PluginManager
+```
+
+## Constructor Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| config.plugins | Plugin[] | No | Pre-register plugins |
+| directory | string | No | Working directory for plugins |
+
+## Types
+
+### Plugin
+
+```typescript
+interface Plugin {
+  name: string;
+  version?: string;
+  hooks?: Hooks;
+}
+```
+
+### Hooks
+
+```typescript
+interface Hooks {
+  'tool.execute.before'?: (input: ToolExecuteBeforeInput, output: ToolExecuteBeforeOutput) => Promise<void>
+  'tool.execute.after'?: (input: ToolExecuteAfterInput, output: ToolExecuteAfterOutput) => Promise<void>
+  'message.transform'?: (input: MessageTransformInput, output: MessageTransformOutput) => Promise<void>
+  'system.prompt'?: (input: SystemPromptInput, output: SystemPromptOutput) => Promise<void>
+  'agent.step'?: (input: AgentStepInput, output: AgentStepOutput) => Promise<void>
+  'agent.error'?: (input: AgentErrorInput, output: AgentErrorOutput) => Promise<void>
+  'state.change'?: (input: StateChangeInput, output: StateChangeOutput) => Promise<void>
+  'agent.start'?: (input: AgentStartInput, output: AgentStartOutput) => Promise<void>
+  'agent.complete'?: (input: AgentCompleteInput, output: AgentCompleteOutput) => Promise<void>
+}
+```
+
+### Hook Event Types
+
+| Event | Input Type | Output Type |
+|-------|------------|--------------|
+| tool.execute.before | `{ tool: string, args: object }` | `{ args: object }` |
+| tool.execute.after | `{ tool: string, args: object, result: string }` | `{ result: string }` |
+| agent.step | `{ step: number, maxSteps: number }` | `{}` |
+| agent.error | `{ error: string }` | `{}` |
+| state.change | `{ from: TaskStatus, to: TaskStatus }` | `{}` |
+| agent.start | `{ userInput: string }` | `{}` |
+| agent.complete | `{ userInput: string, response: string }` | `{}` |
+
+## Methods
+
+### register(plugin)
+
+Register a plugin with validation. Parses using `PluginSchema`, subscribes hooks to events.
+
+### unregister(name)
+
+Remove plugin by name. Does not error if not found.
+
+### list()
+
+Returns copy of registered plugins array.
+
+### on(event, handler)
+
+Subscribe to events with handler function. Returns RxJS `Subscription` for cleanup.
+
+**Returns:** `Subscription` - Call `.unsubscribe()` to remove handler
+
+### trigger(event, input, output)
+
+Trigger event with payload. Handlers execute in parallel via `mergeMap`.
+
+**Returns:** `Promise<output>` - Modified output after all handlers
+
+### observable(event)
+
+Get RxJS observable for event stream. Useful for debugging or custom processing.
+
+**Returns:** `Observable<{ input, output }>`
+
+### destroy()
+
+Unsubscribe all handlers, complete all subjects. Call on agent shutdown.
+
+## Examples
+
+### Example 1: Register Plugin
+
+```typescript
+import { PluginManager } from 'primo-agent';
+
+const pm = new PluginManager();
+
+const loggingPlugin = {
+  name: 'logger',
+  version: '1.0.0',
+  hooks: {
+    'agent.step': async (input, output) => {
+      console.log(`Step ${input.step} of ${input.maxSteps}`);
+    },
+    'tool.execute.after': async (input, output) => {
+      console.log(`Tool ${input.tool} returned: ${input.result.slice(0, 100)}`);
+    },
+  },
+};
+
+pm.register(loggingPlugin);
+```
+
+### Example 2: Custom Event Handler
+
+```typescript
+const sub = pm.on('agent.error', async (input, output) => {
+  // Send to external error tracker
+  await fetch('https://errors.example.com/report', {
+    method: 'POST',
+    body: JSON.stringify({ error: input.error }),
+  });
+});
+
+// Later, unsubscribe
+sub.unsubscribe();
+```
+
+### Example 3: Observable Stream
+
+```typescript
+import { filter, map } from 'rxjs';
+
+pm.observable('tool.execute.before')
+  .pipe(
+    filter(({ input }) => input.tool === 'calculator'),
+    map(({ input }) => input.args)
+  )
+  .subscribe((args) => {
+    console.log('Calculator called with:', args);
+  });
+```
+
+### Example 4: Trigger Custom Events
+
+```typescript
+await pm.trigger('custom.event', { custom: 'data' }, { result: 'modified' });
+// All 'custom.event' handlers receive input and can modify output
+```
+
+### Example 5: Cleanup
+
+```typescript
+// On shutdown
+pm.destroy();
+```
+
+## Dependencies
+
+- `rxjs` - Reactive event handling
+- `zod` - Plugin schema validation
+
+## Related
+
+- [PluginTypes](./plugin/types.mdx)
+- [Agent](./agent.mdx)
+- [HookEvents](./plugin/types.mdx#HookEvents)

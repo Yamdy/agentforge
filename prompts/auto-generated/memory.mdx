@@ -1,0 +1,288 @@
+---
+title: 'Memory System'
+type: 'class'
+author: 'AI-Assistant'
+date: '2026-04-07'
+version: '1.0.0'
+sourceFile: 'src/memory/index.ts'
+complexity: 'high'
+tests: ['tests/memory/memory.test.ts']
+dependencies: ['uuid', 'zod']
+---
+
+# Memory System
+
+## Description
+
+Multi-layered memory system for AI agents, featuring thread-based conversation management, message history, working memory, and observational memory. Supports pluggable storage backends with built-in in-memory storage.
+
+## Architecture
+
+```
+┌─────────────────────────────────────────┐
+│         MemoryManager                   │
+│  ┌──────────┐ ┌──────────┐ ┌────────┐ │
+│  │ Message  │ │ Working  │ │ Observ-│ │
+│  │ History  │ │  Memory  │ │ ational│ │
+│  └──────────┘ └──────────┘ └────────┘ │
+└──────────────┬──────────────────────────┘
+               │
+         ┌─────▼─────┐
+         │  Storage  │
+         │ (Pluggable)│
+         └───────────┘
+```
+
+## Signature
+
+```typescript
+class MemoryManager {
+  constructor(config?: MemoryManagerConfig);
+  load(): Promise<void>;
+  save(): Promise<void>;
+  addMessage(message: Message): void;
+  getMessages(): Message[];
+  getWorkingMemory(): WorkingMemory | null;
+  updateWorkingMemory(content: string): void;
+  getObservationalMemory(): Observation[] | null;
+  addObservation(observation: Omit<Observation, 'id' | 'timestamp'>): void;
+  clear(): void;
+}
+
+function createMemory(config?: MemoryManagerConfig): MemoryManager;
+```
+
+## Constructor Parameters
+
+| Parameter                  | Type                      | Required | Description                        |
+| -------------------------- | ------------------------- | -------- | ---------------------------------- |
+| config.threadId            | string                    | No       | Custom thread identifier           |
+| config.messageHistory      | MessageHistoryConfig      | No       | Message history configuration      |
+| config.workingMemory       | WorkingMemoryConfig       | No       | Working memory configuration       |
+| config.observationalMemory | ObservationalMemoryConfig | No       | Observational memory configuration |
+| config.storage             | MemoryStorage             | No       | Custom storage backend             |
+
+## Methods
+
+### load()
+
+Load memory state from storage backend. Must be called before use.
+
+**Returns:** `Promise<void>`
+
+### save()
+
+Persist current memory state to storage backend.
+
+**Returns:** `Promise<void>`
+
+### addMessage(message)
+
+Add a message to the conversation history.
+
+| Parameter | Type    | Required | Description    |
+| --------- | ------- | -------- | -------------- |
+| message   | Message | Yes      | Message to add |
+
+### getMessages()
+
+Retrieve all messages in current thread.
+
+**Returns:** `Message[]` - Array of messages
+
+### getWorkingMemory()
+
+Get current working memory content.
+
+**Returns:** `WorkingMemory | null` - Working memory object or null if disabled
+
+### updateWorkingMemory(content)
+
+Update working memory with new content.
+
+| Parameter | Type   | Required | Description                |
+| --------- | ------ | -------- | -------------------------- |
+| content   | string | Yes      | New working memory content |
+
+### getObservationalMemory()
+
+Get all observational memory entries.
+
+**Returns:** `Observation[] | null` - Observations array or null if disabled
+
+### addObservation(observation)
+
+Add a new observation to observational memory.
+
+| Parameter   | Type                                         | Required | Description      |
+| ----------- | -------------------------------------------- | -------- | ---------------- |
+| observation | Omit&lt;Observation, 'id' \| 'timestamp'&gt; | Yes      | Observation data |
+
+### clear()
+
+Clear all messages and observations from memory.
+
+## Types
+
+### Thread
+
+```typescript
+interface Thread {
+  id: string;
+  title?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+```
+
+### Observation
+
+```typescript
+interface Observation {
+  id: string;
+  content: string;
+  timestamp: Date;
+  compressionLevel?: 0 | 1 | 2 | 3 | 4;
+}
+```
+
+### WorkingMemory
+
+```typescript
+interface WorkingMemory {
+  content: string;
+  updatedAt: Date;
+}
+```
+
+### MemoryStorage Interface
+
+```typescript
+interface MemoryStorage {
+  getThread(threadId: string): Promise<Thread | null>;
+  saveThread(thread: Thread): Promise<Thread>;
+  deleteThread(threadId: string): Promise<void>;
+  listThreads(options?: ListThreadsOptions): Promise<Thread[]>;
+  getMessages(threadId: string): Promise<Message[]>;
+  addMessage(threadId: string, message: Message): Promise<void>;
+  getWorkingMemory(threadId: string): Promise<WorkingMemory | null>;
+  saveWorkingMemory(threadId: string, memory: WorkingMemory): Promise<void>;
+  getObservationalMemory?(threadId: string): Promise<Observation[] | null>;
+  saveObservationalMemory?(threadId: string, observations: Observation[]): Promise<void>;
+}
+```
+
+## Examples
+
+### Example 1: Basic Memory Usage
+
+```typescript
+import { createMemory } from 'primo-agent';
+
+const memory = createMemory();
+await memory.load();
+
+memory.addMessage({ role: 'user', content: 'Hello!' });
+memory.addMessage({ role: 'assistant', content: 'Hi there!' });
+
+const messages = memory.getMessages();
+console.log(messages);
+```
+
+### Example 2: With Working Memory
+
+```typescript
+import { createMemory } from 'primo-agent';
+
+const memory = createMemory({
+  workingMemory: {
+    enabled: true,
+    template: '# Current Task\n- Status: In Progress',
+  },
+});
+await memory.load();
+
+const current = memory.getWorkingMemory();
+console.log('Current:', current?.content);
+
+memory.updateWorkingMemory('# Current Task\n- Status: Completed');
+const updated = memory.getWorkingMemory();
+console.log('Updated:', updated?.content);
+```
+
+### Example 3: With Observational Memory
+
+```typescript
+import { createMemory } from 'primo-agent';
+
+const memory = createMemory({
+  observationalMemory: {
+    enabled: true,
+    compressionLevel: 2,
+  },
+});
+await memory.load();
+
+memory.addObservation({
+  content: 'User prefers concise responses',
+});
+memory.addObservation({
+  content: 'User asked about JavaScript 3 times',
+});
+
+const observations = memory.getObservationalMemory();
+console.log('Observations:', observations);
+```
+
+### Example 4: Custom Storage Backend
+
+```typescript
+import { createMemory, type MemoryStorage } from 'primo-agent';
+
+class DatabaseStorage implements MemoryStorage {
+  async getThread(threadId: string) {
+    return await db.threads.findOne({ id: threadId });
+  }
+
+  async saveThread(thread: Thread) {
+    await db.threads.upsert(thread);
+    return thread;
+  }
+
+  // Implement other MemoryStorage methods...
+}
+
+const memory = createMemory({
+  storage: new DatabaseStorage(),
+});
+await memory.load();
+```
+
+### Example 5: Persistence
+
+```typescript
+import { createMemory } from 'primo-agent';
+
+const memory = createMemory();
+await memory.load();
+
+memory.addMessage({ role: 'user', content: 'Remember this!' });
+await memory.save();
+
+// Later, reload from storage
+const memory2 = createMemory({ threadId: memory.threadId });
+await memory2.load();
+const messages = memory2.getMessages();
+console.log('Restored:', messages);
+```
+
+## Dependencies
+
+- `uuid` - Unique identifier generation
+- `zod` - Schema validation
+
+## Related
+
+- [Agent](./agent.mdx)
+- [Session Storage](./session-storage.mdx)
+- [In Memory History](./in-memory-history.mdx)

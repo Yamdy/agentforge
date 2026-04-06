@@ -1,0 +1,208 @@
+---
+title: "Types"
+type: "config"
+author: "AI-Assistant"
+date: "2026-04-06"
+version: "1.0.0"
+sourceFile: "src/types.ts"
+complexity: "medium"
+tests: []
+dependencies: ["zod"]
+---
+
+# Types
+
+## Description
+
+Central type definitions and Zod schemas for the agent system. Includes message, tool, LLM response, stream events, and task state machine types.
+
+## Schemas
+
+### MessageSchema
+
+```typescript
+const MessageSchema = z.object({
+  role: z.enum(['system', 'user', 'assistant']),
+  content: z.string(),
+})
+type Message = z.infer<typeof MessageSchema>
+```
+
+### ToolSchema
+
+```typescript
+const ToolSchema = z.object({
+  name: z.string().min(1),
+  description: z.string(),
+  parameters: ToolParametersSchema.optional(),
+  execute: z.custom<(args) => Promise<string>>(),
+})
+type Tool = z.infer<typeof ToolSchema>
+```
+
+### ToolParametersSchema
+
+```typescript
+const ToolParametersSchema = z.object({
+  type: z.literal('object'),
+  properties: z.record(z.string(), z.any()),
+  required: z.array(z.string()).optional(),
+})
+```
+
+### StreamEventSchema
+
+Discriminated union of event types:
+- `{ type: 'text', content: string }`
+- `{ type: 'tool_call_start', id: string, name: string }`
+- `{ type: 'tool_call_delta', id: string, arguments: string }`
+- `{ type: 'tool_call_end', id: string, result?: string }`
+- `{ type: 'done', response: LLMResponse }`
+
+### LLMResponseSchema
+
+```typescript
+const LLMResponseSchema = z.object({
+  content: z.string().nullable(),
+  toolCalls: z.array(ToolCallSchema).optional(),
+  finishReason: z.enum(['stop', 'tool-calls', 'length', 'error']).optional(),
+})
+```
+
+## Interfaces
+
+### LLMAdapter
+
+```typescript
+interface LLMAdapter {
+  chat(messages: Message[]): Promise<LLMResponse>
+  chatStream(messages: Message[]): AsyncGenerator<StreamEvent>
+}
+```
+
+### HistoryManager
+
+```typescript
+interface HistoryManager {
+  add(role: 'user' | 'assistant', content: string): void
+  addToolResult(toolCallId: string, toolName: string, result: string): void
+  getMessages(): Message[]
+  clear(): void
+}
+```
+
+### AgentConfig
+
+```typescript
+interface AgentConfig {
+  maxSteps?: number
+}
+```
+
+### TaskState
+
+```typescript
+interface TaskState {
+  status: TaskStatus
+  step: number
+  maxSteps: number
+  error?: string
+}
+```
+
+### TaskStatus
+
+```typescript
+type TaskStatus = 'pending' | 'running' | 'completed' | 'cancelled' | 'error'
+```
+
+### TaskStateMachine
+
+```typescript
+interface TaskStateMachine {
+  transition(status: TaskStatus, payload?: { error?: string, step?: number }): void
+  getState(): TaskState
+  onStateChange(callback: (state: TaskState) => void): void
+  cancel(): void
+}
+```
+
+## Factory Functions
+
+### createInitialTaskState(maxSteps)
+
+Creates initial task state with 'pending' status.
+
+### createTaskStateMachine(maxSteps)
+
+Creates state machine with transition logic and listeners.
+
+### validateTool(tool)
+
+Validate tool against ToolSchema.
+
+### validateMessage(message)
+
+Validate message against MessageSchema.
+
+### validateLLMResponse(response)
+
+Validate LLM response against LLMResponseSchema.
+
+## Examples
+
+### Example 1: Using Schemas
+
+```typescript
+import { MessageSchema, ToolSchema, validateTool } from 'primo-agent';
+
+const msg = MessageSchema.parse({
+  role: 'user',
+  content: 'Hello'
+});
+
+const tool = validateTool({
+  name: 'my-tool',
+  description: 'Does something',
+  execute: async (args) => 'result'
+});
+```
+
+### Example 2: Implementing HistoryManager
+
+```typescript
+import { HistoryManager, Message } from 'primo-agent';
+
+class MyHistory implements HistoryManager {
+  private messages: Message[] = [];
+  
+  add(role, content) {
+    this.messages.push({ role, content });
+  }
+  
+  addToolResult(id, name, result) {
+    this.messages.push({
+      role: 'user',
+      content: `[TOOL] ${name}: ${result}`
+    });
+  }
+  
+  getMessages() {
+    return [...this.messages];
+  }
+  
+  clear() {
+    this.messages = [];
+  }
+}
+```
+
+## Dependencies
+
+- `zod` - Schema validation
+
+## Related
+
+- [Agent](./agent.mdx)
+- [AIAdapter](./ai-adapter.mdx)
+- [ToolRegistry](./registry.mdx)

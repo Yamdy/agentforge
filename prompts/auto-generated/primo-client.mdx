@@ -1,0 +1,170 @@
+---
+title: "PrimoClient"
+type: "class"
+author: "AI-Assistant"
+date: "2026-04-06"
+version: "1.0.0"
+sourceFile: "src/sdk/client.ts"
+complexity: "medium"
+tests: []
+dependencies: []
+---
+
+# PrimoClient
+
+## Description
+
+HTTP client SDK for interacting with Primo Agent server. Provides typed methods for running agents, managing sessions, and streaming responses.
+
+## Signature
+
+```typescript
+class PrimoClient {
+  constructor(config: PrimoClientConfig)
+  run(input: string, options?: { maxSteps?: number }): Promise<string>
+  runWithSession(sessionId: string, input: string): Promise<string>
+  runStream(input: string, options?: { sessionId?: string }): AsyncGenerator<StreamEvent>
+  getStatus(): Promise<AgentStatus>
+  healthCheck(): Promise<{ status: string, timestamp: string }>
+  createSession(options?: SessionOptions): Promise<any>
+  listSessions(options?: ListOptions): Promise<any[]>
+  getSession(id: string): Promise<any>
+  updateSession(id: string, updates: SessionUpdates): Promise<any>
+  deleteSession(id: string): Promise<{ success: boolean }>
+}
+
+function createPrimoClient(config: PrimoClientConfig): PrimoClient
+```
+
+## Configuration
+
+### PrimoClientConfig
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| baseUrl | string | Yes | Server base URL |
+| apiKey | string | No | API key for authentication |
+
+## Methods
+
+### run(input, options)
+
+Run agent synchronously.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| input | string | Yes | User prompt |
+| options.maxSteps | number | No | Max steps |
+
+**Returns:** `Promise<string>` - Agent response
+
+### runWithSession(sessionId, input)
+
+Run agent with existing session context.
+
+**Returns:** `Promise<string>`
+
+### runStream(input, options)
+
+Run agent with streaming response.
+
+**Returns:** `AsyncGenerator<StreamEvent>`
+
+### createSession(options)
+
+Create new session.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| options.title | string | No | Session title |
+| options.messages | Message[] | No | Initial messages |
+| options.parentId | string | No | Parent session |
+| options.projectId | string | No | Project ID |
+
+### listSessions(options)
+
+List sessions with pagination.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| options.limit | number | No | Max results |
+| options.offset | number | No | Pagination offset |
+| options.parentId | string | No | Filter by parent |
+| options.projectId | string | No | Filter by project |
+
+## Stream Events
+
+| Event | Fields | Description |
+|-------|--------|-------------|
+| text | `{ type: 'text', content: string }` | Text delta |
+| tool_call_start | `{ type, id, name }` | Tool called |
+| tool_call_delta | `{ type, id, arguments }` | Arguments |
+| tool_call_end | `{ type, id, result }` | Result |
+| done | `{ type: 'done' }` | Complete |
+| error | `{ type: 'error', error: string }` | Error |
+
+## Examples
+
+### Example 1: Basic Client Usage
+
+```typescript
+import { createPrimoClient } from 'primo-agent';
+
+const client = createPrimoClient({
+  baseUrl: 'http://localhost:3000',
+  apiKey: process.env.API_KEY,
+});
+
+const result = await client.run('What is AI?');
+console.log(result);
+```
+
+### Example 2: Streaming Response
+
+```typescript
+const stream = client.runStream('Explain quantum computing');
+
+for await (const event of stream) {
+  if (event.type === 'text') {
+    process.stdout.write(event.content);
+  } else if (event.type === 'tool_call_start') {
+    console.log(`\n[Tool: ${event.name}]`);
+  }
+}
+```
+
+### Example 3: Session Management
+
+```typescript
+// Create session
+const session = await client.createSession({
+  title: 'Research Chat',
+  messages: [
+    { role: 'system', content: 'You are a research assistant.' }
+  ]
+});
+
+console.log('Created:', session.id);
+
+// Continue conversation
+const result = await client.runWithSession(session.id, 'What are LLMs?');
+
+// List sessions
+const sessions = await client.listSessions({ limit: 10 });
+```
+
+### Example 4: Health Check
+
+```typescript
+const health = await client.healthCheck();
+console.log(health.status, health.timestamp);
+```
+
+## Dependencies
+
+None (uses native fetch)
+
+## Related
+
+- [Server](./server.mdx)
+- [Agent](./agent.mdx)

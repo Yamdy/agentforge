@@ -1,0 +1,329 @@
+---
+title: 'Middleware System'
+type: 'class'
+author: 'AI-Assistant'
+date: '2026-04-07'
+version: '1.0.0'
+sourceFile: 'src/middleware/index.ts'
+complexity: 'low'
+tests: []
+dependencies: ['rxjs']
+---
+
+# Middleware System
+
+## Description
+
+Reactive middleware system for processing and transforming agent stream events. Built on RxJS, supports middleware composition, pipeline creation, and includes built-in middleware for HITL (Human-in-the-Loop) and TODO extraction.
+
+## Architecture
+
+```
+┌─────────────────────────────────────────┐
+│         Stream Event Source              │
+│  (Agent Execution Events)                │
+└──────────────┬──────────────────────────┘
+               │
+       ┌───────▼────────┐
+       │  Middleware 1  │
+       └───────┬────────┘
+               │
+       ┌───────▼────────┐
+       │  Middleware 2  │
+       └───────┬────────┘
+               │
+       ┌───────▼────────┐
+       │  Middleware 3  │
+       └───────┬────────┘
+               │
+       ┌───────▼────────┐
+       │   Output       │
+       │   Stream       │
+       └────────────────┘
+```
+
+## Signature
+
+```typescript
+type Middleware = (source$: Observable<StreamEvent>) => Observable<StreamEvent>;
+
+function createMiddlewarePipeline(...middlewares: Middleware[]): Middleware;
+
+function createMiddleware(
+  name: string,
+  handler: (source$: Observable<StreamEvent>) => Observable<StreamEvent>
+): Middleware;
+
+function createTodoMiddleware(): Middleware;
+
+function createHitlMiddleware(config?: HitlConfig): Middleware;
+```
+
+## Core Functions
+
+### createMiddlewarePipeline(...middlewares)
+
+Create a middleware pipeline by composing multiple middleware functions.
+
+| Parameter   | Type         | Required | Description                   |
+| ----------- | ------------ | -------- | ----------------------------- |
+| middlewares | Middleware[] | Yes      | Array of middleware functions |
+
+**Returns:** `Middleware` - Composed middleware pipeline
+
+### createMiddleware(name, handler)
+
+Create a named middleware with logging.
+
+| Parameter | Type                                                                         | Required | Description                 |
+| --------- | ---------------------------------------------------------------------------- | -------- | --------------------------- |
+| name      | string                                                                       | Yes      | Middleware name             |
+| handler   | (source$: Observable&lt;StreamEvent&gt;) =&gt; Observable&lt;StreamEvent&gt; | Yes      | Middleware handler function |
+
+**Returns:** `Middleware` - Named middleware
+
+### createTodoMiddleware()
+
+Create a middleware that extracts TODO items from agent text output.
+
+**Returns:** `Middleware` - TODO extraction middleware
+
+### createHitlMiddleware(config?)
+
+Create a Human-in-the-Loop middleware for tool execution approval.
+
+| Parameter       | Type     | Required | Description                      |
+| --------------- | -------- | -------- | -------------------------------- |
+| config.tools    | string[] | No       | List of tools requiring approval |
+| config.allTools | boolean  | No       | Require approval for all tools   |
+| config.prompt   | string   | No       | Custom approval prompt           |
+
+**Returns:** `Middleware` - HITL middleware
+
+## Types
+
+### Middleware
+
+```typescript
+type Middleware = (source$: Observable<StreamEvent>) => Observable<StreamEvent>;
+```
+
+### HitlConfig
+
+```typescript
+interface HitlConfig {
+  tools?: string[];
+  allTools?: boolean;
+  prompt?: string;
+}
+```
+
+### StreamEvent
+
+```typescript
+type StreamEvent =
+  | { type: 'text'; content: string }
+  | { type: 'tool_call_start'; id: string; name: string }
+  | { type: 'tool_call_delta'; id: string; arguments: string }
+  | { type: 'tool_call_end'; id: string; result?: string }
+  | { type: 'done'; response: LLMResponse };
+```
+
+## Built-in Middleware
+
+### TodoMiddleware
+
+Extracts TODO items from text events:
+
+- Markdown checklists: `- [ ] Task` or `- [x] Completed`
+- TODO annotations: `TODO: Task`
+
+### HitlMiddleware
+
+Provides human approval for tool execution:
+
+- Approve/reject specific tools
+- Approve/reject all tools
+- Custom approval prompts
+
+## Examples
+
+### Example 1: Basic Middleware Pipeline
+
+```typescript
+import { createMiddlewarePipeline, createTodoMiddleware, createHitlMiddleware } from 'primo-agent';
+
+const pipeline = createMiddlewarePipeline(
+  createTodoMiddleware(),
+  createHitlMiddleware({ tools: ['delete_file', 'write_file'] })
+);
+
+// Use with agent streaming
+const stream = agent.runStream('Create a todo list');
+const processedStream = pipeline(stream);
+
+for await (const event of processedStream) {
+  console.log(event);
+}
+```
+
+### Example 2: Create Custom Middleware
+
+```typescript
+import { createMiddleware } from 'primo-agent';
+import { tap } from 'rxjs/operators';
+
+const loggingMiddleware = createMiddleware('logging', (source$) => {
+  return source$.pipe(
+    tap((event) => {
+      console.log(`[Event] ${event.type}`);
+      if (event.type === 'text') {
+        console.log(`  Content: ${event.content.slice(0, 50)}...`);
+      }
+    })
+  );
+});
+```
+
+### Example 3: HITL Middleware with All Tools
+
+```typescript
+import { createHitlMiddleware } from 'primo-agent';
+
+const hitlMiddleware = createHitlMiddleware({
+  allTools: true,
+  prompt: 'Do you want to proceed with this tool execution?',
+});
+
+// All tool calls will require approval
+```
+
+### Example 4: HITL Middleware with Specific Tools
+
+```typescript
+import { createHitlMiddleware } from 'primo-agent';
+
+const hitlMiddleware = createHitlMiddleware({
+  tools: ['delete_file', 'execute_command', 'write_file'],
+});
+
+// Only dangerous tools require approval
+```
+
+### Example 5: Multiple Middleware in Pipeline
+
+```typescript
+import { createMiddlewarePipeline, createMiddleware, createTodoMiddleware } from 'primo-agent';
+import { tap, map, filter } from 'rxjs/operators';
+
+const filterMiddleware = createMiddleware('filter', (source$) => {
+  return source$.pipe(filter((event) => event.type !== 'tool_call_delta'));
+});
+
+const transformMiddleware = createMiddleware('transform', (source$) => {
+  return source$.pipe(
+    map((event) => {
+      if (event.type === 'text') {
+        return { ...event, content: event.content.toUpperCase() };
+      }
+      return event;
+    })
+  );
+});
+
+const pipeline = createMiddlewarePipeline(
+  filterMiddleware,
+  transformMiddleware,
+  createTodoMiddleware()
+);
+```
+
+### Example 6: Using with RxJS Operators
+
+```typescript
+import { createMiddleware } from 'primo-agent';
+import { scan, bufferTime, debounceTime } from 'rxjs/operators';
+
+const accumulatorMiddleware = createMiddleware('accumulator', (source$) => {
+  return source$.pipe(
+    scan(
+      (acc, event) => {
+        if (event.type === 'text') {
+          return { ...acc, text: acc.text + event.content };
+        }
+        return acc;
+      },
+      { text: '' }
+    )
+  );
+});
+
+const batchMiddleware = createMiddleware('batch', (source$) => {
+  return source$.pipe(
+    bufferTime(1000),
+    filter((events) => events.length > 0)
+  );
+});
+```
+
+### Example 7: Error Handling Middleware
+
+```typescript
+import { createMiddleware } from 'primo-agent';
+import { catchError, of } from 'rxjs';
+
+const errorHandlingMiddleware = createMiddleware('error-handler', (source$) => {
+  return source$.pipe(
+    catchError((error) => {
+      console.error('Middleware error:', error);
+      return of({
+        type: 'text',
+        content: `[Error occurred: ${error.message}]`,
+      });
+    })
+  );
+});
+```
+
+### Example 8: Metric Collection Middleware
+
+```typescript
+import { createMiddleware } from 'primo-agent';
+import { tap } from 'rxjs/operators';
+
+const metrics = {
+  textEvents: 0,
+  toolCalls: 0,
+  startTime: Date.now(),
+};
+
+const metricsMiddleware = createMiddleware('metrics', (source$) => {
+  return source$.pipe(
+    tap((event) => {
+      switch (event.type) {
+        case 'text':
+          metrics.textEvents++;
+          break;
+        case 'tool_call_start':
+          metrics.toolCalls++;
+          break;
+      }
+    })
+  );
+});
+
+// Later, access metrics
+console.log('Metrics:', {
+  ...metrics,
+  duration: Date.now() - metrics.startTime,
+});
+```
+
+## Dependencies
+
+- `rxjs` - Reactive extensions for stream processing
+
+## Related
+
+- [Agent](./agent.mdx)
+- [Plugin Manager](./plugin-manager.mdx)
