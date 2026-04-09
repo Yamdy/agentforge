@@ -163,17 +163,13 @@ export function createApp(config: ServerConfig & { agent?: AgentRunner }) {
                     const result = await compactSession(session, {
                       maxMessages: COMPACTION_MSG_THRESHOLD,
                     });
-                    if (result.compactedCount < session.messages.length) {
-                      const compacted = [
-                        ...session.messages.slice(0, 2),
-                        { role: 'system' as const, content: `[Summary: ${result.summary}]` },
-                        ...session.messages.slice(-15),
-                      ];
+                    if (result.compactedMessages.length < session.messages.length) {
+                      const compacted = result.compactedMessages;
                       await sessionApi.update(sessionId, { messages: compacted });
                       log.info('Session compacted', {
                         sessionId,
                         original: result.originalCount,
-                        compacted: result.compactedCount,
+                        compacted: result.compactedMessages.length,
                       });
                     }
                   }
@@ -279,17 +275,13 @@ export function createApp(config: ServerConfig & { agent?: AgentRunner }) {
                     const result = await compactSession(session, {
                       maxMessages: COMPACTION_MSG_THRESHOLD,
                     });
-                    if (result.compactedCount < session.messages.length) {
-                      const compacted = [
-                        ...session.messages.slice(0, 2),
-                        { role: 'system' as const, content: `[Summary: ${result.summary}]` },
-                        ...session.messages.slice(-15),
-                      ];
+                    if (result.compactedMessages.length < session.messages.length) {
+                      const compacted = result.compactedMessages;
                       await sessionApi.update(sessionId, { messages: compacted });
                       log.info('Session compacted', {
                         sessionId,
                         original: result.originalCount,
-                        compacted: result.compactedCount,
+                        compacted: result.compactedMessages.length,
                       });
                     }
                   }

@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { Observable } from 'rxjs';
 
 export const MessageSchema = z.object({
-  role: z.enum(['system', 'user', 'assistant']),
+  role: z.enum(['system', 'user', 'assistant', 'tool']),
   content: z.string(),
 });
 export type Message = z.infer<typeof MessageSchema>;
@@ -78,7 +78,7 @@ export type LLMAdapter = {
 };
 
 export type HistoryManager = {
-  add(role: 'user' | 'assistant', content: string): void;
+  add(role: 'user' | 'assistant' | 'tool', content: string): void;
   addToolResult(toolCallId: string, toolName: string, result: string): void;
   getMessages(): Message[];
   clear(): void;

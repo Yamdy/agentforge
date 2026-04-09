@@ -1,4 +1,4 @@
-import type { WorkflowStep, WorkflowContext, InputMapping } from '../types.js';
+import type { WorkflowStep, WorkflowContext, InputMapping, LoopOptions } from '../types.js';
 import { WorkflowContextImpl } from '../context.js';
 
 interface StepNode {
@@ -14,6 +14,11 @@ export class DefaultExecutor {
     condition: (ctx: WorkflowContext) => boolean;
     trueBranch: StepNode;
     falseBranch: StepNode;
+  };
+  private loop?: {
+    condition: (ctx: WorkflowContext, iteration: number) => boolean;
+    loopStep: StepNode;
+    maxIterations: number;
   };
 
   addStep(
@@ -46,6 +51,23 @@ export class DefaultExecutor {
     };
   }
 
+  setLoop(
+    condition: (ctx: WorkflowContext, iteration: number) => boolean,
+    loopStep: { id: string; step: WorkflowStep<unknown, unknown> },
+    maxIterations: number = 100
+  ): void {
+    this.loop = {
+      condition,
+      loopStep: {
+        id: loopStep.id,
+        step: loopStep.step,
+        options: undefined,
+        dependencies: [],
+      },
+      maxIterations: Math.max(1, maxIterations),
+    };
+  }
+
   async execute<TInput, TOutput>(input: TInput): Promise<TOutput> {
     const context = new WorkflowContextImpl();
     let currentInput: unknown = input;
@@ -64,6 +86,21 @@ export class DefaultExecutor {
       const result = await selectedNode.step.execute(stepInput, context);
       context.setResult(selectedNode.id, result);
       currentInput = result;
+    }
+
+    if (this.loop) {
+      let iteration = 0;
+      let lastResult = currentInput;
+
+      while (this.loop.condition(context, iteration) && iteration < this.loop.maxIterations) {
+        const stepInput = this.resolveInput(this.loop.loopStep.options?.input, context, lastResult);
+        const result = await this.loop.loopStep.step.execute(stepInput, context);
+        context.setResult(this.loop.loopStep.id, result);
+        lastResult = result;
+        iteration++;
+      }
+
+      currentInput = lastResult;
     }
 
     return currentInput as TOutput;

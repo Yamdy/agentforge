@@ -40,6 +40,11 @@ export interface Workflow<TInput = unknown, TOutput = unknown> {
     },
     options?: BranchOptions
   ): Workflow<TInput, TO>;
+  loop<TI, TO>(
+    condition: (ctx: WorkflowContext, iteration: number) => boolean,
+    loopStep: { id: string; step: WorkflowStep<TI, TO> },
+    options?: LoopOptions
+  ): Workflow<TInput, TO>;
   commit(): CommittedWorkflow<TInput, TOutput>;
 }
 
@@ -64,6 +69,11 @@ export interface ParallelOptions {
 
 export interface BranchOptions {
   description?: string;
+}
+
+export interface LoopOptions {
+  description?: string;
+  maxIterations?: number;
 }
 
 export interface MsgHubConfig {

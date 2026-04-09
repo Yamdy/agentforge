@@ -11,6 +11,7 @@ import {
 } from './filesystem.js';
 import { Lock } from './lock.js';
 import { NotFoundError } from './filesystem.js';
+export { SQLiteMemoryStorage } from './sqlite-memory.js';
 
 export { NotFoundError };
 

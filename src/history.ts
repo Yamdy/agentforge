@@ -4,7 +4,7 @@ export class InMemoryHistory implements HistoryManager {
   private messages: Message[] = [];
   private toolResults: ToolResult[] = [];
 
-  add(role: 'user' | 'assistant', content: string): void {
+  add(role: 'user' | 'assistant' | 'tool', content: string): void {
     this.messages.push(validateMessage({ role, content }));
   }
 
@@ -13,7 +13,7 @@ export class InMemoryHistory implements HistoryManager {
   }
 
   getToolResult(toolCallId: string): ToolResult | undefined {
-    return this.toolResults.find(tr => tr.toolCallId === toolCallId);
+    return this.toolResults.find((tr) => tr.toolCallId === toolCallId);
   }
 
   getMessages(): Message[] {

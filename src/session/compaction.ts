@@ -1,10 +1,12 @@
 import type { Session, SessionMessage } from './storage.js';
+import type { LLMAdapter } from '../types.js';
 
 export interface CompactionOptions {
   maxMessages?: number;
   keepFirst?: number;
   keepLast?: number;
   summaryPrompt?: string;
+  llmAdapter?: LLMAdapter;
 }
 
 export interface CompactionResult {
@@ -13,53 +15,74 @@ export interface CompactionResult {
   summary: string;
 }
 
+const DEFAULT_SUMMARY_PROMPT = `
+Summarize the following conversation between a user and an AI assistant.
+Focus on the key points, decisions, and important information that would be needed for continuing the conversation.
+Keep the summary concise but comprehensive.
+Conversation to summarize:
+`;
+
 export async function compactSession(
   session: Session,
   options: CompactionOptions = {}
-): Promise<CompactionResult> {
+): Promise<{
+  originalCount: number;
+  compactedMessages: SessionMessage[];
+  summary: string;
+}> {
   const maxMessages = options.maxMessages ?? 50;
   const keepFirst = options.keepFirst ?? 2;
   const keepLast = options.keepLast ?? 10;
+  const summaryPrompt = options.summaryPrompt ?? DEFAULT_SUMMARY_PROMPT;
 
   if (session.messages.length <= maxMessages) {
     return {
       originalCount: session.messages.length,
-      compactedCount: session.messages.length,
+      compactedMessages: session.messages,
       summary: 'No compaction needed',
     };
   }
 
-  const systemMessages = session.messages.filter(m => m.role === 'system');
-  const nonSystemMessages = session.messages.filter(m => m.role !== 'system');
+  const systemMessages = session.messages.filter((m) => m.role === 'system');
+  const nonSystemMessages = session.messages.filter((m) => m.role !== 'system');
 
   const firstMessages = nonSystemMessages.slice(0, keepFirst);
   const lastMessages = nonSystemMessages.slice(-keepLast);
   const middleMessages = nonSystemMessages.slice(keepFirst, nonSystemMessages.length - keepLast);
 
-  let summary = `Session had ${middleMessages.length} intermediate messages.`;
-  
-  if (middleMessages.length > 0) {
-    summary += ` The conversation covered ${middleMessages.length} exchanges between user and assistant.`;
+  let summary: string;
+
+  if (options.llmAdapter && middleMessages.length > 0) {
+    // Use LLM to generate better summary
+    const conversationText = middleMessages
+      .map((msg) => `${msg.role}: ${msg.content}`)
+      .join('\n\n');
+    const prompt = `${summaryPrompt}\n\n${conversationText}`;
+    const result = await options.llmAdapter.generate(prompt);
+    summary = result;
+  } else {
+    // Fallback to simple summary
+    summary = `Session had ${middleMessages.length} intermediate messages that were compacted. `;
+    if (middleMessages.length > 0) {
+      summary += `The conversation covered ${middleMessages.length} exchanges.`;
+    }
   }
 
   const compacted: SessionMessage[] = [
     ...systemMessages,
     ...firstMessages,
-    { role: 'system', content: `[Previous conversation summary: ${summary}]` },
+    { role: 'system', content: `[Previous conversation summary]: ${summary}` },
     ...lastMessages,
   ];
 
   return {
     originalCount: session.messages.length,
-    compactedCount: compacted.length,
+    compactedMessages: compacted,
     summary,
   };
 }
 
-export function applyCompaction(
-  session: Session,
-  compactedMessages: SessionMessage[]
-): Session {
+export function applyCompaction(session: Session, compactedMessages: SessionMessage[]): Session {
   return {
     ...session,
     messages: compactedMessages,

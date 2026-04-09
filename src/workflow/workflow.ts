@@ -7,6 +7,7 @@ import type {
   InputMapping,
   ParallelOptions,
   BranchOptions,
+  LoopOptions,
 } from './types.js';
 import { DefaultExecutor } from './executors/index.js';
 
@@ -71,6 +72,22 @@ class WorkflowBuilder<TInput = unknown, TOutput = unknown> implements Workflow<T
         id: branches.false.id,
         step: branches.false.step as WorkflowStep<unknown, unknown>,
       }
+    );
+    return this as unknown as WorkflowBuilder<TInput, TO>;
+  }
+
+  loop<TI, TO>(
+    condition: (ctx: WorkflowContext, iteration: number) => boolean,
+    loopStep: { id: string; step: WorkflowStep<TI, TO> },
+    options?: LoopOptions
+  ): WorkflowBuilder<TInput, TO> {
+    this.executor.setLoop(
+      condition,
+      {
+        id: loopStep.id,
+        step: loopStep.step as WorkflowStep<unknown, unknown>,
+      },
+      options?.maxIterations
     );
     return this as unknown as WorkflowBuilder<TInput, TO>;
   }

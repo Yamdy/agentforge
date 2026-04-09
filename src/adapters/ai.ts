@@ -83,9 +83,7 @@ export class AIAdapter implements LLMAdapter {
     return result;
   }
 
-  private toModelMessages(
-    messages: Message[]
-  ): Array<{ role: 'user' | 'assistant' | 'system'; content: string }> {
+  private toModelMessages(messages: Message[]): Array<{ role: any; content: string }> {
     return messages.map((msg) => ({
       role: msg.role,
       content: msg.content,

@@ -1,11 +1,19 @@
-import type { Tool } from '../types.js';
+import type { Tool, Message } from '../types.js';
 import { registry } from './registry.js';
 import { delegation } from './delegation.js';
+import { getCurrentMemory } from '../context.js';
+
+export interface DelegateToSubAgentToolArgs {
+  subagent: string;
+  task: string;
+  contextMessages?: Message[];
+}
 
 export function createDelegateToSubAgentTool(): Tool {
   return {
     name: 'delegate_to_subagent',
-    description: 'Delegate a task to a specialized sub-agent',
+    description:
+      'Delegate a task to a specialized sub-agent. The sub-agent will work independently and return the result.',
     parameters: {
       type: 'object',
       properties: {
@@ -15,7 +23,11 @@ export function createDelegateToSubAgentTool(): Tool {
         },
         task: {
           type: 'string',
-          description: 'Task description for the sub-agent',
+          description: 'Detailed task description for the sub-agent',
+        },
+        includeContext: {
+          type: 'boolean',
+          description: 'Whether to include current conversation context (default: true)',
         },
       },
       required: ['subagent', 'task'],
@@ -23,10 +35,14 @@ export function createDelegateToSubAgentTool(): Tool {
     execute: async (args: Record<string, unknown>) => {
       const subagent = args.subagent as string;
       const task = args.task as string;
+      const includeContext = (args.includeContext as boolean) !== false;
+
+      const context = getCurrentMemory();
+      const parentMessages = includeContext && context?.messages ? [...context.messages] : [];
 
       try {
-        const result = await delegation.delegate(subagent, task, []);
-        return result;
+        const result = await delegation.delegate(subagent, task, parentMessages);
+        return `Sub-agent ${subagent} result:\n\n${result}`;
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
         return `Error delegating to ${subagent}: ${errorMsg}`;
@@ -38,7 +54,7 @@ export function createDelegateToSubAgentTool(): Tool {
 export function createListSubAgentsTool(): Tool {
   return {
     name: 'list_subagents',
-    description: 'List all available sub-agents',
+    description: 'List all available sub-agents with their descriptions',
     parameters: {
       type: 'object',
       properties: {},
@@ -47,12 +63,12 @@ export function createListSubAgentsTool(): Tool {
       const subAgents = registry.list();
 
       if (subAgents.length === 0) {
-        return 'No sub-agents available. Register sub-agents first.';
+        return 'No sub-agents available. Register sub-agents first using SubAgent.register().';
       }
 
       let result = 'Available sub-agents:\n\n';
       for (const sa of subAgents) {
-        result += `- ${sa.name} (${sa.mode}): ${sa.description}\n`;
+        result += `- **${sa.name}** (${sa.mode}): ${sa.description}\n`;
       }
 
       return result;

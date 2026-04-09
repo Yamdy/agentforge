@@ -2,6 +2,7 @@ export { createMemory, MemoryManager } from './manager.js';
 export { MessageHistory } from './message-history.js';
 export { WorkingMemory } from './working-memory.js';
 export { InMemoryStorage } from './storages/inmemory.js';
+export { SQLiteMemoryStorage } from '../storage/sqlite-memory.js';
 export type {
   MemoryStorage,
   Thread,
