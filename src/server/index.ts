@@ -219,6 +219,13 @@ export function createApp(config: ServerConfig & { agent?: AgentRunner }) {
           sessionMessages = session.messages.map((m) => ({ role: m.role, content: m.content }));
         }
         const result = await agent.run(input, { sessionMessages });
+
+        // Always save user message
+        await sessionApi.addMessage(sessionId, { role: 'user', content: input });
+        if (result) {
+          await sessionApi.addMessage(sessionId, { role: 'assistant', content: result });
+        }
+
         return c.json({ result });
       } catch (err) {
         log.error('Agent run failed', { error: err instanceof Error ? err.message : String(err) });
@@ -255,8 +262,9 @@ export function createApp(config: ServerConfig & { agent?: AgentRunner }) {
               complete: async () => {
                 await stream.write(`data: {"type":"done"}\n\n`);
 
+                // Always save the conversation, even if response is empty
+                await sessionApi.addMessage(sessionId, { role: 'user', content: input });
                 if (fullResponse) {
-                  await sessionApi.addMessage(sessionId, { role: 'user', content: input });
                   await sessionApi.addMessage(sessionId, {
                     role: 'assistant',
                     content: fullResponse,
@@ -285,6 +293,9 @@ export function createApp(config: ServerConfig & { agent?: AgentRunner }) {
                       });
                     }
                   }
+                } else {
+                  // Still save user message even if agent response is empty
+                  log.warn('Empty agent response', { sessionId });
                 }
                 resolve();
               },

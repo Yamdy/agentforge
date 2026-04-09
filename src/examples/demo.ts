@@ -375,28 +375,33 @@ async function runInteractive(hasApiKey: boolean, input?: string) {
 
       try {
         let responseText = '';
-        agent
-          .runStream(inp, {
-            onText: (text) => {
-              if (text) process.stdout.write(text);
-              responseText += text;
-            },
-            onToolCallStart: (_id, name) => {
-              process.stdout.write(`\n[Calling ${name}...]`);
-            },
-            onToolCallEnd: (_id, result) => {
-              if (result) process.stdout.write(` => ${result}`);
-              process.stdout.write('\n[Tool completed]');
-            },
-            onStep: (step, maxSteps) => {
-              process.stdout.write(`\n[Step ${step}/${maxSteps}]`);
-            },
-          })
-          .subscribe({
-            complete: () => {
-              console.log('\n[Stream completed]');
-            },
-          });
+        process.stdout.write('\nAgent: ');
+
+        await new Promise<void>((resolve) => {
+          agent
+            .runStream(inp, {
+              onText: (text) => {
+                if (text) process.stdout.write(text);
+                responseText += text;
+              },
+              onToolCallStart: (_id, name) => {
+                process.stdout.write(`\n[Calling ${name}...]`);
+              },
+              onToolCallEnd: (_id, result) => {
+                if (result) process.stdout.write(` => ${result}`);
+                process.stdout.write('\n[Tool completed]');
+              },
+              onStep: (step, maxSteps) => {
+                process.stdout.write(`\n[Step ${step}/${maxSteps}]`);
+              },
+            })
+            .subscribe({
+              complete: () => {
+                console.log('\n[Stream completed]');
+                resolve();
+              },
+            });
+        });
 
         await sessionApi.addMessage(currentSession.id, { role: 'user', content: inp });
         await sessionApi.addMessage(currentSession.id, {
