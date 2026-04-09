@@ -9,11 +9,11 @@ description: Primo-Agent 项目开发指导 skill。在新增或修改 primo-age
 
 - **项目名称**：primo-agent
 - **定位**：agent 开发框架
-- **基础**：基于 opencode 项目（D:\code\opencode）开发
+- **基础**：基于 opencode 项目（.\opencode）开发
 - **参考项目**：请参考同级目录下的以下项目进行设计和实现：
-  - D:\code\agentscope
-  - D:\code\deepsagent
-  - D:\code\mastra
+  - .\agentscope
+  - .\deepsagent
+  - .\mastra
 
 ## 开发原则
 

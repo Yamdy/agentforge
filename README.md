@@ -58,7 +58,7 @@ A modern, enterprise-grade Agent development framework for TypeScript. Build pro
 ### 安装
 
 ```bash
-npm install agentforge
+pnpm add agentforge
 ```
 
 ### Create Configuration
@@ -227,28 +227,28 @@ console.log('是否有权限:', hasPermission); // true
 ### 安装依赖
 
 ```bash
-npm install
+pnpm install
 ```
 
 ### 运行测试
 
 ```bash
-npm run test          # Watch mode
-npm run test:run      # Single run
-npm run test:coverage # Coverage report
+pnpm test          # Watch mode
+pnpm test:run      # Single run
+pnpm test:coverage # Coverage report
 ```
 
 ### 代码检查
 
 ```bash
-npm run lint
-npm run lint:fix
+pnpm lint
+pnpm lint:fix
 ```
 
 ### 构建
 
 ```bash
-npm run build
+pnpm build
 ```
 
 ## 文档

@@ -32,6 +32,7 @@ tests/
 ## Chunk 1: 项目初始化
 
 **Files:**
+
 - Create: `package.json`
 - Create: `tsconfig.json`
 
@@ -97,13 +98,14 @@ module.exports = {
 
 - [ ] **Step 4: 安装依赖**
 
-Run: `npm install`
+Run: `pnpm install`
 
 ---
 
 ## Chunk 2: 类型定义
 
 **Files:**
+
 - Create: `src/types.ts`
 
 - [ ] **Step 1: 创建 types.ts**
@@ -152,6 +154,7 @@ git init && git add . && git commit -m "chore: initial project setup and types"
 ## Chunk 3: HistoryManager
 
 **Files:**
+
 - Create: `src/history.ts`
 - Create: `tests/history.test.ts`
 
@@ -170,7 +173,7 @@ describe('InMemoryHistory', () => {
   test('should add messages and retrieve them', () => {
     history.add('user', 'Hello');
     history.add('assistant', 'Hi there');
-    
+
     const messages = history.getMessages();
     expect(messages).toHaveLength(2);
     expect(messages[0]).toEqual({ role: 'user', content: 'Hello' });
@@ -180,7 +183,7 @@ describe('InMemoryHistory', () => {
   test('should clear history', () => {
     history.add('user', 'Hello');
     history.clear();
-    
+
     expect(history.getMessages()).toHaveLength(0);
   });
 });
@@ -229,6 +232,7 @@ git add . && git commit -m "feat: add InMemoryHistory implementation"
 ## Chunk 4: ToolRegistry
 
 **Files:**
+
 - Create: `src/registry.ts`
 - Create: `tests/registry.test.ts`
 
@@ -253,7 +257,7 @@ describe('ToolRegistry', () => {
 
   test('should register and retrieve tools', () => {
     registry.register(mockTool);
-    
+
     const tool = registry.get('calculator');
     expect(tool).toBeDefined();
     expect(tool?.name).toBe('calculator');
@@ -266,7 +270,7 @@ describe('ToolRegistry', () => {
 
   test('should list all tools', () => {
     registry.register(mockTool);
-    
+
     const tools = registry.list();
     expect(tools).toHaveLength(1);
     expect(tools[0].name).toBe('calculator');
@@ -274,7 +278,7 @@ describe('ToolRegistry', () => {
 
   test('should execute tool', async () => {
     registry.register(mockTool);
-    
+
     const result = await registry.execute('calculator', { expr: '2+2' });
     expect(result).toBe('4');
   });
@@ -332,6 +336,7 @@ git add . && git commit -m "feat: add ToolRegistry implementation"
 ## Chunk 5: Agent
 
 **Files:**
+
 - Create: `src/agent.ts`
 - Create: `tests/agent.test.ts`
 
@@ -360,28 +365,28 @@ describe('Agent', () => {
     const adapter = createMockAdapter([{ content: 'Hello!' }]);
     const history = new InMemoryHistory();
     const registry = new ToolRegistry();
-    
+
     const agent = new Agent({ adapter, history, registry });
     const response = await agent.run('Hi');
-    
+
     expect(response).toBe('Hello!');
   });
 
   test('should execute tool and continue', async () => {
     const adapter = createMockAdapter([
-      { 
-        content: null, 
-        toolCalls: [{ name: 'calculator', arguments: { expr: '2+2' } }] 
+      {
+        content: null,
+        toolCalls: [{ name: 'calculator', arguments: { expr: '2+2' } }],
       },
       { content: 'The result is 4' },
     ]);
     const history = new InMemoryHistory();
     const registry = new ToolRegistry();
     registry.register(mockTool);
-    
+
     const agent = new Agent({ adapter, history, registry });
     const response = await agent.run('Calculate 2+2');
-    
+
     expect(response).toBe('The result is 4');
   });
 });
@@ -451,6 +456,7 @@ git add . && git commit -m "feat: add Agent implementation"
 ## Chunk 6: OpenAI Adapter
 
 **Files:**
+
 - Create: `src/adapters/openai.ts`
 
 - [ ] **Step 1: 实现 OpenAI Adapter**
@@ -482,23 +488,26 @@ export class OpenAIAdapter implements LLMAdapter {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey}`,
+        Authorization: `Bearer ${this.apiKey}`,
       },
       body: JSON.stringify({
         model: this.model,
         messages,
-        tools: this.tools.length > 0 ? this.tools.map(t => ({
-          type: 'function',
-          function: {
-            name: t.name,
-            description: t.description,
-            parameters: {
-              type: 'object',
-              properties: {},
-              required: [],
-            },
-          },
-        })) : undefined,
+        tools:
+          this.tools.length > 0
+            ? this.tools.map((t) => ({
+                type: 'function',
+                function: {
+                  name: t.name,
+                  description: t.description,
+                  parameters: {
+                    type: 'object',
+                    properties: {},
+                    required: [],
+                  },
+                },
+              }))
+            : undefined,
       }),
     });
 
@@ -531,6 +540,7 @@ git add . && git commit -m "feat: add OpenAI adapter"
 ## Chunk 7: CLI
 
 **Files:**
+
 - Create: `src/cli.ts`
 - Create: `.env.example`
 
@@ -547,10 +557,7 @@ import { OpenAIAdapter } from './adapters/openai';
 
 const program = new Command();
 
-program
-  .name('primo-agent')
-  .description('Generic Agent Development Framework')
-  .version('0.1.0');
+program.name('primo-agent').description('Generic Agent Development Framework').version('0.1.0');
 
 program
   .command('run')
@@ -573,9 +580,7 @@ program
     } else {
       console.log('Interactive mode (Ctrl+C to exit)');
       while (true) {
-        const { input } = await inquirer.prompt([
-          { type: 'input', name: 'input', message: '>' },
-        ]);
+        const { input } = await inquirer.prompt([{ type: 'input', name: 'input', message: '>' }]);
         const response = await agent.run(input);
         console.log(response);
         console.log();
@@ -594,7 +599,7 @@ OPENAI_API_KEY=your-api-key-here
 
 - [ ] **Step 3: 构建并测试**
 
-Run: `npm run build`
+Run: `pnpm build`
 Expected: 编译成功
 
 - [ ] **Step 4: 提交**
@@ -607,15 +612,15 @@ git add . && git commit -m "feat: add CLI interface"
 
 ## Summary
 
-| Chunk | 内容 | 测试 |
-|-------|------|------|
-| 1 | 项目初始化 | 无 |
-| 2 | 类型定义 | 无 |
-| 3 | HistoryManager | ✅ |
-| 4 | ToolRegistry | ✅ |
-| 5 | Agent | ✅ |
-| 6 | OpenAI Adapter | 无 |
-| 7 | CLI | 手动测试 |
+| Chunk | 内容           | 测试     |
+| ----- | -------------- | -------- |
+| 1     | 项目初始化     | 无       |
+| 2     | 类型定义       | 无       |
+| 3     | HistoryManager | ✅       |
+| 4     | ToolRegistry   | ✅       |
+| 5     | Agent          | ✅       |
+| 6     | OpenAI Adapter | 无       |
+| 7     | CLI            | 手动测试 |
 
-**运行测试:** `npm test`
-**启动CLI:** `npm run dev`
+**运行测试:** `pnpm test`
+**启动CLI:** `pnpm dev`
