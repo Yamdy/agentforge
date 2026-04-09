@@ -1,5 +1,5 @@
 import {
-  PrimoConfigSchema,
+  AgentForgeConfigSchema,
   AgentConfigSchema,
   ServerConfigSchema,
   ModelConfigSchema,
@@ -7,7 +7,7 @@ import {
   PluginConfigSchema,
 } from './schema.js';
 import type {
-  PrimoConfig,
+  AgentForgeConfig,
   AgentConfig,
   ServerConfig,
   ModelConfig,
@@ -19,8 +19,8 @@ export * from './loader.js';
 export { ConfigLoader, loadConfig, loadConfigSync } from './loader.js';
 export type { LoadConfigOptions } from './loader.js';
 
-export function validatePrimoConfig(config: unknown): PrimoConfig {
-  return PrimoConfigSchema.parse(config);
+export function validateAgentForgeConfig(config: unknown): AgentForgeConfig {
+  return AgentForgeConfigSchema.parse(config);
 }
 
 export function validateServerConfig(config: unknown): ServerConfig {
@@ -36,7 +36,7 @@ export function validateModelConfig(config: unknown): ModelConfig {
 }
 
 export {
-  PrimoConfigSchema,
+  AgentForgeConfigSchema,
   AgentConfigSchema,
   ServerConfigSchema,
   ModelConfigSchema,
@@ -44,4 +44,4 @@ export {
   PluginConfigSchema,
 };
 
-export type { PrimoConfig, AgentConfig, ServerConfig, ModelConfig, ToolConfig, PluginConfig };
+export type { AgentForgeConfig, AgentConfig, ServerConfig, ModelConfig, ToolConfig, PluginConfig };

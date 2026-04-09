@@ -1,4 +1,4 @@
-export interface PrimoClientConfig {
+export interface AgentForgeClientConfig {
   baseUrl: string;
   apiKey?: string;
 }
@@ -24,11 +24,11 @@ export interface AgentStatus {
   error?: string;
 }
 
-export class PrimoClient {
+export class AgentForgeClient {
   private baseUrl: string;
   private apiKey?: string;
 
-  constructor(config: PrimoClientConfig) {
+  constructor(config: AgentForgeClientConfig) {
     this.baseUrl = config.baseUrl.replace(/\/$/, '');
     this.apiKey = config.apiKey;
   }
@@ -192,6 +192,6 @@ export class PrimoClient {
   }
 }
 
-export function createPrimoClient(config: PrimoClientConfig): PrimoClient {
-  return new PrimoClient(config);
+export function createAgentForgeClient(config: AgentForgeClientConfig): AgentForgeClient {
+  return new AgentForgeClient(config);
 }

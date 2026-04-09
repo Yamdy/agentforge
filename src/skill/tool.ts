@@ -44,7 +44,7 @@ export function createListSkillsTool(): Tool {
       const skills = discovery.list();
 
       if (skills.length === 0) {
-        return 'No SKILLs available. Add SKILLs to .primo-agent/skills/, .agents/skills/, or .claude/skills/';
+        return 'No SKILLs available. Add SKILLs to .agentforge/skills/, .agents/skills/, or .claude/skills/';
       }
 
       let result = 'Available SKILLs:\n\n';

@@ -66,7 +66,7 @@ export const AgentConfigSchema = z.object({
     .optional(),
 });
 
-export const PrimoConfigSchema = z.object({
+export const AgentForgeConfigSchema = z.object({
   name: z.string(),
   version: z.string().default('1.0.0'),
   description: z.string().optional(),
@@ -87,4 +87,4 @@ export type ServerConfig = z.infer<typeof ServerConfigSchema>;
 export type ToolConfig = z.infer<typeof ToolConfigSchema>;
 export type PluginConfig = z.infer<typeof PluginConfigSchema>;
 export type AgentConfig = z.infer<typeof AgentConfigSchema>;
-export type PrimoConfig = z.infer<typeof PrimoConfigSchema>;
+export type AgentForgeConfig = z.infer<typeof AgentForgeConfigSchema>;

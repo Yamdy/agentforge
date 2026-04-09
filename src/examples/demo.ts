@@ -7,7 +7,7 @@ import { AIAdapter } from '../adapters/ai';
 import { calculatorTool, searchTool, allTools } from '../tools';
 import { BuiltinTools } from '../tools/builtin';
 import { startServer, createApp } from '../server';
-import { createPrimoClient, type StreamEvent } from '../sdk/client';
+import { createAgentForgeClient, type StreamEvent } from '../sdk/client';
 import { createLogger } from '../logger';
 import { createSessionAPI } from '../session';
 import { MCP, SubAgent } from '../index.js';
@@ -103,7 +103,7 @@ async function runServer() {
   const useSubagent = process.env.USE_SUBAGENT !== 'false';
   const agent = await createAgent(useMcp, useSkill, useSubagent);
 
-  console.log('=== Primo Agent Server ===');
+  console.log('=== AgentForge Server ===');
   console.log('Port:', serverPort);
   console.log('API Key:', serverApiKey ? 'configured' : 'none');
   console.log('Model:', model);
@@ -135,10 +135,10 @@ async function runClient(prompt?: string) {
   const baseUrl = process.env.SERVER_URL || `http://localhost:${serverPort}`;
   const apiKey = process.env.CLIENT_API_KEY || serverApiKey;
 
-  const client = createPrimoClient({ baseUrl, apiKey });
+  const client = createAgentForgeClient({ baseUrl, apiKey });
 
   if (prompt) {
-    console.log('=== Primo Agent Client ===');
+    console.log('=== AgentForge Client ===');
     console.log('Server:', baseUrl);
     console.log('Input:', prompt);
     console.log('\nAgent: ');
@@ -163,7 +163,7 @@ async function runClient(prompt?: string) {
     return;
   }
 
-  console.log('=== Primo Agent Client ===');
+  console.log('=== AgentForge Client ===');
   console.log('Server:', baseUrl);
   console.log('Type your question (Ctrl+C to exit)\n');
 

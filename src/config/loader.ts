@@ -2,9 +2,9 @@ import fs from 'fs';
 import path from 'path';
 import matter from 'gray-matter';
 import { z } from 'zod';
-import { PrimoConfigSchema } from './schema.js';
-import { validatePrimoConfig } from './index.js';
-import type { PrimoConfig } from './schema.js';
+import { AgentForgeConfigSchema } from './schema.js';
+import { validateAgentForgeConfig } from './index.js';
+import type { AgentForgeConfig } from './schema.js';
 import { AppError, ValidationError } from '../errors/index.js';
 
 export interface LoadConfigOptions {
@@ -19,8 +19,8 @@ export class ConfigLoader {
   constructor(searchPaths: string[] = []) {
     this.searchPaths = [
       process.cwd(),
-      path.join(process.cwd(), 'primo'),
-      path.join(process.cwd(), '.primo'),
+      path.join(process.cwd(), 'agentforge'),
+      path.join(process.cwd(), '.agentforge'),
       ...searchPaths,
     ];
   }
@@ -29,8 +29,8 @@ export class ConfigLoader {
    * Find config file by searching in multiple paths
    */
   findConfigFile(): string | null {
-    const extensions = ['.md', '.markdown', '.json', '.primo.json'];
-    const baseNames = ['primo.config', 'agent', 'primo'];
+    const extensions = ['.md', '.markdown', '.json', '.agentforge.json'];
+    const baseNames = ['agentforge.config', 'agent', 'agentforge'];
 
     for (const searchPath of this.searchPaths) {
       for (const baseName of baseNames) {
@@ -49,7 +49,7 @@ export class ConfigLoader {
   /**
    * Load configuration from file
    */
-  async loadConfig(options: LoadConfigOptions = {}): Promise<PrimoConfig> {
+  async loadConfig(options: LoadConfigOptions = {}): Promise<AgentForgeConfig> {
     let filePath = options.filePath;
 
     if (!filePath) {
@@ -91,7 +91,7 @@ export class ConfigLoader {
 
     if (options.validate ?? true) {
       try {
-        return validatePrimoConfig(configData);
+        return validateAgentForgeConfig(configData);
       } catch (error) {
         if (error instanceof z.ZodError) {
           const issues = error.issues
@@ -103,13 +103,13 @@ export class ConfigLoader {
       }
     }
 
-    return configData as PrimoConfig;
+    return configData as AgentForgeConfig;
   }
 
   /**
    * Load configuration synchronously
    */
-  loadConfigSync(options: LoadConfigOptions = {}): PrimoConfig {
+  loadConfigSync(options: LoadConfigOptions = {}): AgentForgeConfig {
     let filePath = options.filePath;
 
     if (!filePath) {
@@ -148,7 +148,7 @@ export class ConfigLoader {
 
     if (options.validate ?? true) {
       try {
-        return validatePrimoConfig(configData);
+        return validateAgentForgeConfig(configData);
       } catch (error) {
         if (error instanceof z.ZodError) {
           const issues = error.issues
@@ -160,13 +160,16 @@ export class ConfigLoader {
       }
     }
 
-    return configData as PrimoConfig;
+    return configData as AgentForgeConfig;
   }
 
   /**
    * Merge multiple configurations
    */
-  mergeConfigs(base: Partial<PrimoConfig>, ...overlays: Partial<PrimoConfig>[]): PrimoConfig {
+  mergeConfigs(
+    base: Partial<AgentForgeConfig>,
+    ...overlays: Partial<AgentForgeConfig>[]
+  ): AgentForgeConfig {
     let result = { ...base } as Record<string, any>;
 
     for (const overlay of overlays) {
@@ -201,14 +204,14 @@ export class ConfigLoader {
       };
     }
 
-    return validatePrimoConfig(result);
+    return validateAgentForgeConfig(result);
   }
 }
 
 /**
  * Helper function to load config quickly
  */
-export function loadConfig(options?: LoadConfigOptions): Promise<PrimoConfig> {
+export function loadConfig(options?: LoadConfigOptions): Promise<AgentForgeConfig> {
   const loader = new ConfigLoader();
   return loader.loadConfig(options);
 }
@@ -216,7 +219,7 @@ export function loadConfig(options?: LoadConfigOptions): Promise<PrimoConfig> {
 /**
  * Helper function to load config synchronously
  */
-export function loadConfigSync(options?: LoadConfigOptions): PrimoConfig {
+export function loadConfigSync(options?: LoadConfigOptions): AgentForgeConfig {
   const loader = new ConfigLoader();
   return loader.loadConfigSync(options);
 }

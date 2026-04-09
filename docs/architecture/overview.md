@@ -1,6 +1,6 @@
-# PrimoAgent Architecture Overview
+# AgentForge Architecture Overview
 
-PrimoAgent is a modern, modular Agent development framework built on TypeScript, designed for building production-ready AI agents with minimal boilerplate.
+AgentForge is a modern, modular Agent development framework built on TypeScript, designed for building production-ready AI agents with minimal boilerplate.
 
 ## Core Architecture
 
@@ -74,7 +74,7 @@ The Markdown content becomes the `agent.systemPrompt`.
 
 ### Configuration Schema
 
-**PrimoConfig** (top-level):
+**AgentForgeConfig** (top-level):
 
 - `name` - Project name (required)
 - `version` - Project version (default: 1.0.0)

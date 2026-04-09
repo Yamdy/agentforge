@@ -4,7 +4,12 @@ import { ToolRegistry } from '../registry.js';
 import { InMemoryHistory } from '../history.js';
 import { PluginManager } from '../plugin/index.js';
 import { createLogger } from '../logger/index.js';
-import { PrimoConfig, AgentConfig, ModelConfig, validateAgentConfig } from '../config/index.js';
+import {
+  AgentForgeConfig,
+  AgentConfig,
+  ModelConfig,
+  validateAgentConfig,
+} from '../config/index.js';
 import type { LLMAdapter, HistoryManager } from '../types';
 import type { Middleware } from '../middleware/index.js';
 import { allTools } from '../tools/index.js';
@@ -37,11 +42,11 @@ export interface AgentFactoryOptions {
 }
 
 export class AgentFactory {
-  private config: PrimoConfig | AgentConfig;
+  private config: AgentForgeConfig | AgentConfig;
   private options: AgentFactoryOptions;
   private log = createLogger('agent-factory');
 
-  constructor(config: PrimoConfig | AgentConfig, options: AgentFactoryOptions = {}) {
+  constructor(config: AgentForgeConfig | AgentConfig, options: AgentFactoryOptions = {}) {
     this.config = config;
     this.options = {
       registerBuiltinTools: true,
@@ -150,7 +155,7 @@ export class AgentFactory {
   /**
    * Static helper to create an agent quickly
    */
-  static create(config: PrimoConfig | AgentConfig, options?: AgentFactoryOptions): Agent {
+  static create(config: AgentForgeConfig | AgentConfig, options?: AgentFactoryOptions): Agent {
     const factory = new AgentFactory(config, options);
     return factory.create();
   }
@@ -158,7 +163,7 @@ export class AgentFactory {
   /**
    * Static helper to create an agent from a loaded configuration
    */
-  static fromConfig(config: PrimoConfig | AgentConfig, options?: AgentFactoryOptions): Agent {
+  static fromConfig(config: AgentForgeConfig | AgentConfig, options?: AgentFactoryOptions): Agent {
     return this.create(config, options);
   }
 }
@@ -167,7 +172,7 @@ export class AgentFactory {
  * Create an agent using the factory
  */
 export function createAgent(
-  config: PrimoConfig | AgentConfig,
+  config: AgentForgeConfig | AgentConfig,
   options?: AgentFactoryOptions
 ): Agent {
   return AgentFactory.create(config, options);

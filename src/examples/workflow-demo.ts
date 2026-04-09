@@ -2,7 +2,7 @@
 /**
  * Workflow Orchestration Demo
  *
- * 演示 Primo Agent 的工作流编排功能：
+ * 演示 AgentForge 的工作流编排功能：
  * - Workflow 链式 API
  * - MsgHub 多代理协作
  * - Pipeline 函数
@@ -20,7 +20,7 @@ import { InMemoryHistory } from '../history.js';
 import { ToolRegistry } from '../registry.js';
 import { AIAdapter } from '../adapters/ai.js';
 
-console.log('=== Primo Agent Workflow Orchestration Demo ===\n');
+console.log('=== AgentForge Workflow Orchestration Demo ===\n');
 
 // === Demo 1: Workflow 链式 API ===
 console.log('Demo 1: Workflow 链式 API\n');

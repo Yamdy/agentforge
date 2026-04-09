@@ -64,7 +64,7 @@ export interface ObservabilityConfig {
 
 export const ObservabilityConfigSchema = z.object({
   exporter: z.custom<SpanExporter>().optional(),
-  serviceName: z.string().optional().default('primo-agent'),
+  serviceName: z.string().optional().default('agentforge'),
   serviceVersion: z.string().optional().default('0.1.0'),
 });
 

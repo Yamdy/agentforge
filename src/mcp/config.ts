@@ -15,7 +15,7 @@ export class McpConfig {
   async load(): Promise<void> {
     const paths = [
       path.join(process.cwd(), CONFIG_FILE_NAME),
-      path.join(process.env.HOME || '', '.primo-agent', CONFIG_FILE_NAME),
+      path.join(process.env.HOME || '', '.agentforge', CONFIG_FILE_NAME),
     ];
 
     for (const p of paths) {

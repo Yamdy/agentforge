@@ -1,16 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
 import {
-  PrimoConfigSchema,
+  AgentForgeConfigSchema,
   AgentConfigSchema,
   ServerConfigSchema,
   ModelConfigSchema,
-  validatePrimoConfig,
+  validateAgentForgeConfig,
   validateAgentConfig,
 } from '../../src/config/index.js';
 
 describe('Configuration Schema', () => {
-  describe('PrimoConfigSchema', () => {
+  describe('AgentForgeConfigSchema', () => {
     it('should validate a minimal valid configuration', () => {
       const config = {
         name: 'test-agent',
@@ -19,8 +19,8 @@ describe('Configuration Schema', () => {
         },
       };
 
-      expect(() => validatePrimoConfig(config)).not.toThrow();
-      const validated = validatePrimoConfig(config);
+      expect(() => validateAgentForgeConfig(config)).not.toThrow();
+      const validated = validateAgentForgeConfig(config);
       expect(validated.name).toBe('test-agent');
       expect(validated.agent.name).toBe('Test Agent');
       expect(validated.version).toBe('1.0.0');
@@ -63,8 +63,8 @@ describe('Configuration Schema', () => {
         },
       };
 
-      expect(() => validatePrimoConfig(config)).not.toThrow();
-      const validated = validatePrimoConfig(config);
+      expect(() => validateAgentForgeConfig(config)).not.toThrow();
+      const validated = validateAgentForgeConfig(config);
       expect(validated.agent.maxSteps).toBe(15);
       expect(validated.server?.port).toBe(8080);
       expect(validated.logging?.level).toBe('debug');
@@ -77,7 +77,7 @@ describe('Configuration Schema', () => {
         },
       };
 
-      expect(() => validatePrimoConfig(config)).toThrow();
+      expect(() => validateAgentForgeConfig(config)).toThrow();
     });
 
     it('should fail when agent is missing', () => {
@@ -85,7 +85,7 @@ describe('Configuration Schema', () => {
         name: 'test-agent',
       };
 
-      expect(() => validatePrimoConfig(config)).toThrow();
+      expect(() => validateAgentForgeConfig(config)).toThrow();
     });
   });
 

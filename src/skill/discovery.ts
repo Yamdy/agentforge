@@ -6,7 +6,7 @@ import type { SkillInfo, SkillFrontmatter } from './types.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const SKILL_DIRS = [
-  path.join(process.cwd(), '.primo-agent', 'skills'),
+  path.join(process.cwd(), '.agentforge', 'skills'),
   path.join(process.cwd(), '.agents', 'skills'),
   path.join(process.cwd(), '.claude', 'skills'),
   path.join(process.cwd(), '.opencode', 'skills'),

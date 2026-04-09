@@ -47,11 +47,11 @@ describe('ConfigLoader', () => {
 
   describe('findConfigFile', () => {
     it('should find config when it exists', () => {
-      // Search from project root where we have primo.config.md
+      // Search from project root where we have agentforge.config.md
       const loader = new ConfigLoader([process.cwd()]);
       const result = loader.findConfigFile();
       expect(result).not.toBeNull();
-      expect(result).toContain('primo.config.md');
+      expect(result).toContain('agentforge.config.md');
     });
   });
 

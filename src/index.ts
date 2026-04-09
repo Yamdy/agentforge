@@ -13,9 +13,9 @@ export { createApp, startServer, type ServerConfig, type AgentRunner } from './s
 export { authMiddleware, type AuthConfig } from './server/middleware/auth.js';
 
 export {
-  PrimoClient,
-  createPrimoClient,
-  type PrimoClientConfig,
+  AgentForgeClient,
+  createAgentForgeClient,
+  type AgentForgeClientConfig,
   type AgentStatus,
 } from './sdk/client.js';
 
@@ -64,20 +64,20 @@ export {
 } from './errors/index.js';
 
 export {
-  validatePrimoConfig,
+  validateAgentForgeConfig,
   validateServerConfig,
   validateAgentConfig,
   validateModelConfig,
   ConfigLoader,
   loadConfig,
   loadConfigSync,
-  PrimoConfigSchema,
+  AgentForgeConfigSchema,
   AgentConfigSchema,
   ServerConfigSchema,
 } from './config/index.js';
 
 export type {
-  PrimoConfig,
+  AgentForgeConfig,
   ModelConfig,
   ToolConfig,
   PluginConfig,

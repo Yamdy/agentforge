@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { startServer } from '../src/server/index.js';
-import { createPrimoClient } from '../src/sdk/client.js';
+import { createAgentForgeClient } from '../src/sdk/client.js';
 import type { Agent } from '../src/agent/agent.js';
 import { createAgent } from '../src/examples/demo.js';
 
-describe('E2E Tests for Primo Agent with Builtin Tools', () => {
+describe('E2E Tests for AgentForge with Builtin Tools', () => {
   let server: any;
   let client: any;
   let agent: Agent;
@@ -15,7 +15,7 @@ describe('E2E Tests for Primo Agent with Builtin Tools', () => {
   beforeAll(async () => {
     agent = await createAgent();
     server = await startServer({ port, apiKey: 'test-api-key', agent });
-    client = createPrimoClient({ baseUrl, apiKey: 'test-api-key' });
+    client = createAgentForgeClient({ baseUrl, apiKey: 'test-api-key' });
   }, 30000);
 
   afterAll(async () => {

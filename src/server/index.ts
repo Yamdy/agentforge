@@ -26,7 +26,7 @@ export type AgentRunner = Agent;
 
 export const OPENAPI_SPEC = {
   openapi: '3.0.0',
-  info: { title: 'Primo Agent API', version: '0.1.0', description: 'AI Agent Server API' },
+  info: { title: 'AgentForge API', version: '0.1.0', description: 'AI Agent Server API' },
   servers: [{ url: 'http://localhost:3000' }],
   paths: {
     '/health': {

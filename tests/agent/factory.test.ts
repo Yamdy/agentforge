@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { AgentFactory, createAgent } from '../../src/agent/factory.js';
-import { validateAgentConfig, validatePrimoConfig } from '../../src/config/index.js';
+import { validateAgentConfig, validateAgentForgeConfig } from '../../src/config/index.js';
 
 describe('AgentFactory', () => {
   describe('constructor', () => {
@@ -10,8 +10,8 @@ describe('AgentFactory', () => {
       expect(factory).toBeInstanceOf(AgentFactory);
     });
 
-    it('should create with PrimoConfig', () => {
-      const config = validatePrimoConfig({
+    it('should create with AgentForgeConfig', () => {
+      const config = validateAgentForgeConfig({
         name: 'test-agent',
         agent: { name: 'Test Agent' },
       });
@@ -27,8 +27,8 @@ describe('AgentFactory', () => {
       expect(agent).toBeDefined();
     });
 
-    it('should create an agent from PrimoConfig', () => {
-      const config = validatePrimoConfig({
+    it('should create an agent from AgentForgeConfig', () => {
+      const config = validateAgentForgeConfig({
         name: 'test-agent',
         agent: {
           name: 'Test Agent',
@@ -44,7 +44,7 @@ describe('AgentFactory', () => {
     });
 
     it('should merge model config from top-level correctly', () => {
-      const config = validatePrimoConfig({
+      const config = validateAgentForgeConfig({
         name: 'test-agent',
         agent: {
           name: 'Test Agent',

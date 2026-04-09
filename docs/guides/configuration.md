@@ -1,6 +1,6 @@
 # Configuration Guide
 
-PrimoAgent comes with a powerful, type-safe configuration system that supports multiple formats and automatic discovery.
+AgentForge comes with a powerful, type-safe configuration system that supports multiple formats and automatic discovery.
 
 ## Quick Start
 
@@ -21,8 +21,8 @@ You are a helpful assistant.
 Load it in your code:
 
 ```typescript
-import { loadConfig } from 'primo-agent/config';
-import { createAgent } from 'primo-agent/agent';
+import { loadConfig } from 'agentforge/config';
+import { createAgent } from 'agentforge/agent';
 
 const config = await loadConfig();
 const agent = createAgent(config);
@@ -110,7 +110,7 @@ You can also use plain JSON:
 ### Async Loading
 
 ```typescript
-import { loadConfig, ConfigLoader } from 'primo-agent/config';
+import { loadConfig, ConfigLoader } from 'agentforge/config';
 
 // Automatic discovery
 const config = await loadConfig();
@@ -126,7 +126,7 @@ const config = await loader.loadConfig({ filePath: './path/to/config.md' });
 ### Synchronous Loading
 
 ```typescript
-import { loadConfigSync } from 'primo-agent/config';
+import { loadConfigSync } from 'agentforge/config';
 
 const config = loadConfigSync();
 // or
@@ -136,7 +136,7 @@ const config = loadConfigSync({ filePath: './path/to/config.md' });
 ## Custom Search Paths
 
 ```typescript
-import { ConfigLoader } from 'primo-agent/config';
+import { ConfigLoader } from 'agentforge/config';
 
 const loader = new ConfigLoader(['/etc/primo/', '/home/user/.config/primo/', './project-configs/']);
 
@@ -149,7 +149,7 @@ if (foundPath) {
 ## Merging Configurations
 
 ```typescript
-import { ConfigLoader } from 'primo-agent/config';
+import { ConfigLoader } from 'agentforge/config';
 
 const loader = new ConfigLoader();
 
@@ -167,13 +167,13 @@ All configurations are fully typed:
 
 ```typescript
 import type {
-  PrimoConfig,
+  AgentForgeConfig,
   AgentConfig,
   ServerConfig,
   ModelConfig,
   ToolConfig,
   PluginConfig,
-} from 'primo-agent/config';
+} from 'agentforge/config';
 ```
 
 ## Validation

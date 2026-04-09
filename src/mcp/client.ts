@@ -70,7 +70,7 @@ class McpClient {
     }
 
     try {
-      const client = new Client({ name: 'primo-agent', version: VERSION });
+      const client = new Client({ name: 'agentforge', version: VERSION });
       let transport: any;
 
       if (serverConfig.type === 'local') {

@@ -1,4 +1,4 @@
-# Primo Agent
+# AgentForge
 
 A modern, enterprise-grade Agent development framework for TypeScript. Build production-ready AI agents with minimal boilerplate.
 
@@ -58,7 +58,7 @@ A modern, enterprise-grade Agent development framework for TypeScript. Build pro
 ### 安装
 
 ```bash
-npm install primo-agent
+npm install agentforge
 ```
 
 ### Create Configuration
@@ -80,8 +80,8 @@ You are a helpful AI assistant.
 ### One-Line Agent Creation
 
 ```typescript
-import { loadConfig } from 'primo-agent/config';
-import { createAgent } from 'primo-agent/agent';
+import { loadConfig } from 'agentforge/config';
+import { createAgent } from 'agentforge/agent';
 
 // Load and validate configuration automatically
 const config = await loadConfig();
@@ -97,7 +97,7 @@ console.log(result);
 ### Streaming Response
 
 ```typescript
-import { loadConfigSync, createAgent } from 'primo-agent';
+import { loadConfigSync, createAgent } from 'agentforge';
 
 const config = loadConfigSync();
 const agent = createAgent(config);
@@ -117,11 +117,11 @@ agent.runStream('Tell me a story').subscribe((event) => {
 ### Manual Creation (Advanced)
 
 ```typescript
-import { Agent } from 'primo-agent';
-import { AIAdapter } from 'primo-agent/adapters/ai';
-import { InMemoryHistory } from 'primo-agent/memory';
-import { ToolRegistry } from 'primo-agent/registry';
-import { allBuiltinTools } from 'primo-agent/tools';
+import { Agent } from 'agentforge';
+import { AIAdapter } from 'agentforge/adapters/ai';
+import { InMemoryHistory } from 'agentforge/memory';
+import { ToolRegistry } from 'agentforge/registry';
+import { allBuiltinTools } from 'agentforge/tools';
 
 const adapter = new AIAdapter({
   apiKey: process.env.OPENAI_API_KEY,
@@ -141,7 +141,7 @@ const agent = new Agent(adapter, history, registry, {
 ### 使用中间件
 
 ```typescript
-import { createTodoMiddleware, createHitlMiddleware } from 'primo-agent/middleware';
+import { createTodoMiddleware, createHitlMiddleware } from 'agentforge/middleware';
 
 // 创建待办事项中间件
 const todoMiddleware = createTodoMiddleware();
@@ -161,7 +161,7 @@ const agent = new Agent(adapter, history, registry, {
 ### 权限管理
 
 ```typescript
-import { getPermissionSystem } from 'primo-agent/permissions';
+import { getPermissionSystem } from 'agentforge/permissions';
 
 const permissionSystem = getPermissionSystem();
 
@@ -195,7 +195,7 @@ console.log('是否有权限:', hasPermission); // true
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                     Primo Agent                         │
+│                     AgentForge                         │
 ├─────────────────────────────────────────────────────────┤
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐    │
 │  │  LLM Adapter│  │  History    │  │ Tool Registry│    │
@@ -298,9 +298,9 @@ Always follow best practices and explain your changes clearly.
 ### 2. Load and run
 
 ```typescript
-import { loadConfig } from 'primo-agent/config';
-import { createAgent } from 'primo-agent/agent';
-import { startServer } from 'primo-agent/server';
+import { loadConfig } from 'agentforge/config';
+import { createAgent } from 'agentforge/agent';
+import { startServer } from 'agentforge/server';
 
 async function main() {
   const config = await loadConfig();
@@ -339,7 +339,7 @@ main();
 ### 添加新工具
 
 ```typescript
-import { Tool } from 'primo-agent/types';
+import { Tool } from 'agentforge/types';
 
 export const MyTool: Tool = {
   name: 'my-tool',

@@ -1,7 +1,7 @@
 ---
 name: my-assistant
 version: 1.0.0
-description: 'A helpful AI assistant built with PrimoAgent'
+description: 'A helpful AI assistant built with AgentForge'
 environment: development
 agent:
   name: Helpful Assistant
@@ -22,6 +22,6 @@ logging:
   enabled: true
 ---
 
-You are a helpful AI assistant built with PrimoAgent.
+You are a helpful AI assistant built with AgentForge.
 You have access to various tools to help users with their questions.
 Always be polite, clear, and helpful in your responses.
