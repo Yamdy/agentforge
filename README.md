@@ -1,46 +1,57 @@
 # Primo Agent
 
-一个轻量级、高性能的智能代理框架，基于TypeScript和RxJS构建。
+A modern, enterprise-grade Agent development framework for TypeScript. Build production-ready AI agents with minimal boilerplate.
 
 ## 核心特性
 
-### 1. 流式处理与响应式设计
+### 1. 📋 **Type-Safe Configuration System**
 
-使用RxJS实现响应式流处理，支持：
+- Zod-based schema validation
+- Multi-file format support (Markdown with frontmatter, JSON)
+- Automatic config discovery
+- Config merging and environment support
 
-- 实时事件流
-- 丰富的操作符（过滤、缓冲、重试等）
-- 多播和错误处理
-- 暂停/恢复/取消控制
+### 2. 🏭 **Agent Factory Pattern**
 
-### 2. 模块化架构
+- One-shot agent creation from configuration
+- Automatic dependency injection
+- Built-in tool auto-registration
+- Easy customization with pre-configured components
 
-- **LLM适配器**：统一接口支持多种LLM提供商
-- **工具注册中心**：工具发现和执行机制
-- **中间件管道**：可扩展的中间件架构
-- **插件系统**：灵活的功能扩展方式
+### 3. 📡 **Reactive Streaming with RxJS**
 
-### 3. 智能控制流
+- Real-time event streaming
+- Rich operators (filter, buffer, retry)
+- Pause/resume/cancel control
+- Sophisticated error handling
 
-- **任务状态机**：管理执行流程（pending→running→paused→completed→cancelled→error）
-- **HITL机制**：Human-in-the-loop支持，可配置工具执行前的人工审批
-- **中断处理**：优雅的取消和暂停机制
-- **重试逻辑**：内置错误重试处理
+### 4. 🔌 **Modular Architecture**
 
-### 4. 安全与权限
+- **LLM Adapters**: Unified interface for multiple providers
+- **Tool Registry**: Dynamic tool discovery and execution
+- **Middleware Pipeline**: Extensible middleware architecture
+- **Plugin System**: Flexible feature extension
+- **Memory Management**: Conversation history persistence
 
-- **权限系统**：基于角色和资源的访问控制
-- **默认角色**：admin（所有权限）和user（受限权限）
-- **权限检查**：工具执行前的权限验证
+### 5. 🎮 **Intelligent Control Flow**
 
-### 5. 内置工具
+- **Task State Machine**: Complete lifecycle management (pending → running → paused → completed → cancelled → error)
+- **Human-in-the-loop**: Configurable approval before tool execution
+- **Graceful Interruption**: Cancellation and pause support
+- **Retry Logic**: Built-in error retry handling
 
-集成常用操作工具：
+### 6. 🔐 **Security & Permissions**
 
-- `read`：读取文件或目录
-- `write`：写入文件
-- `ls`：列出目录内容
-- `bash`：执行Shell命令
+- Role-based access control
+- Resource-based permission checks
+- Default admin/user roles
+
+### 7. 🔧 **Built-in Tools**
+
+- `read`: Read files and directories
+- `write`: Write files
+- `ls`: List directory contents
+- `bash`: Execute shell commands
 
 ## 快速开始
 
@@ -50,52 +61,80 @@
 npm install primo-agent
 ```
 
-### 基本使用
+### Create Configuration
+
+Create `primo.config.md` in your project:
+
+```markdown
+---
+name: my-assistant
+agent:
+  name: My Assistant
+  model: gpt-4o
+  maxSteps: 15
+---
+
+You are a helpful AI assistant.
+```
+
+### One-Line Agent Creation
+
+```typescript
+import { loadConfig } from 'primo-agent/config';
+import { createAgent } from 'primo-agent/agent';
+
+// Load and validate configuration automatically
+const config = await loadConfig();
+
+// Create agent with all dependencies wired up
+const agent = createAgent(config);
+
+// Run the agent
+const result = await agent.run('Hello, how are you?');
+console.log(result);
+```
+
+### Streaming Response
+
+```typescript
+import { loadConfigSync, createAgent } from 'primo-agent';
+
+const config = loadConfigSync();
+const agent = createAgent(config);
+
+agent.runStream('Tell me a story').subscribe((event) => {
+  switch (event.type) {
+    case 'text':
+      process.stdout.write(event.content);
+      break;
+    case 'tool_call_start':
+      console.log(`\n[Calling tool: ${event.name}]`);
+      break;
+  }
+});
+```
+
+### Manual Creation (Advanced)
 
 ```typescript
 import { Agent } from 'primo-agent';
 import { AIAdapter } from 'primo-agent/adapters/ai';
-import { InMemoryHistory } from 'primo-agent/history';
+import { InMemoryHistory } from 'primo-agent/memory';
 import { ToolRegistry } from 'primo-agent/registry';
-import { ReadTool, WriteTool, LsTool, BashTool } from 'primo-agent/tools/builtin';
+import { allBuiltinTools } from 'primo-agent/tools';
 
-// 创建LLM适配器
 const adapter = new AIAdapter({
-  apiKey: 'your-api-key',
-  model: 'gpt-3.5-turbo',
-  baseURL: 'https://api.openai.com/v1',
+  apiKey: process.env.OPENAI_API_KEY,
+  model: 'gpt-4o',
 });
 
-// 创建历史管理器
 const history = new InMemoryHistory();
-
-// 创建工具注册中心
 const registry = new ToolRegistry();
-registry.register([ReadTool, WriteTool, LsTool, BashTool]);
+registry.register(allBuiltinTools);
 
-// 创建代理
 const agent = new Agent(adapter, history, registry, {
+  name: 'My Agent',
   maxSteps: 10,
-});
-
-// 运行任务
-agent.run('列出当前目录的内容').then((response) => {
-  console.log('响应:', response);
-});
-
-// 或者使用流式API
-agent.runStream('列出当前目录的内容').subscribe((event) => {
-  switch (event.type) {
-    case 'text':
-      console.log('文本:', event.content);
-      break;
-    case 'tool_call_start':
-      console.log('工具调用:', event.name);
-      break;
-    case 'tool_call_end':
-      console.log('工具结果:', event.result);
-      break;
-  }
 });
 ```
 
@@ -194,8 +233,9 @@ npm install
 ### 运行测试
 
 ```bash
-npm run test
-npm run test:watch  # 监听模式
+npm run test          # Watch mode
+npm run test:run      # Single run
+npm run test:coverage # Coverage report
 ```
 
 ### 代码检查
@@ -211,63 +251,72 @@ npm run lint:fix
 npm run build
 ```
 
-## 示例
+## 文档
 
-### 简单的文件操作
+- [Architecture Overview](./docs/architecture/overview.md) - Overall architecture
+- [Configuration Guide](./docs/guides/configuration.md) - Complete configuration documentation
+- [Examples](./src/examples/) - Working examples
 
-```typescript
-import { Agent } from 'primo-agent';
-import { AIAdapter } from 'primo-agent/adapters/ai';
-import { InMemoryHistory } from 'primo-agent/history';
-import { ToolRegistry } from 'primo-agent/registry';
-import { ReadTool, WriteTool, LsTool } from 'primo-agent/tools/builtin';
+### Available Examples
 
-const adapter = new AIAdapter({
-  apiKey: 'your-key',
-  model: 'gpt-3.5-turbo',
-  baseURL: 'https://api.openai.com/v1',
-});
+- `config-basic.ts` - Basic configuration loading
+- `agent-factory.ts` - Different ways to create agents
+- `custom-config-path.ts` - Custom search paths and explicit loading
+- `demo.ts` - Full featured demo
+- `workflow-demo.ts` - Workflow engine demo
 
-const history = new InMemoryHistory();
-const registry = new ToolRegistry();
-registry.register([ReadTool, WriteTool, LsTool]);
+## 示例：配置驱动开发
 
-const agent = new Agent(adapter, history, registry);
+### 1. Define your configuration in Markdown
 
-agent.run('列出当前目录的内容，然后创建一个名为"test.txt"的文件，内容为"Hello World"').subscribe({
-  next: (event) => {
-    if (event.type === 'text') {
-      console.log(event.content);
-    } else if (event.type === 'tool_call_start') {
-      console.log(`开始执行工具: ${event.name}`);
-    } else if (event.type === 'tool_call_end') {
-      console.log(`工具结果: ${event.result}`);
-    }
-  },
-  complete: () => console.log('任务完成'),
-  error: (err) => console.error('错误:', err),
-});
+```markdown
+---
+name: code-assistant
+version: 1.0.0
+agent:
+  name: Code Assistant
+  model: gpt-4o
+  maxSteps: 20
+  temperature: 0.3
+  tools:
+    - read
+    - write
+    - ls
+    - bash
+model:
+  apiKey: ${OPENAI_API_KEY}
+server:
+  port: 3000
+logging:
+  level: debug
+---
+
+You are an expert code assistant. Help users develop and refactor their code.
+Always follow best practices and explain your changes clearly.
 ```
 
-### 使用HITL进行敏感操作
+### 2. Load and run
 
 ```typescript
-import { createHitlMiddleware } from 'primo-agent/middleware';
+import { loadConfig } from 'primo-agent/config';
+import { createAgent } from 'primo-agent/agent';
+import { startServer } from 'primo-agent/server';
 
-const hitlMiddleware = createHitlMiddleware({
-  tools: ['delete', 'write'],
-  prompt: '请批准以下操作:',
-});
+async function main() {
+  const config = await loadConfig();
+  const agent = createAgent(config);
 
-const agent = new Agent(adapter, history, registry, {
-  middleware: [hitlMiddleware],
-});
+  // Start HTTP API server
+  if (config.server) {
+    startServer(agent, config.server);
+    console.log(`Server running on port ${config.server.port}`);
+  }
 
-agent.run('删除当前目录下所有的临时文件').subscribe({
-  next: (event) => {
-    // 会在执行delete工具前暂停，等待用户输入批准
-  },
-});
+  const result = await agent.run('Help me refactor this project');
+  console.log(result);
+}
+
+main();
 ```
 
 ## 贡献指南

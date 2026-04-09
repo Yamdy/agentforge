@@ -1,5 +1,5 @@
-export { Agent } from './agent/index.js';
-export type { StreamHandler } from './agent/index.js';
+export { Agent, AgentFactory, createAgent } from './agent/index.js';
+export type { StreamHandler, AgentFactoryOptions } from './agent/index.js';
 export { ToolRegistry } from './registry.js';
 export { InMemoryHistory } from './history.js';
 export { AIAdapter } from './adapters/ai.js';
@@ -29,12 +29,12 @@ export type {
   StreamEvent,
   LLMAdapter,
   HistoryManager,
-  AgentConfig,
   TaskStatus,
   TaskState,
   Schemas,
 } from './types.js';
 export { schemas } from './types.js';
+export type { AgentConfig } from './config/index.js';
 export type { Plugin, Hooks, HookEvent } from './plugin/types.js';
 export type { Logger, LogEntry, LogLevel } from './logger/index.js';
 export type { Span, TraceContext } from './tracer.js';
@@ -63,7 +63,29 @@ export {
   toErrorResponse,
 } from './errors/index.js';
 
-export { validateServerConfig, validateAgentConfig } from './config/index.js';
+export {
+  validatePrimoConfig,
+  validateServerConfig,
+  validateAgentConfig,
+  validateModelConfig,
+  ConfigLoader,
+  loadConfig,
+  loadConfigSync,
+  PrimoConfigSchema,
+  AgentConfigSchema,
+  ServerConfigSchema,
+} from './config/index.js';
+
+export type {
+  PrimoConfig,
+  ModelConfig,
+  ToolConfig,
+  PluginConfig,
+  LoadConfigOptions,
+  // ServerConfig is already exported from server
+} from './config/index.js';
+
+export * as Config from './config/index.js';
 export * as Workflow from './workflow/index.js';
 export * as Memory from './memory/index.js';
 export * as Observability from './observability/index.js';
