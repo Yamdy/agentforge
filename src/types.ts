@@ -135,7 +135,7 @@ export interface PendingToolCall {
 export type TaskStateMachine = {
   transition(status: TaskStatus, payload?: { error?: string; step?: number }): void;
   getState(): TaskState;
-  onStateChange(callback: (state: TaskState) => void): void;
+  onStateChange(callback: (state: TaskState) => void): () => void;
   cancel(): void;
   pause(): void;
   resume(): void;
@@ -168,8 +168,15 @@ export function createTaskStateMachine(maxSteps: number): TaskStateMachine {
     getState(): TaskState {
       return { ...state };
     },
-    onStateChange(callback: (state: TaskState) => void) {
+    onStateChange(callback: (state: TaskState) => void): () => void {
       listeners.push(callback);
+      const callbackRef = callback;
+      return () => {
+        const index = listeners.indexOf(callbackRef);
+        if (index !== -1) {
+          listeners.splice(index, 1);
+        }
+      };
     },
     cancel() {
       if (

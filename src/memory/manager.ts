@@ -19,8 +19,7 @@ export class MemoryManager implements HistoryManager {
   private workingMemory?: WorkingMemory;
   private observations: Observation[] = [];
   private loaded: boolean = false;
-  private loadPromise: Promise<void> | null = null;
-  private savePromise: Promise<void> | null = null;
+  private operationLock: Promise<void> | null = null;
 
   constructor(config?: MemoryManagerConfig) {
     this.config = config ?? {};
@@ -47,13 +46,17 @@ export class MemoryManager implements HistoryManager {
 
   async load(): Promise<void> {
     if (this.loaded) return;
-    if (this.loadPromise) return this.loadPromise;
 
-    this.loadPromise = this._doLoad();
+    if (this.operationLock) {
+      await this.operationLock;
+      if (this.loaded) return;
+    }
+
+    this.operationLock = this._doLoad();
     try {
-      await this.loadPromise;
+      await this.operationLock;
     } finally {
-      this.loadPromise = null;
+      this.operationLock = null;
     }
   }
 
@@ -89,13 +92,15 @@ export class MemoryManager implements HistoryManager {
   }
 
   async save(): Promise<void> {
-    if (this.savePromise) return this.savePromise;
+    if (this.operationLock) {
+      await this.operationLock;
+    }
 
-    this.savePromise = this._doSave();
+    this.operationLock = this._doSave();
     try {
-      await this.savePromise;
+      await this.operationLock;
     } finally {
-      this.savePromise = null;
+      this.operationLock = null;
     }
   }
 

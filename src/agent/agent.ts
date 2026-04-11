@@ -172,6 +172,8 @@ export class Agent {
       const span = this.tracer.startSpan('agent.run');
       this.tracer.log(span.spanId, 'Agent run started', { userInput });
 
+      let unsubscribeState: (() => void) | null = null;
+
       const initAndRun = async () => {
         if (this.memoryManager && !this.memoryManager.isLoaded()) {
           await this.memoryManager.load();
@@ -202,7 +204,7 @@ export class Agent {
         this.pluginManager.trigger('chat.message', { role: 'user', content: userInput }, { content: userInput }).catch(() => {});
 
         let previousStatus = this.stateMachine.getState().status;
-        this.stateMachine.onStateChange(async (state) => {
+        unsubscribeState = this.stateMachine.onStateChange(async (state) => {
           handler?.onStateChange?.(state);
           await this.pluginManager.trigger(
             'state.change',
@@ -310,6 +312,9 @@ export class Agent {
       });
 
       return () => {
+        if (unsubscribeState) {
+          unsubscribeState();
+        }
         if (this.stateMachine.getState().status === 'running') {
           this.stateMachine.cancel();
           this.tracer.endSpan(span.spanId, 'cancelled');
@@ -339,9 +344,12 @@ export class Agent {
       let completedToolExecCount = 0;
       let streamDone = false;
       let nextInProgress = 0;
+      let resolved = false;
 
       const tryResolve = () => {
+        if (resolved) return;
         if (streamDone && nextInProgress === 0 && pendingToolExecCount === completedToolExecCount) {
+          resolved = true;
           resolve(stepTextContent);
         }
       };
