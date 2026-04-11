@@ -1,4 +1,4 @@
-import { Subject, Observable, filter, map } from 'rxjs';
+import { Subject, Observable, filter } from 'rxjs';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
@@ -24,6 +24,7 @@ export class LogService implements Logger {
   private logSubject: Subject<LogEntry>;
   private minLevel: LogLevel = 'info';
   private static instance: LogService;
+  private children: WeakRef<LogService>[] = [];
 
   private static levelPriority: Record<LogLevel, number> = {
     debug: 0,
@@ -47,6 +48,13 @@ export class LogService implements Logger {
   static setLogSubject(subject: Subject<LogEntry>): void {
     const instance = LogService.getInstance();
     instance.logSubject = subject;
+    for (const ref of instance.children) {
+      const child = ref.deref();
+      if (child) {
+        child.logSubject = subject;
+      }
+    }
+    instance.children = [];
   }
 
   setLevel(level: LogLevel): void {
@@ -93,7 +101,9 @@ export class LogService implements Logger {
   }
 
   child(service: string): Logger {
-    return new LogService(service, this.logSubject);
+    const childLogger = new LogService(service, this.logSubject);
+    this.children.push(new WeakRef(childLogger));
+    return childLogger;
   }
 
   observable(): Observable<LogEntry> {

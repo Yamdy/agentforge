@@ -1,26 +1,41 @@
-import { Observable } from 'rxjs';
+import { Observable, Subject } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import { StreamEvent } from '../types';
+import { createLogger } from '../logger/index.js';
 
-// TODO中间件状态
+const log = createLogger('todo');
+
 interface TodoState {
   items: string[];
   currentItem?: string;
 }
 
-// TODO中间件创建函数
+export interface TodoItem {
+  text: string;
+  addedAt: Date;
+}
+
+const todoSubject = new Subject<TodoItem>();
+
+export function getTodoObservable() {
+  return todoSubject.asObservable();
+}
+
+export function getCurrentTodos(): string[] {
+  return [...todoState.items];
+}
+
+const todoState: TodoState = {
+  items: [],
+  currentItem: undefined,
+};
+
 export function createTodoMiddleware(): (
   source$: Observable<StreamEvent>
 ) => Observable<StreamEvent> {
-  const todoState: TodoState = {
-    items: [],
-    currentItem: undefined,
-  };
-
   return (source$: Observable<StreamEvent>) => {
     return source$.pipe(
       tap((event) => {
-        // 处理TODO相关的事件
         switch (event.type) {
           case 'text':
             extractTodosFromText(event.content);
@@ -34,23 +49,24 @@ export function createTodoMiddleware(): (
       })
     );
   };
+}
 
-  function extractTodosFromText(text: string) {
-    // 简单的TODO提取逻辑，识别类似 "- [ ] Task" 或 "TODO: Task" 的格式
-    const todoPatterns = [
-      /- \[ \] (.*)/g, // Markdown checklist
-      /- \[x\] (.*)/g, // Completed items
-      /TODO: (.*)/g,
-    ];
+function extractTodosFromText(text: string) {
+  const todoPatterns = [
+    /- \[ \] (.*)/g,
+    /- \[x\] (.*)/g,
+    /TODO: (.*)/g,
+  ];
 
-    todoPatterns.forEach((pattern) => {
-      let match;
-      while ((match = pattern.exec(text)) !== null) {
-        if (!todoState.items.includes(match[1])) {
-          todoState.items.push(match[1]);
-          console.log(`[TodoMiddleware] Added TODO: ${match[1]}`);
-        }
+  todoPatterns.forEach((pattern) => {
+    let match;
+    while ((match = pattern.exec(text)) !== null) {
+      if (!todoState.items.includes(match[1])) {
+        todoState.items.push(match[1]);
+        const item: TodoItem = { text: match[1], addedAt: new Date() };
+        todoSubject.next(item);
+        log.info('Added TODO', { text: match[1] });
       }
-    });
-  }
+    }
+  });
 }

@@ -41,10 +41,14 @@ export const FetchTool: Tool = {
     const headers = (args.headers as Record<string, string>) || {};
     const body = args.body as string | object | undefined;
 
+    const FETCH_TIMEOUT = 30000;
+    const MAX_RESPONSE_SIZE = 5 * 1024 * 1024;
+
     try {
       const options: RequestInit = {
         method,
         headers: new Headers(headers),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT),
       };
 
       if (body) {
@@ -60,10 +64,9 @@ export const FetchTool: Tool = {
 
       const response = await fetch(url, options);
       const contentType = response.headers.get('content-type');
-      let result;
 
       if (contentType?.includes('application/json')) {
-        result = await response.json();
+        const result = await response.json();
         return JSON.stringify(
           {
             status: response.status,
@@ -75,13 +78,28 @@ export const FetchTool: Tool = {
           2
         );
       } else {
-        result = await response.text();
+        const contentLength = response.headers.get('content-length');
+        if (contentLength && parseInt(contentLength, 10) > MAX_RESPONSE_SIZE) {
+          return JSON.stringify({
+            status: response.status,
+            statusText: response.statusText,
+            text: `[Response truncated: content-length ${contentLength} exceeds ${MAX_RESPONSE_SIZE} byte limit]`,
+          }, null, 2);
+        }
+
+        const text = await response.text();
+        const truncated = text.length > MAX_RESPONSE_SIZE;
+        const result = truncated
+          ? text.slice(0, MAX_RESPONSE_SIZE) + '\n\n[Response truncated: exceeded 5MB limit]'
+          : text;
+
         return JSON.stringify(
           {
             status: response.status,
             statusText: response.statusText,
             headers: Object.fromEntries(response.headers.entries()),
             text: result,
+            ...(truncated && { truncated: true }),
           },
           null,
           2
