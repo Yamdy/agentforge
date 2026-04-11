@@ -45,12 +45,16 @@ class WorkflowBuilder<TInput = unknown, TOutput = unknown> implements Workflow<T
   parallel<TI, TO>(
     stepIds: string[],
     steps: WorkflowStep<TI, TO>[],
-    options?: ParallelOptions
+    _options?: ParallelOptions
   ): WorkflowBuilder<TInput, TO[]> {
-    for (let i = 0; i < stepIds.length; i++) {
-      this.executor.addStep(stepIds[i], steps[i] as WorkflowStep<unknown, unknown>);
-    }
-    this.lastStepId = null;
+    const stepNodes = stepIds.map((id, i) => ({
+      id,
+      step: steps[i] as WorkflowStep<unknown, unknown>,
+      options: undefined as { input?: InputMapping } | undefined,
+      dependencies: [] as string[],
+    }));
+    this.executor.addParallelGroup(stepNodes);
+    this.lastStepId = stepIds[stepIds.length - 1];
     return this as unknown as WorkflowBuilder<TInput, TO[]>;
   }
 
@@ -60,7 +64,7 @@ class WorkflowBuilder<TInput = unknown, TOutput = unknown> implements Workflow<T
       true: { id: string; step: WorkflowStep<TI, TO> };
       false: { id: string; step: WorkflowStep<TI, TO> };
     },
-    options?: BranchOptions
+    _options?: BranchOptions
   ): WorkflowBuilder<TInput, TO> {
     this.executor.setBranch(
       condition,

@@ -9,4 +9,12 @@ export default defineConfig({
   clean: true,
   outDir: 'dist',
   shims: true,
+  platform: 'node',
+  external: [
+    'rxjs', 'hono', 'sql.js', 'zod', 'ai', '@ai-sdk/openai',
+    '@ai-sdk/openai-compatible', '@modelcontextprotocol/sdk',
+    'commander', 'inquirer', 'uuid', 'gray-matter', 'dotenv',
+    'mathjs', '@agents-mdx/runtime', '@primno/dpapi',
+    'openapi-types', 'hono-zod',
+  ],
 });

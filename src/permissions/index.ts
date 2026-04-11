@@ -101,7 +101,7 @@ export class PermissionSystem {
   }
 
   // 检查工具是否有权限
-  async checkToolPermission(userId: string, tool: Tool, args: any): Promise<boolean> {
+  async checkToolPermission(userId: string, tool: Tool, args: Record<string, unknown>): Promise<boolean> {
     const resource = this.getToolResource(tool, args);
     return this.checkPermission(userId, {
       type: 'execute',
@@ -111,10 +111,10 @@ export class PermissionSystem {
   }
 
   // 获取工具资源路径
-  private getToolResource(tool: Tool, args: any): string {
+  private getToolResource(tool: Tool, args: Record<string, unknown>): string {
     // 简单的资源路径解析
     if (tool.name === 'read' || tool.name === 'write' || tool.name === 'edit') {
-      return args.filePath;
+      return (args.filePath as string) ?? `/tools/${tool.name}`;
     }
     if (tool.name === 'bash' || tool.name === 'execute') {
       return `/tools/${tool.name}`;
@@ -132,11 +132,18 @@ export class PermissionSystem {
       return false;
     }
 
-    // 资源匹配逻辑
-    const resourcePattern = pattern.resource.replace('[userId]', user.id).replace('*', '.*');
+    const resourcePattern = pattern.resource
+      .replace('[userId]', user.id)
+      .replace(/\*/g, '{{WILDCARD}}');
 
-    const regex = new RegExp(`^${resourcePattern}$`);
+    const escaped = this.escapeRegExp(resourcePattern).replace(/\{\{WILDCARD\}\}/g, '.*');
+
+    const regex = new RegExp(`^${escaped}$`);
     return regex.test(check.resource);
+  }
+
+  private escapeRegExp(str: string): string {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 }
 

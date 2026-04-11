@@ -17,8 +17,8 @@ export const LsTool: Tool = {
     },
     required: [],
   },
-  async execute(args: any) {
-    const directory = args.directory || process.cwd();
+  async execute(args: Record<string, unknown>) {
+    const directory = (args.directory as string) || process.cwd();
     let dirPath = directory;
     if (!isAbsolute(dirPath)) {
       dirPath = join(process.cwd(), dirPath);

@@ -1,9 +1,10 @@
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import type { AuthProvider } from './sse.js';
 
 export function createStreamableHTTPTransport(
   url: string,
   options?: {
-    authProvider?: any;
+    authProvider?: AuthProvider;
     requestInit?: RequestInit;
   }
 ) {

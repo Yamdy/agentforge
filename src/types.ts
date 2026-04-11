@@ -4,6 +4,8 @@ import { Observable } from 'rxjs';
 export const MessageSchema = z.object({
   role: z.enum(['system', 'user', 'assistant', 'tool']),
   content: z.string(),
+  toolCallId: z.string().optional(),
+  toolName: z.string().optional(),
 });
 export type Message = z.infer<typeof MessageSchema>;
 

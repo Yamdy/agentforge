@@ -37,10 +37,15 @@ export class SQLiteMemoryStorage implements MemoryStorage {
 
     const data = this.db.export();
     const buffer = Buffer.from(data);
-    await fs.writeFile(this.dbPath, buffer);
-    this.db.close();
-    this.db = null;
-    this.initialized = false;
+    try {
+      await fs.writeFile(this.dbPath, buffer);
+    } catch (writeError) {
+      console.error('Failed to save database to disk:', writeError);
+    } finally {
+      this.db.close();
+      this.db = null;
+      this.initialized = false;
+    }
   }
 
   private async createTables(): Promise<void> {

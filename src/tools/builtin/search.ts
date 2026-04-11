@@ -42,15 +42,17 @@ export function createSearchTool(apiKey?: string): Tool {
           return `Search failed: ${response.status} ${response.statusText}`;
         }
 
-        const data: any = await response.json();
-        const results = data.web?.results?.slice(0, 10) || [];
+        const data = await response.json() as Record<string, unknown>;
+        const results = (data.web as Record<string, unknown> | undefined)?.results
+          ? ((data.web as Record<string, unknown>).results as Record<string, unknown>[]).slice(0, 10)
+          : [];
 
         if (results.length === 0) {
           return 'No results found.';
         }
 
         let output = `Search results for "${query}":\n\n`;
-        results.forEach((result: any, index: number) => {
+        results.forEach((result: Record<string, unknown>, index: number) => {
           output += `${index + 1}. **${result.title}**\n${result.url}\n${result.description}\n\n`;
         });
 

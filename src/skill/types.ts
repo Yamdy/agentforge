@@ -5,7 +5,7 @@ export const SkillFrontmatterSchema = z.object({
   description: z.string(),
   license: z.string().optional(),
   compatibility: z.string().optional(),
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 export type SkillFrontmatter = z.infer<typeof SkillFrontmatterSchema>;
 

@@ -80,7 +80,11 @@ export class DelegationManager {
       };
 
       if (config?.onDelegationComplete) {
-        await config.onDelegationComplete(completeContext);
+        try {
+          await config.onDelegationComplete(completeContext);
+        } catch (callbackError) {
+          console.error('onDelegationComplete callback failed:', callbackError);
+        }
       }
 
       throw error;

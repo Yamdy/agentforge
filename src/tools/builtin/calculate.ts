@@ -1,4 +1,5 @@
 import type { Tool } from '../../types.js';
+import { evaluate } from 'mathjs';
 
 export interface CalculatorToolArgs {
   expression: string;
@@ -20,12 +21,11 @@ export const CalculatorTool: Tool = {
   execute: async (args: Record<string, unknown>) => {
     const expression = args.expression as string;
 
-    // Basic safe calculation - only allow numbers and operators
-    const sanitized = expression.replace(/[^0-9+\-*/().\s]/g, '');
-
     try {
-      // eslint-disable-next-line no-eval
-      const result = eval(sanitized);
+      const result = evaluate(expression);
+      if (typeof result === 'function') {
+        throw new Error('Function evaluation is not allowed');
+      }
       return `${result}`;
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);

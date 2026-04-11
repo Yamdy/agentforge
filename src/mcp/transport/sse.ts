@@ -1,9 +1,12 @@
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
+
+export interface AuthProvider extends OAuthClientProvider {}
 
 export function createSSETransport(
   url: string,
   options?: {
-    authProvider?: any;
+    authProvider?: AuthProvider;
     requestInit?: RequestInit;
   }
 ) {

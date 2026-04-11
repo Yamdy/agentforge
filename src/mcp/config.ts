@@ -1,10 +1,7 @@
-import { z } from 'zod';
 import fs from 'fs/promises';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import os from 'os';
 import { McpServerConfigSchema, type McpServerConfig } from './types.js';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const CONFIG_FILE_NAME = 'mcp.config.json';
 
@@ -15,7 +12,7 @@ export class McpConfig {
   async load(): Promise<void> {
     const paths = [
       path.join(process.cwd(), CONFIG_FILE_NAME),
-      path.join(process.env.HOME || '', '.agentforge', CONFIG_FILE_NAME),
+      path.join(os.homedir(), '.agentforge', CONFIG_FILE_NAME),
     ];
 
     for (const p of paths) {

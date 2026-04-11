@@ -1,37 +1,58 @@
 import { HistoryManager, validateMessage, Message, ToolResult } from './types';
 
+interface HistoryEntry {
+  type: 'message' | 'toolResult';
+  message?: Message;
+  toolResult?: ToolResult;
+  order: number;
+}
+
 export class InMemoryHistory implements HistoryManager {
-  private messages: Message[] = [];
-  private toolResults: ToolResult[] = [];
+  private entries: HistoryEntry[] = [];
+  private order = 0;
 
   add(role: 'user' | 'assistant' | 'tool', content: string): void {
-    this.messages.push(validateMessage({ role, content }));
+    this.entries.push({
+      type: 'message',
+      message: validateMessage({ role, content }),
+      order: this.order++,
+    });
   }
 
   addToolResult(toolCallId: string, toolName: string, result: string): void {
-    this.toolResults.push({ toolCallId, toolName, result });
+    this.entries.push({
+      type: 'toolResult',
+      toolResult: { toolCallId, toolName, result },
+      order: this.order++,
+    });
   }
 
   getToolResult(toolCallId: string): ToolResult | undefined {
-    return this.toolResults.find((tr) => tr.toolCallId === toolCallId);
+    const entry = this.entries.find(
+      (e) => e.type === 'toolResult' && e.toolResult?.toolCallId === toolCallId
+    );
+    return entry?.toolResult;
   }
 
   getMessages(): Message[] {
-    const result: Message[] = [];
-    for (const msg of this.messages) {
-      result.push(msg);
-    }
-    for (const tr of this.toolResults) {
-      result.push({
-        role: 'user',
-        content: `[TOOL_CALL_RESULT] tool_name=${tr.toolName} tool_call_id=${tr.toolCallId} result="${tr.result}"`,
-      });
-    }
-    return result;
+    return this.entries.map((entry) => {
+      if (entry.type === 'message' && entry.message) {
+        return entry.message;
+      }
+      if (entry.type === 'toolResult' && entry.toolResult) {
+        return {
+          role: 'tool' as const,
+          content: entry.toolResult.result,
+          toolCallId: entry.toolResult.toolCallId,
+          toolName: entry.toolResult.toolName,
+        };
+      }
+      return { role: 'user' as const, content: '' };
+    });
   }
 
   clear(): void {
-    this.messages = [];
-    this.toolResults = [];
+    this.entries = [];
+    this.order = 0;
   }
 }

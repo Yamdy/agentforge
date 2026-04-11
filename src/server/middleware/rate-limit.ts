@@ -7,8 +7,15 @@ export function rateLimitMiddleware(options?: { windowMs?: number; limit?: numbe
   const limit = options?.limit ?? 100;
 
   return async (c: Context, next: Next) => {
-    const ip = c.req.header('x-forwarded-for') || c.req.header('cf-connecting-ip') || 'unknown';
     const now = Date.now();
+
+    for (const [key, entry] of rateLimitMap) {
+      if (now > entry.resetAt) {
+        rateLimitMap.delete(key);
+      }
+    }
+
+    const ip = c.req.header('x-forwarded-for') || c.req.header('cf-connecting-ip') || 'unknown';
     const record = rateLimitMap.get(ip);
 
     if (!record || now > record.resetAt) {

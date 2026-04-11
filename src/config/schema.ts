@@ -39,7 +39,7 @@ export const ToolConfigSchema = z.object({
 export const PluginConfigSchema = z.object({
   name: z.string(),
   enabled: z.boolean().default(true),
-  options: z.record(z.any()).optional(),
+  options: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const AgentConfigSchema = z.object({

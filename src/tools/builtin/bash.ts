@@ -31,16 +31,17 @@ export const BashTool: Tool = {
     },
     required: ['command', 'description'],
   },
-  async execute(args: any) {
+  async execute(args: Record<string, unknown>) {
     const DEFAULT_TIMEOUT = 120000;
-    const MAX_METADATA_LENGTH = 30000;
+    const MAX_OUTPUT_LENGTH = 1024 * 1024;
 
-    const cwd = args.workdir || process.cwd();
-    const timeout = args.timeout ?? DEFAULT_TIMEOUT;
+    const cwd = (args.workdir as string) || process.cwd();
+    const timeout = (args.timeout as number) ?? DEFAULT_TIMEOUT;
+    const command = args.command as string;
 
     return new Promise<string>((resolve, reject) => {
       const shell = process.platform === 'win32' ? 'powershell' : 'bash';
-      const proc = spawn(args.command, {
+      const proc = spawn(command, {
         shell,
         cwd,
         env: process.env,
@@ -51,6 +52,10 @@ export const BashTool: Tool = {
 
       const append = (chunk: Buffer) => {
         output += chunk.toString();
+        if (output.length > MAX_OUTPUT_LENGTH) {
+          output = output.slice(0, MAX_OUTPUT_LENGTH) + '\n\n[Output truncated: exceeded 1MB limit]';
+          proc.kill();
+        }
       };
 
       proc.stdout?.on('data', append);

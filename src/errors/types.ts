@@ -7,6 +7,15 @@ export class AppError extends Error {
     super(message);
     this.name = 'AppError';
   }
+
+  toJSON(): { error: { code: string; message: string } } {
+    return {
+      error: {
+        code: this.code,
+        message: this.message,
+      },
+    };
+  }
 }
 
 export class NotFoundError extends AppError {
@@ -17,7 +26,7 @@ export class NotFoundError extends AppError {
 }
 
 export class BadRequestError extends AppError {
-  constructor(message: string) {
+  constructor(message: string = 'Bad request') {
     super('BAD_REQUEST', message, 400);
     this.name = 'BadRequestError';
   }
@@ -31,9 +40,20 @@ export class UnauthorizedError extends AppError {
 }
 
 export class ValidationError extends AppError {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    public errors?: { field: string; message: string }[]
+  ) {
     super('VALIDATION_ERROR', message, 400);
     this.name = 'ValidationError';
+  }
+
+  toJSON(): { error: { code: string; message: string; details?: { field: string; message: string }[] } } {
+    const base = super.toJSON();
+    if (this.errors && this.errors.length > 0) {
+      return { error: { ...base.error, details: this.errors } };
+    }
+    return base;
   }
 }
 

@@ -9,15 +9,16 @@ import { config } from './config.js';
 import type { McpServerConfig, McpStatus } from './types.js';
 import {
   createStdioTransport,
-  createSSETransport,
   createStreamableHTTPTransport,
 } from './transport/index.js';
 
 const DEFAULT_TIMEOUT = 30000;
 const VERSION = '0.1.0';
 
+import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
+
 interface ClientState {
-  client: Client;
+  client: Client | null;
   config: McpServerConfig;
   status: McpStatus;
 }
@@ -71,7 +72,7 @@ class McpClient {
 
     try {
       const client = new Client({ name: 'agentforge', version: VERSION });
-      let transport: any;
+      let transport: Transport;
 
       if (serverConfig.type === 'local') {
         const [cmd, ...args] = serverConfig.command;
@@ -94,7 +95,7 @@ class McpClient {
         status: 'failed',
         error: error instanceof Error ? error.message : String(error),
       };
-      this.clients.set(name, { client: undefined as any, config: serverConfig, status });
+      this.clients.set(name, { client: null, config: serverConfig, status });
       return status;
     }
   }
@@ -143,7 +144,7 @@ class McpClient {
     const parameters: ToolParameters = {
       type: 'object',
       properties: (inputSchema.properties ?? {}) as Record<string, unknown>,
-      required: inputSchema.required as string[],
+      required: (inputSchema.required ?? []) as string[],
     };
 
     return {

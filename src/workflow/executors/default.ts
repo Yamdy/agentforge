@@ -1,4 +1,4 @@
-import type { WorkflowStep, WorkflowContext, InputMapping, LoopOptions } from '../types.js';
+import type { WorkflowStep, WorkflowContext, InputMapping } from '../types.js';
 import { WorkflowContextImpl } from '../context.js';
 
 interface StepNode {
@@ -8,8 +8,13 @@ interface StepNode {
   dependencies: string[];
 }
 
+interface ParallelStepGroup {
+  steps: StepNode[];
+}
+
 export class DefaultExecutor {
   private steps: StepNode[] = [];
+  private parallelGroups: ParallelStepGroup[] = [];
   private branch?: {
     condition: (ctx: WorkflowContext) => boolean;
     trueBranch: StepNode;
@@ -27,6 +32,10 @@ export class DefaultExecutor {
     options?: { input?: InputMapping }
   ): void {
     this.steps.push({ id, step, options, dependencies: [] });
+  }
+
+  addParallelGroup(steps: StepNode[]): void {
+    this.parallelGroups.push({ steps });
   }
 
   setBranch(
@@ -77,6 +86,23 @@ export class DefaultExecutor {
       const result = await node.step.execute(stepInput, context);
       context.setResult(node.id, result);
       currentInput = result;
+    }
+
+    for (const group of this.parallelGroups) {
+      const results = await Promise.all(
+        group.steps.map(async (node) => {
+          const stepInput = this.resolveInput(node.options?.input, context, currentInput);
+          const result = await node.step.execute(stepInput, context);
+          context.setResult(node.id, result);
+          return { id: node.id, result };
+        })
+      );
+
+      const parallelResults: Record<string, unknown> = {};
+      for (const { id, result } of results) {
+        parallelResults[id] = result;
+      }
+      currentInput = parallelResults;
     }
 
     if (this.branch) {

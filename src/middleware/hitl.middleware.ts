@@ -1,18 +1,13 @@
 import { Observable } from 'rxjs';
-import { tap, switchMap, filter } from 'rxjs/operators';
+import { switchMap } from 'rxjs/operators';
 import { StreamEvent } from '../types';
 
-// HITL配置类型
 export interface HitlConfig {
-  // 需要人工批准的工具名称列表
   tools?: string[];
-  // 是否对所有工具都需要批准
   allTools?: boolean;
-  // 提示信息
   prompt?: string;
 }
 
-// HITL中间件创建函数
 export function createHitlMiddleware(
   config: HitlConfig = {}
 ): (source$: Observable<StreamEvent>) => Observable<StreamEvent> {
@@ -24,7 +19,6 @@ export function createHitlMiddleware(
         }
         return [event];
       }),
-      // 展平数组
       switchMap((events) => events)
     );
 
@@ -41,11 +35,10 @@ export function createHitlMiddleware(
       const prompt =
         config.prompt || `Do you want to approve the execution of tool: ${event.name}?`;
 
-      // 模拟用户输入，实际应该替换为真实的用户交互
-      const approval = await simulateUserApproval(prompt);
+      const approval = await requestUserApproval(prompt);
 
       if (approval) {
-        return [event]; // 批准继续执行
+        return [event];
       } else {
         return [
           {
@@ -57,15 +50,28 @@ export function createHitlMiddleware(
       }
     }
 
-    async function simulateUserApproval(prompt: string): Promise<boolean> {
-      // 这是一个模拟，实际应该实现为真实的用户交互
+    async function requestUserApproval(prompt: string): Promise<boolean> {
+      const autoApprove = process.env.HITL_AUTO_APPROVE === 'true';
+
+      if (autoApprove) {
+        console.log(`\n${prompt}`);
+        console.log('(Auto-approved: HITL_AUTO_APPROVE=true)');
+        return true;
+      }
+
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error(
+          'HITL approval requires a real user interaction mechanism in production. ' +
+          'Set HITL_AUTO_APPROVE=true for development only.'
+        );
+      }
+
       console.log(`\n${prompt}`);
       console.log('(Enter "y" to approve, "n" to reject)');
 
       return new Promise((resolve) => {
-        // 模拟用户输入，默认批准
         setTimeout(() => {
-          console.log('(Auto-approving for test purposes)');
+          console.log('(Auto-approving for development purposes)');
           resolve(true);
         }, 1000);
       });

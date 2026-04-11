@@ -179,7 +179,7 @@ export function createApp(config: ServerConfig & { agent?: AgentRunner }) {
               error: async (err) => {
                 const errorMsg = err instanceof Error ? err.message : String(err);
                 log.error('Agent stream failed', { error: errorMsg });
-                await stream.write(`data: {"type":"error","error":"${errorMsg}"}\n\n`);
+                await stream.write(`data: ${JSON.stringify({ type: 'error', error: errorMsg })}\n\n`);
                 resolve();
               },
             });
@@ -189,7 +189,7 @@ export function createApp(config: ServerConfig & { agent?: AgentRunner }) {
         } catch (err) {
           const errorMsg = err instanceof Error ? err.message : String(err);
           log.error('Agent stream failed', { error: errorMsg });
-          await stream.write(`data: {"type":"error","error":"${errorMsg}"}\n\n`);
+          await stream.write(`data: ${JSON.stringify({ type: 'error', error: errorMsg })}\n\n`);
         }
       });
     });
@@ -302,7 +302,7 @@ export function createApp(config: ServerConfig & { agent?: AgentRunner }) {
               error: async (err) => {
                 const errorMsg = err instanceof Error ? err.message : String(err);
                 log.error('Agent stream failed', { error: errorMsg });
-                await stream.write(`data: {"type":"error","error":"${errorMsg}"}\n\n`);
+                await stream.write(`data: ${JSON.stringify({ type: 'error', error: errorMsg })}\n\n`);
                 resolve();
               },
             });
@@ -312,7 +312,7 @@ export function createApp(config: ServerConfig & { agent?: AgentRunner }) {
         } catch (err) {
           const errorMsg = err instanceof Error ? err.message : String(err);
           log.error('Agent stream failed', { error: errorMsg });
-          await stream.write(`data: {"type":"error","error":"${errorMsg}"}\n\n`);
+          await stream.write(`data: ${JSON.stringify({ type: 'error', error: errorMsg })}\n\n`);
         }
       });
     });

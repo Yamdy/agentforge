@@ -66,25 +66,23 @@ export class ConfigLoader {
 
     const ext = path.extname(filePath).toLowerCase();
 
-    let configData: any;
+    let configData: Record<string, unknown>;
 
     if (ext === '.md' || ext === '.markdown') {
-      // Load from markdown with frontmatter
       const content = await fs.promises.readFile(filePath, 'utf-8');
       const parsed = matter(content);
       configData = {
-        ...parsed.data,
+        ...(parsed.data as Record<string, unknown>),
         ...(parsed.content.trim() && {
           agent: {
-            ...parsed.data.agent,
+            ...((parsed.data as Record<string, unknown>).agent as Record<string, unknown>),
             systemPrompt: parsed.content.trim(),
           },
         }),
       };
     } else if (ext === '.json') {
-      // Load from JSON
       const content = await fs.promises.readFile(filePath, 'utf-8');
-      configData = JSON.parse(content);
+      configData = JSON.parse(content) as Record<string, unknown>;
     } else {
       throw new AppError(`Unsupported config file format: ${ext}`, 'INVALID_CONFIG_FORMAT');
     }
@@ -125,23 +123,23 @@ export class ConfigLoader {
     }
 
     const ext = path.extname(filePath).toLowerCase();
-    let configData: any;
+    let configData: Record<string, unknown>;
 
     if (ext === '.md' || ext === '.markdown') {
       const content = fs.readFileSync(filePath, 'utf-8');
       const parsed = matter(content);
       configData = {
-        ...parsed.data,
+        ...(parsed.data as Record<string, unknown>),
         ...(parsed.content.trim() && {
           agent: {
-            ...parsed.data.agent,
+            ...((parsed.data as Record<string, unknown>).agent as Record<string, unknown>),
             systemPrompt: parsed.content.trim(),
           },
         }),
       };
     } else if (ext === '.json') {
       const content = fs.readFileSync(filePath, 'utf-8');
-      configData = JSON.parse(content);
+      configData = JSON.parse(content) as Record<string, unknown>;
     } else {
       throw new AppError(`Unsupported config file format: ${ext}`, 'INVALID_CONFIG_FORMAT');
     }
@@ -170,36 +168,36 @@ export class ConfigLoader {
     base: Partial<AgentForgeConfig>,
     ...overlays: Partial<AgentForgeConfig>[]
   ): AgentForgeConfig {
-    let result = { ...base } as Record<string, any>;
+    let result = { ...base } as Record<string, unknown>;
 
     for (const overlay of overlays) {
-      const overlayAny = overlay as Record<string, any>;
+      const overlayRecord = overlay as Record<string, unknown>;
       result = {
         ...result,
         ...overlay,
         agent: {
-          ...(result.agent || {}),
-          ...(overlayAny.agent || {}),
+          ...((result.agent as Record<string, unknown>) || {}),
+          ...((overlayRecord.agent as Record<string, unknown>) || {}),
           tools: [
-            ...(result.agent && result.agent.tools ? result.agent.tools : []),
-            ...(overlay.agent && overlay.agent.tools ? overlay.agent.tools : []),
+            ...((result.agent as Record<string, unknown> | undefined)?.tools as unknown[] || []),
+            ...((overlay.agent as Record<string, unknown> | undefined)?.tools as unknown[] || []),
           ],
           plugins: [
-            ...(result.agent && result.agent.plugins ? result.agent.plugins : []),
-            ...(overlay.agent && overlay.agent.plugins ? overlay.agent.plugins : []),
+            ...((result.agent as Record<string, unknown> | undefined)?.plugins as unknown[] || []),
+            ...((overlay.agent as Record<string, unknown> | undefined)?.plugins as unknown[] || []),
           ],
           middleware: [
-            ...(result.agent && result.agent.middleware ? result.agent.middleware : []),
-            ...(overlay.agent && overlay.agent.middleware ? overlay.agent.middleware : []),
+            ...((result.agent as Record<string, unknown> | undefined)?.middleware as unknown[] || []),
+            ...((overlay.agent as Record<string, unknown> | undefined)?.middleware as unknown[] || []),
           ],
         },
         server: {
-          ...(result.server || {}),
-          ...(overlayAny.server || {}),
+          ...((result.server as Record<string, unknown>) || {}),
+          ...((overlayRecord.server as Record<string, unknown>) || {}),
         },
         model: {
-          ...(result.model || {}),
-          ...(overlayAny.model || {}),
+          ...((result.model as Record<string, unknown>) || {}),
+          ...((overlayRecord.model as Record<string, unknown>) || {}),
         },
       };
     }

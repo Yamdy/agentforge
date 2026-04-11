@@ -1,9 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import type { SkillInfo, SkillFrontmatter } from './types.js';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const SKILL_DIRS = [
   path.join(process.cwd(), '.agentforge', 'skills'),
@@ -64,7 +61,7 @@ class SkillDiscovery {
     frontmatter: SkillFrontmatter | null;
     body: string;
   } {
-    const frontmatterRegex = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/;
+    const frontmatterRegex = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/;
     const match = content.match(frontmatterRegex);
 
     if (!match) {
@@ -72,8 +69,8 @@ class SkillDiscovery {
     }
 
     try {
-      const frontmatterLines = match[1].split('\n');
-      const frontmatter: Record<string, any> = {};
+      const frontmatterLines = match[1].split(/\r?\n/);
+      const frontmatter: Record<string, unknown> = {};
       let currentKey: string | null = null;
       let currentValue: string[] = [];
 

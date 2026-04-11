@@ -44,7 +44,7 @@ export async function createAgent(
   if (useSubagent) {
     console.log('Initializing SubAgent...');
     try {
-      const subAgents = SubAgent.list();
+      const subAgents = SubAgent.registry.list();
       if (subAgents.length > 0) {
         console.log(`Loaded ${subAgents.length} SubAgents`);
       }

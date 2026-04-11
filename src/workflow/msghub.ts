@@ -6,18 +6,28 @@ import type { Message } from '../types.js';
 export class MsgHub implements MsgHubType {
   private _participants: Agent[];
   private messagesSubject: Subject<Message> = new Subject();
+  private pendingAnnouncements: Message[] = [];
   public readonly messages$: Observable<Message>;
 
   constructor(config: MsgHubConfig) {
     this._participants = [...config.participants];
-    this.messages$ = this.messagesSubject.asObservable();
 
     if (config.announcement) {
       const announcements = Array.isArray(config.announcement)
         ? config.announcement
         : [config.announcement];
-      announcements.forEach((msg) => this.broadcast(msg));
+      this.pendingAnnouncements = [...announcements];
     }
+
+    const pending = this.pendingAnnouncements;
+    this.pendingAnnouncements = [];
+
+    this.messages$ = new Observable((subscriber) => {
+      for (const msg of pending) {
+        subscriber.next(msg);
+      }
+      this.messagesSubject.subscribe(subscriber);
+    });
   }
 
   get participants(): Agent[] {

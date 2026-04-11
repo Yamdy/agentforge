@@ -65,15 +65,28 @@ export class MemoryManager {
   }
 
   async save(): Promise<void> {
+    const existingThread = await this.storage.getThread(this.threadId);
     await this.storage.saveThread({
       id: this.threadId,
-      createdAt: new Date(),
+      createdAt: existingThread?.createdAt ?? new Date(),
       updatedAt: new Date(),
     });
 
-    const messages = this.messageHistory.getMessages();
-    for (const msg of messages) {
-      await this.storage.addMessage(this.threadId, msg);
+    if (existingThread) {
+      const existingMessages = await this.storage.getMessages(this.threadId);
+      const currentMessages = this.messageHistory.getMessages();
+      const newMessageCount = currentMessages.length - existingMessages.length;
+      if (newMessageCount > 0) {
+        const newMessages = currentMessages.slice(existingMessages.length);
+        for (const msg of newMessages) {
+          await this.storage.addMessage(this.threadId, msg);
+        }
+      }
+    } else {
+      const messages = this.messageHistory.getMessages();
+      for (const msg of messages) {
+        await this.storage.addMessage(this.threadId, msg);
+      }
     }
 
     if (this.workingMemory) {

@@ -12,7 +12,7 @@ import { ToolRegistry } from '../registry';
 import { PluginManager } from '../plugin/index.js';
 import { createLogger } from '../logger/index.js';
 import { getTracer } from '../tracer.js';
-import { Observable, Subject } from 'rxjs';
+import { Observable } from 'rxjs';
 import { Middleware } from '../middleware/index.js';
 import { createMiddlewarePipeline } from '../middleware/index.js';
 
@@ -151,10 +151,18 @@ export class Agent {
       let step = 0;
       let hasToolCalls = false;
       let textContent = '';
+      let doneSent = false;
       const pendingToolCalls: Map<string, PendingToolCall> = new Map();
 
       const executeStep = async () => {
         if (step >= this.maxSteps) {
+          if (doneSent) return;
+          doneSent = true;
+
+          if (textContent.trim()) {
+            this.history.add('assistant', textContent);
+          }
+
           this.stateMachine.transition('completed');
           this.tracer.endSpan(span.spanId, 'completed');
           this.log.info('Agent run completed', { textLength: textContent.length });
@@ -189,9 +197,6 @@ export class Agent {
             switch (event.type) {
               case 'text':
                 textContent += event.content;
-                if (event.content.trim()) {
-                  this.history.add('assistant', event.content);
-                }
                 handler?.onText?.(event.content);
                 observer.next(event);
                 break;
@@ -218,11 +223,10 @@ export class Agent {
                 const toolResult = event.result ?? '';
 
                 if (toolCall && this.registry.get(toolCall.name)) {
+                  const toolSpan = this.tracer.startSpan(`tool.${toolCall.name}`, span.spanId);
+                  this.tracer.setTag(toolSpan.spanId, 'tool.name', toolCall.name);
                   try {
                     const args = JSON.parse(toolCall.arguments || '{}');
-
-                    const toolSpan = this.tracer.startSpan(`tool.${toolCall.name}`, span.spanId);
-                    this.tracer.setTag(toolSpan.spanId, 'tool.name', toolCall.name);
 
                     await this.pluginManager.trigger(
                       'tool.execute.before',
@@ -255,7 +259,7 @@ export class Agent {
                   } catch (err) {
                     const errorMsg = err instanceof Error ? err.message : String(err);
                     this.tracer.endSpan(
-                      span.spanId,
+                      toolSpan.spanId,
                       'failed',
                       err instanceof Error ? err : new Error(errorMsg)
                     );
@@ -282,6 +286,13 @@ export class Agent {
                 break;
 
               case 'done':
+                if (doneSent) break;
+                doneSent = true;
+
+                if (textContent.trim()) {
+                  this.history.add('assistant', textContent);
+                }
+
                 const finishReason = event.response.finishReason;
 
                 observer.next(event);
@@ -301,7 +312,13 @@ export class Agent {
             }
           },
           complete: () => {
-            if (!hasToolCalls) {
+            if (!hasToolCalls && !doneSent) {
+              doneSent = true;
+
+              if (textContent.trim()) {
+                this.history.add('assistant', textContent);
+              }
+
               this.stateMachine.transition('completed');
               this.tracer.endSpan(span.spanId, 'completed');
               this.log.info('Agent run completed', { textLength: textContent.length });

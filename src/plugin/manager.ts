@@ -6,13 +6,14 @@ export interface PluginManagerConfig {
   plugins?: Plugin[];
 }
 
-type AnyFunction = (input: any, output: any) => Promise<void>;
+type HookFunction = (input: unknown, output: unknown) => Promise<void>;
 
 export class PluginManager {
   private plugins: Plugin[] = [];
   private context: PluginContext;
-  private subjects: Map<string, Subject<any>> = new Map();
+  private subjects: Map<string, Subject<{ event: string; input: unknown; output: unknown }>> = new Map();
   private subscriptions: Subscription = new Subscription();
+  private pluginSubscriptions: Map<string, Subscription[]> = new Map();
 
   constructor(config: PluginManagerConfig = {}, directory: string = process.cwd()) {
     this.context = createPluginContext({ plugins: [] }, directory);
@@ -22,7 +23,7 @@ export class PluginManager {
     }
   }
 
-  private getOrCreateSubject(event: string): Subject<any> {
+  private getOrCreateSubject(event: string): Subject<{ event: string; input: unknown; output: unknown }> {
     if (!this.subjects.has(event)) {
       this.subjects.set(event, new Subject());
     }
@@ -32,16 +33,19 @@ export class PluginManager {
   private registerPluginHooks(): void {
     for (const plugin of this.plugins) {
       if (plugin.hooks) {
+        const subs: Subscription[] = [];
         for (const [eventName, hook] of Object.entries(plugin.hooks)) {
           if (hook) {
-            this.subscribe(eventName, hook as AnyFunction, plugin.name);
+            const sub = this.subscribeToEvent(eventName, hook as HookFunction, plugin.name);
+            subs.push(sub);
           }
         }
+        this.pluginSubscriptions.set(plugin.name, subs);
       }
     }
   }
 
-  private subscribe(event: string, handler: AnyFunction, pluginName: string): void {
+  private subscribeToEvent(event: string, handler: HookFunction, pluginName: string): Subscription {
     const subject = this.getOrCreateSubject(event);
     const sub = subject
       .pipe(
@@ -60,6 +64,7 @@ export class PluginManager {
       .subscribe();
 
     this.subscriptions.add(sub);
+    return sub;
   }
 
   register(plugin: Plugin): void {
@@ -68,11 +73,14 @@ export class PluginManager {
     this.context.logger.info('Plugin registered', { name: validated.name });
 
     if (validated.hooks) {
+      const subs: Subscription[] = this.pluginSubscriptions.get(validated.name) ?? [];
       for (const [eventName, hook] of Object.entries(validated.hooks)) {
         if (hook) {
-          this.subscribe(eventName, hook as AnyFunction, validated.name);
+          const sub = this.subscribeToEvent(eventName, hook as HookFunction, validated.name);
+          subs.push(sub);
         }
       }
+      this.pluginSubscriptions.set(validated.name, subs);
     }
   }
 
@@ -80,6 +88,11 @@ export class PluginManager {
     const index = this.plugins.findIndex(p => p.name === name);
     if (index !== -1) {
       this.plugins.splice(index, 1);
+      const subs = this.pluginSubscriptions.get(name);
+      if (subs) {
+        subs.forEach(s => s.unsubscribe());
+        this.pluginSubscriptions.delete(name);
+      }
       this.context.logger.info('Plugin unregistered', { name });
     }
   }
@@ -92,7 +105,7 @@ export class PluginManager {
     return this.plugins.find(p => p.name === name);
   }
 
-  on(event: string, handler: AnyFunction): Subscription {
+  on(event: string, handler: HookFunction): Subscription {
     const subject = this.getOrCreateSubject(event);
     const sub = subject
       .pipe(
@@ -113,13 +126,34 @@ export class PluginManager {
     return sub;
   }
 
-  async trigger(event: string, input: any, output: any): Promise<any> {
-    const subject = this.getOrCreateSubject(event);
-    subject.next({ event, input, output });
-    return output;
+  async trigger(event: string, input: unknown, output: unknown): Promise<unknown> {
+    const hooks = this.getEventHooks(event);
+    let modifiedOutput = output;
+
+    for (const hook of hooks) {
+      try {
+        await hook(input, modifiedOutput);
+      } catch (err) {
+        this.context.logger.error(`Hook ${event} failed`, {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    return modifiedOutput;
   }
 
-  observable(event: string): Observable<{ input: any; output: any }> {
+  private getEventHooks(event: string): HookFunction[] {
+    const hooks: HookFunction[] = [];
+    for (const plugin of this.plugins) {
+      if (plugin.hooks?.[event]) {
+        hooks.push(plugin.hooks[event] as HookFunction);
+      }
+    }
+    return hooks;
+  }
+
+  observable(event: string): Observable<{ input: unknown; output: unknown }> {
     const subject = this.getOrCreateSubject(event);
     return subject.pipe(
       filter((payload) => payload.event === event),
@@ -131,6 +165,7 @@ export class PluginManager {
     this.subscriptions.unsubscribe();
     this.subjects.forEach((subject) => subject.complete());
     this.subjects.clear();
+    this.pluginSubscriptions.clear();
   }
 }
 

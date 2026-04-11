@@ -19,7 +19,7 @@ async function basicConfigExample() {
 
     // Create agent from config
     const agent = createAgent(config);
-    console.log('\n✓ Created agent successfully: ' + agent.config.name);
+    console.log('\n✓ Created agent successfully');
 
     return agent;
   } catch (error) {

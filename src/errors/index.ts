@@ -1,4 +1,5 @@
-import { AppError, type AppError as AppErrorType } from './types.js';
+import { AppError } from './types.js';
+
 export {
   AppError,
   NotFoundError,
@@ -9,17 +10,22 @@ export {
   ToolExecuteError,
   LLMError,
 } from './types.js';
-export type { AppError as AppErrorType };
 
-export function toErrorResponse(error: Error): Response {
-  if (error instanceof AppError) {
-    return Response.json(
-      { error: { code: error.code, message: error.message } },
-      { status: error.status }
-    );
+export type { AppError as AppErrorType } from './types.js';
+
+export function isAppError(err: unknown): err is AppError {
+  return err instanceof AppError;
+}
+
+export function toErrorResponse(err: unknown): { error: { code: string; message: string } } {
+  if (isAppError(err)) {
+    return err.toJSON();
   }
-  return Response.json(
-    { error: { code: 'INTERNAL_ERROR', message: error.message } },
-    { status: 500 }
-  );
+  const message = err instanceof Error ? err.message : 'Internal server error';
+  return {
+    error: {
+      code: 'INTERNAL_ERROR',
+      message,
+    },
+  };
 }

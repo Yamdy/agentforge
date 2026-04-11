@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Message } from './types.js';
 
 interface CurrentContext {
@@ -5,16 +6,27 @@ interface CurrentContext {
   sessionId?: string;
 }
 
-let currentContext: CurrentContext | null = null;
+const asyncLocalStorage = new AsyncLocalStorage<CurrentContext>();
 
 export function setCurrentMemory(context: CurrentContext): void {
-  currentContext = { ...context };
+  const store = asyncLocalStorage.getStore();
+  if (store) {
+    Object.assign(store, { ...context, messages: [...context.messages] });
+  } else {
+    asyncLocalStorage.enterWith({ ...context, messages: [...context.messages] });
+  }
 }
 
 export function getCurrentMemory(): CurrentContext | null {
-  return currentContext;
+  return asyncLocalStorage.getStore() ?? null;
 }
 
 export function clearCurrentMemory(): void {
-  currentContext = null;
+  const store = asyncLocalStorage.getStore();
+  if (store) {
+    store.messages = [];
+    store.sessionId = undefined;
+  }
 }
+
+export { asyncLocalStorage };

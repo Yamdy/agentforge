@@ -1,8 +1,14 @@
 import { Tool } from '../../types';
-import { readFileSync, existsSync, statSync } from 'fs';
-import { join, isAbsolute, dirname } from 'path';
+import { existsSync, statSync } from 'fs';
+import { join, isAbsolute } from 'path';
 import { createInterface } from 'readline';
 import { createReadStream } from 'fs';
+
+interface ReadToolArgs {
+  filePath: string;
+  offset?: number;
+  limit?: number;
+}
 
 export const ReadTool: Tool = {
   name: 'read',
@@ -28,12 +34,13 @@ export const ReadTool: Tool = {
     },
     required: ['filePath'],
   },
-  async execute(args: any) {
+  async execute(args: Record<string, unknown>) {
     const DEFAULT_READ_LIMIT = 2000;
     const MAX_LINE_LENGTH = 2000;
     const MAX_BYTES = 50 * 1024;
 
-    let filepath = args.filePath;
+    const parsed = args as unknown as ReadToolArgs;
+    let filepath = parsed.filePath;
     if (!isAbsolute(filepath)) {
       filepath = join(process.cwd(), filepath);
     }
@@ -45,9 +52,9 @@ export const ReadTool: Tool = {
     const stats = statSync(filepath);
 
     if (stats.isDirectory()) {
-      return readDirectory(filepath, args.offset, args.limit);
+      return readDirectory(filepath, parsed.offset, parsed.limit);
     } else {
-      return readFile(filepath, args.offset, args.limit);
+      return readFile(filepath, parsed.offset, parsed.limit);
     }
 
     async function readDirectory(
@@ -90,7 +97,6 @@ export const ReadTool: Tool = {
       offset: number = 1,
       limit: number = DEFAULT_READ_LIMIT
     ) {
-      const fs = await import('fs');
       const stream = createReadStream(filePath, { encoding: 'utf8' });
       const rl = createInterface({
         input: stream,
@@ -103,7 +109,7 @@ export const ReadTool: Tool = {
       for await (const text of rl) {
         const line =
           text.length > MAX_LINE_LENGTH ? text.substring(0, MAX_LINE_LENGTH) + '...' : text;
-        const size = Buffer.byteLength(line, 'utf8') + 1; // add newline character
+        const size = Buffer.byteLength(line, 'utf8') + 1;
 
         if (byteCount + size > MAX_BYTES) {
           break;

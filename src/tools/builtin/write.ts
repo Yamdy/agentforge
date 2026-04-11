@@ -20,8 +20,8 @@ export const WriteTool: Tool = {
     },
     required: ['content', 'filePath'],
   },
-  async execute(args: any) {
-    let filepath = args.filePath;
+  async execute(args: Record<string, unknown>) {
+    let filepath = args.filePath as string;
     if (!isAbsolute(filepath)) {
       filepath = join(process.cwd(), filepath);
     }
@@ -32,7 +32,7 @@ export const WriteTool: Tool = {
       mkdirSync(dir, { recursive: true });
     }
 
-    writeFileSync(filepath, args.content);
+    writeFileSync(filepath, args.content as string);
     return `File written successfully: ${filepath}`;
   },
 };
