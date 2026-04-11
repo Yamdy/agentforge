@@ -33,6 +33,9 @@ export type {
   TaskStatus,
   TaskState,
   Schemas,
+  RequestContext,
+  RequestInterceptor,
+  TimeoutConfig,
 } from './types.js';
 export { schemas } from './types.js';
 export type { AgentConfig } from './config/index.js';

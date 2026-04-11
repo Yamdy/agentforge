@@ -136,6 +136,8 @@ export class Agent {
       }
       this.history.add('user', userInput);
 
+      this.pluginManager.trigger('chat.message', { role: 'user', content: userInput }, { content: userInput }).catch(() => {});
+
       const initialState = this.stateMachine.getState();
       this.pluginManager.trigger('agent.start', { userInput }, {}).catch(observer.error);
       this.stateMachine.onStateChange(async (state) => {
@@ -191,6 +193,9 @@ export class Agent {
 
         const messages = this.history.getMessages();
         hasToolCalls = false;
+
+        const chatParamsOutput: { temperature?: number; maxTokens?: number; topP?: number } = {};
+        this.pluginManager.trigger('chat.params', { model: 'unknown', sessionId: undefined }, chatParamsOutput).catch(() => {});
 
         this.adapter.chatStream(messages).subscribe({
           next: async (event) => {
@@ -295,6 +300,12 @@ export class Agent {
 
                 const finishReason = event.response.finishReason;
 
+                this.pluginManager.trigger('chat.response', {
+                  finishReason: finishReason ?? 'stop',
+                  duration: 0,
+                  responseText: textContent,
+                }, {}).catch(() => {});
+
                 observer.next(event);
 
                 if (finishReason === 'tool-calls') {
@@ -339,6 +350,10 @@ export class Agent {
           error: async (err) => {
             const errorMsg = err instanceof Error ? err.message : String(err);
             await this.pluginManager.trigger('agent.error', { error: errorMsg }, {});
+            await this.pluginManager.trigger('chat.error', {
+              error: err instanceof Error ? err : new Error(errorMsg),
+              duration: 0,
+            }, {});
             this.tracer.endSpan(
               span.spanId,
               'failed',

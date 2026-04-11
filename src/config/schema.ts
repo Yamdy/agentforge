@@ -2,10 +2,17 @@ import { z } from 'zod';
 
 export const ModelConfigSchema = z.object({
   model: z.string().default('gpt-4-turbo'),
+  provider: z.string().default('openai-compatible'),
   apiKey: z.string().optional(),
   baseURL: z.string().optional(),
   temperature: z.number().optional(),
   maxTokens: z.number().optional(),
+  timeout: z.object({
+    total: z.number().optional(),
+    firstToken: z.number().optional(),
+    chunk: z.number().optional(),
+  }).optional(),
+  tlsRejectUnauthorized: z.boolean().optional(),
 });
 
 export const ServerConfigSchema = z.object({

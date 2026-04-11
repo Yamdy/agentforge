@@ -1,3 +1,4 @@
+import * as https from 'node:https';
 import { streamText } from 'ai';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { z } from 'zod';
@@ -7,31 +8,45 @@ import {
   Tool,
   StreamEvent,
   LLMResponse,
-  ToolCall,
-  ToolResult,
+  RequestInterceptor,
+  RequestContext,
+  TimeoutConfig,
 } from '../types.js';
-import { Observable, from, of } from 'rxjs';
-import { catchError } from 'rxjs/operators';
+import { Observable } from 'rxjs';
+
+type FetchFn = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
 interface AIAdapterConfig {
   model: string;
   apiKey?: string;
   baseURL?: string;
   useTools?: boolean;
+  interceptors?: RequestInterceptor[];
+  timeout?: TimeoutConfig;
+  tlsRejectUnauthorized?: boolean;
+  fetch?: FetchFn;
 }
 
 export class AIAdapter implements LLMAdapter {
   private modelId: string;
-  private apiKey: string = '';
-  private baseURL: string = '';
+  private apiKey: string;
+  private baseURL: string;
   private tools: Record<string, Tool> = {};
-  private useTools: boolean = true;
+  private useTools: boolean;
+  private interceptors: RequestInterceptor[];
+  private timeout: TimeoutConfig;
+  private tlsRejectUnauthorized: boolean;
+  private customFetch: FetchFn | undefined;
 
   constructor(config: AIAdapterConfig) {
     this.modelId = config.model;
     this.apiKey = config.apiKey || '';
     this.baseURL = config.baseURL || '';
     this.useTools = config.useTools ?? true;
+    this.interceptors = config.interceptors ?? [];
+    this.timeout = config.timeout ?? {};
+    this.tlsRejectUnauthorized = config.tlsRejectUnauthorized ?? true;
+    this.customFetch = config.fetch;
   }
 
   setTools(tools: Tool[]): void {
@@ -42,11 +57,107 @@ export class AIAdapter implements LLMAdapter {
     return this.tools[name];
   }
 
+  private createCustomFetch(): FetchFn {
+    const interceptors = this.interceptors;
+    const rejectUnauthorized = this.tlsRejectUnauthorized;
+    const customFetch = this.customFetch;
+
+    return async (input: string | URL | Request, init?: RequestInit) => {
+      const headers = new Headers(init?.headers);
+
+      let body: Record<string, unknown> | undefined;
+      if (init?.body && typeof init.body === 'string') {
+        try {
+          body = JSON.parse(init.body);
+        } catch {
+          body = undefined;
+        }
+      }
+
+      if (interceptors.length > 0 && body) {
+        const ctx: RequestContext = {
+          url: typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url,
+          method: init?.method || 'POST',
+          headers: Object.fromEntries(headers.entries()),
+          body,
+        };
+
+        let result = ctx;
+        for (const interceptor of interceptors) {
+          if (interceptor.beforeRequest) {
+            result = await interceptor.beforeRequest(result);
+          }
+        }
+
+        for (const [key, value] of Object.entries(result.headers)) {
+          headers.set(key, value);
+        }
+        body = result.body;
+      }
+
+      const newInit: RequestInit = {
+        ...init,
+        headers,
+        body: body ? JSON.stringify(body) : init?.body,
+      };
+
+      if (!rejectUnauthorized) {
+        const urlStr = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+        if (urlStr.startsWith('https://')) {
+          const agent = new https.Agent({ rejectUnauthorized: false });
+          const parsedUrl = new URL(urlStr);
+          const nodeRequestOptions: https.RequestOptions = {
+            hostname: parsedUrl.hostname,
+            port: parsedUrl.port || 443,
+            path: parsedUrl.pathname + parsedUrl.search,
+            method: (newInit.method || 'POST') as string,
+            headers: Object.fromEntries(headers.entries()),
+            agent,
+          };
+
+          return new Promise<Response>((resolve, reject) => {
+            const req = https.request(nodeRequestOptions, (res) => {
+              const chunks: Buffer[] = [];
+              res.on('data', (chunk: Buffer) => chunks.push(chunk));
+              res.on('end', () => {
+                const responseBody = Buffer.concat(chunks);
+                const responseHeaders = new Headers();
+                for (const [key, value] of Object.entries(res.headers)) {
+                  if (value) {
+                    responseHeaders.set(key, Array.isArray(value) ? value.join(', ') : value);
+                  }
+                }
+                resolve(new Response(responseBody, {
+                  status: res.statusCode,
+                  statusText: res.statusMessage,
+                  headers: responseHeaders,
+                }));
+              });
+            });
+            req.on('error', reject);
+            if (newInit.body) {
+              req.write(newInit.body);
+            }
+            req.end();
+          });
+        }
+      }
+
+      const fetchImpl = customFetch ?? fetch;
+      return fetchImpl(input, newInit);
+    };
+  }
+
   private createModel() {
+    const needsCustomFetch = this.interceptors.length > 0
+      || !this.tlsRejectUnauthorized
+      || this.customFetch !== undefined;
+
     const provider = createOpenAICompatible({
       name: 'custom',
       baseURL: this.baseURL,
       apiKey: this.apiKey,
+      ...(needsCustomFetch ? { fetch: this.createCustomFetch() } : {}),
     });
     return provider(this.modelId);
   }
@@ -57,13 +168,21 @@ export class AIAdapter implements LLMAdapter {
       const properties: Record<string, z.ZodType> = {};
       if (t.parameters?.properties) {
         for (const [key, prop] of Object.entries(t.parameters.properties)) {
-          const propTyped = prop as { type?: string };
-          if (propTyped.type === 'string') {
-            properties[key] = z.string();
-          } else if (propTyped.type === 'number') {
+          const propSchema = prop as { type?: string; enum?: unknown[] };
+          if (propSchema.type === 'string') {
+            let schema: z.ZodType = z.string();
+            if (propSchema.enum) {
+              schema = z.enum(propSchema.enum as [string, ...string[]]);
+            }
+            properties[key] = schema;
+          } else if (propSchema.type === 'number' || propSchema.type === 'integer') {
             properties[key] = z.number();
-          } else if (propTyped.type === 'boolean') {
+          } else if (propSchema.type === 'boolean') {
             properties[key] = z.boolean();
+          } else if (propSchema.type === 'array') {
+            properties[key] = z.array(z.unknown());
+          } else if (propSchema.type === 'object') {
+            properties[key] = z.record(z.unknown());
           } else {
             properties[key] = z.unknown();
           }
@@ -83,47 +202,34 @@ export class AIAdapter implements LLMAdapter {
     return result;
   }
 
-  private toModelMessages(messages: Message[]): Array<{ role: any; content: string }> {
+  private toModelMessages(messages: Message[]): Array<{ role: string; content: string }> {
     return messages.map((msg) => ({
       role: msg.role,
       content: msg.content,
     }));
   }
 
-  private extractToolCalls(events: StreamEvent[]): { calls: ToolCall[]; results: ToolResult[] } {
-    const calls: ToolCall[] = [];
-    const results: ToolResult[] = [];
-    let currentCall: { id: string; name: string; arguments: string } | null = null;
-
-    for (const event of events) {
-      if (event.type === 'tool_call_start') {
-        currentCall = { id: event.id, name: event.name, arguments: '' };
-      } else if (event.type === 'tool_call_delta' && currentCall) {
-        currentCall.arguments += event.arguments;
-      } else if (event.type === 'tool_call_end' && currentCall) {
-        try {
-          const parsed = JSON.parse(currentCall.arguments);
-          calls.push({ name: currentCall.name, arguments: parsed });
-          results.push({ toolCallId: currentCall.id, toolName: currentCall.name, result: '' });
-        } catch {
-          // ignore parse errors
-        }
-      }
-    }
-    return { calls, results };
-  }
-
   async chat(messages: Message[]): Promise<LLMResponse> {
     return new Promise((resolve, reject) => {
-      const events: StreamEvent[] = [];
+      let resolved = false;
       this.chatStream(messages).subscribe({
         next: (event) => {
-          events.push(event);
-          if (event.type === 'done') {
+          if (event.type === 'done' && !resolved) {
+            resolved = true;
             resolve(event.response);
           }
         },
         error: reject,
+        complete: () => {
+          if (!resolved) {
+            resolved = true;
+            resolve({
+              content: null,
+              finishReason: 'stop',
+              toolCalls: [],
+            });
+          }
+        },
       });
     });
   }
@@ -132,10 +238,117 @@ export class AIAdapter implements LLMAdapter {
     return new Observable((observer) => {
       const model = this.createModel();
       const tools = this.useTools ? this.getTools() : {};
+      const hasTimeout = this.timeout.firstToken || this.timeout.chunk || this.timeout.total;
+
+      if (hasTimeout) {
+        const overallAbort = new AbortController();
+        let firstTokenTimeoutId: ReturnType<typeof setTimeout> | null = null;
+        let chunkTimeoutId: ReturnType<typeof setTimeout> | null = null;
+        let firstTokenReceived = false;
+
+        const clearFirstTokenTimeout = () => {
+          if (firstTokenTimeoutId) {
+            clearTimeout(firstTokenTimeoutId);
+            firstTokenTimeoutId = null;
+          }
+        };
+
+        const resetChunkTimeout = () => {
+          if (chunkTimeoutId) {
+            clearTimeout(chunkTimeoutId);
+          }
+          if (this.timeout.chunk) {
+            chunkTimeoutId = setTimeout(() => {
+              chunkAbort.abort(`Timeout: no data received over ${this.timeout.chunk}ms`);
+              overallAbort.abort();
+            }, this.timeout.chunk);
+          }
+        };
+
+        const chunkAbort = new AbortController();
+
+        if (this.timeout.firstToken) {
+          firstTokenTimeoutId = setTimeout(() => {
+            overallAbort.abort(`Timeout: no response received after ${this.timeout.firstToken}ms`);
+          }, this.timeout.firstToken);
+        }
+
+        if (this.timeout.total) {
+          setTimeout(() => {
+            overallAbort.abort(`Total timeout exceeded: ${this.timeout.total}ms`);
+          }, this.timeout.total);
+        }
+
+        const result = streamText({
+          model,
+          messages: this.toModelMessages(messages) as Parameters<typeof streamText>[0]['messages'] & {},
+          tools:
+            this.useTools && Object.keys(tools).length > 0
+              ? (tools as unknown as Parameters<typeof streamText>[0]['tools'])
+              : undefined,
+          maxRetries: 0,
+          abortSignal: overallAbort.signal,
+        });
+
+        (async () => {
+          try {
+            for await (const event of result.fullStream) {
+              if (observer.closed) break;
+
+              if (!firstTokenReceived) {
+                firstTokenReceived = true;
+                clearFirstTokenTimeout();
+              }
+              resetChunkTimeout();
+
+              if (event.type === 'text-delta') {
+                observer.next({ type: 'text', content: event.text });
+              } else if (event.type === 'tool-call') {
+                observer.next({
+                  type: 'tool_call_start',
+                  id: event.toolCallId,
+                  name: event.toolName,
+                });
+                observer.next({
+                  type: 'tool_call_delta',
+                  id: event.toolCallId,
+                  arguments: JSON.stringify(event.input),
+                });
+              } else if (event.type === 'tool-result') {
+                const output =
+                  typeof event.output === 'string' ? event.output : JSON.stringify(event.output);
+                observer.next({ type: 'tool_call_end', id: event.toolCallId, result: output });
+              } else if (event.type === 'finish') {
+                observer.next({
+                  type: 'done',
+                  response: {
+                    content: null,
+                    finishReason: event.finishReason as LLMResponse['finishReason'],
+                    toolCalls: [],
+                  },
+                });
+              }
+            }
+            clearFirstTokenTimeout();
+            if (chunkTimeoutId) clearTimeout(chunkTimeoutId);
+            observer.complete();
+          } catch (error) {
+            clearFirstTokenTimeout();
+            if (chunkTimeoutId) clearTimeout(chunkTimeoutId);
+            observer.error(error);
+          }
+        })();
+
+        return () => {
+          clearFirstTokenTimeout();
+          if (chunkTimeoutId) clearTimeout(chunkTimeoutId);
+          overallAbort.abort();
+        };
+      }
 
       const result = streamText({
         model,
-        messages: this.toModelMessages(messages),
+        messages: this.toModelMessages(messages) as Parameters<typeof streamText>[0]['messages'] & {},
         tools:
           this.useTools && Object.keys(tools).length > 0
             ? (tools as unknown as Parameters<typeof streamText>[0]['tools'])
@@ -182,9 +395,7 @@ export class AIAdapter implements LLMAdapter {
         }
       })();
 
-      return () => {
-        // 清理资源
-      };
+      return () => {};
     });
   }
 }

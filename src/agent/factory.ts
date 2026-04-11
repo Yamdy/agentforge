@@ -10,35 +10,18 @@ import {
   ModelConfig,
   validateAgentConfig,
 } from '../config/index.js';
-import type { LLMAdapter, HistoryManager } from '../types';
+import type { LLMAdapter, HistoryManager, RequestInterceptor } from '../types';
 import type { Middleware } from '../middleware/index.js';
 import { allTools } from '../tools/index.js';
 
 export interface AgentFactoryOptions {
-  /**
-   * Pre-configured adapter (will override config settings)
-   */
   adapter?: LLMAdapter;
-  /**
-   * Pre-configured history manager
-   */
   history?: HistoryManager;
-  /**
-   * Pre-configured tool registry
-   */
   registry?: ToolRegistry;
-  /**
-   * Pre-configured plugin manager
-   */
   pluginManager?: PluginManager;
-  /**
-   * Additional middleware to add
-   */
   middleware?: Middleware[];
-  /**
-   * Auto-register built-in tools
-   */
   registerBuiltinTools?: boolean;
+  interceptors?: RequestInterceptor[];
 }
 
 export class AgentFactory {
@@ -54,27 +37,27 @@ export class AgentFactory {
     };
   }
 
-  /**
-   * Create a new Agent instance with the provided configuration
-   */
   create(): Agent {
-    // Get validated agent config
     const agentConfig =
       'agent' in this.config ? this.config.agent : validateAgentConfig(this.config);
 
-    // Merge model config from top-level if it exists
     let modelConfig: ModelConfig;
     if ('model' in this.config && this.config.model && typeof this.config.model === 'object') {
+      const cfgModel = this.config.model as Record<string, unknown>;
       modelConfig = {
-        model: this.config.model.model || agentConfig.model,
-        apiKey: this.config.model.apiKey || agentConfig.apiKey,
-        baseURL: this.config.model.baseURL || agentConfig.baseURL,
-        temperature: this.config.model.temperature ?? agentConfig.temperature,
-        maxTokens: this.config.model.maxTokens ?? agentConfig.maxTokens,
+        model: (cfgModel.model as string) || agentConfig.model,
+        provider: (cfgModel.provider as string) ?? 'openai-compatible',
+        apiKey: (cfgModel.apiKey as string) || agentConfig.apiKey,
+        baseURL: (cfgModel.baseURL as string) || agentConfig.baseURL,
+        temperature: (cfgModel.temperature as number) ?? agentConfig.temperature,
+        maxTokens: (cfgModel.maxTokens as number) ?? agentConfig.maxTokens,
+        timeout: cfgModel.timeout as { total?: number; firstToken?: number; chunk?: number } | undefined,
+        tlsRejectUnauthorized: cfgModel.tlsRejectUnauthorized as boolean | undefined,
       };
     } else {
       modelConfig = {
         model: agentConfig.model,
+        provider: 'openai-compatible',
         apiKey: agentConfig.apiKey,
         baseURL: agentConfig.baseURL,
         temperature: agentConfig.temperature,
@@ -82,19 +65,11 @@ export class AgentFactory {
       };
     }
 
-    // Create or use provided adapter
     const adapter = this.options.adapter ?? this.createAdapter(modelConfig);
-
-    // Create or use provided history
     const history = this.options.history ?? this.createHistory();
-
-    // Create or use provided registry
     const registry = this.options.registry ?? this.createRegistry(agentConfig);
-
-    // Create or use provided plugin manager
     const pluginManager = this.options.pluginManager ?? new PluginManager();
 
-    // Create agent
     const agent = new Agent(adapter, history, registry, {
       ...agentConfig,
       pluginManager,
@@ -102,13 +77,9 @@ export class AgentFactory {
     });
 
     this.log.info('Agent created successfully', { name: agentConfig.name });
-
     return agent;
   }
 
-  /**
-   * Create LLM adapter from config
-   */
   private createAdapter(config: ModelConfig): LLMAdapter {
     const apiKey = config.apiKey ?? process.env.OPENAI_API_KEY;
 
@@ -118,59 +89,41 @@ export class AgentFactory {
       );
     }
 
-    const adapter = new AIAdapter({
+    return new AIAdapter({
       model: config.model,
       apiKey,
       baseURL: config.baseURL,
+      timeout: config.timeout,
+      tlsRejectUnauthorized: config.tlsRejectUnauthorized,
+      interceptors: this.options.interceptors,
     });
-
-    return adapter;
   }
 
-  /**
-   * Create history manager
-   */
   private createHistory(): HistoryManager {
     return new InMemoryHistory();
   }
 
-  /**
-   * Create and configure tool registry
-   */
-  private createRegistry(config: AgentConfig): ToolRegistry {
+  private createRegistry(_config: AgentConfig): ToolRegistry {
     const registry = new ToolRegistry();
 
-    // Register built-in tools if enabled
     if (this.options.registerBuiltinTools) {
       registry.register(allTools);
       this.log.debug('Registered all built-in tools', { count: allTools.length });
     }
 
-    // TODO: Implement tool registration from config
-    // For now, it's expected that users register additional tools manually
-
     return registry;
   }
 
-  /**
-   * Static helper to create an agent quickly
-   */
   static create(config: AgentForgeConfig | AgentConfig, options?: AgentFactoryOptions): Agent {
     const factory = new AgentFactory(config, options);
     return factory.create();
   }
 
-  /**
-   * Static helper to create an agent from a loaded configuration
-   */
   static fromConfig(config: AgentForgeConfig | AgentConfig, options?: AgentFactoryOptions): Agent {
     return this.create(config, options);
   }
 }
 
-/**
- * Create an agent using the factory
- */
 export function createAgent(
   config: AgentForgeConfig | AgentConfig,
   options?: AgentFactoryOptions

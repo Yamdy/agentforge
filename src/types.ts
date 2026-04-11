@@ -79,6 +79,23 @@ export type LLMAdapter = {
   chatStream(messages: Message[]): Observable<StreamEvent>;
 };
 
+export interface RequestContext {
+  url: string;
+  method: string;
+  headers: Record<string, string>;
+  body: Record<string, unknown>;
+}
+
+export interface RequestInterceptor {
+  beforeRequest?(context: RequestContext): Promise<RequestContext> | RequestContext;
+}
+
+export interface TimeoutConfig {
+  total?: number;
+  firstToken?: number;
+  chunk?: number;
+}
+
 export type HistoryManager = {
   add(role: 'user' | 'assistant' | 'tool', content: string): void;
   addToolResult(toolCallId: string, toolName: string, result: string): void;

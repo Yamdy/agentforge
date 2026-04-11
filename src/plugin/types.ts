@@ -11,6 +11,12 @@ export const HookEvents = {
   STATE_CHANGE: 'state.change',
   AGENT_START: 'agent.start',
   AGENT_COMPLETE: 'agent.complete',
+  LLM_REQUEST_BEFORE: 'llm.request.before',
+  CHAT_MESSAGE: 'chat.message',
+  CHAT_PARAMS: 'chat.params',
+  CHAT_RESPONSE: 'chat.response',
+  CHAT_ERROR: 'chat.error',
+  SESSION_COMPACTING: 'session.compacting',
 } as const;
 
 export type HookEvent = typeof HookEvents[keyof typeof HookEvents];
@@ -70,6 +76,68 @@ export interface AgentCompleteInput {
 }
 export interface AgentCompleteOutput {}
 
+export interface LLMRequestBeforeInput {
+  headers: Record<string, string>;
+  body: Record<string, unknown>;
+}
+
+export interface LLMRequestBeforeOutput {
+  headers: Record<string, string>;
+  body: Record<string, unknown>;
+}
+
+export interface ChatMessageInput {
+  sessionId?: string;
+  role: string;
+  content: string;
+}
+
+export interface ChatMessageOutput {
+  content: string;
+}
+
+export interface ChatParamsInput {
+  sessionId?: string;
+  model: string;
+  temperature?: number;
+  maxTokens?: number;
+  topP?: number;
+}
+
+export interface ChatParamsOutput {
+  temperature?: number;
+  maxTokens?: number;
+  topP?: number;
+}
+
+export interface ChatResponseInput {
+  sessionId?: string;
+  finishReason?: string;
+  tokens?: { input: number; output: number };
+  duration: number;
+  responseText: string;
+}
+
+export interface ChatResponseOutput {}
+
+export interface ChatErrorInput {
+  sessionId?: string;
+  error: Error;
+  duration: number;
+}
+
+export interface ChatErrorOutput {}
+
+export interface SessionCompactingInput {
+  sessionId?: string;
+  messageCount: number;
+}
+
+export interface SessionCompactingOutput {
+  context: string[];
+  prompt?: string;
+}
+
 export interface Hooks {
   'tool.execute.before'?: (input: ToolExecuteBeforeInput, output: ToolExecuteBeforeOutput) => Promise<void>;
   'tool.execute.after'?: (input: ToolExecuteAfterInput, output: ToolExecuteAfterOutput) => Promise<void>;
@@ -80,6 +148,12 @@ export interface Hooks {
   'state.change'?: (input: StateChangeInput, output: StateChangeOutput) => Promise<void>;
   'agent.start'?: (input: AgentStartInput, output: AgentStartOutput) => Promise<void>;
   'agent.complete'?: (input: AgentCompleteInput, output: AgentCompleteOutput) => Promise<void>;
+  'llm.request.before'?: (input: LLMRequestBeforeInput, output: LLMRequestBeforeOutput) => Promise<void>;
+  'chat.message'?: (input: ChatMessageInput, output: ChatMessageOutput) => Promise<void>;
+  'chat.params'?: (input: ChatParamsInput, output: ChatParamsOutput) => Promise<void>;
+  'chat.response'?: (input: ChatResponseInput, output: ChatResponseOutput) => Promise<void>;
+  'chat.error'?: (input: ChatErrorInput, output: ChatErrorOutput) => Promise<void>;
+  'session.compacting'?: (input: SessionCompactingInput, output: SessionCompactingOutput) => Promise<void>;
 }
 
 export const PluginSchema = z.object({

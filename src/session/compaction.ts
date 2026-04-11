@@ -1,5 +1,6 @@
 import type { Session, SessionMessage } from './storage.js';
 import type { LLMAdapter } from '../types.js';
+import type { PluginManager } from '../plugin/index.js';
 
 export interface CompactionOptions {
   maxMessages?: number;
@@ -7,6 +8,8 @@ export interface CompactionOptions {
   keepLast?: number;
   summaryPrompt?: string;
   llmAdapter?: LLMAdapter;
+  pluginManager?: PluginManager;
+  sessionId?: string;
 }
 
 export interface CompactionResult {
@@ -43,6 +46,18 @@ export async function compactSession(
     };
   }
 
+  const compactingOutput: { context: string[]; prompt?: string } = { context: [] };
+  if (options.pluginManager) {
+    await options.pluginManager.trigger('session.compacting', {
+      sessionId: options.sessionId,
+      messageCount: session.messages.length,
+    }, compactingOutput);
+  }
+
+  if (compactingOutput.prompt) {
+    options = { ...options, summaryPrompt: compactingOutput.prompt };
+  }
+
   const systemMessages = session.messages.filter((m) => m.role === 'system');
   const nonSystemMessages = session.messages.filter((m) => m.role !== 'system');
 
@@ -53,13 +68,15 @@ export async function compactSession(
   let summary: string;
 
   if (options.llmAdapter && middleMessages.length > 0) {
-    // Use LLM to generate better summary
     const conversationText = middleMessages
       .map((msg) => `${msg.role}: ${msg.content}`)
       .join('\n\n');
-    const prompt = `${summaryPrompt}\n\n${conversationText}`;
-    const result = await options.llmAdapter.generate(prompt);
-    summary = result;
+    let prompt = `${summaryPrompt}\n\n${conversationText}`;
+    if (compactingOutput.context.length > 0) {
+      prompt = `${compactingOutput.context.join('\n\n')}\n\n${prompt}`;
+    }
+    const result = await options.llmAdapter.chat([{ role: 'user', content: prompt }]);
+    summary = result.content ?? JSON.stringify(result);
   } else {
     // Fallback to simple summary
     summary = `Session had ${middleMessages.length} intermediate messages that were compacted. `;
