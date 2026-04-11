@@ -197,10 +197,7 @@ export class AIAdapter implements LLMAdapter {
 
       result[name] = {
         description: t.description,
-        inputSchema: schema,
-        execute: async (args: Record<string, unknown>) => {
-          return await t.execute(args);
-        },
+        parameters: schema,
       };
     }
     return result;

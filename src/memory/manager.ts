@@ -19,11 +19,7 @@ export class MemoryManager implements HistoryManager {
   private workingMemory?: WorkingMemory;
   private observations: Observation[] = [];
   private loaded: boolean = false;
-  private _pendingToolResults: Array<{
-    toolCallId: string;
-    toolName: string;
-    result: string;
-  }> = [];
+  private loadPromise: Promise<void> | null = null;
 
   constructor(config?: MemoryManagerConfig) {
     this.config = config ?? {};
@@ -50,7 +46,17 @@ export class MemoryManager implements HistoryManager {
 
   async load(): Promise<void> {
     if (this.loaded) return;
+    if (this.loadPromise) return this.loadPromise;
 
+    this.loadPromise = this._doLoad();
+    try {
+      await this.loadPromise;
+    } finally {
+      this.loadPromise = null;
+    }
+  }
+
+  private async _doLoad(): Promise<void> {
     let thread = await this.storage.getThread(this.threadId);
     if (!thread) {
       thread = {
@@ -120,7 +126,6 @@ export class MemoryManager implements HistoryManager {
   }
 
   addToolResult(toolCallId: string, toolName: string, result: string): void {
-    this._pendingToolResults.push({ toolCallId, toolName, result });
     this.messageHistory.add({
       role: 'tool',
       content: result,
@@ -165,7 +170,6 @@ export class MemoryManager implements HistoryManager {
   clear(): void {
     this.messageHistory.clear();
     this.observations = [];
-    this._pendingToolResults = [];
   }
 
   isLoaded(): boolean {

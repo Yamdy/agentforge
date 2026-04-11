@@ -62,7 +62,7 @@ export class Agent {
   ) {
     this.adapter = adapter;
     this.history = history;
-    this.registry = registry!;
+    this.registry = registry ?? new ToolRegistry();
     this.maxSteps = options?.maxSteps ?? Infinity;
     this.stateMachine = createTaskStateMachine(this.maxSteps);
     this.pluginManager = options?.pluginManager ?? new PluginManager();
@@ -78,7 +78,11 @@ export class Agent {
   }
 
   observe(message: Message): void {
-    this.history.add(message.role as 'user' | 'assistant' | 'tool', message.content);
+    const validRoles: ReadonlyArray<'user' | 'assistant' | 'tool'> = ['user', 'assistant', 'tool'];
+    const role = validRoles.includes(message.role as 'user' | 'assistant' | 'tool')
+      ? (message.role as 'user' | 'assistant' | 'tool')
+      : 'user';
+    this.history.add(role, message.content);
     this.log.info('Agent observed message', { role: message.role });
   }
 
@@ -134,8 +138,6 @@ export class Agent {
         next: (event) => {
           if (event.type === 'text') {
             result += event.content;
-          } else if (event.type === 'tool_call_end' && event.result) {
-            result += event.result;
           } else if (event.type === 'done' && event.response.content) {
             result = event.response.content;
           }
@@ -165,275 +167,302 @@ export class Agent {
       const span = this.tracer.startSpan('agent.run');
       this.tracer.log(span.spanId, 'Agent run started', { userInput });
 
-      if (this.memoryManager && !this.memoryManager.isLoaded()) {
-        this.memoryManager.load().catch((err) => {
-          this.log.error('Failed to load memory', {
-            error: err instanceof Error ? err.message : String(err),
-          });
-        });
-      }
-
-      this.history.clear();
-
-      for (const msg of sessionMessages) {
-        if (msg.role !== 'system') {
-          this.history.add(msg.role, msg.content);
+      const initAndRun = async () => {
+        if (this.memoryManager && !this.memoryManager.isLoaded()) {
+          await this.memoryManager.load();
         }
-      }
-      this.history.add('user', userInput);
 
-      this.pluginManager.trigger('chat.message', { role: 'user', content: userInput }, { content: userInput }).catch(() => {});
+        if (this.memoryManager) {
+          for (const msg of sessionMessages) {
+            if (msg.role !== 'system') {
+              this.history.add(msg.role, msg.content);
+            }
+          }
+        } else {
+          this.history.clear();
+          for (const msg of sessionMessages) {
+            if (msg.role !== 'system') {
+              this.history.add(msg.role, msg.content);
+            }
+          }
+        }
 
-      const initialState = this.stateMachine.getState();
-      this.pluginManager.trigger('agent.start', { userInput }, {}).catch(observer.error);
-      this.stateMachine.onStateChange(async (state) => {
-        handler?.onStateChange?.(state);
-        await this.pluginManager.trigger(
-          'state.change',
-          { from: initialState.status, to: state.status },
-          {}
-        );
-      });
-      this.stateMachine.transition('running');
+        this.history.add('user', userInput);
 
-      let step = 0;
-      let hasToolCalls = false;
-      let textContent = '';
-      let doneSent = false;
-      const pendingToolCalls: Map<string, PendingToolCall> = new Map();
+        this.pluginManager.trigger('chat.message', { role: 'user', content: userInput }, { content: userInput }).catch(() => {});
 
-      const executeStep = async () => {
-        if (step >= this.maxSteps) {
-          if (doneSent) return;
-          doneSent = true;
+        const initialState = this.stateMachine.getState();
+        this.stateMachine.onStateChange(async (state) => {
+          handler?.onStateChange?.(state);
+          await this.pluginManager.trigger(
+            'state.change',
+            { from: initialState.status, to: state.status },
+            {}
+          );
+        });
+        this.stateMachine.transition('running');
 
-          if (textContent.trim()) {
-            this.history.add('assistant', textContent);
-            this.responseSubject.next({ role: 'assistant', content: textContent });
+        let step = 0;
+
+        const executeStep = async (): Promise<void> => {
+          if (step >= this.maxSteps) {
+            this.stateMachine.transition('completed');
+            this.tracer.endSpan(span.spanId, 'completed');
+            this.log.info('Agent run completed (max steps reached)');
+            observer.next({
+              type: 'done',
+              response: {
+                content: null,
+                finishReason: 'length',
+                toolCalls: [],
+              },
+            });
+            this.pluginManager
+              .trigger('agent.complete', { userInput, response: '' }, {})
+              .catch(() => {});
+            observer.complete();
+            return;
           }
 
-          this.stateMachine.transition('completed');
-          this.tracer.endSpan(span.spanId, 'completed');
-          this.log.info('Agent run completed', { textLength: textContent.length });
-          observer.next({
-            type: 'done',
-            response: {
-              content: textContent,
-              finishReason: 'length',
-              toolCalls: [],
-            },
-          });
-          observer.complete();
+          step++;
+          this.stateMachine.transition('running', { step });
+          this.tracer.log(span.spanId, `Step ${step} started`);
+          handler?.onStep?.(step, this.maxSteps);
           this.pluginManager
-            .trigger('agent.complete', { userInput, response: textContent }, {})
-            .catch(observer.error);
-          return;
-        }
+            .trigger('agent.step', { step, maxSteps: this.maxSteps }, {})
+            .catch(() => {});
 
-        step++;
-        this.stateMachine.transition('running', { step });
-        this.tracer.log(span.spanId, `Step ${step} started`);
-        handler?.onStep?.(step, this.maxSteps);
-        this.pluginManager
-          .trigger('agent.step', { step, maxSteps: this.maxSteps }, {})
-          .catch(observer.error);
+          const chatParamsOutput: { temperature?: number; maxTokens?: number; topP?: number } = {};
+          this.pluginManager.trigger('chat.params', { model: 'unknown', sessionId: undefined }, chatParamsOutput).catch(() => {});
 
-        const messages = this.history.getMessages();
-        hasToolCalls = false;
+          const messages = this.history.getMessages();
 
-        const chatParamsOutput: { temperature?: number; maxTokens?: number; topP?: number } = {};
-        this.pluginManager.trigger('chat.params', { model: 'unknown', sessionId: undefined }, chatParamsOutput).catch(() => {});
+          const stepTextContent = await this.processLLMStream(messages, span, handler, observer);
 
-        this.adapter.chatStream(messages).subscribe({
-          next: async (event) => {
-            switch (event.type) {
-              case 'text':
-                textContent += event.content;
-                handler?.onText?.(event.content);
-                observer.next(event);
-                break;
+          if (stepTextContent.trim()) {
+            this.history.add('assistant', stepTextContent);
+          }
 
-              case 'tool_call_start':
-                hasToolCalls = true;
-                pendingToolCalls.set(event.id, { id: event.id, name: event.name, arguments: '' });
-                this.tracer.log(span.spanId, `Tool call started: ${event.name}`);
-                handler?.onToolCallStart?.(event.id, event.name);
-                observer.next(event);
-                break;
+          const lastHistory = this.history.getMessages();
+          const lastMsg = lastHistory[lastHistory.length - 1];
+          const hasToolResults = lastMsg?.role === 'tool';
 
-              case 'tool_call_delta':
-                const pending = pendingToolCalls.get(event.id);
-                if (pending) {
-                  pending.arguments += event.arguments;
-                }
-                handler?.onToolCallDelta?.(event.id, event.arguments);
-                observer.next(event);
-                break;
-
-              case 'tool_call_end':
-                const toolCall = pendingToolCalls.get(event.id);
-                const toolResult = event.result ?? '';
-
-                if (toolCall && this.registry.get(toolCall.name)) {
-                  const toolSpan = this.tracer.startSpan(`tool.${toolCall.name}`, span.spanId);
-                  this.tracer.setTag(toolSpan.spanId, 'tool.name', toolCall.name);
-                  try {
-                    const args = JSON.parse(toolCall.arguments || '{}');
-
-                    await this.pluginManager.trigger(
-                      'tool.execute.before',
-                      { tool: toolCall.name, args },
-                      { args }
-                    );
-
-                    this.log.info('Executing tool', { tool: toolCall.name, args });
-                    const execResult = await this.registry.execute(toolCall.name, args);
-                    this.log.info('Tool executed', {
-                      tool: toolCall.name,
-                      result: execResult.slice(0, 50),
-                    });
-
-                    await this.pluginManager.trigger(
-                      'tool.execute.after',
-                      { tool: toolCall.name, args, result: execResult },
-                      { result: execResult }
-                    );
-
-                    this.tracer.endSpan(toolSpan.spanId, 'completed');
-
-                    this.history.addToolResult(toolCall.id, toolCall.name, execResult);
-                    handler?.onToolCallEnd?.(toolCall.id, execResult);
-                    observer.next({
-                      type: 'tool_call_end',
-                      id: event.id,
-                      result: execResult,
-                    });
-                  } catch (err) {
-                    const errorMsg = err instanceof Error ? err.message : String(err);
-                    this.tracer.endSpan(
-                      toolSpan.spanId,
-                      'failed',
-                      err instanceof Error ? err : new Error(errorMsg)
-                    );
-                    this.log.error('Tool execution failed', {
-                      tool: toolCall.name,
-                      error: errorMsg,
-                    });
-                    this.history.addToolResult(toolCall.id, toolCall.name, `Error: ${errorMsg}`);
-                    handler?.onToolCallEnd?.(toolCall.id, `Error: ${errorMsg}`);
-                    observer.next({
-                      type: 'tool_call_end',
-                      id: event.id,
-                      result: `Error: ${errorMsg}`,
-                    });
-                  }
-                } else if (toolResult) {
-                  const toolName = toolCall?.name || event.id;
-                  this.history.addToolResult(event.id, toolName, toolResult);
-                  handler?.onToolCallEnd?.(event.id, toolResult);
-                  observer.next(event);
-                }
-
-                pendingToolCalls.delete(event.id);
-                break;
-
-              case 'done':
-                if (doneSent) break;
-                doneSent = true;
-
-                if (textContent.trim()) {
-                  this.history.add('assistant', textContent);
-                }
-
-                const finishReason = event.response.finishReason;
-
-                this.pluginManager.trigger('chat.response', {
-                  finishReason: finishReason ?? 'stop',
-                  duration: 0,
-                  responseText: textContent,
-                }, {}).catch(() => {});
-
-                observer.next(event);
-
-                if (finishReason === 'tool-calls') {
-                  doneSent = false;
-                  executeStep().catch(observer.error);
-                } else {
-                  if (textContent.trim()) {
-                    this.responseSubject.next({ role: 'assistant', content: textContent });
-                  }
-                  this.stateMachine.transition('completed');
-                  this.tracer.endSpan(span.spanId, 'completed');
-                  this.log.info('Agent run completed', { textLength: textContent.length });
-                  this.pluginManager
-                    .trigger('agent.complete', { userInput, response: textContent }, {})
-                    .catch(observer.error);
-                  observer.complete();
-                }
-                break;
+          if (hasToolResults) {
+            await executeStep();
+          } else {
+            if (stepTextContent.trim()) {
+              this.responseSubject.next({ role: 'assistant', content: stepTextContent });
             }
-          },
-          complete: () => {
-            if (!hasToolCalls && !doneSent) {
-              doneSent = true;
 
-              if (textContent.trim()) {
-                this.history.add('assistant', textContent);
-                this.responseSubject.next({ role: 'assistant', content: textContent });
-              }
+            this.stateMachine.transition('completed');
+            this.tracer.endSpan(span.spanId, 'completed');
+            this.log.info('Agent run completed', { textLength: stepTextContent.length });
 
-              this.stateMachine.transition('completed');
-              this.tracer.endSpan(span.spanId, 'completed');
-              this.log.info('Agent run completed', { textLength: textContent.length });
-              observer.next({
-                type: 'done',
-                response: {
-                  content: textContent,
-                  finishReason: 'stop',
-                  toolCalls: [],
-                },
-              });
-              this.pluginManager
-                .trigger('agent.complete', { userInput, response: textContent }, {})
-                .catch(observer.error);
-              observer.complete();
-            }
-          },
-          error: async (err) => {
-            const errorMsg = err instanceof Error ? err.message : String(err);
-            await this.pluginManager.trigger('agent.error', { error: errorMsg }, {});
-            await this.pluginManager.trigger('chat.error', {
-              error: err instanceof Error ? err : new Error(errorMsg),
+            observer.next({
+              type: 'done',
+              response: {
+                content: stepTextContent,
+                finishReason: 'stop',
+                toolCalls: [],
+              },
+            });
+
+            this.pluginManager
+              .trigger('agent.complete', { userInput, response: stepTextContent }, {})
+              .catch(() => {});
+
+            this.pluginManager.trigger('chat.response', {
+              finishReason: 'stop',
               duration: 0,
-            }, {});
-            this.tracer.endSpan(
-              span.spanId,
-              'failed',
-              err instanceof Error ? err : new Error(errorMsg)
-            );
-            this.stateMachine.transition('error', { error: errorMsg });
-            this.log.error('Agent run failed', { error: errorMsg });
-            handler?.onError?.(err instanceof Error ? err : new Error(errorMsg));
-            observer.error(err);
-          },
-        });
+              responseText: stepTextContent,
+            }, {}).catch(() => {});
+
+            observer.complete();
+          }
+        };
+
+        await executeStep();
       };
 
-      executeStep().catch(observer.error);
+      initAndRun().catch((err) => {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        this.pluginManager.trigger('agent.error', { error: errorMsg }, {}).catch(() => {});
+        this.tracer.endSpan(
+          span.spanId,
+          'failed',
+          err instanceof Error ? err : new Error(errorMsg)
+        );
+        this.stateMachine.transition('error', { error: errorMsg });
+        this.log.error('Agent run failed', { error: errorMsg });
+        handler?.onError?.(err instanceof Error ? err : new Error(errorMsg));
+        observer.error(err);
+      });
 
-      // Return teardown logic
       return () => {
-        // Cleanup if unsubscribed early
         if (this.stateMachine.getState().status === 'running') {
           this.stateMachine.cancel();
           this.tracer.endSpan(span.spanId, 'cancelled');
           this.pluginManager
-            .trigger('agent.complete', { userInput, response: textContent }, {})
+            .trigger('agent.complete', { userInput, response: '' }, {})
             .catch(() => {});
         }
       };
     });
 
     return this.pipeline(source$ as Observable<StreamEvent>);
+  }
+
+  private processLLMStream(
+    messages: Message[],
+    parentSpan: { spanId: string },
+    handler: StreamHandler | undefined,
+    observer: {
+      next: (event: StreamEvent) => void;
+      error: (err: unknown) => void;
+    }
+  ): Promise<string> {
+    return new Promise((resolve, reject) => {
+      let stepTextContent = '';
+      const pendingToolCalls: Map<string, PendingToolCall> = new Map();
+      let pendingToolExecCount = 0;
+      let completedToolExecCount = 0;
+      let streamDone = false;
+      let nextInProgress = 0;
+
+      const tryResolve = () => {
+        if (streamDone && nextInProgress === 0 && pendingToolExecCount === completedToolExecCount) {
+          resolve(stepTextContent);
+        }
+      };
+
+      const executeToolCall = async (toolCall: PendingToolCall) => {
+        pendingToolExecCount++;
+        const toolSpan = this.tracer.startSpan(`tool.${toolCall.name}`, parentSpan.spanId);
+        this.tracer.setTag(toolSpan.spanId, 'tool.name', toolCall.name);
+
+        try {
+          const args = JSON.parse(toolCall.arguments || '{}');
+
+          await this.pluginManager.trigger(
+            'tool.execute.before',
+            { tool: toolCall.name, args },
+            { args }
+          );
+
+          this.log.info('Executing tool', { tool: toolCall.name, args });
+          const execResult = await this.registry.execute(toolCall.name, args);
+          this.log.info('Tool executed', {
+            tool: toolCall.name,
+            result: execResult.slice(0, 50),
+          });
+
+          await this.pluginManager.trigger(
+            'tool.execute.after',
+            { tool: toolCall.name, args, result: execResult },
+            { result: execResult }
+          );
+
+          this.tracer.endSpan(toolSpan.spanId, 'completed');
+
+          this.history.addToolResult(toolCall.id, toolCall.name, execResult);
+          handler?.onToolCallEnd?.(toolCall.id, execResult);
+          observer.next({
+            type: 'tool_call_end',
+            id: toolCall.id,
+            result: execResult,
+          });
+        } catch (err) {
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          this.tracer.endSpan(
+            toolSpan.spanId,
+            'failed',
+            err instanceof Error ? err : new Error(errorMsg)
+          );
+          this.log.error('Tool execution failed', {
+            tool: toolCall.name,
+            error: errorMsg,
+          });
+          this.history.addToolResult(toolCall.id, toolCall.name, `Error: ${errorMsg}`);
+          handler?.onToolCallEnd?.(toolCall.id, `Error: ${errorMsg}`);
+          observer.next({
+            type: 'tool_call_end',
+            id: toolCall.id,
+            result: `Error: ${errorMsg}`,
+          });
+        }
+
+        completedToolExecCount++;
+        pendingToolCalls.delete(toolCall.id);
+        tryResolve();
+      };
+
+      const executePendingToolCalls = () => {
+        for (const [id, toolCall] of pendingToolCalls) {
+          if (toolCall.arguments) {
+            executeToolCall(toolCall).catch(reject);
+          }
+        }
+      };
+
+      this.adapter.chatStream(messages).subscribe({
+        next: async (event) => {
+          nextInProgress++;
+          try {
+          switch (event.type) {
+            case 'text':
+              stepTextContent += event.content;
+              handler?.onText?.(event.content);
+              observer.next(event);
+              break;
+
+            case 'tool_call_start':
+              pendingToolCalls.set(event.id, { id: event.id, name: event.name, arguments: '' });
+              this.tracer.log(parentSpan.spanId, `Tool call started: ${event.name}`);
+              handler?.onToolCallStart?.(event.id, event.name);
+              observer.next(event);
+              break;
+
+            case 'tool_call_delta': {
+              const pending = pendingToolCalls.get(event.id);
+              if (pending) {
+                pending.arguments += event.arguments;
+              }
+              handler?.onToolCallDelta?.(event.id, event.arguments);
+              observer.next(event);
+              break;
+            }
+
+            case 'tool_call_end': {
+              const toolCall = pendingToolCalls.get(event.id);
+              if (toolCall) {
+                executeToolCall(toolCall).catch(reject);
+              } else {
+                handler?.onToolCallEnd?.(event.id, event.result);
+                observer.next(event);
+              }
+              break;
+            }
+
+            case 'done':
+              observer.next(event);
+              break;
+          }
+          } finally {
+            nextInProgress--;
+            tryResolve();
+          }
+        },
+        complete: () => {
+          streamDone = true;
+          if (pendingToolCalls.size > 0) {
+            executePendingToolCalls();
+          }
+          tryResolve();
+        },
+        error: (err) => {
+          reject(err);
+        },
+      });
+    });
   }
 }
