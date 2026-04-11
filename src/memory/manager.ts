@@ -20,6 +20,7 @@ export class MemoryManager implements HistoryManager {
   private observations: Observation[] = [];
   private loaded: boolean = false;
   private loadPromise: Promise<void> | null = null;
+  private savePromise: Promise<void> | null = null;
 
   constructor(config?: MemoryManagerConfig) {
     this.config = config ?? {};
@@ -88,6 +89,17 @@ export class MemoryManager implements HistoryManager {
   }
 
   async save(): Promise<void> {
+    if (this.savePromise) return this.savePromise;
+
+    this.savePromise = this._doSave();
+    try {
+      await this.savePromise;
+    } finally {
+      this.savePromise = null;
+    }
+  }
+
+  private async _doSave(): Promise<void> {
     const existingThread = await this.storage.getThread(this.threadId);
     await this.storage.saveThread({
       id: this.threadId,
@@ -95,19 +107,24 @@ export class MemoryManager implements HistoryManager {
       updatedAt: new Date(),
     });
 
+    const existingMessages = await this.storage.getMessages(this.threadId);
+    const currentMessages = this.messageHistory.getMessages();
+
     if (existingThread) {
-      const existingMessages = await this.storage.getMessages(this.threadId);
-      const currentMessages = this.messageHistory.getMessages();
       const newMessageCount = currentMessages.length - existingMessages.length;
       if (newMessageCount > 0) {
         const newMessages = currentMessages.slice(existingMessages.length);
         for (const msg of newMessages) {
           await this.storage.addMessage(this.threadId, msg);
         }
+      } else if (newMessageCount < 0) {
+        const overwriteMessages = currentMessages.slice();
+        for (const msg of overwriteMessages) {
+          await this.storage.addMessage(this.threadId, msg);
+        }
       }
     } else {
-      const messages = this.messageHistory.getMessages();
-      for (const msg of messages) {
+      for (const msg of currentMessages) {
         await this.storage.addMessage(this.threadId, msg);
       }
     }

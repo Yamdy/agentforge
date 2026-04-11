@@ -160,6 +160,9 @@ export class PluginManager {
       }
     }
 
+    const subject = this.getOrCreateSubject(event);
+    subject.next({ event, input, output: modifiedOutput });
+
     return modifiedOutput;
   }
 

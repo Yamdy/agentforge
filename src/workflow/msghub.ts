@@ -7,18 +7,18 @@ export class MsgHub implements MsgHubType {
   private _participants: Agent[];
   private _enableAutoBroadcast: boolean;
   private _name?: string;
-  private _maxBroadcastDepth: number;
+  private _maxBroadcastCount: number;
   private messagesSubject: Subject<Message> = new Subject();
   private pendingAnnouncements: Message[] = [];
   public readonly messages$: Observable<Message>;
   private agentResponseSubscriptions: Map<Agent, Subscription> = new Map();
-  private broadcastDepth: number = 0;
+  private totalBroadcastCount: number = 0;
 
   constructor(config: MsgHubConfig) {
     this._participants = [...config.participants];
     this._enableAutoBroadcast = config.enableAutoBroadcast ?? true;
     this._name = config.name;
-    this._maxBroadcastDepth = config.maxBroadcastDepth ?? 10;
+    this._maxBroadcastCount = config.maxBroadcastDepth ?? 50;
 
     if (config.announcement) {
       const announcements = Array.isArray(config.announcement)
@@ -79,6 +79,10 @@ export class MsgHub implements MsgHubType {
     }
   }
 
+  resetBroadcastCount(): void {
+    this.totalBroadcastCount = 0;
+  }
+
   private setupAutoBroadcast(agent: Agent): void {
     const existing = this.agentResponseSubscriptions.get(agent);
     if (existing) {
@@ -86,25 +90,22 @@ export class MsgHub implements MsgHubType {
     }
 
     const sub = agent.onResponse().subscribe((response) => {
-      if (this.broadcastDepth >= this._maxBroadcastDepth) {
+      if (this.totalBroadcastCount >= this._maxBroadcastCount) {
         return;
       }
 
-      this.broadcastDepth++;
-      try {
-        const broadcastMessage: Message = {
-          role: response.role,
-          content: response.content,
-        };
-        this.messagesSubject.next(broadcastMessage);
+      this.totalBroadcastCount++;
 
-        for (const participant of this._participants) {
-          if (participant !== agent) {
-            participant.observe(broadcastMessage);
-          }
+      const broadcastMessage: Message = {
+        role: response.role,
+        content: response.content,
+      };
+      this.messagesSubject.next(broadcastMessage);
+
+      for (const participant of this._participants) {
+        if (participant !== agent) {
+          participant.observe(broadcastMessage);
         }
-      } finally {
-        this.broadcastDepth--;
       }
     });
 

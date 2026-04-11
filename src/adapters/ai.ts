@@ -1,5 +1,5 @@
 import * as https from 'node:https';
-import { streamText } from 'ai';
+import { streamText, type ModelMessage } from 'ai';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { z } from 'zod';
 import {
@@ -203,11 +203,78 @@ export class AIAdapter implements LLMAdapter {
     return result;
   }
 
-  private toModelMessages(messages: Message[]): Array<{ role: string; content: string }> {
-    return messages.map((msg) => ({
-      role: msg.role,
-      content: msg.content,
-    }));
+  private toModelMessages(messages: Message[]): Array<{
+    role: 'system' | 'user' | 'assistant' | 'tool';
+    content: string;
+    tool_call_id?: string;
+    tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>;
+  }> {
+    const result: Array<{
+      role: 'system' | 'user' | 'assistant' | 'tool';
+      content: string;
+      tool_call_id?: string;
+      tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>;
+    }> = [];
+    const pendingToolCalls: Array<{ id: string; name: string }> = [];
+
+    for (const msg of messages) {
+      if (msg.role === 'user') {
+        result.push({ role: 'user', content: msg.content });
+      } else if (msg.role === 'assistant') {
+        if (msg.toolCallId && msg.toolName) {
+          pendingToolCalls.push({ id: msg.toolCallId, name: msg.toolName });
+        } else {
+          if (pendingToolCalls.length > 0) {
+            result.push({
+              role: 'assistant',
+              content: msg.content,
+              tool_calls: pendingToolCalls.map((tc) => ({
+                id: tc.id,
+                type: 'function' as const,
+                function: { name: tc.name, arguments: '{}' },
+              })),
+            });
+            pendingToolCalls.length = 0;
+          } else {
+            result.push({ role: 'assistant', content: msg.content });
+          }
+        }
+      } else if (msg.role === 'tool') {
+        if (pendingToolCalls.length > 0) {
+          result.push({
+            role: 'assistant',
+            content: '',
+            tool_calls: pendingToolCalls.map((tc) => ({
+              id: tc.id,
+              type: 'function' as const,
+              function: { name: tc.name, arguments: '{}' },
+            })),
+          });
+          pendingToolCalls.length = 0;
+        }
+        result.push({
+          role: 'tool',
+          content: msg.content,
+          tool_call_id: msg.toolCallId ?? '',
+        });
+      } else if (msg.role === 'system') {
+        result.push({ role: 'system', content: msg.content });
+      }
+    }
+
+    if (pendingToolCalls.length > 0) {
+      result.push({
+        role: 'assistant',
+        content: '',
+        tool_calls: pendingToolCalls.map((tc) => ({
+          id: tc.id,
+          type: 'function' as const,
+          function: { name: tc.name, arguments: '{}' },
+        })),
+      });
+    }
+
+    return result;
   }
 
   async chat(messages: Message[]): Promise<LLMResponse> {
@@ -240,6 +307,35 @@ export class AIAdapter implements LLMAdapter {
       const model = this.createModel();
       const tools = this.useTools ? this.getTools() : {};
       const hasTimeout = this.timeout.firstToken || this.timeout.chunk || this.timeout.total;
+      const modelMessages = this.toModelMessages(messages);
+
+      const streamConfig = {
+        model,
+        messages: modelMessages as unknown as ModelMessage[],
+        tools:
+          this.useTools && Object.keys(tools).length > 0
+            ? (tools as unknown as Parameters<typeof streamText>[0]['tools'])
+            : undefined,
+        maxRetries: 0,
+      };
+
+      const mapEvent = (event: { type: string; [key: string]: unknown }): StreamEvent | null => {
+        if (event.type === 'text-delta') {
+          return { type: 'text', content: event.text as string };
+        } else if (event.type === 'tool-call') {
+          return null;
+        } else if (event.type === 'finish') {
+          return {
+            type: 'done',
+            response: {
+              content: null,
+              finishReason: event.finishReason as LLMResponse['finishReason'],
+              toolCalls: [],
+            },
+          };
+        }
+        return null;
+      };
 
       if (hasTimeout) {
         const overallAbort = new AbortController();
@@ -281,13 +377,7 @@ export class AIAdapter implements LLMAdapter {
         }
 
         const result = streamText({
-          model,
-          messages: this.toModelMessages(messages) as Parameters<typeof streamText>[0]['messages'] & {},
-          tools:
-            this.useTools && Object.keys(tools).length > 0
-              ? (tools as unknown as Parameters<typeof streamText>[0]['tools'])
-              : undefined,
-          maxRetries: 0,
+          ...streamConfig,
           abortSignal: overallAbort.signal,
         });
 
@@ -302,32 +392,20 @@ export class AIAdapter implements LLMAdapter {
               }
               resetChunkTimeout();
 
-              if (event.type === 'text-delta') {
-                observer.next({ type: 'text', content: event.text });
-              } else if (event.type === 'tool-call') {
+              if (event.type === 'tool-call') {
                 observer.next({
                   type: 'tool_call_start',
-                  id: event.toolCallId,
-                  name: event.toolName,
+                  id: event.toolCallId as string,
+                  name: event.toolName as string,
                 });
                 observer.next({
                   type: 'tool_call_delta',
-                  id: event.toolCallId,
+                  id: event.toolCallId as string,
                   arguments: JSON.stringify(event.input),
                 });
-              } else if (event.type === 'tool-result') {
-                const output =
-                  typeof event.output === 'string' ? event.output : JSON.stringify(event.output);
-                observer.next({ type: 'tool_call_end', id: event.toolCallId, result: output });
-              } else if (event.type === 'finish') {
-                observer.next({
-                  type: 'done',
-                  response: {
-                    content: null,
-                    finishReason: event.finishReason as LLMResponse['finishReason'],
-                    toolCalls: [],
-                  },
-                });
+              } else {
+                const mapped = mapEvent(event);
+                if (mapped) observer.next(mapped);
               }
             }
             clearFirstTokenTimeout();
@@ -347,47 +425,27 @@ export class AIAdapter implements LLMAdapter {
         };
       }
 
-      const result = streamText({
-        model,
-        messages: this.toModelMessages(messages) as Parameters<typeof streamText>[0]['messages'] & {},
-        tools:
-          this.useTools && Object.keys(tools).length > 0
-            ? (tools as unknown as Parameters<typeof streamText>[0]['tools'])
-            : undefined,
-        maxRetries: 0,
-      });
+      const result = streamText(streamConfig);
 
       (async () => {
         try {
           for await (const event of result.fullStream) {
             if (observer.closed) break;
 
-            if (event.type === 'text-delta') {
-              observer.next({ type: 'text', content: event.text });
-            } else if (event.type === 'tool-call') {
+            if (event.type === 'tool-call') {
               observer.next({
                 type: 'tool_call_start',
-                id: event.toolCallId,
-                name: event.toolName,
+                id: event.toolCallId as string,
+                name: event.toolName as string,
               });
               observer.next({
                 type: 'tool_call_delta',
-                id: event.toolCallId,
+                id: event.toolCallId as string,
                 arguments: JSON.stringify(event.input),
               });
-            } else if (event.type === 'tool-result') {
-              const output =
-                typeof event.output === 'string' ? event.output : JSON.stringify(event.output);
-              observer.next({ type: 'tool_call_end', id: event.toolCallId, result: output });
-            } else if (event.type === 'finish') {
-              observer.next({
-                type: 'done',
-                response: {
-                  content: null,
-                  finishReason: event.finishReason as LLMResponse['finishReason'],
-                  toolCalls: [],
-                },
-              });
+            } else {
+              const mapped = mapEvent(event);
+              if (mapped) observer.next(mapped);
             }
           }
           observer.complete();

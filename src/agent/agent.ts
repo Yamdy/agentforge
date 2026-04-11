@@ -13,6 +13,7 @@ import { PluginManager } from '../plugin/index.js';
 import { createLogger } from '../logger/index.js';
 import { getTracer } from '../tracer.js';
 import { Observable, Subject } from 'rxjs';
+import { setCurrentMemory } from '../context.js';
 import { Middleware } from '../middleware/index.js';
 import { createMiddlewarePipeline } from '../middleware/index.js';
 import type { MemoryManager } from '../memory/manager.js';
@@ -133,19 +134,23 @@ export class Agent {
 
   async run(userInput: string, options?: RunOptions): Promise<string> {
     return new Promise((resolve, reject) => {
-      let result = '';
+      let lastStepText = '';
       this.runStream(userInput, options).subscribe({
         next: (event) => {
           if (event.type === 'text') {
-            result += event.content;
-          } else if (event.type === 'done' && event.response.content) {
-            result = event.response.content;
+            lastStepText += event.content;
+          } else if (event.type === 'done') {
+            if (event.response.content) {
+              lastStepText = event.response.content;
+            }
+          } else if (event.type === 'tool_call_start') {
+            lastStepText = '';
           }
         },
         complete: () => {
           this.persistMemory()
-            .then(() => resolve(result))
-            .catch(() => resolve(result));
+            .then(() => resolve(lastStepText))
+            .catch(() => resolve(lastStepText));
         },
         error: (err) => {
           this.persistMemory()
@@ -189,16 +194,22 @@ export class Agent {
 
         this.history.add('user', userInput);
 
+        setCurrentMemory({
+          messages: this.history.getMessages(),
+          sessionId: this.memoryManager?.threadIdField,
+        });
+
         this.pluginManager.trigger('chat.message', { role: 'user', content: userInput }, { content: userInput }).catch(() => {});
 
-        const initialState = this.stateMachine.getState();
+        let previousStatus = this.stateMachine.getState().status;
         this.stateMachine.onStateChange(async (state) => {
           handler?.onStateChange?.(state);
           await this.pluginManager.trigger(
             'state.change',
-            { from: initialState.status, to: state.status },
+            { from: previousStatus, to: state.status },
             {}
           );
+          previousStatus = state.status;
         });
         this.stateMachine.transition('running');
 
