@@ -16,6 +16,7 @@ export class DelegationManager {
     config?: DelegationConfig
   ): Promise<string> {
     const startTime = Date.now();
+    // iteration is a reserved field, currently no retry logic
     const iteration = 0;
 
     const subAgent = registry.get(subAgentName);

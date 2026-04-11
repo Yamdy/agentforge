@@ -6,6 +6,7 @@ export const MessageSchema = z.object({
   content: z.string(),
   toolCallId: z.string().optional(),
   toolName: z.string().optional(),
+  toolArguments: z.string().optional(),
 });
 export type Message = z.infer<typeof MessageSchema>;
 
@@ -37,6 +38,7 @@ export const ToolResultSchema = z.object({
   toolCallId: z.string(),
   toolName: z.string(),
   result: z.string(),
+  toolArguments: z.string().optional(),
 });
 export type ToolResult = z.infer<typeof ToolResultSchema>;
 
@@ -98,7 +100,7 @@ export interface TimeoutConfig {
 
 export type HistoryManager = {
   add(role: 'user' | 'assistant' | 'tool', content: string): void;
-  addToolResult(toolCallId: string, toolName: string, result: string): void;
+  addToolResult(toolCallId: string, toolName: string, result: string, toolArguments?: string): void;
   getMessages(): Message[];
   clear(): void;
 };

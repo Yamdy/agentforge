@@ -215,42 +215,76 @@ export class AIAdapter implements LLMAdapter {
       tool_call_id?: string;
       tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>;
     }> = [];
-    const pendingToolCalls: Array<{ id: string; name: string }> = [];
+
+    const toolMessages = new Map<string, { name: string; arguments: string }>();
+
+    for (const msg of messages) {
+      if (msg.role === 'tool' && msg.toolCallId) {
+        toolMessages.set(msg.toolCallId, {
+          name: msg.toolName ?? '',
+          arguments: msg.toolArguments ?? '{}',
+        });
+      }
+    }
+
+    const pendingToolCallIds: string[] = [];
 
     for (const msg of messages) {
       if (msg.role === 'user') {
         result.push({ role: 'user', content: msg.content });
       } else if (msg.role === 'assistant') {
         if (msg.toolCallId && msg.toolName) {
-          pendingToolCalls.push({ id: msg.toolCallId, name: msg.toolName });
+          pendingToolCallIds.push(msg.toolCallId);
         } else {
-          if (pendingToolCalls.length > 0) {
-            result.push({
-              role: 'assistant',
-              content: msg.content,
-              tool_calls: pendingToolCalls.map((tc) => ({
-                id: tc.id,
-                type: 'function' as const,
-                function: { name: tc.name, arguments: '{}' },
-              })),
-            });
-            pendingToolCalls.length = 0;
+          if (pendingToolCallIds.length > 0) {
+            const toolCalls = pendingToolCallIds
+              .map((id) => {
+                const toolInfo = toolMessages.get(id);
+                if (!toolInfo) return null;
+                return {
+                  id,
+                  type: 'function' as const,
+                  function: { name: toolInfo.name, arguments: toolInfo.arguments },
+                };
+              })
+              .filter((tc): tc is NonNullable<typeof tc> => tc !== null);
+
+            if (toolCalls.length > 0) {
+              result.push({
+                role: 'assistant',
+                content: msg.content,
+                tool_calls: toolCalls,
+              });
+            } else {
+              result.push({ role: 'assistant', content: msg.content });
+            }
+            pendingToolCallIds.length = 0;
           } else {
             result.push({ role: 'assistant', content: msg.content });
           }
         }
       } else if (msg.role === 'tool') {
-        if (pendingToolCalls.length > 0) {
-          result.push({
-            role: 'assistant',
-            content: '',
-            tool_calls: pendingToolCalls.map((tc) => ({
-              id: tc.id,
-              type: 'function' as const,
-              function: { name: tc.name, arguments: '{}' },
-            })),
-          });
-          pendingToolCalls.length = 0;
+        if (pendingToolCallIds.length > 0) {
+          const toolCalls = pendingToolCallIds
+            .map((id) => {
+              const toolInfo = toolMessages.get(id);
+              if (!toolInfo) return null;
+              return {
+                id,
+                type: 'function' as const,
+                function: { name: toolInfo.name, arguments: toolInfo.arguments },
+              };
+            })
+            .filter((tc): tc is NonNullable<typeof tc> => tc !== null);
+
+          if (toolCalls.length > 0) {
+            result.push({
+              role: 'assistant',
+              content: '',
+              tool_calls: toolCalls,
+            });
+          }
+          pendingToolCallIds.length = 0;
         }
         result.push({
           role: 'tool',
@@ -262,16 +296,26 @@ export class AIAdapter implements LLMAdapter {
       }
     }
 
-    if (pendingToolCalls.length > 0) {
-      result.push({
-        role: 'assistant',
-        content: '',
-        tool_calls: pendingToolCalls.map((tc) => ({
-          id: tc.id,
-          type: 'function' as const,
-          function: { name: tc.name, arguments: '{}' },
-        })),
-      });
+    if (pendingToolCallIds.length > 0) {
+      const toolCalls = pendingToolCallIds
+        .map((id) => {
+          const toolInfo = toolMessages.get(id);
+          if (!toolInfo) return null;
+          return {
+            id,
+            type: 'function' as const,
+            function: { name: toolInfo.name, arguments: toolInfo.arguments },
+          };
+        })
+        .filter((tc): tc is NonNullable<typeof tc> => tc !== null);
+
+      if (toolCalls.length > 0) {
+        result.push({
+          role: 'assistant',
+          content: '',
+          tool_calls: toolCalls,
+        });
+      }
     }
 
     return result;

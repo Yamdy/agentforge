@@ -375,7 +375,7 @@ export class Agent {
 
           this.tracer.endSpan(toolSpan.spanId, 'completed');
 
-          this.history.addToolResult(toolCall.id, toolCall.name, execResult);
+          this.history.addToolResult(toolCall.id, toolCall.name, execResult, toolCall.arguments);
           handler?.onToolCallEnd?.(toolCall.id, execResult);
           observer.next({
             type: 'tool_call_end',
@@ -393,7 +393,7 @@ export class Agent {
             tool: toolCall.name,
             error: errorMsg,
           });
-          this.history.addToolResult(toolCall.id, toolCall.name, `Error: ${errorMsg}`);
+          this.history.addToolResult(toolCall.id, toolCall.name, `Error: ${errorMsg}`, toolCall.arguments);
           handler?.onToolCallEnd?.(toolCall.id, `Error: ${errorMsg}`);
           observer.next({
             type: 'tool_call_end',

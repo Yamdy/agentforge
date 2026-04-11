@@ -142,12 +142,13 @@ export class MemoryManager implements HistoryManager {
     this.messageHistory.add({ role, content });
   }
 
-  addToolResult(toolCallId: string, toolName: string, result: string): void {
+  addToolResult(toolCallId: string, toolName: string, result: string, toolArguments?: string): void {
     this.messageHistory.add({
       role: 'tool',
       content: result,
       toolCallId,
       toolName,
+      toolArguments,
     });
   }
 

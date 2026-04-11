@@ -19,10 +19,10 @@ export class InMemoryHistory implements HistoryManager {
     });
   }
 
-  addToolResult(toolCallId: string, toolName: string, result: string): void {
+  addToolResult(toolCallId: string, toolName: string, result: string, toolArguments?: string): void {
     this.entries.push({
       type: 'toolResult',
-      toolResult: { toolCallId, toolName, result },
+      toolResult: { toolCallId, toolName, result, toolArguments },
       order: this.order++,
     });
   }
@@ -45,6 +45,7 @@ export class InMemoryHistory implements HistoryManager {
           content: entry.toolResult.result,
           toolCallId: entry.toolResult.toolCallId,
           toolName: entry.toolResult.toolName,
+          toolArguments: entry.toolResult.toolArguments,
         };
       }
       return { role: 'user' as const, content: '' };
