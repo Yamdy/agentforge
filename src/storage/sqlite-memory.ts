@@ -61,6 +61,8 @@ export class SQLiteMemoryStorage implements MemoryStorage {
         thread_id TEXT NOT NULL,
         role TEXT NOT NULL,
         content TEXT NOT NULL,
+        tool_call_id TEXT,
+        tool_name TEXT,
         created_at REAL NOT NULL,
         FOREIGN KEY (thread_id) REFERENCES threads(id) ON DELETE CASCADE
       );`,
@@ -84,6 +86,19 @@ export class SQLiteMemoryStorage implements MemoryStorage {
 
     for (const query of queries) {
       this.db!.run(query);
+    }
+
+    const migrations = [
+      'ALTER TABLE messages ADD COLUMN tool_call_id TEXT',
+      'ALTER TABLE messages ADD COLUMN tool_name TEXT',
+    ];
+
+    for (const migration of migrations) {
+      try {
+        this.db!.run(migration);
+      } catch {
+        // Column already exists, ignore
+      }
     }
   }
 
@@ -159,27 +174,37 @@ export class SQLiteMemoryStorage implements MemoryStorage {
   async getMessages(threadId: string): Promise<Message[]> {
     this.ensureInitialized();
     const result = this.db!.exec(
-      'SELECT role, content FROM messages WHERE thread_id = ? ORDER BY id ASC',
+      'SELECT role, content, tool_call_id, tool_name FROM messages WHERE thread_id = ? ORDER BY id ASC',
       [threadId]
     );
 
     if (result.length === 0) return [];
 
-    return result[0].values.map(([role, content]) => ({
-      role: role as 'system' | 'user' | 'assistant' | 'tool',
-      content: content as string,
-    })) as Message[];
+    return result[0].values.map(([role, content, toolCallId, toolName]) => {
+      const message: Record<string, unknown> = {
+        role: role as 'system' | 'user' | 'assistant' | 'tool',
+        content: content as string,
+      };
+      if (toolCallId) {
+        message.toolCallId = toolCallId as string;
+      }
+      if (toolName) {
+        message.toolName = toolName as string;
+      }
+      return message as Message;
+    });
   }
 
   async addMessage(threadId: string, message: Message): Promise<void> {
     this.ensureInitialized();
     const timestamp = Date.now();
+    const toolCallId = (message as Record<string, unknown>).toolCallId as string | undefined;
+    const toolName = (message as Record<string, unknown>).toolName as string | undefined;
     this.db!.run(
-      'INSERT INTO messages (thread_id, role, content, created_at) VALUES (?, ?, ?, ?)',
-      [threadId, message.role, message.content, timestamp]
+      'INSERT INTO messages (thread_id, role, content, tool_call_id, tool_name, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      [threadId, message.role, message.content, toolCallId ?? null, toolName ?? null, timestamp]
     );
 
-    // Update thread's updated_at
     this.db!.run('UPDATE threads SET updated_at = ? WHERE id = ?', [timestamp, threadId]);
   }
 

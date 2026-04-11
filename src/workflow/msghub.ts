@@ -7,16 +7,18 @@ export class MsgHub implements MsgHubType {
   private _participants: Agent[];
   private _enableAutoBroadcast: boolean;
   private _name?: string;
+  private _maxBroadcastDepth: number;
   private messagesSubject: Subject<Message> = new Subject();
   private pendingAnnouncements: Message[] = [];
   public readonly messages$: Observable<Message>;
-  private subscriptions: Map<Agent, Subscription> = new Map();
   private agentResponseSubscriptions: Map<Agent, Subscription> = new Map();
+  private broadcastDepth: number = 0;
 
   constructor(config: MsgHubConfig) {
     this._participants = [...config.participants];
     this._enableAutoBroadcast = config.enableAutoBroadcast ?? true;
     this._name = config.name;
+    this._maxBroadcastDepth = config.maxBroadcastDepth ?? 10;
 
     if (config.announcement) {
       const announcements = Array.isArray(config.announcement)
@@ -71,6 +73,10 @@ export class MsgHub implements MsgHubType {
 
   broadcast(message: Message): void {
     this.messagesSubject.next(message);
+
+    for (const participant of this._participants) {
+      participant.observe(message);
+    }
   }
 
   private setupAutoBroadcast(agent: Agent): void {
@@ -80,16 +86,25 @@ export class MsgHub implements MsgHubType {
     }
 
     const sub = agent.onResponse().subscribe((response) => {
-      const broadcastMessage: Message = {
-        role: response.role,
-        content: response.content,
-      };
-      this.broadcast(broadcastMessage);
+      if (this.broadcastDepth >= this._maxBroadcastDepth) {
+        return;
+      }
 
-      for (const participant of this._participants) {
-        if (participant !== agent) {
-          participant.observe(broadcastMessage);
+      this.broadcastDepth++;
+      try {
+        const broadcastMessage: Message = {
+          role: response.role,
+          content: response.content,
+        };
+        this.messagesSubject.next(broadcastMessage);
+
+        for (const participant of this._participants) {
+          if (participant !== agent) {
+            participant.observe(broadcastMessage);
+          }
         }
+      } finally {
+        this.broadcastDepth--;
       }
     });
 

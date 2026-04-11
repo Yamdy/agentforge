@@ -80,6 +80,7 @@ export interface MsgHubConfig {
   participants: Agent[];
   announcement?: Message | Message[];
   enableAutoBroadcast?: boolean;
+  maxBroadcastDepth?: number;
   name?: string;
 }
 

@@ -2,40 +2,46 @@ import type { WorkflowStep, WorkflowContext, InputMapping } from '../types.js';
 import { WorkflowContextImpl } from '../context.js';
 
 interface StepNode {
+  type: 'step';
   id: string;
   step: WorkflowStep<unknown, unknown>;
   options?: { input?: InputMapping };
-  dependencies: string[];
 }
 
-interface ParallelStepGroup {
+interface ParallelNode {
+  type: 'parallel';
   steps: StepNode[];
 }
 
+interface BranchNode {
+  type: 'branch';
+  condition: (ctx: WorkflowContext) => boolean;
+  trueBranch: StepNode;
+  falseBranch: StepNode;
+}
+
+interface LoopNode {
+  type: 'loop';
+  condition: (ctx: WorkflowContext, iteration: number) => boolean;
+  loopStep: StepNode;
+  maxIterations: number;
+}
+
+type ExecutionNode = StepNode | ParallelNode | BranchNode | LoopNode;
+
 export class DefaultExecutor {
-  private steps: StepNode[] = [];
-  private parallelGroups: ParallelStepGroup[] = [];
-  private branch?: {
-    condition: (ctx: WorkflowContext) => boolean;
-    trueBranch: StepNode;
-    falseBranch: StepNode;
-  };
-  private loop?: {
-    condition: (ctx: WorkflowContext, iteration: number) => boolean;
-    loopStep: StepNode;
-    maxIterations: number;
-  };
+  private nodes: ExecutionNode[] = [];
 
   addStep(
     id: string,
     step: WorkflowStep<unknown, unknown>,
     options?: { input?: InputMapping }
   ): void {
-    this.steps.push({ id, step, options, dependencies: [] });
+    this.nodes.push({ type: 'step', id, step, options });
   }
 
   addParallelGroup(steps: StepNode[]): void {
-    this.parallelGroups.push({ steps });
+    this.nodes.push({ type: 'parallel', steps });
   }
 
   setBranch(
@@ -43,21 +49,12 @@ export class DefaultExecutor {
     trueBranch: { id: string; step: WorkflowStep<unknown, unknown> },
     falseBranch: { id: string; step: WorkflowStep<unknown, unknown> }
   ): void {
-    this.branch = {
+    this.nodes.push({
+      type: 'branch',
       condition,
-      trueBranch: {
-        id: trueBranch.id,
-        step: trueBranch.step,
-        options: undefined,
-        dependencies: [],
-      },
-      falseBranch: {
-        id: falseBranch.id,
-        step: falseBranch.step,
-        options: undefined,
-        dependencies: [],
-      },
-    };
+      trueBranch: { type: 'step', id: trueBranch.id, step: trueBranch.step },
+      falseBranch: { type: 'step', id: falseBranch.id, step: falseBranch.step },
+    });
   }
 
   setLoop(
@@ -65,68 +62,72 @@ export class DefaultExecutor {
     loopStep: { id: string; step: WorkflowStep<unknown, unknown> },
     maxIterations: number = 100
   ): void {
-    this.loop = {
+    this.nodes.push({
+      type: 'loop',
       condition,
-      loopStep: {
-        id: loopStep.id,
-        step: loopStep.step,
-        options: undefined,
-        dependencies: [],
-      },
+      loopStep: { type: 'step', id: loopStep.id, step: loopStep.step },
       maxIterations: Math.max(1, maxIterations),
-    };
+    });
   }
 
   async execute<TInput, TOutput>(input: TInput): Promise<TOutput> {
     const context = new WorkflowContextImpl();
     let currentInput: unknown = input;
 
-    for (const node of this.steps) {
-      const stepInput = this.resolveInput(node.options?.input, context, currentInput);
-      const result = await node.step.execute(stepInput, context);
-      context.setResult(node.id, result);
-      currentInput = result;
-    }
-
-    for (const group of this.parallelGroups) {
-      const results = await Promise.all(
-        group.steps.map(async (node) => {
+    for (const node of this.nodes) {
+      switch (node.type) {
+        case 'step': {
           const stepInput = this.resolveInput(node.options?.input, context, currentInput);
           const result = await node.step.execute(stepInput, context);
           context.setResult(node.id, result);
-          return { id: node.id, result };
-        })
-      );
+          currentInput = result;
+          break;
+        }
 
-      const parallelResults: Record<string, unknown> = {};
-      for (const { id, result } of results) {
-        parallelResults[id] = result;
+        case 'parallel': {
+          const results = await Promise.all(
+            node.steps.map(async (stepNode) => {
+              const stepInput = this.resolveInput(stepNode.options?.input, context, currentInput);
+              const result = await stepNode.step.execute(stepInput, context);
+              context.setResult(stepNode.id, result);
+              return { id: stepNode.id, result };
+            })
+          );
+
+          const parallelResults: Record<string, unknown> = {};
+          for (const { id, result } of results) {
+            parallelResults[id] = result;
+          }
+          currentInput = parallelResults;
+          break;
+        }
+
+        case 'branch': {
+          const conditionResult = node.condition(context);
+          const selectedNode = conditionResult ? node.trueBranch : node.falseBranch;
+          const stepInput = this.resolveInput(selectedNode.options?.input, context, currentInput);
+          const result = await selectedNode.step.execute(stepInput, context);
+          context.setResult(selectedNode.id, result);
+          currentInput = result;
+          break;
+        }
+
+        case 'loop': {
+          let iteration = 0;
+          let lastResult = currentInput;
+
+          while (node.condition(context, iteration) && iteration < node.maxIterations) {
+            const stepInput = this.resolveInput(node.loopStep.options?.input, context, lastResult);
+            const result = await node.loopStep.step.execute(stepInput, context);
+            context.setResult(node.loopStep.id, result);
+            lastResult = result;
+            iteration++;
+          }
+
+          currentInput = lastResult;
+          break;
+        }
       }
-      currentInput = parallelResults;
-    }
-
-    if (this.branch) {
-      const conditionResult = this.branch.condition(context);
-      const selectedNode = conditionResult ? this.branch.trueBranch : this.branch.falseBranch;
-      const stepInput = this.resolveInput(selectedNode.options?.input, context, currentInput);
-      const result = await selectedNode.step.execute(stepInput, context);
-      context.setResult(selectedNode.id, result);
-      currentInput = result;
-    }
-
-    if (this.loop) {
-      let iteration = 0;
-      let lastResult = currentInput;
-
-      while (this.loop.condition(context, iteration) && iteration < this.loop.maxIterations) {
-        const stepInput = this.resolveInput(this.loop.loopStep.options?.input, context, lastResult);
-        const result = await this.loop.loopStep.step.execute(stepInput, context);
-        context.setResult(this.loop.loopStep.id, result);
-        lastResult = result;
-        iteration++;
-      }
-
-      currentInput = lastResult;
     }
 
     return currentInput as TOutput;

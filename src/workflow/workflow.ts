@@ -48,10 +48,10 @@ class WorkflowBuilder<TInput = unknown, TOutput = unknown> implements Workflow<T
     _options?: ParallelOptions
   ): WorkflowBuilder<TInput, TO[]> {
     const stepNodes = stepIds.map((id, i) => ({
+      type: 'step' as const,
       id,
       step: steps[i] as WorkflowStep<unknown, unknown>,
       options: undefined as { input?: InputMapping } | undefined,
-      dependencies: [] as string[],
     }));
     this.executor.addParallelGroup(stepNodes);
     this.lastStepId = stepIds[stepIds.length - 1];
