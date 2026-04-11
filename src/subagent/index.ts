@@ -7,14 +7,16 @@ export { createDelegateToSubAgentTool, createListSubAgentsTool } from './tool.js
 import { registry } from './registry.js';
 import { delegation } from './delegation.js';
 import { createDelegateToSubAgentTool, createListSubAgentsTool } from './tool.js';
+import type { SubAgentRegistration, DelegationConfig } from './types.js';
+import type { Message } from '../types.js';
 
 export const SubAgent = {
-  register: (config: any) => registry.register(config),
+  register: (config: SubAgentRegistration) => registry.register(config),
   list: () => registry.list(),
   get: (name: string) => registry.get(name),
   getAgent: (name: string) => registry.getAgent(name),
   getTools: (name: string) => registry.getTools(name),
-  delegate: (name: string, prompt: string, messages: any[], config?: any) =>
+  delegate: (name: string, prompt: string, messages: Message[], config?: DelegationConfig) =>
     delegation.delegate(name, prompt, messages, config),
   createDelegateToSubAgentTool,
   createListSubAgentsTool,

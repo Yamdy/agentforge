@@ -12,15 +12,17 @@ import { ToolRegistry } from '../registry';
 import { PluginManager } from '../plugin/index.js';
 import { createLogger } from '../logger/index.js';
 import { getTracer } from '../tracer.js';
-import { Observable } from 'rxjs';
+import { Observable, Subject } from 'rxjs';
 import { Middleware } from '../middleware/index.js';
 import { createMiddlewarePipeline } from '../middleware/index.js';
+import type { MemoryManager } from '../memory/manager.js';
 
 interface AgentOptions extends AgentConfig {
   registry?: ToolRegistry;
   pluginManager?: PluginManager;
   logger?: ReturnType<typeof createLogger>;
   middleware?: Middleware[];
+  memoryManager?: MemoryManager;
 }
 
 export interface StreamHandler {
@@ -46,6 +48,8 @@ export class Agent {
   private pluginManager: PluginManager;
   private log: ReturnType<typeof createLogger>;
   private tracer: ReturnType<typeof getTracer>;
+  private memoryManager?: MemoryManager;
+  private responseSubject: Subject<Message> = new Subject();
 
   private middleware: Middleware[] = [];
   private pipeline: Middleware;
@@ -66,6 +70,20 @@ export class Agent {
     this.tracer = getTracer();
     this.middleware = options?.middleware ?? [];
     this.pipeline = createMiddlewarePipeline(...this.middleware);
+    this.memoryManager = options?.memoryManager;
+  }
+
+  getMemoryManager(): MemoryManager | undefined {
+    return this.memoryManager;
+  }
+
+  observe(message: Message): void {
+    this.history.add(message.role as 'user' | 'assistant' | 'tool', message.content);
+    this.log.info('Agent observed message', { role: message.role });
+  }
+
+  onResponse(): Observable<Message> {
+    return this.responseSubject.asObservable();
   }
 
   getState(): TaskState {
@@ -96,6 +114,19 @@ export class Agent {
     this.log.info('Plugin registered', { name: plugin.name });
   }
 
+  private async persistMemory(): Promise<void> {
+    if (this.memoryManager) {
+      try {
+        await this.memoryManager.save();
+        this.log.info('Memory persisted after agent run');
+      } catch (err) {
+        this.log.error('Failed to persist memory', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  }
+
   async run(userInput: string, options?: RunOptions): Promise<string> {
     return new Promise((resolve, reject) => {
       let result = '';
@@ -106,12 +137,18 @@ export class Agent {
           } else if (event.type === 'tool_call_end' && event.result) {
             result += event.result;
           } else if (event.type === 'done' && event.response.content) {
-            // 如果 done 事件有 content，使用它作为最终结果
             result = event.response.content;
           }
         },
-        complete: () => resolve(result),
-        error: reject,
+        complete: () => {
+          this.persistMemory()
+            .then(() => resolve(result))
+            .catch(() => resolve(result));
+        },
+        error: (err) => {
+          this.persistMemory()
+            .finally(() => reject(err));
+        },
       });
     });
   }
@@ -127,6 +164,15 @@ export class Agent {
 
       const span = this.tracer.startSpan('agent.run');
       this.tracer.log(span.spanId, 'Agent run started', { userInput });
+
+      if (this.memoryManager && !this.memoryManager.isLoaded()) {
+        this.memoryManager.load().catch((err) => {
+          this.log.error('Failed to load memory', {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
+      }
+
       this.history.clear();
 
       for (const msg of sessionMessages) {
@@ -163,6 +209,7 @@ export class Agent {
 
           if (textContent.trim()) {
             this.history.add('assistant', textContent);
+            this.responseSubject.next({ role: 'assistant', content: textContent });
           }
 
           this.stateMachine.transition('completed');
@@ -309,8 +356,12 @@ export class Agent {
                 observer.next(event);
 
                 if (finishReason === 'tool-calls') {
+                  doneSent = false;
                   executeStep().catch(observer.error);
                 } else {
+                  if (textContent.trim()) {
+                    this.responseSubject.next({ role: 'assistant', content: textContent });
+                  }
                   this.stateMachine.transition('completed');
                   this.tracer.endSpan(span.spanId, 'completed');
                   this.log.info('Agent run completed', { textLength: textContent.length });
@@ -328,6 +379,7 @@ export class Agent {
 
               if (textContent.trim()) {
                 this.history.add('assistant', textContent);
+                this.responseSubject.next({ role: 'assistant', content: textContent });
               }
 
               this.stateMachine.transition('completed');

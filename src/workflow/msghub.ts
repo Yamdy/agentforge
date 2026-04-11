@@ -1,16 +1,22 @@
-import { Observable, Subject } from 'rxjs';
+import { Observable, Subject, Subscription } from 'rxjs';
 import type { MsgHubConfig, MsgHub as MsgHubType } from './types.js';
 import type { Agent } from '../agent/index.js';
 import type { Message } from '../types.js';
 
 export class MsgHub implements MsgHubType {
   private _participants: Agent[];
+  private _enableAutoBroadcast: boolean;
+  private _name?: string;
   private messagesSubject: Subject<Message> = new Subject();
   private pendingAnnouncements: Message[] = [];
   public readonly messages$: Observable<Message>;
+  private subscriptions: Map<Agent, Subscription> = new Map();
+  private agentResponseSubscriptions: Map<Agent, Subscription> = new Map();
 
   constructor(config: MsgHubConfig) {
     this._participants = [...config.participants];
+    this._enableAutoBroadcast = config.enableAutoBroadcast ?? true;
+    this._name = config.name;
 
     if (config.announcement) {
       const announcements = Array.isArray(config.announcement)
@@ -28,14 +34,27 @@ export class MsgHub implements MsgHubType {
       }
       this.messagesSubject.subscribe(subscriber);
     });
+
+    if (this._enableAutoBroadcast) {
+      for (const agent of this._participants) {
+        this.setupAutoBroadcast(agent);
+      }
+    }
   }
 
   get participants(): Agent[] {
     return [...this._participants];
   }
 
+  get name(): string | undefined {
+    return this._name;
+  }
+
   add(agent: Agent): void {
     this._participants.push(agent);
+    if (this._enableAutoBroadcast) {
+      this.setupAutoBroadcast(agent);
+    }
   }
 
   delete(agent: Agent): void {
@@ -43,13 +62,45 @@ export class MsgHub implements MsgHubType {
     if (index !== -1) {
       this._participants.splice(index, 1);
     }
+    const sub = this.agentResponseSubscriptions.get(agent);
+    if (sub) {
+      sub.unsubscribe();
+      this.agentResponseSubscriptions.delete(agent);
+    }
   }
 
   broadcast(message: Message): void {
     this.messagesSubject.next(message);
   }
 
+  private setupAutoBroadcast(agent: Agent): void {
+    const existing = this.agentResponseSubscriptions.get(agent);
+    if (existing) {
+      existing.unsubscribe();
+    }
+
+    const sub = agent.onResponse().subscribe((response) => {
+      const broadcastMessage: Message = {
+        role: response.role,
+        content: response.content,
+      };
+      this.broadcast(broadcastMessage);
+
+      for (const participant of this._participants) {
+        if (participant !== agent) {
+          participant.observe(broadcastMessage);
+        }
+      }
+    });
+
+    this.agentResponseSubscriptions.set(agent, sub);
+  }
+
   async [Symbol.asyncDispose](): Promise<void> {
+    for (const sub of this.agentResponseSubscriptions.values()) {
+      sub.unsubscribe();
+    }
+    this.agentResponseSubscriptions.clear();
     this.messagesSubject.complete();
   }
 }

@@ -13,6 +13,9 @@ import {
 import type { LLMAdapter, HistoryManager, RequestInterceptor } from '../types';
 import type { Middleware } from '../middleware/index.js';
 import { allTools } from '../tools/index.js';
+import type { MemoryManager } from '../memory/manager.js';
+import type { MemoryManagerConfig } from '../memory/types.js';
+import { createMemory } from '../memory/manager.js';
 
 export interface AgentFactoryOptions {
   adapter?: LLMAdapter;
@@ -21,6 +24,8 @@ export interface AgentFactoryOptions {
   pluginManager?: PluginManager;
   middleware?: Middleware[];
   registerBuiltinTools?: boolean;
+  memoryManager?: MemoryManager;
+  memoryConfig?: MemoryManagerConfig;
 }
 
 export class AgentFactory {
@@ -66,13 +71,27 @@ export class AgentFactory {
 
     const pluginManager = this.options.pluginManager ?? new PluginManager();
     const adapter = this.options.adapter ?? await this.createAdapter(modelConfig, pluginManager);
-    const history = this.options.history ?? this.createHistory();
+
+    let memoryManager = this.options.memoryManager;
+    let history: HistoryManager;
+
+    if (memoryManager) {
+      history = memoryManager;
+    } else if (this.options.memoryConfig) {
+      memoryManager = createMemory(this.options.memoryConfig);
+      await memoryManager.load();
+      history = memoryManager;
+    } else {
+      history = this.options.history ?? this.createHistory();
+    }
+
     const registry = this.options.registry ?? this.createRegistry(agentConfig);
 
     const agent = new Agent(adapter, history, registry, {
       ...agentConfig,
       pluginManager,
       middleware: this.options.middleware,
+      memoryManager,
     });
 
     this.log.info('Agent created successfully', { name: agentConfig.name });

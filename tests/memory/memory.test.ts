@@ -5,6 +5,7 @@ import {
   MessageHistory,
   WorkingMemory,
 } from '../../src/memory/index.js';
+import type { HistoryManager } from '../../src/types.js';
 
 describe('Memory System', () => {
   describe('MessageHistory', () => {
@@ -145,6 +146,93 @@ describe('Memory System', () => {
       memory.updateWorkingMemory('Updated');
       const updated = memory.getWorkingMemory();
       expect(updated?.content).toBe('Updated');
+    });
+  });
+
+  describe('MemoryManager as HistoryManager', () => {
+    test('should implement HistoryManager interface', async () => {
+      const memory = createMemory();
+      await memory.load();
+
+      const history: HistoryManager = memory;
+
+      history.add('user', 'Hello');
+      history.add('assistant', 'Hi there!');
+      history.addToolResult('call-1', 'bash', 'command output');
+
+      const messages = history.getMessages();
+      expect(messages).toHaveLength(3);
+      expect(messages[0]).toEqual({ role: 'user', content: 'Hello' });
+      expect(messages[1]).toEqual({ role: 'assistant', content: 'Hi there!' });
+      expect(messages[2]).toEqual({
+        role: 'tool',
+        content: 'command output',
+        toolCallId: 'call-1',
+        toolName: 'bash',
+      });
+    });
+
+    test('should clear all data including tool results', async () => {
+      const memory = createMemory();
+      await memory.load();
+
+      memory.add('user', 'Hello');
+      memory.addToolResult('call-1', 'bash', 'output');
+      memory.clear();
+
+      expect(memory.getMessages()).toHaveLength(0);
+    });
+
+    test('should persist messages via save/load', async () => {
+      const storage = new InMemoryStorage();
+      const threadId = 'test-thread-persist';
+
+      const memory1 = createMemory({ threadId, storage });
+      await memory1.load();
+
+      memory1.add('user', 'Hello from session 1');
+      memory1.add('assistant', 'Response');
+      await memory1.save();
+
+      const memory2 = createMemory({ threadId, storage });
+      await memory2.load();
+
+      const messages = memory2.getMessages();
+      expect(messages).toHaveLength(2);
+      expect(messages[0].content).toBe('Hello from session 1');
+      expect(messages[1].content).toBe('Response');
+    });
+
+    test('should persist working memory via save/load', async () => {
+      const storage = new InMemoryStorage();
+      const threadId = 'test-thread-wm';
+
+      const memory1 = createMemory({
+        threadId,
+        storage,
+        workingMemory: { enabled: true, template: 'Initial' },
+      });
+      await memory1.load();
+
+      memory1.updateWorkingMemory('Updated in session 1');
+      await memory1.save();
+
+      const memory2 = createMemory({
+        threadId,
+        storage,
+        workingMemory: { enabled: true },
+      });
+      await memory2.load();
+
+      expect(memory2.getWorkingMemory()?.content).toBe('Updated in session 1');
+    });
+
+    test('should report loaded state', async () => {
+      const memory = createMemory();
+      expect(memory.isLoaded()).toBe(false);
+
+      await memory.load();
+      expect(memory.isLoaded()).toBe(true);
     });
   });
 });

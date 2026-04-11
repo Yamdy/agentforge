@@ -85,6 +85,7 @@ export interface MsgHubConfig {
 
 export interface MsgHub {
   participants: Agent[];
+  name?: string;
   add(agent: Agent): void;
   delete(agent: Agent): void;
   broadcast(message: Message): void;

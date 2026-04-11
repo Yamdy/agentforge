@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import type { Message } from '../types.js';
+import type { Message, HistoryManager } from '../types.js';
 import type {
   MemoryManagerConfig,
   MemoryStorage,
@@ -11,7 +11,7 @@ import { MessageHistory } from './message-history.js';
 import { WorkingMemory } from './working-memory.js';
 import { InMemoryStorage } from './storages/inmemory.js';
 
-export class MemoryManager {
+export class MemoryManager implements HistoryManager {
   private config: MemoryManagerConfig;
   private threadId: string;
   private storage: MemoryStorage;
@@ -19,6 +19,11 @@ export class MemoryManager {
   private workingMemory?: WorkingMemory;
   private observations: Observation[] = [];
   private loaded: boolean = false;
+  private _pendingToolResults: Array<{
+    toolCallId: string;
+    toolName: string;
+    result: string;
+  }> = [];
 
   constructor(config?: MemoryManagerConfig) {
     this.config = config ?? {};
@@ -29,6 +34,18 @@ export class MemoryManager {
     if (config?.workingMemory?.enabled) {
       this.workingMemory = new WorkingMemory(config.workingMemory);
     }
+  }
+
+  get threadIdField(): string {
+    return this.threadId;
+  }
+
+  get storageField(): MemoryStorage {
+    return this.storage;
+  }
+
+  get workingMemoryField(): WorkingMemory | undefined {
+    return this.workingMemory;
   }
 
   async load(): Promise<void> {
@@ -98,6 +115,20 @@ export class MemoryManager {
     }
   }
 
+  add(role: 'user' | 'assistant' | 'tool', content: string): void {
+    this.messageHistory.add({ role, content });
+  }
+
+  addToolResult(toolCallId: string, toolName: string, result: string): void {
+    this._pendingToolResults.push({ toolCallId, toolName, result });
+    this.messageHistory.add({
+      role: 'tool',
+      content: result,
+      toolCallId,
+      toolName,
+    });
+  }
+
   addMessage(message: Message): void {
     this.messageHistory.add(message);
   }
@@ -134,6 +165,11 @@ export class MemoryManager {
   clear(): void {
     this.messageHistory.clear();
     this.observations = [];
+    this._pendingToolResults = [];
+  }
+
+  isLoaded(): boolean {
+    return this.loaded;
   }
 }
 
