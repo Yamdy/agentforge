@@ -14,7 +14,7 @@ export interface StreamEvent {
   name?: string;
   arguments?: string;
   result?: string;
-  response?: any;
+  response?: Record<string, unknown>;
 }
 
 export interface AgentStatus {
@@ -22,6 +22,16 @@ export interface AgentStatus {
   step: number;
   maxSteps: number;
   error?: string;
+}
+
+export interface SessionInfo {
+  id: string;
+  title?: string;
+  messages: { role: string; content: string }[];
+  parentId?: string;
+  projectId?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export class AgentForgeClient {
@@ -33,10 +43,10 @@ export class AgentForgeClient {
     this.apiKey = config.apiKey;
   }
 
-  private async request<T = any>(path: string, options: RequestInit = {}): Promise<T> {
+  private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      ...(options.headers as Record<string, string>),
+      ...(options.headers as Record<string, string> | undefined),
     };
 
     if (this.apiKey) {
@@ -110,31 +120,35 @@ export class AgentForgeClient {
     const reader = response.body?.getReader();
     if (!reader) throw new Error('No response body');
 
-    const decoder = new TextDecoder();
-    let buffer = '';
+    try {
+      const decoder = new TextDecoder();
+      let buffer = '';
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-      buffer += decoder.decode(value, { stream: true });
+        buffer += decoder.decode(value, { stream: true });
 
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
 
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith('data: ')) continue;
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith('data: ')) continue;
 
-        const data = trimmed.slice(6);
-        try {
-          const event = JSON.parse(data);
-          yield event;
-          if (event.type === 'done') break;
-        } catch {
-          // Skip invalid JSON
+          const data = trimmed.slice(6);
+          try {
+            const event = JSON.parse(data) as StreamEvent;
+            yield event;
+            if (event.type === 'done') break;
+          } catch {
+            // Skip invalid JSON
+          }
         }
       }
+    } finally {
+      reader.cancel().catch(() => {});
     }
   }
 
@@ -151,8 +165,8 @@ export class AgentForgeClient {
     messages?: { role: string; content: string }[];
     parentId?: string;
     projectId?: string;
-  }): Promise<any> {
-    return this.request('/api/sessions', {
+  }): Promise<SessionInfo> {
+    return this.request<SessionInfo>('/api/sessions', {
       method: 'POST',
       body: JSON.stringify(options || {}),
     });
@@ -163,25 +177,25 @@ export class AgentForgeClient {
     offset?: number;
     parentId?: string;
     projectId?: string;
-  }): Promise<any[]> {
+  }): Promise<SessionInfo[]> {
     const params = new URLSearchParams();
     if (options?.limit) params.set('limit', String(options.limit));
     if (options?.offset) params.set('offset', String(options.offset));
     if (options?.parentId) params.set('parentId', options.parentId);
     if (options?.projectId) params.set('projectId', options.projectId);
     const query = params.toString();
-    return this.request(`/api/sessions${query ? '?' + query : ''}`);
+    return this.request<SessionInfo[]>(`/api/sessions${query ? '?' + query : ''}`);
   }
 
-  async getSession(id: string): Promise<any> {
-    return this.request(`/api/sessions/${id}`);
+  async getSession(id: string): Promise<SessionInfo> {
+    return this.request<SessionInfo>(`/api/sessions/${id}`);
   }
 
   async updateSession(
     id: string,
-    updates: { title?: string; messages?: any[]; parentId?: string; projectId?: string }
-  ): Promise<any> {
-    return this.request(`/api/sessions/${id}`, {
+    updates: { title?: string; messages?: { role: string; content: string }[]; parentId?: string; projectId?: string }
+  ): Promise<SessionInfo> {
+    return this.request<SessionInfo>(`/api/sessions/${id}`, {
       method: 'PUT',
       body: JSON.stringify(updates),
     });

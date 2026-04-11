@@ -10,9 +10,9 @@ import type { Agent } from '../agent/agent.js';
 import { createSessionAPI } from '../session/index.js';
 import { toErrorResponse, AppError } from './error.js';
 import { compactSession } from '../session/compaction.js';
+import type { Message } from '../types.js';
 
 const log = createLogger('server');
-const sessionApi = createSessionAPI();
 
 export interface ServerConfig {
   port?: number;
@@ -53,13 +53,21 @@ export const OPENAPI_SPEC = {
 export function createApp(config: ServerConfig & { agent?: AgentRunner }) {
   const { apiKey, agent, corsOrigins, compactionThreshold, compactionEnabled } = config;
   const app = new Hono();
+  const sessionApi = createSessionAPI();
 
   const COMPACTION_MSG_THRESHOLD = compactionThreshold ?? 20;
   const COMPACTION_ENABLED = compactionEnabled ?? true;
 
-  (async () => {
-    await sessionApi.init();
-  })();
+  let initPromise: Promise<void> | null = null;
+  let initialized = false;
+
+  const ensureInit = (): Promise<void> => {
+    if (initialized) return Promise.resolve();
+    if (!initPromise) {
+      initPromise = sessionApi.init().then(() => { initialized = true; });
+    }
+    return initPromise;
+  };
 
   app.use(
     '*',
@@ -76,13 +84,13 @@ export function createApp(config: ServerConfig & { agent?: AgentRunner }) {
     const response = toErrorResponse(err);
     const status = err instanceof AppError ? err.status : 500;
     log.error('Request error', { error: err instanceof Error ? err.message : String(err), status });
-    return c.json(response, status as any);
+    return c.json(response, status as 400 | 401 | 403 | 404 | 500);
   });
 
   if (apiKey) {
     app.use('*', async (c, next) => {
       const authMw = authMiddleware({ apiKey });
-      await authMw(c as any, next);
+      await authMw(c, next);
     });
   }
 
@@ -93,12 +101,13 @@ export function createApp(config: ServerConfig & { agent?: AgentRunner }) {
     const agentApp = new Hono();
 
     agentApp.post('/run', async (c) => {
+      await ensureInit();
       const body = await c.req.json();
       const { input, sessionId } = body;
       log.info('Running agent', { input: input?.slice(0, 50), sessionId });
 
       try {
-        let sessionMessages: any[] = [];
+        let sessionMessages: Message[] = [];
         if (sessionId) {
           const session = await sessionApi.get(sessionId);
           if (session) {
@@ -114,11 +123,12 @@ export function createApp(config: ServerConfig & { agent?: AgentRunner }) {
     });
 
     agentApp.post('/run/stream', async (c) => {
+      await ensureInit();
       const body = await c.req.json();
       const { input, sessionId } = body;
       log.info('Running agent stream', { input: input?.slice(0, 50), sessionId });
 
-      let sessionMessages: any[] = [];
+      let sessionMessages: Message[] = [];
       if (sessionId) {
         const session = await sessionApi.get(sessionId);
         if (session) {
@@ -128,8 +138,7 @@ export function createApp(config: ServerConfig & { agent?: AgentRunner }) {
 
       return streamSSE(c, async (stream) => {
         try {
-          // 立即发送一个初始事件，确保响应流保持打开
-          await stream.write(`data: {"type":"start"}\n\n`);
+          await stream.write(`data: ${JSON.stringify({ type: 'start' })}\n\n`);
 
           let fullResponse = '';
           const completionPromise = new Promise<void>((resolve) => {
@@ -141,7 +150,7 @@ export function createApp(config: ServerConfig & { agent?: AgentRunner }) {
                 }
               },
               complete: async () => {
-                await stream.write(`data: {"type":"done"}\n\n`);
+                await stream.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
 
                 if (sessionId && fullResponse) {
                   await sessionApi.addMessage(sessionId, { role: 'user', content: input });
@@ -200,6 +209,7 @@ export function createApp(config: ServerConfig & { agent?: AgentRunner }) {
     const sessionApp = new Hono();
 
     sessionApp.post('/', async (c) => {
+      await ensureInit();
       const body = await c.req.json();
       const { title, messages, parentId, projectId } = body;
       const session = await sessionApi.create({ title, messages, parentId, projectId });
@@ -207,20 +217,20 @@ export function createApp(config: ServerConfig & { agent?: AgentRunner }) {
     });
 
     sessionApp.post('/:sessionID/run', async (c) => {
+      await ensureInit();
       const sessionId = c.req.param('sessionID');
       const body = await c.req.json();
       const { input } = body;
       log.info('Running agent', { input: input?.slice(0, 50), sessionId });
 
       try {
-        let sessionMessages: any[] = [];
+        let sessionMessages: Message[] = [];
         const session = await sessionApi.get(sessionId);
         if (session) {
           sessionMessages = session.messages.map((m) => ({ role: m.role, content: m.content }));
         }
         const result = await agent.run(input, { sessionMessages });
 
-        // Always save user message
         await sessionApi.addMessage(sessionId, { role: 'user', content: input });
         if (result) {
           await sessionApi.addMessage(sessionId, { role: 'assistant', content: result });
@@ -234,12 +244,13 @@ export function createApp(config: ServerConfig & { agent?: AgentRunner }) {
     });
 
     sessionApp.post('/:sessionID/run/stream', async (c) => {
+      await ensureInit();
       const sessionId = c.req.param('sessionID');
       const body = await c.req.json();
       const { input } = body;
       log.info('Running agent stream', { input: input?.slice(0, 50), sessionId });
 
-      let sessionMessages: any[] = [];
+      let sessionMessages: Message[] = [];
       const session = await sessionApi.get(sessionId);
       if (session) {
         sessionMessages = session.messages.map((m) => ({ role: m.role, content: m.content }));
@@ -247,8 +258,7 @@ export function createApp(config: ServerConfig & { agent?: AgentRunner }) {
 
       return streamSSE(c, async (stream) => {
         try {
-          // 立即发送一个初始事件，确保响应流保持打开
-          await stream.write(`data: {"type":"start"}\n\n`);
+          await stream.write(`data: ${JSON.stringify({ type: 'start' })}\n\n`);
 
           let fullResponse = '';
           const completionPromise = new Promise<void>((resolve) => {
@@ -260,9 +270,8 @@ export function createApp(config: ServerConfig & { agent?: AgentRunner }) {
                 }
               },
               complete: async () => {
-                await stream.write(`data: {"type":"done"}\n\n`);
+                await stream.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
 
-                // Always save the conversation, even if response is empty
                 await sessionApi.addMessage(sessionId, { role: 'user', content: input });
                 if (fullResponse) {
                   await sessionApi.addMessage(sessionId, {
@@ -294,7 +303,6 @@ export function createApp(config: ServerConfig & { agent?: AgentRunner }) {
                     }
                   }
                 } else {
-                  // Still save user message even if agent response is empty
                   log.warn('Empty agent response', { sessionId });
                 }
                 resolve();
@@ -318,13 +326,14 @@ export function createApp(config: ServerConfig & { agent?: AgentRunner }) {
     });
 
     sessionApp.get('/', async (c) => {
+      await ensureInit();
       const limit = c.req.query('limit');
       const offset = c.req.query('offset');
       const parentId = c.req.query('parentId');
       const projectId = c.req.query('projectId');
       const sessions = await sessionApi.list({
-        limit: limit ? parseInt(limit) : undefined,
-        offset: offset ? parseInt(offset) : undefined,
+        limit: limit ? parseInt(limit, 10) : undefined,
+        offset: offset ? parseInt(offset, 10) : undefined,
         parentId,
         projectId,
       });
@@ -332,6 +341,7 @@ export function createApp(config: ServerConfig & { agent?: AgentRunner }) {
     });
 
     sessionApp.get('/:id', async (c) => {
+      await ensureInit();
       const id = c.req.param('id');
       const session = await sessionApi.get(id);
       if (!session) {
@@ -341,6 +351,7 @@ export function createApp(config: ServerConfig & { agent?: AgentRunner }) {
     });
 
     sessionApp.put('/:id', async (c) => {
+      await ensureInit();
       const id = c.req.param('id');
       const body = await c.req.json();
       const { title, messages, parentId, projectId } = body;
@@ -352,6 +363,7 @@ export function createApp(config: ServerConfig & { agent?: AgentRunner }) {
     });
 
     sessionApp.delete('/:id', async (c) => {
+      await ensureInit();
       const id = c.req.param('id');
       const deleted = await sessionApi.delete(id);
       return c.json({ success: deleted });
@@ -364,13 +376,13 @@ export function createApp(config: ServerConfig & { agent?: AgentRunner }) {
   return app;
 }
 
-export async function startServer(config: ServerConfig & { agent?: AgentRunner }) {
+export async function startServer(config: ServerConfig & { agent?: AgentRunner }): Promise<import('http').Server> {
   const { port = 3000 } = config;
   const app = createApp(config);
 
   const httpModule = await import('http');
 
-  const server = httpModule.createServer(async (nodeReq: any, nodeRes: any) => {
+  const server = httpModule.createServer(async (nodeReq: import('http').IncomingMessage, nodeRes: import('http').ServerResponse) => {
     const url = nodeReq.url || '/';
     const method = nodeReq.method || 'GET';
 
@@ -396,7 +408,7 @@ export async function startServer(config: ServerConfig & { agent?: AgentRunner }
         headers,
         body,
         duplex: 'half',
-      } as unknown as Request);
+      } as RequestInit & { duplex: 'half' });
       const res = await app.fetch(req);
 
       const responseHeaders: Record<string, string> = {};
@@ -419,9 +431,8 @@ export async function startServer(config: ServerConfig & { agent?: AgentRunner }
             const { done, value } = await reader.read();
             if (done) break;
             nodeRes.write(value);
-            // 确保数据立即发送（Node.js 12+ 支持）
-            if (typeof nodeRes.flush === 'function') {
-              nodeRes.flush();
+            if ('flush' in nodeRes && typeof nodeRes.flush === 'function') {
+              (nodeRes as unknown as { flush: () => void }).flush();
             }
           }
           nodeRes.end();
@@ -437,7 +448,7 @@ export async function startServer(config: ServerConfig & { agent?: AgentRunner }
     }
   });
 
-  return new Promise((resolve: (server: any) => void) => {
+  return new Promise<import('http').Server>((resolve) => {
     server.listen(port, () => {
       log.info('Server started', { port });
       resolve(server);

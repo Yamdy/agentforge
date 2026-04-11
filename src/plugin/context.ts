@@ -1,5 +1,7 @@
-import { Logger as FrameworkLogger, createLogger } from '../logger/index.js';
+import type { Logger as FrameworkLogger } from '../logger/index.js';
+import { createLogger } from '../logger/index.js';
 import type { Tracer } from '../tracer.js';
+import type { Agent } from '../agent/agent.js';
 
 export type Logger = FrameworkLogger;
 
@@ -12,12 +14,12 @@ export interface PluginContext {
   logger: Logger;
   directory: string;
   tracer?: Tracer;
-  agent?: any;
+  agent?: Agent;
 }
 
-export const defaultLogger = createLogger('plugin');
+const defaultLogger = createLogger('plugin');
 
-export function createPluginContext(config: PluginConfig, directory: string = process.cwd(), tracer?: Tracer, agent?: any): PluginContext {
+export function createPluginContext(config: PluginConfig, directory: string = process.cwd(), tracer?: Tracer, agent?: Agent): PluginContext {
   return {
     config,
     logger: defaultLogger,

@@ -34,7 +34,7 @@ export interface ToolExecuteAfterOutput {
 
 export interface MessageTransformInput {}
 export interface MessageTransformOutput {
-  messages: any[];
+  messages: Record<string, unknown>[];
 }
 
 export interface SystemPromptInput {}
