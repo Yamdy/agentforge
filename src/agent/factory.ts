@@ -21,7 +21,6 @@ export interface AgentFactoryOptions {
   pluginManager?: PluginManager;
   middleware?: Middleware[];
   registerBuiltinTools?: boolean;
-  interceptors?: RequestInterceptor[];
 }
 
 export class AgentFactory {
@@ -37,7 +36,7 @@ export class AgentFactory {
     };
   }
 
-  create(): Agent {
+  async create(): Promise<Agent> {
     const agentConfig =
       'agent' in this.config ? this.config.agent : validateAgentConfig(this.config);
 
@@ -65,10 +64,10 @@ export class AgentFactory {
       };
     }
 
-    const adapter = this.options.adapter ?? this.createAdapter(modelConfig);
+    const pluginManager = this.options.pluginManager ?? new PluginManager();
+    const adapter = this.options.adapter ?? await this.createAdapter(modelConfig, pluginManager);
     const history = this.options.history ?? this.createHistory();
     const registry = this.options.registry ?? this.createRegistry(agentConfig);
-    const pluginManager = this.options.pluginManager ?? new PluginManager();
 
     const agent = new Agent(adapter, history, registry, {
       ...agentConfig,
@@ -80,7 +79,7 @@ export class AgentFactory {
     return agent;
   }
 
-  private createAdapter(config: ModelConfig): LLMAdapter {
+  private async createAdapter(config: ModelConfig, pluginManager: PluginManager): Promise<LLMAdapter> {
     const apiKey = config.apiKey ?? process.env.OPENAI_API_KEY;
 
     if (!apiKey && !config.baseURL) {
@@ -89,13 +88,57 @@ export class AgentFactory {
       );
     }
 
-    return new AIAdapter({
+    const providerCtx = { model: config.model, apiKey, baseURL: config.baseURL };
+    const providerResults = await pluginManager.collectProviders(providerCtx);
+
+    const mergedConfig: Record<string, unknown> = {
       model: config.model,
       apiKey,
       baseURL: config.baseURL,
       timeout: config.timeout,
       tlsRejectUnauthorized: config.tlsRejectUnauthorized,
-      interceptors: this.options.interceptors,
+    };
+
+    const interceptors: RequestInterceptor[] = [];
+
+    for (const result of providerResults) {
+      if (result.baseURL) mergedConfig.baseURL = result.baseURL;
+      if (result.apiKey) mergedConfig.apiKey = result.apiKey;
+      if (result.fetch) mergedConfig.fetch = result.fetch;
+      if (result.timeout) mergedConfig.timeout = result.timeout;
+      if (result.tlsRejectUnauthorized !== undefined) {
+        mergedConfig.tlsRejectUnauthorized = result.tlsRejectUnauthorized;
+      }
+      if (result.headers) {
+        const staticHeaders = result.headers;
+        interceptors.push({
+          beforeRequest(ctx) {
+            return { ...ctx, headers: { ...staticHeaders, ...ctx.headers } };
+          },
+        });
+      }
+    }
+
+    const hookInterceptor: RequestInterceptor = {
+      async beforeRequest(ctx) {
+        const output = { headers: { ...ctx.headers }, body: { ...ctx.body } };
+        await pluginManager.trigger('llm.request.before',
+          { headers: ctx.headers, body: ctx.body },
+          output
+        );
+        return { ...ctx, headers: output.headers, body: output.body };
+      },
+    };
+    interceptors.push(hookInterceptor);
+
+    return new AIAdapter({
+      model: mergedConfig.model as string,
+      apiKey: mergedConfig.apiKey as string,
+      baseURL: mergedConfig.baseURL as string | undefined,
+      timeout: mergedConfig.timeout as { total?: number; firstToken?: number; chunk?: number } | undefined,
+      tlsRejectUnauthorized: mergedConfig.tlsRejectUnauthorized as boolean | undefined,
+      fetch: mergedConfig.fetch as ((input: string | URL | Request, init?: RequestInit) => Promise<Response>) | undefined,
+      interceptors,
     });
   }
 
@@ -114,19 +157,19 @@ export class AgentFactory {
     return registry;
   }
 
-  static create(config: AgentForgeConfig | AgentConfig, options?: AgentFactoryOptions): Agent {
+  static async create(config: AgentForgeConfig | AgentConfig, options?: AgentFactoryOptions): Promise<Agent> {
     const factory = new AgentFactory(config, options);
     return factory.create();
   }
 
-  static fromConfig(config: AgentForgeConfig | AgentConfig, options?: AgentFactoryOptions): Agent {
+  static async fromConfig(config: AgentForgeConfig | AgentConfig, options?: AgentFactoryOptions): Promise<Agent> {
     return this.create(config, options);
   }
 }
 
-export function createAgent(
+export async function createAgent(
   config: AgentForgeConfig | AgentConfig,
   options?: AgentFactoryOptions
-): Agent {
+): Promise<Agent> {
   return AgentFactory.create(config, options);
 }

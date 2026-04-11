@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { TaskStatus } from '../types.js';
+import type { TaskStatus, TimeoutConfig } from '../types.js';
 
 export const HookEvents = {
   TOOL_EXECUTE_BEFORE: 'tool.execute.before',
@@ -86,6 +86,21 @@ export interface LLMRequestBeforeOutput {
   body: Record<string, unknown>;
 }
 
+export interface ProviderContext {
+  model: string;
+  apiKey?: string;
+  baseURL?: string;
+}
+
+export interface ProviderResult {
+  baseURL?: string;
+  apiKey?: string;
+  fetch?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+  headers?: Record<string, string>;
+  timeout?: TimeoutConfig;
+  tlsRejectUnauthorized?: boolean;
+}
+
 export interface ChatMessageInput {
   sessionId?: string;
   role: string;
@@ -160,5 +175,12 @@ export const PluginSchema = z.object({
   name: z.string().min(1, 'Plugin name is required'),
   version: z.string().optional(),
   hooks: z.record(z.string(), z.function()).optional(),
+  provider: z.function().optional(),
 });
-export type Plugin = z.infer<typeof PluginSchema>;
+
+export type Plugin = {
+  name: string;
+  version?: string;
+  hooks?: Record<string, (input: unknown, output: unknown) => Promise<void>>;
+  provider?: (ctx: ProviderContext) => Promise<ProviderResult>;
+};

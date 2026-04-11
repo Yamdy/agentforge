@@ -39,7 +39,7 @@ export type {
 } from './types.js';
 export { schemas } from './types.js';
 export type { AgentConfig } from './config/index.js';
-export type { Plugin, Hooks, HookEvent } from './plugin/types.js';
+export type { Plugin, Hooks, HookEvent, ProviderContext, ProviderResult } from './plugin/types.js';
 export type { Logger, LogEntry, LogLevel } from './logger/index.js';
 export type { Span, TraceContext } from './tracer.js';
 

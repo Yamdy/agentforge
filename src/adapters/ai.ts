@@ -57,6 +57,10 @@ export class AIAdapter implements LLMAdapter {
     return this.tools[name];
   }
 
+  setInterceptors(interceptors: RequestInterceptor[]): void {
+    this.interceptors = interceptors;
+  }
+
   private createCustomFetch(): FetchFn {
     const interceptors = this.interceptors;
     const rejectUnauthorized = this.tlsRejectUnauthorized;

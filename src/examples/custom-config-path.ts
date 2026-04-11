@@ -30,7 +30,7 @@ function loadFromSpecificPath() {
 /**
  * Example 2: Multiple custom search paths
  */
-function multipleSearchPathsExample() {
+async function multipleSearchPathsExample() {
   console.log('\n=== Multiple Search Paths Example ===\n');
 
   // Define multiple search paths in order of priority
@@ -44,7 +44,7 @@ function multipleSearchPathsExample() {
   if (foundPath) {
     console.log('✓ Found config in one of the search paths:', foundPath);
     const config = loader.loadConfigSync();
-    const agent = createAgent(config);
+    const agent = await createAgent(config);
     console.log('✓ Agent created successfully');
   } else {
     console.log('⚠ No config found in any of the custom search paths');

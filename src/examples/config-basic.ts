@@ -18,7 +18,7 @@ async function basicConfigExample() {
     console.log('✓ Loaded config:', JSON.stringify(config, null, 2));
 
     // Create agent from config
-    const agent = createAgent(config);
+    const agent = await createAgent(config);
     console.log('\n✓ Created agent successfully');
 
     return agent;

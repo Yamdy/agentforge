@@ -6,10 +6,10 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-function quickStartExample() {
+async function quickStartExample() {
   console.log('=== Quick Start Example ===\n');
 
-  const agent = createAgent({
+  const agent = await createAgent({
     name: 'My Quick Agent',
     middleware: [],
     tools: [],
@@ -23,7 +23,7 @@ function quickStartExample() {
   return agent;
 }
 
-function advancedFactoryExample() {
+async function advancedFactoryExample() {
   console.log('\n=== Advanced Factory Example ===\n');
 
   const customStorage = new InMemoryStorage();
@@ -47,12 +47,12 @@ function advancedFactoryExample() {
     }
   );
 
-  const agent = factory.create();
+  const agent = await factory.create();
   console.log('✓ Advanced agent created with custom components');
   return agent;
 }
 
-function fromLoadedConfigExample() {
+async function fromLoadedConfigExample() {
   console.log('\n=== From Loaded Config Example ===\n');
 
   try {
@@ -60,7 +60,7 @@ function fromLoadedConfigExample() {
     const config = loader.loadConfigSync();
 
     if (config) {
-      const agent = AgentFactory.fromConfig(config);
+      const agent = await AgentFactory.fromConfig(config);
       console.log('✓ Agent created from loaded config');
       return agent;
     }

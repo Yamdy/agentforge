@@ -1,5 +1,5 @@
 import { Subject, Observable, filter, map, mergeMap, Subscription } from 'rxjs';
-import { Plugin, PluginSchema } from './types.js';
+import { Plugin, PluginSchema, type ProviderContext, type ProviderResult } from './types.js';
 import { PluginContext, createPluginContext } from './context.js';
 
 export interface PluginManagerConfig {
@@ -68,19 +68,19 @@ export class PluginManager {
   }
 
   register(plugin: Plugin): void {
-    const validated = PluginSchema.parse(plugin);
-    this.plugins.push(validated);
-    this.context.logger.info('Plugin registered', { name: validated.name });
+    PluginSchema.parse(plugin);
+    this.plugins.push(plugin);
+    this.context.logger.info('Plugin registered', { name: plugin.name });
 
-    if (validated.hooks) {
-      const subs: Subscription[] = this.pluginSubscriptions.get(validated.name) ?? [];
-      for (const [eventName, hook] of Object.entries(validated.hooks)) {
+    if (plugin.hooks) {
+      const subs: Subscription[] = this.pluginSubscriptions.get(plugin.name) ?? [];
+      for (const [eventName, hook] of Object.entries(plugin.hooks)) {
         if (hook) {
-          const sub = this.subscribeToEvent(eventName, hook as HookFunction, validated.name);
+          const sub = this.subscribeToEvent(eventName, hook as HookFunction, plugin.name);
           subs.push(sub);
         }
       }
-      this.pluginSubscriptions.set(validated.name, subs);
+      this.pluginSubscriptions.set(plugin.name, subs);
     }
   }
 
@@ -103,6 +103,26 @@ export class PluginManager {
 
   get(name: string): Plugin | undefined {
     return this.plugins.find(p => p.name === name);
+  }
+
+  async collectProviders(ctx: ProviderContext): Promise<ProviderResult[]> {
+    const results: ProviderResult[] = [];
+    for (const plugin of this.plugins) {
+      if (plugin.provider) {
+        try {
+          const result = await plugin.provider(ctx);
+          if (result) {
+            results.push(result);
+            this.context.logger.info('Provider collected', { plugin: plugin.name });
+          }
+        } catch (err) {
+          this.context.logger.error(`Provider failed for plugin ${plugin.name}`, {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+    }
+    return results;
   }
 
   on(event: string, handler: HookFunction): Subscription {
@@ -128,7 +148,7 @@ export class PluginManager {
 
   async trigger(event: string, input: unknown, output: unknown): Promise<unknown> {
     const hooks = this.getEventHooks(event);
-    let modifiedOutput = output;
+    const modifiedOutput = output;
 
     for (const hook of hooks) {
       try {

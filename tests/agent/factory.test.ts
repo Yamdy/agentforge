@@ -21,13 +21,13 @@ describe('AgentFactory', () => {
   });
 
   describe('create', () => {
-    it('should create an agent from minimal AgentConfig', () => {
+    it('should create an agent from minimal AgentConfig', async () => {
       const config = validateAgentConfig({ name: 'Test Agent' });
-      const agent = AgentFactory.create(config);
+      const agent = await AgentFactory.create(config);
       expect(agent).toBeDefined();
     });
 
-    it('should create an agent from AgentForgeConfig', () => {
+    it('should create an agent from AgentForgeConfig', async () => {
       const config = validateAgentForgeConfig({
         name: 'test-agent',
         agent: {
@@ -39,11 +39,11 @@ describe('AgentFactory', () => {
           temperature: 0.7,
         },
       });
-      const agent = AgentFactory.fromConfig(config);
+      const agent = await AgentFactory.fromConfig(config);
       expect(agent).toBeDefined();
     });
 
-    it('should merge model config from top-level correctly', () => {
+    it('should merge model config from top-level correctly', async () => {
       const config = validateAgentForgeConfig({
         name: 'test-agent',
         agent: {
@@ -55,13 +55,13 @@ describe('AgentFactory', () => {
           temperature: 0.5,
         },
       });
-      const agent = createAgent(config);
+      const agent = await createAgent(config);
       expect(agent).toBeDefined();
     });
 
-    it('should use createAgent helper function', () => {
+    it('should use createAgent helper function', async () => {
       const config = validateAgentConfig({ name: 'Test Agent' });
-      const agent = createAgent(config);
+      const agent = await createAgent(config);
       expect(agent).toBeDefined();
     });
   });
