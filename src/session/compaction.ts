@@ -10,12 +10,18 @@ export interface CompactionOptions {
   llmAdapter?: LLMAdapter;
   pluginManager?: PluginManager;
   sessionId?: string;
+  /** 保留系统消息 */
+  keepSystemMessages?: boolean;
+  /** 保留工具结果 */
+  keepToolResults?: boolean;
 }
 
 export interface CompactionResult {
   originalCount: number;
   compactedCount: number;
   summary: string;
+  /** 节省的 token 数 */
+  savedTokens: number;
 }
 
 const DEFAULT_SUMMARY_PROMPT = `
@@ -25,6 +31,84 @@ Keep the summary concise but comprehensive.
 Conversation to summarize:
 `;
 
+/**
+ * 估算文本的 token 数
+ * 简单实现：按字符数估算（平均 3 字符 = 1 token）
+ * @param text 要估算的文本
+ * @returns 估算的 token 数
+ */
+export function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 3);
+}
+
+/**
+ * 压缩消息列表
+ * @param messages 消息列表
+ * @param config 压缩配置
+ * @returns 压缩结果
+ */
+export function compactMessages(
+  messages: SessionMessage[],
+  config: CompactionOptions
+): {
+  messages: SessionMessage[];
+  originalCount: number;
+  compactedCount: number;
+  savedTokens: number;
+} {
+  const maxMessages = config.maxMessages ?? 50;
+  const keepSystem = config.keepSystemMessages ?? true;
+  const keepTools = config.keepToolResults ?? true;
+
+  const originalTokens = messages.reduce(
+    (sum, m) => sum + estimateTokens(m.content),
+    0
+  );
+
+  if (messages.length <= maxMessages) {
+    return {
+      messages,
+      originalCount: messages.length,
+      compactedCount: messages.length,
+      savedTokens: 0,
+    };
+  }
+
+  // 分离需要保留的消息
+  const toKeep: SessionMessage[] = [];
+  const toCompact: SessionMessage[] = [];
+
+  for (const msg of messages) {
+    if (keepSystem && msg.role === 'system') {
+      toKeep.push(msg);
+    } else if (keepTools && msg.role === 'tool') {
+      toKeep.push(msg);
+    } else {
+      toCompact.push(msg);
+    }
+  }
+
+  // 保留最新的消息
+  const remainingSlots = maxMessages - toKeep.length;
+  const recentMessages = toCompact.slice(-Math.max(0, remainingSlots));
+
+  const result = [...toKeep, ...recentMessages].sort(
+    (a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0)
+  );
+
+  const compactedTokens = result.reduce(
+    (sum, m) => sum + estimateTokens(m.content),
+    0
+  );
+
+  return {
+    messages: result,
+    originalCount: messages.length,
+    compactedCount: result.length,
+    savedTokens: originalTokens - compactedTokens,
+  };
+}
+
 export async function compactSession(
   session: Session,
   options: CompactionOptions = {}
@@ -32,6 +116,7 @@ export async function compactSession(
   originalCount: number;
   compactedMessages: SessionMessage[];
   summary: string;
+  savedTokens: number;
 }> {
   const maxMessages = options.maxMessages ?? 50;
   const keepFirst = options.keepFirst ?? 2;
@@ -43,6 +128,7 @@ export async function compactSession(
       originalCount: session.messages.length,
       compactedMessages: session.messages,
       summary: 'No compaction needed',
+      savedTokens: 0,
     };
   }
 
@@ -85,6 +171,11 @@ export async function compactSession(
     }
   }
 
+  const originalTokens = session.messages.reduce(
+    (sum, m) => sum + estimateTokens(m.content),
+    0
+  );
+
   const compacted: SessionMessage[] = [
     ...systemMessages,
     ...firstMessages,
@@ -92,10 +183,16 @@ export async function compactSession(
     ...lastMessages,
   ];
 
+  const compactedTokens = compacted.reduce(
+    (sum, m) => sum + estimateTokens(m.content),
+    0
+  );
+
   return {
     originalCount: session.messages.length,
     compactedMessages: compacted,
     summary,
+    savedTokens: originalTokens - compactedTokens,
   };
 }
 
