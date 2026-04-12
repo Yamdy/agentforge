@@ -1,9 +1,11 @@
 import { Storage, NotFoundError } from '../storage/index.js';
 
 export interface SessionMessage {
-  role: 'system' | 'user' | 'assistant';
+  role: 'system' | 'user' | 'assistant' | 'tool';
   content: string;
   timestamp?: number;
+  toolCallId?: string;
+  toolName?: string;
 }
 
 export interface Session {
