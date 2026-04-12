@@ -93,5 +93,6 @@ export * as Config from './config/index.js';
 export * as Workflow from './workflow/index.js';
 export * as Memory from './memory/index.js';
 export * as Observability from './observability/index.js';
+export * as Sandbox from './sandbox/index.js';
 export * from './context.js';
 export { SQLiteMemoryStorage } from './storage/sqlite-memory.js';
