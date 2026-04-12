@@ -5,6 +5,9 @@ import pkg from '../../package.json';
 import { logger } from './utils/logger.js';
 import { create } from './commands/create/index.js';
 import { init } from './commands/init/index.js';
+import { dev } from './commands/dev/index.js';
+import { build } from './commands/build/index.js';
+import { start } from './commands/start/index.js';
 
 const program = new Command();
 
@@ -46,9 +49,7 @@ program
   .option('-p, --port <port>', 'Port to run on (default: 4111)')
   .option('-e, --env <env>', 'Custom env file')
   .option('--inspect', 'Enable inspect mode')
-  .action(() => {
-    logger.info('Dev command coming soon!');
-  });
+  .action((options) => dev(options));
 
 program
   .command('build')
@@ -56,9 +57,7 @@ program
   .option('-d, --dir <dir>', 'Path to your source folder')
   .option('-o, --output <dir>', 'Output directory (default: .agentforge/output)')
   .option('--minify', 'Minify output')
-  .action(() => {
-    logger.info('Build command coming soon!');
-  });
+  .action((options) => build(options));
 
 program
   .command('start')
@@ -66,9 +65,7 @@ program
   .option('-d, --dir <dir>', 'Path to your built output directory')
   .option('-p, --port <port>', 'Port to run on')
   .option('-e, --env <env>', 'Custom env file')
-  .action(() => {
-    logger.info('Start command coming soon!');
-  });
+  .action((options) => start(options));
 
 program
   .command('run')
