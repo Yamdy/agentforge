@@ -8,6 +8,9 @@ import { init } from './commands/init/index.js';
 import { dev } from './commands/dev/index.js';
 import { build } from './commands/build/index.js';
 import { start } from './commands/start/index.js';
+import { run } from './commands/run/index.js';
+import { lint } from './commands/lint/index.js';
+import { studio } from './commands/studio/index.js';
 
 const program = new Command();
 
@@ -74,25 +77,19 @@ program
   .option('-w, --workflow <name>', 'Run specified workflow')
   .option('-p, --prompt <text>', 'Input prompt')
   .option('-i, --interactive', 'Interactive mode')
-  .action(() => {
-    logger.info('Run command coming soon!');
-  });
+  .action((options) => run(options));
 
 program
   .command('lint')
   .description('Lint your AgentForge project')
   .option('-d, --dir <dir>', 'Path to your project')
   .option('--fix', 'Auto-fix issues')
-  .action(() => {
-    logger.info('Lint command coming soon!');
-  });
+  .action((options) => lint(options));
 
 program
   .command('studio')
   .description('Start the AgentForge studio')
   .option('-p, --port <port>', 'Port to run the studio on')
-  .action(() => {
-    logger.info('Studio command coming soon!');
-  });
+  .action((options) => studio(options));
 
 program.parse(process.argv);
