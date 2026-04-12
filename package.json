@@ -55,6 +55,7 @@
     "@typescript-eslint/parser": "^8.0.0",
     "@vitest/coverage-v8": "1.6.1",
     "eslint": "^9.0.0",
+    "picocolors": "^1.1.1",
     "prettier": "^3.0.0",
     "tsup": "^8.5.1",
     "tsx": "^4.0.0",
