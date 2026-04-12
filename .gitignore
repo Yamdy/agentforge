@@ -44,3 +44,6 @@ coverage/
 
 # Tool
 .gitnexus/
+
+# Worktrees
+.worktrees/
