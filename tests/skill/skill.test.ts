@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { Skill } from '../src/skill/index.js';
+import { Skill } from '../../src/skill/index.js';
 
 describe('SKILL Module Tests', () => {
   beforeAll(async () => {

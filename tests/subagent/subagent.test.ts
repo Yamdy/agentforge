@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SubAgent } from '../src/subagent/index.js';
+import { SubAgent } from '../../src/subagent/index.js';
 
 describe('SubAgent Module Tests', () => {
   describe('Configuration and Types', () => {

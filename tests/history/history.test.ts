@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { InMemoryHistory } from '../src/history';
+import { InMemoryHistory } from '../../src/history';
 
 describe('InMemoryHistory', () => {
   let history: InMemoryHistory;

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { MCP } from '../src/index.js';
+import { MCP } from '../../src/index.js';
 
 describe('MCP Module Tests', () => {
   describe('Configuration and Types', () => {

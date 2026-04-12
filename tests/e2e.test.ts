@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { startServer } from '../src/server/index.js';
 import { createAgentForgeClient } from '../src/sdk/client.js';
 import type { Agent } from '../src/agent/agent.js';
-import { createAgent } from '../src/examples/demo.js';
+import { createAgent } from '../examples/demo.ts';
 
 describe('E2E Tests for AgentForge API', () => {
   let server: any;

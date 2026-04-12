@@ -1,17 +1,17 @@
 #!/usr/bin/env node
 import 'dotenv/config';
-import { Agent } from '../agent';
-import { InMemoryHistory } from '../history';
-import { ToolRegistry } from '../registry';
-import { AIAdapter } from '../adapters/ai';
-import { calculatorTool, searchTool, allTools } from '../tools';
-import { BuiltinTools } from '../tools/builtin';
-import { startServer, createApp } from '../server';
-import { createAgentForgeClient, type StreamEvent } from '../sdk/client';
-import { createLogger } from '../logger';
-import { createSessionAPI } from '../session';
-import { MCP, SubAgent } from '../index.js';
-import { Skill } from '../skill/index.js';
+import { Agent } from '../src/agent';
+import { InMemoryHistory } from '../src/history';
+import { ToolRegistry } from '../src/registry';
+import { AIAdapter } from '../src/adapters/ai';
+import { calculatorTool, searchTool, allTools } from '../src/tools';
+import { BuiltinTools } from '../src/tools/builtin';
+import { startServer, createApp } from '../src/server';
+import { createAgentForgeClient, type StreamEvent } from '../src/sdk/client';
+import { createLogger } from '../src/logger';
+import { createSessionAPI } from '../src/session';
+import { MCP, SubAgent } from '../src/index.js';
+import { Skill } from '../src/skill/index.js';
 
 const log = createLogger('demo');
 

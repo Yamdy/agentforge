@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { Agent } from '../src/agent';
-import { LLMAdapter, StreamEvent } from '../src/types';
-import { InMemoryHistory } from '../src/history';
-import { ToolRegistry } from '../src/registry';
+import { Agent } from '../../src/agent';
+import { LLMAdapter, StreamEvent } from '../../src/types';
+import { InMemoryHistory } from '../../src/history';
+import { ToolRegistry } from '../../src/registry';
 import { of } from 'rxjs';
 
 function createMockAdapter(events: StreamEvent[][]): LLMAdapter {
