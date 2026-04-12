@@ -1,7 +1,7 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  entry: ['src/index.ts', 'src/cli.ts'],
+  entry: ['src/index.ts', 'src/cli/index.ts'],
   format: ['esm'],
   dts: true,
   splitting: false,
@@ -11,10 +11,23 @@ export default defineConfig({
   shims: true,
   platform: 'node',
   external: [
-    'rxjs', 'hono', 'sql.js', 'zod', 'ai', '@ai-sdk/openai',
-    '@ai-sdk/openai-compatible', '@modelcontextprotocol/sdk',
-    'commander', 'inquirer', 'uuid', 'gray-matter', 'dotenv',
-    'mathjs', '@agents-mdx/runtime', '@primno/dpapi',
-    'openapi-types', 'hono-zod',
+    'rxjs',
+    'hono',
+    'sql.js',
+    'zod',
+    'ai',
+    '@ai-sdk/openai',
+    '@ai-sdk/openai-compatible',
+    '@modelcontextprotocol/sdk',
+    'commander',
+    'inquirer',
+    'uuid',
+    'gray-matter',
+    'dotenv',
+    'mathjs',
+    '@agents-mdx/runtime',
+    '@primno/dpapi',
+    'openapi-types',
+    'hono-zod',
   ],
 });
