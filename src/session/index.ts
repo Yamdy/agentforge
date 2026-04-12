@@ -12,6 +12,11 @@ import {
   type SessionMessage,
 } from './storage.js';
 
+export { CheckpointManager } from './checkpoint.js';
+export { compactMessages, compactSession, applyCompaction, estimateTokens } from './compaction.js';
+export type { CompactionOptions, CompactionResult } from './compaction.js';
+export type { Checkpoint, SessionConfig, PendingToolCall } from './types.js';
+
 export type { Session, SessionMessage };
 
 export interface SessionAPI {
