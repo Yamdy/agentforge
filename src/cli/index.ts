@@ -3,6 +3,8 @@ import { Command } from 'commander';
 import pc from 'picocolors';
 import pkg from '../../package.json';
 import { logger } from './utils/logger.js';
+import { create } from './commands/create/index.js';
+import { init } from './commands/init/index.js';
 
 const program = new Command();
 
@@ -20,16 +22,14 @@ ${pc.bold(pc.cyan('AgentForge'))} is a TypeScript framework for building AI appl
   });
 
 program
-  .command('create')
+  .command('create [project-name]')
   .description('Create a new AgentForge project')
   .option('--default', 'Quick start with defaults')
   .option('-d, --dir <directory>', 'Target directory')
   .option('-t, --template <template>', 'Project template (basic/workflow/full)')
   .option('--no-example', 'Do not include example code')
   .option('--no-git', 'Do not initialize git repository')
-  .action(() => {
-    logger.info('Create command coming soon!');
-  });
+  .action((projectName, options) => create(projectName, options));
 
 program
   .command('init')
@@ -37,9 +37,7 @@ program
   .option('--default', 'Quick start with defaults')
   .option('-d, --dir <directory>', 'Directory for AgentForge files (default: src/agentforge)')
   .option('--example', 'Include example code')
-  .action(() => {
-    logger.info('Init command coming soon!');
-  });
+  .action((options) => init(options));
 
 program
   .command('dev')
