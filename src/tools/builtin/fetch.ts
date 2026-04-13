@@ -80,11 +80,15 @@ export const FetchTool: Tool = {
       } else {
         const contentLength = response.headers.get('content-length');
         if (contentLength && parseInt(contentLength, 10) > MAX_RESPONSE_SIZE) {
-          return JSON.stringify({
-            status: response.status,
-            statusText: response.statusText,
-            text: `[Response truncated: content-length ${contentLength} exceeds ${MAX_RESPONSE_SIZE} byte limit]`,
-          }, null, 2);
+          return JSON.stringify(
+            {
+              status: response.status,
+              statusText: response.statusText,
+              text: `[Response truncated: content-length ${contentLength} exceeds ${MAX_RESPONSE_SIZE} byte limit]`,
+            },
+            null,
+            2
+          );
         }
 
         const text = await response.text();
@@ -107,7 +111,7 @@ export const FetchTool: Tool = {
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      throw new Error(`Fetch failed: ${errorMsg}`);
+      throw new Error(`Fetch failed: ${errorMsg}`, { cause: error });
     }
   },
 };

@@ -29,7 +29,7 @@ export const CalculatorTool: Tool = {
       return `${result}`;
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      throw new Error(`Calculation failed: ${errorMsg}`);
+      throw new Error(`Calculation failed: ${errorMsg}`, { cause: error });
     }
   },
 };

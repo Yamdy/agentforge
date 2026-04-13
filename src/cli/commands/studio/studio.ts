@@ -6,8 +6,8 @@ interface StudioOptions {
   port?: string;
 }
 
-export async function studio(options: StudioOptions = {}): Promise<void> {
-  const port = options.port ? parseInt(options.port) : 3000;
+export async function studio(_options: StudioOptions = {}): Promise<void> {
+  //  const port = options.port ? parseInt(options.port) : 3000;
 
   p.note(`
     ${pc.yellow('Studio coming soon!')}

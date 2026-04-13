@@ -1,5 +1,6 @@
 import * as crypto from 'node:crypto';
 import { createLogger } from '../../logger/index.js';
+import type { Context } from 'hono';
 
 const log = createLogger('auth');
 
@@ -17,7 +18,7 @@ function timingSafeEqual(a: string, b: string): boolean {
 }
 
 export function authMiddleware(config: AuthConfig) {
-  return async (c: any, next: () => Promise<void>) => {
+  return async (c: Context, next: () => Promise<void>) => {
     if (!config.apiKey) {
       return next();
     }

@@ -448,7 +448,7 @@ export class Agent {
       };
 
       const executePendingToolCalls = () => {
-        for (const [id, toolCall] of pendingToolCalls) {
+        for (const [, toolCall] of pendingToolCalls) {
           if (toolCall.arguments) {
             executeToolCall(toolCall).catch(reject);
           }

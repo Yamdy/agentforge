@@ -133,7 +133,7 @@ export class SQLiteMemoryStorage implements MemoryStorage {
     this.ensureInitialized();
     this.db!.run(
       `INSERT OR REPLACE INTO threads (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)`,
-      [thread.id, thread.title, thread.createdAt.getTime(), thread.updatedAt.getTime()]
+      [thread.id, thread.title ?? null, thread.createdAt.getTime(), thread.updatedAt.getTime()]
     );
     return thread;
   }
@@ -262,7 +262,7 @@ export class SQLiteMemoryStorage implements MemoryStorage {
     for (const obs of observations) {
       this.db!.run(
         'INSERT INTO observations (id, thread_id, content, timestamp, compression_level) VALUES (?, ?, ?, ?, ?)',
-        [obs.id, threadId, obs.content, obs.timestamp.getTime(), obs.compressionLevel]
+        [obs.id, threadId, obs.content, obs.timestamp.getTime(), obs.compressionLevel ?? null]
       );
     }
   }

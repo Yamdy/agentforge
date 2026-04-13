@@ -1,6 +1,5 @@
 import * as p from '@clack/prompts';
 import pc from 'picocolors';
-import { logger } from '../../utils/logger.js';
 import { LLM_PROVIDERS, DEFAULT_DIR } from '../../utils/constants.js';
 import type { LLMProvider } from '../../utils/constants.js';
 import {

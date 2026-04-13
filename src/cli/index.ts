@@ -3,7 +3,6 @@ import 'dotenv/config';
 import { Command } from 'commander';
 import pc from 'picocolors';
 import pkg from '../../package.json';
-import { logger } from './utils/logger.js';
 import { create } from './commands/create/index.js';
 import { init } from './commands/init/index.js';
 import { dev } from './commands/dev/index.js';

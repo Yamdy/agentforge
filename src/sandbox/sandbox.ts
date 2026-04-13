@@ -77,7 +77,7 @@ export class Sandbox {
     }
 
     // 匹配以 / 或 ./ 或 \ 或 .\ 开头的路径
-    const pathPattern = /(?<=\s)(\/[^\s]+|\.[\/\\][^\s]+|[A-Za-z]:[\\/][^\s]+)/g;
+    const pathPattern = /(?<=\s)(\/[^ ]+|\.[/\\][^ ]+|[A-Za-z]:[\\/][^ ]+)/g;
     while ((match = pathPattern.exec(command)) !== null) {
       paths.push(match[0]);
     }

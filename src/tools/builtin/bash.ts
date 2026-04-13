@@ -53,7 +53,8 @@ export const BashTool: Tool = {
       const append = (chunk: Buffer) => {
         output += chunk.toString();
         if (output.length > MAX_OUTPUT_LENGTH) {
-          output = output.slice(0, MAX_OUTPUT_LENGTH) + '\n\n[Output truncated: exceeded 1MB limit]';
+          output =
+            output.slice(0, MAX_OUTPUT_LENGTH) + '\n\n[Output truncated: exceeded 1MB limit]';
           proc.kill();
         }
       };
@@ -63,6 +64,7 @@ export const BashTool: Tool = {
 
       let timedOut = false;
       const aborted = false;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       let exited = false;
 
       const kill = () => proc.kill();

@@ -64,7 +64,9 @@ export function createApp(config: ServerConfig & { agent?: AgentRunner }) {
   const ensureInit = (): Promise<void> => {
     if (initialized) return Promise.resolve();
     if (!initPromise) {
-      initPromise = sessionApi.init().then(() => { initialized = true; });
+      initPromise = sessionApi.init().then(() => {
+        initialized = true;
+      });
     }
     return initPromise;
   };
@@ -188,7 +190,9 @@ export function createApp(config: ServerConfig & { agent?: AgentRunner }) {
               error: async (err) => {
                 const errorMsg = err instanceof Error ? err.message : String(err);
                 log.error('Agent stream failed', { error: errorMsg });
-                await stream.write(`data: ${JSON.stringify({ type: 'error', error: errorMsg })}\n\n`);
+                await stream.write(
+                  `data: ${JSON.stringify({ type: 'error', error: errorMsg })}\n\n`
+                );
                 resolve();
               },
             });
@@ -310,7 +314,9 @@ export function createApp(config: ServerConfig & { agent?: AgentRunner }) {
               error: async (err) => {
                 const errorMsg = err instanceof Error ? err.message : String(err);
                 log.error('Agent stream failed', { error: errorMsg });
-                await stream.write(`data: ${JSON.stringify({ type: 'error', error: errorMsg })}\n\n`);
+                await stream.write(
+                  `data: ${JSON.stringify({ type: 'error', error: errorMsg })}\n\n`
+                );
                 resolve();
               },
             });
@@ -376,77 +382,80 @@ export function createApp(config: ServerConfig & { agent?: AgentRunner }) {
   return app;
 }
 
-export async function startServer(config: ServerConfig & { agent?: AgentRunner }): Promise<import('http').Server> {
+export async function startServer(
+  config: ServerConfig & { agent?: AgentRunner }
+): Promise<import('http').Server> {
   const { port = 3000 } = config;
   const app = createApp(config);
 
   const httpModule = await import('http');
 
-  const server = httpModule.createServer(async (nodeReq: import('http').IncomingMessage, nodeRes: import('http').ServerResponse) => {
-    const url = nodeReq.url || '/';
-    const method = nodeReq.method || 'GET';
+  const server = httpModule.createServer(
+    async (nodeReq: import('http').IncomingMessage, nodeRes: import('http').ServerResponse) => {
+      const url = nodeReq.url || '/';
+      const method = nodeReq.method || 'GET';
 
-    const headers: Record<string, string> = {};
-    for (const [key, value] of Object.entries(nodeReq.headers)) {
-      if (value) headers[key] = Array.isArray(value) ? value[0] : value;
-    }
-
-    try {
-      let body: ReadableStream | undefined;
-      if (method !== 'GET' && method !== 'HEAD') {
-        body = new ReadableStream({
-          start(controller) {
-            nodeReq.on('data', (chunk: Buffer) => controller.enqueue(chunk));
-            nodeReq.on('end', () => controller.close());
-            nodeReq.on('error', (err: Error) => controller.error(err));
-          },
-        });
+      const headers: Record<string, string> = {};
+      for (const [key, value] of Object.entries(nodeReq.headers)) {
+        if (value) headers[key] = Array.isArray(value) ? value[0] : value;
       }
 
-      const req = new Request(`http://localhost${url}`, {
-        method,
-        headers,
-        body,
-        duplex: 'half',
-      } as RequestInit & { duplex: 'half' });
-      const res = await app.fetch(req);
-
-      const responseHeaders: Record<string, string> = {};
-      res.headers.forEach((value: string, key: string) => {
-        responseHeaders[key] = value;
-      });
-
-      if (res.headers.get('content-type')?.includes('text/event-stream')) {
-        nodeRes.writeHead(res.status, {
-          ...responseHeaders,
-          'Transfer-Encoding': 'chunked',
-          'Cache-Control': 'no-cache',
-          Connection: 'keep-alive',
-        });
-
-        const reader = res.body?.getReader();
-        if (reader) {
-          const decoder = new TextDecoder();
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            nodeRes.write(value);
-            if ('flush' in nodeRes && typeof nodeRes.flush === 'function') {
-              (nodeRes as unknown as { flush: () => void }).flush();
-            }
-          }
-          nodeRes.end();
+      try {
+        let body: ReadableStream | undefined;
+        if (method !== 'GET' && method !== 'HEAD') {
+          body = new ReadableStream({
+            start(controller) {
+              nodeReq.on('data', (chunk: Buffer) => controller.enqueue(chunk));
+              nodeReq.on('end', () => controller.close());
+              nodeReq.on('error', (err: Error) => controller.error(err));
+            },
+          });
         }
-      } else {
-        const text = await res.text();
-        nodeRes.writeHead(res.status, responseHeaders);
-        nodeRes.end(text);
+
+        const req = new Request(`http://localhost${url}`, {
+          method,
+          headers,
+          body,
+          duplex: 'half',
+        } as RequestInit & { duplex: 'half' });
+        const res = await app.fetch(req);
+
+        const responseHeaders: Record<string, string> = {};
+        res.headers.forEach((value: string, key: string) => {
+          responseHeaders[key] = value;
+        });
+
+        if (res.headers.get('content-type')?.includes('text/event-stream')) {
+          nodeRes.writeHead(res.status, {
+            ...responseHeaders,
+            'Transfer-Encoding': 'chunked',
+            'Cache-Control': 'no-cache',
+            Connection: 'keep-alive',
+          });
+
+          const reader = res.body?.getReader();
+          if (reader) {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              nodeRes.write(value);
+              if ('flush' in nodeRes && typeof nodeRes.flush === 'function') {
+                (nodeRes as unknown as { flush: () => void }).flush();
+              }
+            }
+            nodeRes.end();
+          }
+        } else {
+          const text = await res.text();
+          nodeRes.writeHead(res.status, responseHeaders);
+          nodeRes.end(text);
+        }
+      } catch (err) {
+        nodeRes.writeHead(500);
+        nodeRes.end(err instanceof Error ? err.message : 'Internal Server Error');
       }
-    } catch (err) {
-      nodeRes.writeHead(500);
-      nodeRes.end(err instanceof Error ? err.message : 'Internal Server Error');
     }
-  });
+  );
 
   return new Promise<import('http').Server>((resolve) => {
     server.listen(port, () => {

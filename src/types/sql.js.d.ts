@@ -1,14 +1,14 @@
 declare module 'sql.js' {
   export interface Database {
-    run(sql: string, params?: any[]): Database;
-    exec(sql: string, params?: any[]): QueryExecResult[];
+    run(sql: string, params?: (string | number | boolean | null)[]): Database;
+    exec(sql: string, params?: (string | number | boolean | null)[]): QueryExecResult[];
     export(): Uint8Array;
     close(): void;
   }
 
   export interface QueryExecResult {
     columns: string[];
-    values: any[][];
+    values: (string | number | boolean | null)[][];
   }
 
   export interface SqlJsStatic {

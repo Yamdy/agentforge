@@ -7,10 +7,7 @@ import {
 import { type Tool, type ToolParameters } from '../types.js';
 import { config } from './config.js';
 import type { McpServerConfig, McpStatus } from './types.js';
-import {
-  createStdioTransport,
-  createStreamableHTTPTransport,
-} from './transport/index.js';
+import { createStdioTransport, createStreamableHTTPTransport } from './transport/index.js';
 
 const DEFAULT_TIMEOUT = 30000;
 const VERSION = '0.1.0';
@@ -111,7 +108,7 @@ class McpClient {
   status(): Record<string, McpStatus> {
     const result: Record<string, McpStatus> = {};
     const servers = config.getServers();
-    for (const [name, cfg] of Object.entries(servers)) {
+    for (const [name] of Object.entries(servers)) {
       const state = this.clients.get(name);
       result[name] = state?.status || { status: 'disabled' };
     }

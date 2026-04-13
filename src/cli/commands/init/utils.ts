@@ -1,7 +1,7 @@
 import { fileService } from '../../services/file.js';
 import { DEFAULT_DIR } from '../../utils/constants.js';
 import { logger } from '../../utils/logger.js';
-import { renderTemplate, TEMPLATES } from '../../utils/template.js';
+// import { renderTemplate, TEMPLATES } from '../../utils/template.js';
 
 export interface InitOptions {
   directory?: string;
@@ -27,8 +27,8 @@ export async function writeIndexFile(options: {
   addWorkflow: boolean;
   addAgent: boolean;
 }): Promise<void> {
-  const { dirPath, addExample, addWorkflow, addAgent } = options;
-  let content = `import { createApp, startServer } from 'agentforge';\n\nconst app = createApp();\n\nstartServer(app, { port: 4111 });\n`;
+  const { dirPath } = options;
+  const content = `import { createApp, startServer } from 'agentforge';\n\nconst app = createApp();\n\nstartServer(app, { port: 4111 });\n`;
   fileService.writeFile(`${dirPath}/index.ts`, content);
   logger.success('Created index.ts');
 }

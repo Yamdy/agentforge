@@ -1,14 +1,6 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
-import {
-  readJson,
-  writeJson,
-  write as fsWrite,
-  read as fsRead,
-  remove as fsRemove,
-  scan,
-  ensureDir,
-} from './filesystem.js';
+import { readJson, writeJson, remove as fsRemove, scan, ensureDir } from './filesystem.js';
 import { Lock } from './lock.js';
 import { NotFoundError } from './filesystem.js';
 export { SQLiteMemoryStorage } from './sqlite-memory.js';
@@ -17,15 +9,25 @@ export { NotFoundError };
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, '../../data/storage');
+ensureDir(DATA_DIR);
 
-export namespace Storage {
-  ensureDir(DATA_DIR);
+function resolve(key: string[]): string {
+  return path.join(DATA_DIR, ...key) + '.json';
+}
 
-  function resolve(key: string[]): string {
-    return path.join(DATA_DIR, ...key) + '.json';
-  }
+async function withErrorHandling<T>(body: () => Promise<T>): Promise<T> {
+  return body().catch((e) => {
+    if (!(e instanceof Error)) throw e;
+    const errnoException = e as NodeJS.ErrnoException;
+    if (errnoException.code === 'ENOENT') {
+      throw new NotFoundError(`Resource not found: ${errnoException.path}`);
+    }
+    throw e;
+  });
+}
 
-  export async function read<T>(key: string[]): Promise<T> {
+export const Storage = {
+  async read<T>(key: string[]): Promise<T> {
     const target = resolve(key);
     return withErrorHandling(async () => {
       const lock = await Lock.read(target);
@@ -35,9 +37,9 @@ export namespace Storage {
         lock[Symbol.dispose]();
       }
     });
-  }
+  },
 
-  export async function write<T>(key: string[], content: T): Promise<void> {
+  async write<T>(key: string[], content: T): Promise<void> {
     const target = resolve(key);
     return withErrorHandling(async () => {
       const lock = await Lock.write(target);
@@ -47,9 +49,9 @@ export namespace Storage {
         lock[Symbol.dispose]();
       }
     });
-  }
+  },
 
-  export async function update<T>(key: string[], fn: (draft: T) => void): Promise<T> {
+  async update<T>(key: string[], fn: (draft: T) => void): Promise<T> {
     const target = resolve(key);
     return withErrorHandling(async () => {
       const lock = await Lock.write(target);
@@ -62,16 +64,16 @@ export namespace Storage {
         lock[Symbol.dispose]();
       }
     });
-  }
+  },
 
-  export async function remove(key: string[]): Promise<void> {
+  async remove(key: string[]): Promise<void> {
     const target = resolve(key);
     return withErrorHandling(async () => {
       await fsRemove(target);
     });
-  }
+  },
 
-  export async function list(prefix: string[]): Promise<string[][]> {
+  async list(prefix: string[]): Promise<string[][]> {
     const dir = path.join(DATA_DIR, ...prefix);
     try {
       const results = await scan('*', { cwd: dir, include: 'file' });
@@ -79,16 +81,5 @@ export namespace Storage {
     } catch {
       return [];
     }
-  }
-
-  async function withErrorHandling<T>(body: () => Promise<T>): Promise<T> {
-    return body().catch((e) => {
-      if (!(e instanceof Error)) throw e;
-      const errnoException = e as NodeJS.ErrnoException;
-      if (errnoException.code === 'ENOENT') {
-        throw new NotFoundError(`Resource not found: ${errnoException.path}`);
-      }
-      throw e;
-    });
-  }
-}
+  },
+};

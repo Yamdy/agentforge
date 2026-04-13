@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import matter from 'gray-matter';
 import { z } from 'zod';
-import { AgentForgeConfigSchema } from './schema.js';
+// import { AgentForgeConfigSchema } from './schema.js';
 import { validateAgentForgeConfig } from './index.js';
 import type { AgentForgeConfig } from './schema.js';
 import { AppError, ValidationError } from '../errors/index.js';
@@ -179,16 +179,20 @@ export class ConfigLoader {
           ...((result.agent as Record<string, unknown>) || {}),
           ...((overlayRecord.agent as Record<string, unknown>) || {}),
           tools: [
-            ...((result.agent as Record<string, unknown> | undefined)?.tools as unknown[] || []),
-            ...((overlay.agent as Record<string, unknown> | undefined)?.tools as unknown[] || []),
+            ...(((result.agent as Record<string, unknown> | undefined)?.tools as unknown[]) || []),
+            ...(((overlay.agent as Record<string, unknown> | undefined)?.tools as unknown[]) || []),
           ],
           plugins: [
-            ...((result.agent as Record<string, unknown> | undefined)?.plugins as unknown[] || []),
-            ...((overlay.agent as Record<string, unknown> | undefined)?.plugins as unknown[] || []),
+            ...(((result.agent as Record<string, unknown> | undefined)?.plugins as unknown[]) ||
+              []),
+            ...(((overlay.agent as Record<string, unknown> | undefined)?.plugins as unknown[]) ||
+              []),
           ],
           middleware: [
-            ...((result.agent as Record<string, unknown> | undefined)?.middleware as unknown[] || []),
-            ...((overlay.agent as Record<string, unknown> | undefined)?.middleware as unknown[] || []),
+            ...(((result.agent as Record<string, unknown> | undefined)?.middleware as unknown[]) ||
+              []),
+            ...(((overlay.agent as Record<string, unknown> | undefined)?.middleware as unknown[]) ||
+              []),
           ],
         },
         server: {

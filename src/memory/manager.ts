@@ -3,7 +3,6 @@ import type { Message, HistoryManager } from '../types.js';
 import type {
   MemoryManagerConfig,
   MemoryStorage,
-  Thread,
   Observation,
   WorkingMemory as WorkingMemoryType,
 } from './types.js';
@@ -147,7 +146,12 @@ export class MemoryManager implements HistoryManager {
     this.messageHistory.add({ role, content });
   }
 
-  addToolResult(toolCallId: string, toolName: string, result: string, toolArguments?: string): void {
+  addToolResult(
+    toolCallId: string,
+    toolName: string,
+    result: string,
+    toolArguments?: string
+  ): void {
     this.messageHistory.add({
       role: 'tool',
       content: result,

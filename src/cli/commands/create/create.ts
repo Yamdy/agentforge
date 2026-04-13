@@ -1,11 +1,10 @@
 import * as p from '@clack/prompts';
 import pc from 'picocolors';
-import { join } from 'node:path';
 import { execa } from 'execa';
 import { fileService } from '../../services/file.js';
 import { detectPackageManager } from '../../utils/package-manager.js';
 import { logger } from '../../utils/logger.js';
-import { TEMPLATES, renderTemplate } from '../../utils/template.js';
+import { TEMPLATES } from '../../utils/template.js';
 import { DEFAULT_DIR, LLM_PROVIDERS } from '../../utils/constants.js';
 import type { LLMProvider, TemplateType } from '../../utils/constants.js';
 import {
@@ -100,7 +99,7 @@ export async function create(projectName?: string, options: CreateOptions = {}):
 
     s.start('Creating project...');
 
-    const originalDir = process.cwd();
+    //    const originalDir = process.cwd();
 
     if (targetDir !== '.') {
       fileService.ensureDir(targetDir);

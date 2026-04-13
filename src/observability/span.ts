@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import type { Span, SpanEvent, SpanStatus, SpanStatusCode } from './types.js';
+import type { Span, SpanEvent, SpanStatus } from './types.js';
 
 class SpanImpl implements Span {
   public readonly spanId: string;

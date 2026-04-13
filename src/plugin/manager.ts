@@ -1,5 +1,5 @@
 import { Subject, Observable, filter, map, mergeMap, Subscription } from 'rxjs';
-import type { Hooks, HookFunction, Plugin, ProviderContext, ProviderResult } from './types.js';
+import type { HookFunction, Plugin, ProviderContext, ProviderResult } from './types.js';
 import { PluginSchema } from './types.js';
 import { PluginContext, createPluginContext } from './context.js';
 
@@ -131,7 +131,7 @@ export class PluginManager {
     return results;
   }
 
-  on(event: string, handler: HookFunction, pluginName: string = 'external'): Subscription {
+  on(event: string, handler: HookFunction, _pluginName: string = 'external'): Subscription {
     const subject = this.getOrCreateSubject(event);
     const sub = subject
       .pipe(

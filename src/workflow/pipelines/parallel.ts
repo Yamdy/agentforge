@@ -10,7 +10,7 @@ export const parallelPipeline: PipelineFunction = async (
 
   const results = await Promise.all(agents.map((agent) => agent.run(input)));
 
-  return results.map((content, index) => ({
+  return results.map((content, _index) => ({
     role: 'assistant',
     content,
   })) as Message[];

@@ -38,12 +38,12 @@ export interface ToolExecuteAfterOutput {
   result: string;
 }
 
-export interface MessageTransformInput {}
+export type MessageTransformInput = object;
 export interface MessageTransformOutput {
   messages: Record<string, unknown>[];
 }
 
-export interface SystemPromptInput {}
+export type SystemPromptInput = object;
 export interface SystemPromptOutput {
   prompt: string[];
 }
@@ -52,29 +52,29 @@ export interface AgentStepInput {
   step: number;
   maxSteps: number;
 }
-export interface AgentStepOutput {}
+export type AgentStepOutput = object;
 
 export interface AgentErrorInput {
   error: string;
 }
-export interface AgentErrorOutput {}
+export type AgentErrorOutput = object;
 
 export interface StateChangeInput {
   from: TaskStatus;
   to: TaskStatus;
 }
-export interface StateChangeOutput {}
+export type StateChangeOutput = object;
 
 export interface AgentStartInput {
   userInput: string;
 }
-export interface AgentStartOutput {}
+export type AgentStartOutput = object;
 
 export interface AgentCompleteInput {
   userInput: string;
   response: string;
 }
-export interface AgentCompleteOutput {}
+export type AgentCompleteOutput = object;
 
 export interface LLMRequestBeforeInput {
   headers: Record<string, string>;
@@ -133,7 +133,7 @@ export interface ChatResponseInput {
   responseText: string;
 }
 
-export interface ChatResponseOutput {}
+export type ChatResponseOutput = object;
 
 export interface ChatErrorInput {
   sessionId?: string;
@@ -141,7 +141,7 @@ export interface ChatErrorInput {
   duration: number;
 }
 
-export interface ChatErrorOutput {}
+export type ChatErrorOutput = object;
 
 export interface SessionCompactingInput {
   sessionId?: string;

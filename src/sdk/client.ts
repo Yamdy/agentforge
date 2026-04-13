@@ -98,7 +98,7 @@ export class AgentForgeClient {
     }
 
     let url = `${this.baseUrl}/api/agent/run/stream`;
-    let body = JSON.stringify({ input });
+    const body = JSON.stringify({ input });
 
     if (options?.sessionId) {
       url = `${this.baseUrl}/api/sessions/${options.sessionId}/run/stream`;
