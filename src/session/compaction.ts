@@ -4,6 +4,7 @@ import type { PluginManager } from '../plugin/index.js';
 
 export interface CompactionOptions {
   maxMessages?: number;
+  maxTokens?: number;
   keepFirst?: number;
   keepLast?: number;
   summaryPrompt?: string;
@@ -14,6 +15,10 @@ export interface CompactionOptions {
   keepSystemMessages?: boolean;
   /** 保留工具结果 */
   keepToolResults?: boolean;
+  /** 自动压缩阈值（token 数），超过后自动压缩 */
+  autoCompactThreshold?: number;
+  /** 是否总是保留当前目标 */
+  preserveGoal?: boolean;
 }
 
 export interface CompactionResult {
@@ -60,10 +65,7 @@ export function compactMessages(
   const keepSystem = config.keepSystemMessages ?? true;
   const keepTools = config.keepToolResults ?? true;
 
-  const originalTokens = messages.reduce(
-    (sum, m) => sum + estimateTokens(m.content),
-    0
-  );
+  const originalTokens = messages.reduce((sum, m) => sum + estimateTokens(m.content), 0);
 
   if (messages.length <= maxMessages) {
     return {
@@ -96,10 +98,7 @@ export function compactMessages(
     (a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0)
   );
 
-  const compactedTokens = result.reduce(
-    (sum, m) => sum + estimateTokens(m.content),
-    0
-  );
+  const compactedTokens = result.reduce((sum, m) => sum + estimateTokens(m.content), 0);
 
   return {
     messages: result,
@@ -107,6 +106,38 @@ export function compactMessages(
     compactedCount: result.length,
     savedTokens: originalTokens - compactedTokens,
   };
+}
+
+/**
+ * Check if session needs compaction based on current options
+ */
+export function needsCompaction(messages: SessionMessage[], options: CompactionOptions): boolean {
+  const maxMessages = options.maxMessages ?? Infinity;
+  const maxTokens = options.maxTokens ?? Infinity;
+  const threshold = options.autoCompactThreshold;
+
+  // Check message count
+  if (messages.length > maxMessages) {
+    return true;
+  }
+
+  // Check token count against threshold
+  if (threshold) {
+    const totalTokens = messages.reduce((sum, m) => sum + estimateTokens(m.content), 0);
+    if (totalTokens >= threshold) {
+      return true;
+    }
+  }
+
+  // Check absolute max tokens
+  if (maxTokens < Infinity) {
+    const totalTokens = messages.reduce((sum, m) => sum + estimateTokens(m.content), 0);
+    if (totalTokens > maxTokens) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 export async function compactSession(
@@ -118,12 +149,12 @@ export async function compactSession(
   summary: string;
   savedTokens: number;
 }> {
-  const maxMessages = options.maxMessages ?? 50;
   const keepFirst = options.keepFirst ?? 2;
-  const keepLast = options.keepLast ?? 10;
+  const keepLast = options.keepLast ?? 15;
   const summaryPrompt = options.summaryPrompt ?? DEFAULT_SUMMARY_PROMPT;
+  const preserveGoal = options.preserveGoal ?? true;
 
-  if (session.messages.length <= maxMessages) {
+  if (!needsCompaction(session.messages, options)) {
     return {
       originalCount: session.messages.length,
       compactedMessages: session.messages,
@@ -134,22 +165,44 @@ export async function compactSession(
 
   const compactingOutput: { context: string[]; prompt?: string } = { context: [] };
   if (options.pluginManager) {
-    await options.pluginManager.trigger('session.compacting', {
-      sessionId: options.sessionId,
-      messageCount: session.messages.length,
-    }, compactingOutput);
+    await options.pluginManager.trigger(
+      'session.compacting',
+      {
+        sessionId: options.sessionId,
+        messageCount: session.messages.length,
+      },
+      compactingOutput
+    );
   }
 
   if (compactingOutput.prompt) {
     options = { ...options, summaryPrompt: compactingOutput.prompt };
   }
 
+  // Extract system messages
   const systemMessages = session.messages.filter((m) => m.role === 'system');
   const nonSystemMessages = session.messages.filter((m) => m.role !== 'system');
 
-  const firstMessages = nonSystemMessages.slice(0, keepFirst);
-  const lastMessages = nonSystemMessages.slice(-keepLast);
-  const middleMessages = nonSystemMessages.slice(keepFirst, nonSystemMessages.length - keepLast);
+  // If preserving goal, look for user messages containing goal/objective/task keywords
+  // and keep them at the beginning
+  const goalMessages: SessionMessage[] = [];
+  const remainingNonSystem = [...nonSystemMessages];
+
+  if (preserveGoal) {
+    // Look for goal-like messages in the first few messages
+    const goalKeywords = ['goal', 'objective', 'task', 'target', 'goal:', 'task:'];
+    for (let i = 0; i < Math.min(5, nonSystemMessages.length); i++) {
+      const msg = nonSystemMessages[i];
+      if (msg.role === 'user' && goalKeywords.some((k) => msg.content.toLowerCase().includes(k))) {
+        goalMessages.push(msg);
+        remainingNonSystem.splice(i - goalMessages.length + 1, 1);
+      }
+    }
+  }
+
+  const firstMessages = remainingNonSystem.slice(0, keepFirst);
+  const lastMessages = remainingNonSystem.slice(-keepLast);
+  const middleMessages = remainingNonSystem.slice(keepFirst, remainingNonSystem.length - keepLast);
 
   let summary: string;
 
@@ -171,22 +224,18 @@ export async function compactSession(
     }
   }
 
-  const originalTokens = session.messages.reduce(
-    (sum, m) => sum + estimateTokens(m.content),
-    0
-  );
+  const originalTokens = session.messages.reduce((sum, m) => sum + estimateTokens(m.content), 0);
 
+  // Build compacted array with smart ordering
   const compacted: SessionMessage[] = [
     ...systemMessages,
+    ...goalMessages,
     ...firstMessages,
     { role: 'system', content: `[Previous conversation summary]: ${summary}` },
     ...lastMessages,
   ];
 
-  const compactedTokens = compacted.reduce(
-    (sum, m) => sum + estimateTokens(m.content),
-    0
-  );
+  const compactedTokens = compacted.reduce((sum, m) => sum + estimateTokens(m.content), 0);
 
   return {
     originalCount: session.messages.length,

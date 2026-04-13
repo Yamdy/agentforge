@@ -7,6 +7,11 @@ import { SearchTool, createSearchTool } from './search';
 import { CalculatorTool } from './calculate';
 import { CurrentTimeTool } from './time';
 import { SleepTool } from './sleep';
+import { GrepTool } from './grep';
+import { GlobTool } from './glob';
+import { FindTool } from './find';
+import { EditTool } from './edit';
+import { AskUserTool } from './ask_user';
 
 export const BuiltinTools = [
   ReadTool,
@@ -18,6 +23,11 @@ export const BuiltinTools = [
   CalculatorTool,
   CurrentTimeTool,
   SleepTool,
+  GrepTool,
+  GlobTool,
+  FindTool,
+  EditTool,
+  AskUserTool,
 ];
 
 export {
@@ -31,4 +41,9 @@ export {
   CalculatorTool,
   CurrentTimeTool,
   SleepTool,
+  GrepTool,
+  GlobTool,
+  FindTool,
+  EditTool,
+  AskUserTool,
 };

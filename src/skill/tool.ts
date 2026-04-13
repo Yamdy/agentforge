@@ -44,14 +44,54 @@ export function createListSkillsTool(): Tool {
       const skills = discovery.list();
 
       if (skills.length === 0) {
-        return 'No SKILLs available. Add SKILLs to .agentforge/skills/, .agents/skills/, or .claude/skills/';
+        return 'No SKILLs available. Add SKILLs to .agentforge/skills/, .agents/skills/, .claude/skills/, or skills/';
       }
 
       let result = 'Available SKILLs:\n\n';
       for (const skill of skills) {
-        result += `- ${skill.name}: ${skill.description}\n`;
+        const category = skill.frontmatter?.category
+          ? `[${skill.frontmatter.category as string}] `
+          : '';
+        result += `- ${category}**${skill.name}**: ${skill.description}\n`;
       }
 
+      return result;
+    },
+  };
+}
+
+export function createSearchSkillsTool(): Tool {
+  return {
+    name: 'search_skills',
+    description:
+      'Search for relevant SKILLs by query. Use this to find skills related to current task',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Search query (keywords related to the task)',
+        },
+      },
+      required: ['query'],
+    },
+    execute: async (args: Record<string, unknown>) => {
+      const query = args.query as string;
+      const skills = discovery.findRelevantSkills(query);
+
+      if (skills.length === 0) {
+        return `No relevant SKILLs found for query: "${query}"`;
+      }
+
+      let result = `Found ${skills.length} relevant SKILL(s) for "${query}":\n\n`;
+      for (const skill of skills) {
+        const category = skill.frontmatter?.category
+          ? `[${skill.frontmatter.category as string}] `
+          : '';
+        result += `- ${category}**${skill.name}**: ${skill.description}\n`;
+      }
+
+      result += '\nUse `load_skill` with the skill name to load the full skill content.';
       return result;
     },
   };

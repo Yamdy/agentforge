@@ -13,7 +13,14 @@ import {
 } from './storage.js';
 
 export { CheckpointManager } from './checkpoint.js';
-export { compactMessages, compactSession, applyCompaction, estimateTokens } from './compaction.js';
+export {
+  compactMessages,
+  compactSession,
+  applyCompaction,
+  estimateTokens,
+  needsCompaction,
+} from './compaction.js';
+export { markSessionCompacted };
 export type { CompactionOptions, CompactionResult } from './compaction.js';
 export type { Checkpoint, SessionConfig, PendingToolCall } from './types.js';
 

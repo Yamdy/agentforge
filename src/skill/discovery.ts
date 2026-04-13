@@ -1,5 +1,5 @@
-import fs from 'fs/promises';
-import path from 'path';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 import type { SkillInfo, SkillFrontmatter } from './types.js';
 
 const SKILL_DIRS = [
@@ -7,6 +7,7 @@ const SKILL_DIRS = [
   path.join(process.cwd(), '.agents', 'skills'),
   path.join(process.cwd(), '.claude', 'skills'),
   path.join(process.cwd(), '.opencode', 'skills'),
+  path.join(process.cwd(), 'skills'),
 ];
 
 class SkillDiscovery {
@@ -21,9 +22,11 @@ class SkillDiscovery {
         if (!exists?.isDirectory()) continue;
 
         const entries = await fs.readdir(dir, { withFileTypes: true });
+
+        // First check: individual .md files (anthropics/skills format)
         for (const entry of entries) {
-          if (entry.isDirectory()) {
-            const skillPath = path.join(dir, entry.name, 'SKILL.md');
+          if (entry.isFile() && entry.name.endsWith('.md')) {
+            const skillPath = path.join(dir, entry.name);
             try {
               const skill = await this.loadSkill(skillPath);
               if (skill) {
@@ -32,9 +35,32 @@ class SkillDiscovery {
             } catch (e) {
               console.warn(`Failed to load skill from ${skillPath}:`, e);
             }
+          } else if (entry.isDirectory()) {
+            // Check for skill in directory: SKILL.md first, then index.md, then README.md
+            const skillFiles = [
+              path.join(dir, entry.name, 'SKILL.md'),
+              path.join(dir, entry.name, 'skill.md'),
+              path.join(dir, entry.name, 'index.md'),
+              path.join(dir, entry.name, 'README.md'),
+            ];
+
+            for (const skillPath of skillFiles) {
+              try {
+                const exists = await fs.stat(skillPath).catch(() => null);
+                if (exists?.isFile()) {
+                  const skill = await this.loadSkill(skillPath);
+                  if (skill) {
+                    this.skills.set(skill.name, skill);
+                    break;
+                  }
+                }
+              } catch {
+                continue;
+              }
+            }
           }
         }
-      } catch (e) {
+      } catch {
         continue;
       }
     }
@@ -44,17 +70,53 @@ class SkillDiscovery {
     const content = await fs.readFile(filePath, 'utf-8');
     const { frontmatter, body } = this.parseFrontmatter(content);
 
-    if (!frontmatter?.name || !frontmatter?.description) {
-      return null;
+    // If no frontmatter, try to extract from filename and first heading
+    const fm = (frontmatter || {}) as SkillFrontmatter;
+    if (!fm.name || !fm.description) {
+      const fileName = path.basename(filePath, '.md');
+      const extracted = this.extractFromMarkdown(body, fileName);
+
+      // Always return with extracted name and description
+      return {
+        name: extracted.name,
+        description: extracted.description,
+        location: filePath,
+        content: body,
+        frontmatter: { ...fm, ...extracted },
+      };
     }
 
     return {
-      name: frontmatter.name,
-      description: frontmatter.description,
+      name: fm.name,
+      description: fm.description,
       location: filePath,
       content: body,
-      frontmatter,
+      frontmatter: fm,
     };
+  }
+
+  private extractFromMarkdown(
+    content: string,
+    defaultName: string
+  ): { name: string; description: string } {
+    // Try to find first heading as name
+    const firstHeadingMatch = content.match(/^#\s+(.+)$/m);
+    const name = firstHeadingMatch ? firstHeadingMatch[1].trim() : defaultName;
+
+    // Try to find first paragraph as description
+    const lines = content
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l);
+    let description = '';
+    for (const line of lines.slice(1)) {
+      if (!line.startsWith('#') && !line.startsWith('---')) {
+        description = line;
+        break;
+      }
+    }
+
+    return { name, description: description || name };
   }
 
   private parseFrontmatter(content: string): {
@@ -95,7 +157,9 @@ class SkillDiscovery {
       if (frontmatter.metadata && typeof frontmatter.metadata === 'string') {
         try {
           frontmatter.metadata = JSON.parse(frontmatter.metadata);
-        } catch {}
+        } catch {
+          // Ignore parsing errors, keep as string
+        }
       }
 
       return {
@@ -113,6 +177,88 @@ class SkillDiscovery {
 
   get(name: string): SkillInfo | undefined {
     return this.skills.get(name);
+  }
+
+  findRelevantSkills(query: string): SkillInfo[] {
+    if (!query || query.trim().length === 0) {
+      return [];
+    }
+
+    const queryLower = query.toLowerCase();
+    const results: SkillInfo[] = [];
+
+    for (const skill of Array.from(this.skills.values())) {
+      let score = 0;
+
+      // Check name match
+      if (skill.name.toLowerCase().includes(queryLower)) {
+        score += 10;
+      }
+
+      // Check description match
+      if (skill.description.toLowerCase().includes(queryLower)) {
+        score += 5;
+      }
+
+      // Check triggers in frontmatter
+      if (skill.frontmatter?.triggers) {
+        for (const trigger of skill.frontmatter.triggers) {
+          if (
+            trigger.toLowerCase().includes(queryLower) ||
+            queryLower.includes(trigger.toLowerCase())
+          ) {
+            score += 8;
+            break;
+          }
+        }
+      }
+
+      // Check keywords in frontmatter
+      if (skill.frontmatter?.keywords) {
+        for (const keyword of skill.frontmatter.keywords) {
+          if (
+            keyword.toLowerCase().includes(queryLower) ||
+            queryLower.includes(keyword.toLowerCase())
+          ) {
+            score += 5;
+            break;
+          }
+        }
+      }
+
+      // Check content match (lower weight)
+      if (skill.content.toLowerCase().includes(queryLower)) {
+        score += 2;
+      }
+
+      if (score > 0) {
+        results.push(skill);
+      }
+    }
+
+    // Sort by relevance
+    return results.sort((a, b) => {
+      const scoreA = this.calculateScore(a, queryLower);
+      const scoreB = this.calculateScore(b, queryLower);
+      return scoreB - scoreA;
+    });
+  }
+
+  private calculateScore(skill: SkillInfo, queryLower: string): number {
+    let score = 0;
+    if (skill.name.toLowerCase().includes(queryLower)) score += 10;
+    if (skill.description.toLowerCase().includes(queryLower)) score += 5;
+    if (skill.frontmatter?.triggers) {
+      if (skill.frontmatter.triggers.some((t: string) => t.toLowerCase().includes(queryLower))) {
+        score += 8;
+      }
+    }
+    if (skill.frontmatter?.keywords) {
+      if (skill.frontmatter.keywords.some((k: string) => k.toLowerCase().includes(queryLower))) {
+        score += 5;
+      }
+    }
+    return score;
   }
 
   async refresh(): Promise<void> {

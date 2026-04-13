@@ -62,7 +62,7 @@ export const BashTool: Tool = {
       proc.stderr?.on('data', append);
 
       let timedOut = false;
-      let aborted = false;
+      const aborted = false;
       let exited = false;
 
       const kill = () => proc.kill();

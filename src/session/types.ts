@@ -54,4 +54,10 @@ export interface SessionConfig {
   autoCompact?: boolean;
   /** 最大消息数 */
   maxMessages?: number;
+  /** 自动压缩阈值（token 数），超过后触发压缩 */
+  autoCompactThreshold?: number;
+  /** 最大总 token 数 */
+  maxTokens?: number;
+  /** 是否保留任务目标消息 */
+  preserveGoal?: boolean;
 }
