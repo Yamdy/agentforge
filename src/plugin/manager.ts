@@ -1,29 +1,31 @@
 import { Subject, Observable, filter, map, mergeMap, Subscription } from 'rxjs';
-import { Plugin, PluginSchema, type ProviderContext, type ProviderResult } from './types.js';
+import type { Hooks, HookFunction, Plugin, ProviderContext, ProviderResult } from './types.js';
+import { PluginSchema } from './types.js';
 import { PluginContext, createPluginContext } from './context.js';
 
 export interface PluginManagerConfig {
   plugins?: Plugin[];
 }
 
-type HookFunction = (input: unknown, output: unknown) => Promise<void>;
-
 export class PluginManager {
   private plugins: Plugin[] = [];
   private context: PluginContext;
-  private subjects: Map<string, Subject<{ event: string; input: unknown; output: unknown }>> = new Map();
+  private subjects: Map<string, Subject<{ event: string; input: unknown; output: unknown }>> =
+    new Map();
   private subscriptions: Subscription = new Subscription();
   private pluginSubscriptions: Map<string, Subscription[]> = new Map();
 
   constructor(config: PluginManagerConfig = {}, directory: string = process.cwd()) {
-    this.context = createPluginContext({ plugins: [] }, directory);
+    this.context = createPluginContext({ plugins: this.plugins }, directory);
     if (config.plugins) {
       this.plugins = config.plugins;
       this.registerPluginHooks();
     }
   }
 
-  private getOrCreateSubject(event: string): Subject<{ event: string; input: unknown; output: unknown }> {
+  private getOrCreateSubject(
+    event: string
+  ): Subject<{ event: string; input: unknown; output: unknown }> {
     if (!this.subjects.has(event)) {
       this.subjects.set(event, new Subject());
     }
@@ -34,9 +36,11 @@ export class PluginManager {
     for (const plugin of this.plugins) {
       if (plugin.hooks) {
         const subs: Subscription[] = [];
-        for (const [eventName, hook] of Object.entries(plugin.hooks)) {
+        for (const [eventName, hook] of Object.entries(
+          plugin.hooks as Record<string, HookFunction>
+        )) {
           if (hook) {
-            const sub = this.subscribeToEvent(eventName, hook as HookFunction, plugin.name);
+            const sub = this.subscribeToEvent(eventName, hook, plugin.name);
             subs.push(sub);
           }
         }
@@ -74,9 +78,11 @@ export class PluginManager {
 
     if (plugin.hooks) {
       const subs: Subscription[] = this.pluginSubscriptions.get(plugin.name) ?? [];
-      for (const [eventName, hook] of Object.entries(plugin.hooks)) {
+      for (const [eventName, hook] of Object.entries(
+        plugin.hooks as Record<string, HookFunction>
+      )) {
         if (hook) {
-          const sub = this.subscribeToEvent(eventName, hook as HookFunction, plugin.name);
+          const sub = this.subscribeToEvent(eventName, hook, plugin.name);
           subs.push(sub);
         }
       }
@@ -85,12 +91,12 @@ export class PluginManager {
   }
 
   unregister(name: string): void {
-    const index = this.plugins.findIndex(p => p.name === name);
+    const index = this.plugins.findIndex((p) => p.name === name);
     if (index !== -1) {
       this.plugins.splice(index, 1);
       const subs = this.pluginSubscriptions.get(name);
       if (subs) {
-        subs.forEach(s => s.unsubscribe());
+        subs.forEach((s) => s.unsubscribe());
         this.pluginSubscriptions.delete(name);
       }
       this.context.logger.info('Plugin unregistered', { name });
@@ -102,7 +108,7 @@ export class PluginManager {
   }
 
   get(name: string): Plugin | undefined {
-    return this.plugins.find(p => p.name === name);
+    return this.plugins.find((p) => p.name === name);
   }
 
   async collectProviders(ctx: ProviderContext): Promise<ProviderResult[]> {
@@ -125,7 +131,7 @@ export class PluginManager {
     return results;
   }
 
-  on(event: string, handler: HookFunction): Subscription {
+  on(event: string, handler: HookFunction, pluginName: string = 'external'): Subscription {
     const subject = this.getOrCreateSubject(event);
     const sub = subject
       .pipe(
@@ -192,6 +198,9 @@ export class PluginManager {
   }
 }
 
-export function createPluginManager(config?: PluginManagerConfig, directory?: string): PluginManager {
+export function createPluginManager(
+  config?: PluginManagerConfig,
+  directory?: string
+): PluginManager {
   return new PluginManager(config, directory);
 }

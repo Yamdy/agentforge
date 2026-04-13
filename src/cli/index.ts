@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import 'dotenv/config';
 import { Command } from 'commander';
 import pc from 'picocolors';
 import pkg from '../../package.json';
@@ -8,7 +9,7 @@ import { init } from './commands/init/index.js';
 import { dev } from './commands/dev/index.js';
 import { build } from './commands/build/index.js';
 import { start } from './commands/start/index.js';
-import { run } from './commands/run/index.js';
+import { run } from './commands/run/run.js';
 import { lint } from './commands/lint/index.js';
 import { studio } from './commands/studio/index.js';
 

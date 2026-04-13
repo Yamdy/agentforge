@@ -1,10 +1,7 @@
 import * as p from '@clack/prompts';
 import pc from 'picocolors';
-import { Agent } from '../../../agent/index.js';
-import { InMemoryHistory } from '../../../history.js';
-import { ToolRegistry } from '../../../registry.js';
-import { AIAdapter } from '../../../adapters/ai.js';
-import { calculatorTool, searchTool, allTools } from '../../../tools/index.js';
+import { loadConfig } from '../../../config/loader.js';
+import { createAgent } from '../../../agent/factory.js';
 import { logger } from '../../utils/logger.js';
 
 interface RunOptions {
@@ -15,32 +12,23 @@ interface RunOptions {
 }
 
 export async function run(options: RunOptions = {}): Promise<void> {
-  const apiKey = process.env.DOUBAO_API_KEY || process.env.OPENAI_API_KEY;
+  // Load configuration from file
+  const config = await loadConfig().catch(() => null);
 
-  if (!apiKey) {
-    logger.error('Error: Set DOUBAO_API_KEY or OPENAI_API_KEY');
+  if (!config) {
+    logger.error('Error: No agentforge.config.json found in current directory');
     process.exit(1);
   }
 
-  const model = process.env.MODEL || 'doubao-seed-2.0-code';
-  const baseURL = process.env.DOUBAO_BASE_URL || '';
+  // Create agent from config
+  const s = p.spinner();
+  s.start('Creating agent from configuration...');
+  const agent = await createAgent(config);
+  s.stop('Agent created');
 
-  const adapter = new AIAdapter({
-    model,
-    apiKey,
-    baseURL,
-  });
-
-  const registry = new ToolRegistry();
-  registry.register(calculatorTool);
-  registry.register(searchTool);
-  for (const tool of allTools) {
-    registry.register(tool);
+  if (config.agent.systemPrompt) {
+    logger.info(`System prompt loaded: ${config.agent.systemPrompt.slice(0, 50)}...`);
   }
-  adapter.setTools(registry.list());
-
-  const history = new InMemoryHistory();
-  const agent = new Agent(adapter, history, registry, { maxSteps: 10 });
 
   if (options.prompt) {
     const s = p.spinner();

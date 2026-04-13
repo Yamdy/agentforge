@@ -45,6 +45,7 @@ export class Agent {
   private history: HistoryManager;
   private registry: ToolRegistry;
   private maxSteps: number;
+  private _sysPrompt: string;
   private stateMachine: ReturnType<typeof createTaskStateMachine>;
   private pluginManager: PluginManager;
   private log: ReturnType<typeof createLogger>;
@@ -64,6 +65,7 @@ export class Agent {
     this.adapter = adapter;
     this.history = history;
     this.registry = registry ?? new ToolRegistry();
+    this._sysPrompt = options?.systemPrompt ?? '';
     this.maxSteps = options?.maxSteps ?? Infinity;
     this.stateMachine = createTaskStateMachine(this.maxSteps);
     this.pluginManager = options?.pluginManager ?? new PluginManager();
@@ -72,6 +74,14 @@ export class Agent {
     this.middleware = options?.middleware ?? [];
     this.pipeline = createMiddlewarePipeline(...this.middleware);
     this.memoryManager = options?.memoryManager;
+  }
+
+  get systemPrompt(): string {
+    return this._sysPrompt;
+  }
+
+  set systemPrompt(value: string) {
+    this._sysPrompt = value;
   }
 
   getMemoryManager(): MemoryManager | undefined {
@@ -153,8 +163,7 @@ export class Agent {
             .catch(() => resolve(lastStepText));
         },
         error: (err) => {
-          this.persistMemory()
-            .finally(() => reject(err));
+          this.persistMemory().finally(() => reject(err));
         },
       });
     });
@@ -180,6 +189,10 @@ export class Agent {
         }
 
         if (this.memoryManager) {
+          // Add system prompt first
+          if (this._sysPrompt) {
+            this.history.add('system', this._sysPrompt);
+          }
           for (const msg of sessionMessages) {
             if (msg.role !== 'system') {
               this.history.add(msg.role, msg.content);
@@ -187,6 +200,10 @@ export class Agent {
           }
         } else {
           this.history.clear();
+          // Add system prompt first
+          if (this._sysPrompt) {
+            this.history.add('system', this._sysPrompt);
+          }
           for (const msg of sessionMessages) {
             if (msg.role !== 'system') {
               this.history.add(msg.role, msg.content);
@@ -201,7 +218,9 @@ export class Agent {
           sessionId: this.memoryManager?.threadIdField,
         });
 
-        this.pluginManager.trigger('chat.message', { role: 'user', content: userInput }, { content: userInput }).catch(() => {});
+        this.pluginManager
+          .trigger('chat.message', { role: 'user', content: userInput }, { content: userInput })
+          .catch(() => {});
 
         let previousStatus = this.stateMachine.getState().status;
         unsubscribeState = this.stateMachine.onStateChange(async (state) => {
@@ -246,7 +265,9 @@ export class Agent {
             .catch(() => {});
 
           const chatParamsOutput: { temperature?: number; maxTokens?: number; topP?: number } = {};
-          this.pluginManager.trigger('chat.params', { model: 'unknown', sessionId: undefined }, chatParamsOutput).catch(() => {});
+          this.pluginManager
+            .trigger('chat.params', { model: 'unknown', sessionId: undefined }, chatParamsOutput)
+            .catch(() => {});
 
           const messages = this.history.getMessages();
 
@@ -284,11 +305,17 @@ export class Agent {
               .trigger('agent.complete', { userInput, response: stepTextContent }, {})
               .catch(() => {});
 
-            this.pluginManager.trigger('chat.response', {
-              finishReason: 'stop',
-              duration: 0,
-              responseText: stepTextContent,
-            }, {}).catch(() => {});
+            this.pluginManager
+              .trigger(
+                'chat.response',
+                {
+                  finishReason: 'stop',
+                  duration: 0,
+                  responseText: stepTextContent,
+                },
+                {}
+              )
+              .catch(() => {});
 
             observer.complete();
           }
@@ -401,7 +428,12 @@ export class Agent {
             tool: toolCall.name,
             error: errorMsg,
           });
-          this.history.addToolResult(toolCall.id, toolCall.name, `Error: ${errorMsg}`, toolCall.arguments);
+          this.history.addToolResult(
+            toolCall.id,
+            toolCall.name,
+            `Error: ${errorMsg}`,
+            toolCall.arguments
+          );
           handler?.onToolCallEnd?.(toolCall.id, `Error: ${errorMsg}`);
           observer.next({
             type: 'tool_call_end',
@@ -427,45 +459,45 @@ export class Agent {
         next: async (event) => {
           nextInProgress++;
           try {
-          switch (event.type) {
-            case 'text':
-              stepTextContent += event.content;
-              handler?.onText?.(event.content);
-              observer.next(event);
-              break;
-
-            case 'tool_call_start':
-              pendingToolCalls.set(event.id, { id: event.id, name: event.name, arguments: '' });
-              this.tracer.log(parentSpan.spanId, `Tool call started: ${event.name}`);
-              handler?.onToolCallStart?.(event.id, event.name);
-              observer.next(event);
-              break;
-
-            case 'tool_call_delta': {
-              const pending = pendingToolCalls.get(event.id);
-              if (pending) {
-                pending.arguments += event.arguments;
-              }
-              handler?.onToolCallDelta?.(event.id, event.arguments);
-              observer.next(event);
-              break;
-            }
-
-            case 'tool_call_end': {
-              const toolCall = pendingToolCalls.get(event.id);
-              if (toolCall) {
-                executeToolCall(toolCall).catch(reject);
-              } else {
-                handler?.onToolCallEnd?.(event.id, event.result);
+            switch (event.type) {
+              case 'text':
+                stepTextContent += event.content;
+                handler?.onText?.(event.content);
                 observer.next(event);
-              }
-              break;
-            }
+                break;
 
-            case 'done':
-              observer.next(event);
-              break;
-          }
+              case 'tool_call_start':
+                pendingToolCalls.set(event.id, { id: event.id, name: event.name, arguments: '' });
+                this.tracer.log(parentSpan.spanId, `Tool call started: ${event.name}`);
+                handler?.onToolCallStart?.(event.id, event.name);
+                observer.next(event);
+                break;
+
+              case 'tool_call_delta': {
+                const pending = pendingToolCalls.get(event.id);
+                if (pending) {
+                  pending.arguments += event.arguments;
+                }
+                handler?.onToolCallDelta?.(event.id, event.arguments);
+                observer.next(event);
+                break;
+              }
+
+              case 'tool_call_end': {
+                const toolCall = pendingToolCalls.get(event.id);
+                if (toolCall) {
+                  executeToolCall(toolCall).catch(reject);
+                } else {
+                  handler?.onToolCallEnd?.(event.id, event.result);
+                  observer.next(event);
+                }
+                break;
+              }
+
+              case 'done':
+                observer.next(event);
+                break;
+            }
           } finally {
             nextInProgress--;
             tryResolve();

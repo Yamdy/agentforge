@@ -1,12 +1,37 @@
 {
   "name": "agentforge",
   "version": "0.1.0",
+  "description": "TypeScript framework for building AI applications, agents, and workflows",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "agentforge": "./dist/cli.js"
+    "agentforge": "./dist/cli/index.js"
   },
+  "keywords": [
+    "ai",
+    "agent",
+    "framework",
+    "typescript",
+    "llm",
+    "workflow",
+    "mcp"
+  ],
+  "author": "AgentForge Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/agentforge"
+  },
+  "homepage": "https://github.com/your-org/agentforge",
+  "bugs": {
+    "url": "https://github.com/your-org/agentforge/issues"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsup",
     "start": "node dist/cli.js",

@@ -99,7 +99,7 @@ export interface TimeoutConfig {
 }
 
 export type HistoryManager = {
-  add(role: 'user' | 'assistant' | 'tool', content: string): void;
+  add(role: 'system' | 'user' | 'assistant' | 'tool', content: string): void;
   addToolResult(toolCallId: string, toolName: string, result: string, toolArguments?: string): void;
   getMessages(): Message[];
   clear(): void;
@@ -107,6 +107,7 @@ export type HistoryManager = {
 
 export interface AgentConfig {
   maxSteps?: number;
+  systemPrompt?: string;
 }
 
 export const TaskStatusSchema = z.enum([

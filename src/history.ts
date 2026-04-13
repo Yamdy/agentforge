@@ -11,7 +11,7 @@ export class InMemoryHistory implements HistoryManager {
   private entries: HistoryEntry[] = [];
   private order = 0;
 
-  add(role: 'user' | 'assistant' | 'tool', content: string): void {
+  add(role: 'system' | 'user' | 'assistant' | 'tool', content: string): void {
     this.entries.push({
       type: 'message',
       message: validateMessage({ role, content }),
@@ -19,7 +19,12 @@ export class InMemoryHistory implements HistoryManager {
     });
   }
 
-  addToolResult(toolCallId: string, toolName: string, result: string, toolArguments?: string): void {
+  addToolResult(
+    toolCallId: string,
+    toolName: string,
+    result: string,
+    toolArguments?: string
+  ): void {
     this.entries.push({
       type: 'toolResult',
       toolResult: { toolCallId, toolName, result, toolArguments },
