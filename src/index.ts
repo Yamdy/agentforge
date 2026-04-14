@@ -51,8 +51,6 @@ export type { Session, SessionMessage } from './session/index.js';
 
 export { Storage } from './storage/index.js';
 
-export { withRetry } from './retry/index.js';
-
 export {
   AppError,
   NotFoundError,
