@@ -11,7 +11,15 @@ import {
   validateAgentConfig,
 } from '../config/index.js';
 import type { LLMAdapter, HistoryManager, RequestInterceptor } from '../types';
-import type { Middleware } from '../middleware/index.js';
+import {
+  createMiddlewarePipeline,
+  createLoggingMiddleware,
+  createTokenCountingMiddleware,
+  createTimeoutMiddleware,
+  type Middleware,
+  type TimeoutMiddlewareOptions,
+  type TokenCountingMiddlewareOptions,
+} from '../middleware/index.js';
 import { allTools } from '../tools/index.js';
 import type { MemoryManager } from '../memory/manager.js';
 import type { MemoryManagerConfig } from '../memory/types.js';
@@ -55,7 +63,9 @@ export class AgentFactory {
         baseURL: (cfgModel.baseURL as string) || agentConfig.baseURL,
         temperature: (cfgModel.temperature as number) ?? agentConfig.temperature,
         maxTokens: (cfgModel.maxTokens as number) ?? agentConfig.maxTokens,
-        timeout: cfgModel.timeout as { total?: number; firstToken?: number; chunk?: number } | undefined,
+        timeout: cfgModel.timeout as
+          | { total?: number; firstToken?: number; chunk?: number }
+          | undefined,
         tlsRejectUnauthorized: cfgModel.tlsRejectUnauthorized as boolean | undefined,
       };
     } else {
@@ -70,7 +80,7 @@ export class AgentFactory {
     }
 
     const pluginManager = this.options.pluginManager ?? new PluginManager();
-    const adapter = this.options.adapter ?? await this.createAdapter(modelConfig, pluginManager);
+    const adapter = this.options.adapter ?? (await this.createAdapter(modelConfig, pluginManager));
 
     let memoryManager = this.options.memoryManager;
     let history: HistoryManager;
@@ -87,10 +97,31 @@ export class AgentFactory {
 
     const registry = this.options.registry ?? this.createRegistry(agentConfig);
 
+    // Build middleware list: combine user provided + auto-added built-ins
+    let middleware = this.options.middleware ?? [];
+
+    // Always add logging middleware (configurable via env, defaults to enabled in dev)
+    const loggingEnabled = process.env.NODE_ENV !== 'production' || true;
+    middleware.push(createLoggingMiddleware(loggingEnabled));
+
+    // Add timeout middleware if configured on model
+    if (modelConfig.timeout?.total) {
+      const timeoutConfig: TimeoutMiddlewareOptions = {
+        timeoutMs: modelConfig.timeout.total,
+      };
+      middleware.push(createTimeoutMiddleware(timeoutConfig));
+    }
+
+    // Add token counting middleware by default
+    const tokenConfig: TokenCountingMiddlewareOptions = {
+      enabled: true,
+    };
+    middleware.push(createTokenCountingMiddleware(tokenConfig));
+
     const agent = new Agent(adapter, history, registry, {
       ...agentConfig,
       pluginManager,
-      middleware: this.options.middleware,
+      middleware,
       memoryManager,
     });
 
@@ -98,7 +129,10 @@ export class AgentFactory {
     return agent;
   }
 
-  private async createAdapter(config: ModelConfig, pluginManager: PluginManager): Promise<LLMAdapter> {
+  private async createAdapter(
+    config: ModelConfig,
+    pluginManager: PluginManager
+  ): Promise<LLMAdapter> {
     const apiKey = config.apiKey ?? process.env.OPENAI_API_KEY;
 
     if (!apiKey && !config.baseURL) {
@@ -141,7 +175,8 @@ export class AgentFactory {
     const hookInterceptor: RequestInterceptor = {
       async beforeRequest(ctx) {
         const output = { headers: { ...ctx.headers }, body: { ...ctx.body } };
-        await pluginManager.trigger('llm.request.before',
+        await pluginManager.trigger(
+          'llm.request.before',
           { headers: ctx.headers, body: ctx.body },
           output
         );
@@ -154,9 +189,13 @@ export class AgentFactory {
       model: mergedConfig.model as string,
       apiKey: mergedConfig.apiKey as string,
       baseURL: mergedConfig.baseURL as string | undefined,
-      timeout: mergedConfig.timeout as { total?: number; firstToken?: number; chunk?: number } | undefined,
+      timeout: mergedConfig.timeout as
+        | { total?: number; firstToken?: number; chunk?: number }
+        | undefined,
       tlsRejectUnauthorized: mergedConfig.tlsRejectUnauthorized as boolean | undefined,
-      fetch: mergedConfig.fetch as ((input: string | URL | Request, init?: RequestInit) => Promise<Response>) | undefined,
+      fetch: mergedConfig.fetch as
+        | ((input: string | URL | Request, init?: RequestInit) => Promise<Response>)
+        | undefined,
       interceptors,
     });
   }
@@ -176,12 +215,18 @@ export class AgentFactory {
     return registry;
   }
 
-  static async create(config: AgentForgeConfig | AgentConfig, options?: AgentFactoryOptions): Promise<Agent> {
+  static async create(
+    config: AgentForgeConfig | AgentConfig,
+    options?: AgentFactoryOptions
+  ): Promise<Agent> {
     const factory = new AgentFactory(config, options);
     return factory.create();
   }
 
-  static async fromConfig(config: AgentForgeConfig | AgentConfig, options?: AgentFactoryOptions): Promise<Agent> {
+  static async fromConfig(
+    config: AgentForgeConfig | AgentConfig,
+    options?: AgentFactoryOptions
+  ): Promise<Agent> {
     return this.create(config, options);
   }
 }
