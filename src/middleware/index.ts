@@ -26,5 +26,7 @@ export function createMiddleware(
 export { createLoggingMiddleware } from './logging.middleware';
 export { createTokenCountingMiddleware } from './token-counting.middleware';
 export { createTimeoutMiddleware } from './timeout.middleware';
+export { createSecurityMiddleware } from './security.middleware';
 export type { TokenCountingMiddlewareOptions } from './token-counting.middleware';
 export type { TimeoutMiddlewareOptions } from './timeout.middleware';
+export type { SecurityMiddlewareOptions } from './security.middleware';
