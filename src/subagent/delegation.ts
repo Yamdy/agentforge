@@ -8,6 +8,21 @@ import type {
   MessageFilterContext,
 } from './types.js';
 
+/**
+ * Default message filter that keeps only the delegated task in the sub-agent context
+ * providing complete isolation from the parent conversation
+ */
+export function isolatedMessageFilter(ctx: MessageFilterContext): Message[] {
+  // For isolated delegation, we only include the delegated prompt
+  // parent conversation is not included - completely isolated context
+  return [
+    {
+      role: 'user',
+      content: ctx.prompt,
+    },
+  ];
+}
+
 export class DelegationManager {
   async delegate(
     subAgentName: string,

@@ -48,9 +48,24 @@ export interface Workflow<TInput = unknown, TOutput = unknown> {
   commit(): CommittedWorkflow<TInput, TOutput>;
 }
 
+export interface WorkflowSuspendResult {
+  /**
+   * Whether the workflow is currently suspended waiting for resume
+   */
+  suspended: true;
+  /**
+   * Persisted state that can be used to resume the workflow later
+   */
+  state: Record<string, unknown>;
+  /**
+   * Message to display to the user explaining what input is needed for resume
+   */
+  message?: string;
+}
+
 export interface CommittedWorkflow<TInput = unknown, TOutput = unknown> {
   id: string;
-  run(input: TInput): Promise<TOutput>;
+  run(input: TInput): Promise<TOutput | WorkflowSuspendResult>;
 }
 
 export interface StepOptions {

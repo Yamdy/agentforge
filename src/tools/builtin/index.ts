@@ -11,6 +11,7 @@ import { GrepTool } from './grep';
 import { GlobTool } from './glob';
 import { FindTool } from './find';
 import { EditTool } from './edit';
+import { diffpatchTool } from './diffpatch';
 import { AskUserTool } from './ask_user';
 
 export const BuiltinTools = [
@@ -27,6 +28,7 @@ export const BuiltinTools = [
   GlobTool,
   FindTool,
   EditTool,
+  diffpatchTool,
   AskUserTool,
 ];
 
@@ -41,9 +43,10 @@ export {
   CalculatorTool,
   CurrentTimeTool,
   SleepTool,
-  GrepTool,
+  Grep,
   GlobTool,
   FindTool,
   EditTool,
+  diffpatchTool,
   AskUserTool,
 };
