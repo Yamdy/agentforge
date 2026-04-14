@@ -1,15 +1,22 @@
 /**
+ * 沙箱配置
+ */
+export interface SandboxConfig extends SandboxPolicy {
+  enabled: boolean;
+}
+
+/**
  * 沙箱安全策略配置
  */
 export interface SandboxPolicy {
   /** 允许访问的目录白名单 */
-  allowedPaths: string[];
+  allowedPaths?: string[];
   /** 禁止访问的目录黑名单（优先级高于白名单） */
-  deniedPaths: string[];
+  deniedPaths?: string[];
   /** 命令执行超时时间（毫秒） */
-  timeout: number;
+  timeout?: number;
   /** 最大输出大小（字节） */
-  maxOutputSize: number;
+  maxOutputSize?: number;
 }
 
 /**

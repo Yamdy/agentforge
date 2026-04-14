@@ -104,14 +104,16 @@ export function isPathAllowed(policy: SandboxPolicy, filePath: string): boolean 
   const normalizedPath = normalizeAndNormalizeSlashes(filePath);
 
   // Check blacklist glob patterns first (higher priority)
-  for (const pattern of policy.deniedPaths) {
+  const deniedPaths = policy.deniedPaths ?? [];
+  for (const pattern of deniedPaths) {
     if (picomatch.isMatch(normalizedPath, pattern)) {
       return false;
     }
   }
 
   // Check whitelist prefix matching - allowed paths already normalized
-  for (const normalizedAllowed of policy.allowedPaths) {
+  const allowedPaths = policy.allowedPaths ?? [];
+  for (const normalizedAllowed of allowedPaths) {
     if (normalizedPath.startsWith(normalizedAllowed)) {
       return true;
     }

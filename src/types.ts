@@ -105,9 +105,12 @@ export type HistoryManager = {
   clear(): void;
 };
 
+import type { SandboxConfig } from './sandbox/types.js';
+
 export interface AgentConfig {
   maxSteps?: number;
   systemPrompt?: string;
+  sandbox?: SandboxConfig;
 }
 
 export const TaskStatusSchema = z.enum([

@@ -40,18 +40,20 @@ export class CommandExecutor {
 
       this.activeProcesses.add(proc);
 
-      // 设置超时
+      // 设置超时 - 默认 30 秒
+      const timeout = this.policy.timeout ?? 30000;
       const timeoutId = setTimeout(() => {
         timedOut = true;
         proc.kill('SIGKILL');
-      }, this.policy.timeout);
+      }, timeout);
 
-      // 收集标准输出
+      // 收集标准输出 - 默认 1MB
+      const maxOutputSize = this.policy.maxOutputSize ?? 1048576;
       proc.stdout?.on('data', (data: Buffer) => {
-        if (!truncated && stdout.length < this.policy.maxOutputSize) {
+        if (!truncated && stdout.length < maxOutputSize) {
           stdout += data.toString('utf8');
-          if (stdout.length >= this.policy.maxOutputSize) {
-            stdout = stdout.slice(0, this.policy.maxOutputSize);
+          if (stdout.length >= maxOutputSize) {
+            stdout = stdout.slice(0, maxOutputSize);
             truncated = true;
           }
         }
@@ -59,10 +61,10 @@ export class CommandExecutor {
 
       // 收集标准错误
       proc.stderr?.on('data', (data: Buffer) => {
-        if (!truncated && stderr.length < this.policy.maxOutputSize) {
+        if (!truncated && stderr.length < maxOutputSize) {
           stderr += data.toString('utf8');
-          if (stderr.length >= this.policy.maxOutputSize) {
-            stderr = stderr.slice(0, this.policy.maxOutputSize);
+          if (stderr.length >= maxOutputSize) {
+            stderr = stderr.slice(0, maxOutputSize);
             truncated = true;
           }
         }
