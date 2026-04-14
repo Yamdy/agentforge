@@ -55,7 +55,17 @@ A modern, enterprise-grade Agent development framework for TypeScript. Build pro
 
 ## 快速开始
 
-### 安装
+### 使用 CLI 创建新项目
+
+```bash
+# Create a new project with interactive scaffolding
+npm create agentforge@latest my-agent-app
+cd my-agent-app
+npm install
+npm run dev
+```
+
+### 安装到现有项目
 
 ```bash
 pnpm add agentforge
@@ -255,15 +265,45 @@ pnpm build
 
 - [Architecture Overview](./docs/architecture/overview.md) - Overall architecture
 - [Configuration Guide](./docs/guides/configuration.md) - Complete configuration documentation
-- [Examples](./src/examples/) - Working examples
+- [Examples](./examples/) - Working examples
 
-### Available Examples
+### CLI Commands
 
-- `config-basic.ts` - Basic configuration loading
-- `agent-factory.ts` - Different ways to create agents
-- `custom-config-path.ts` - Custom search paths and explicit loading
-- `demo.ts` - Full featured demo
-- `workflow-demo.ts` - Workflow engine demo
+AgentForge comes with a full-featured CLI:
+
+| Command             | Description                                     |
+| ------------------- | ----------------------------------------------- |
+| `agentforge create` | Create new project with interactive scaffolding |
+| `agentforge init`   | Initialize AgentForge in existing project       |
+| `agentforge dev`    | Start development server                        |
+| `agentforge build`  | Build for production                            |
+| `agentforge start`  | Start production server                         |
+| `agentforge run`    | Run an agent directly                           |
+| `agentforge lint`   | Lint your configuration                         |
+| `agentforge studio` | Start development studio                        |
+
+### Examples
+
+AgentForge has many categorized working examples:
+
+```
+examples/
+├── agents/             # Different agent types examples
+│   └── inferhub-plugin.ts
+├── basic/              # Basic getting started examples
+│   └── agent-factory.ts
+├── config/             # Configuration system examples
+│   ├── config-basic.ts
+│   └── custom-config-path.ts
+├── mcp/               # Model Context Protocol examples
+│   └── mcp-demo.ts
+├── workflows/          # Workflow composition examples
+│   └── workflow-demo.ts
+├── demo.ts             # Full featured demo
+└── web-ui.html        # Web UI example
+```
+
+View all examples [here](./examples/).
 
 ## 示例：配置驱动开发
 
@@ -360,6 +400,21 @@ export const MyTool: Tool = {
 // 在工具注册中心注册
 registry.register([MyTool]);
 ```
+
+## 对比其他框架
+
+| 特性                         | agentforge       | agentscope | deepagents | mastra     |
+| ---------------------------- | ---------------- | ---------- | ---------- | ---------- |
+| **Language**                 | TypeScript       | Python     | Python     | TypeScript |
+| **Multiple Agents**          | ✅               | ✅         | ✅         | ✅         |
+| **Reactive Streaming**       | ✅ (RxJS native) | ⚙️         | ⚙️         | ⚡         |
+| **Configuration Driven**     | ✅               | ⚙️         | ✅         | ✅         |
+| **Middleware Pipeline**      | ✅               | ⚙️ (hooks) | ❌         | ✅         |
+| **PII & Injection Security** | ✅               | ❌         | ❌         | ⚙️         |
+| **Size**                     | Lightweight      | Full       | Full       | Full       |
+| **MCP Support**              | ✅               | ✅         | ✅         | ✅         |
+
+**agentforge** is a lightweight, clean alternative for TypeScript developers who want a simple but powerful framework for building AI agents without the heavyweight.
 
 ## 许可证
 
