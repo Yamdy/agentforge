@@ -1,4 +1,5 @@
 import path from 'path';
+import picomatch from 'picomatch';
 import type { SandboxPolicy } from './types.js';
 
 export interface PolicyOptions {
@@ -9,47 +10,109 @@ export interface PolicyOptions {
 }
 
 /**
- * 创建沙箱安全策略
- * @param options 策略选项
- * @returns 完整的沙箱策略配置
+ * Default sensitive path patterns that are always denied.
+ * These protect credential files from LLM access even when not explicitly configured.
+ * Patterns use glob syntax matched against absolute paths.
+ * Default patterns are globs matching anywhere in the path, don't need full resolution.
+ */
+const DEFAULT_DENY_PATTERNS: string[] = [
+  // SSH keys and config
+  '**/.ssh/*',
+  // AWS credentials
+  '**/.aws/credentials',
+  '**/.aws/config',
+  // GCP credentials
+  '**/.config/gcloud/*',
+  // Azure credentials
+  '**/.azure/*',
+  // GPG keys
+  '**/.gnupg/*',
+  // Docker credentials
+  '**/.docker/config.json',
+  // Kubernetes credentials
+  '**/.kube/config',
+  // OpenHarness-style credentials
+  '**/.openharness/*credentials*.json',
+  // Git configuration with potential credentials
+  '**/.git/config',
+  // Environment files with potential secrets
+  '**/.env',
+  '**/.env.*',
+  '**/*.env',
+  '**/*.env.*',
+];
+
+/**
+ * Create a sandbox security policy
+ * @param options Policy options
+ * @returns Complete sandbox policy configuration
  */
 export function createPolicy(options: PolicyOptions): SandboxPolicy {
+  // Combine user denied paths with default sensitive patterns
+  // User custom denied paths that look like absolute paths need to be normalized
+  const deniedPaths = [
+    ...DEFAULT_DENY_PATTERNS,
+    ...(options.deniedPaths ?? []).map((p) => {
+      // If it starts with / it's a glob pattern or absolute path.
+      // For absolute exact matches we need to normalize them to the current OS format.
+      // Globs can remain as-is since picomatch will match against normalized path.
+      if (p.includes('*')) {
+        // Already a glob pattern, keep as-is - it matches against normalized path
+        return p;
+      }
+      // Exact path, normalize it properly
+      let normalized = path.resolve(p);
+      normalized = normalized.replace(/\\/g, '/');
+      return normalized;
+    }),
+  ];
+
+  // Pre-normalize all allowed paths to consistent format (forward slashes)
+  const normalizedAllowedPaths = (options.allowedPaths ?? [process.cwd()]).map((p) => {
+    let normalized = path.resolve(p);
+    normalized = normalized.replace(/\\/g, '/');
+    return normalized;
+  });
+
   return {
-    allowedPaths: options.allowedPaths ?? [process.cwd()],
-    deniedPaths: options.deniedPaths ?? [],
+    allowedPaths: normalizedAllowedPaths,
+    deniedPaths,
     timeout: options.timeout ?? 60000,
     maxOutputSize: options.maxOutputSize ?? 1024 * 1024,
   };
 }
 
 /**
- * 规范化路径（解析相对路径、符号链接等）
- * @param filePath 原始路径
- * @returns 规范化后的绝对路径
+ * Normalize a path (resolves relative, converts to forward slashes)
+ * @param filePath Original file path
+ * @returns Normalized absolute path with forward slashes
  */
-function normalizePath(filePath: string): string {
-  return path.resolve(filePath);
+function normalizeAndNormalizeSlashes(filePath: string): string {
+  let normalized = path.resolve(filePath);
+  normalized = normalized.replace(/\\/g, '/');
+  return normalized;
 }
 
 /**
- * 检查路径是否在允许列表中
- * @param policy 沙箱策略
- * @param filePath 要检查的路径
- * @returns 是否允许访问
+ * Check if a path is allowed by the policy
+ * @param policy Sandbox policy
+ * @param filePath Path to check
+ * @returns True if allowed, false if denied
  */
 export function isPathAllowed(policy: SandboxPolicy, filePath: string): boolean {
-  const normalizedPath = normalizePath(filePath);
+  // Normalize path and convert backslashes to forward slashes
+  const normalizedPath = normalizeAndNormalizeSlashes(filePath);
 
-  // 先检查黑名单（优先级更高）
-  for (const denied of policy.deniedPaths) {
-    if (normalizedPath.startsWith(normalizePath(denied))) {
+  // Check blacklist glob patterns first (higher priority)
+  for (const pattern of policy.deniedPaths) {
+    if (picomatch.isMatch(normalizedPath, pattern)) {
       return false;
     }
   }
 
-  // 再检查白名单
-  for (const allowed of policy.allowedPaths) {
-    if (normalizedPath.startsWith(normalizePath(allowed))) {
+  // Check whitelist prefix matching - allowed paths already normalized
+  for (const normalizedAllowed of policy.allowedPaths) {
+    if (normalizedPath.startsWith(normalizedAllowed)) {
       return true;
     }
   }

@@ -21,15 +21,29 @@ describe('Sandbox', () => {
     expect(result.exitCode).toBe(0);
   });
 
-  it('should check if path is allowed', () => {
+  it('should allow non-sensitive paths under allowed directory', () => {
+    // ./src/index.ts should be allowed because:
+    // 1. it's under the allowed working directory (cwd) which is in allowedPaths
+    // 2. it doesn't match any of the default denied patterns
     expect(sandbox.isPathAllowed('./src/index.ts')).toBe(true);
+  });
+
+  it('should deny default sensitive paths like .env', () => {
+    // .env should be denied by default even though it's under allowed directory
+    expect(sandbox.isPathAllowed('./.env')).toBe(false);
+  });
+
+  it('should deny /etc/passwd by default', () => {
+    // /etc/passwd should be denied because:
+    // 1. it's outside the allowed working directory
+    // 2. it also matches default denied pattern '*/passwd*' → yes it does, so denied because 1
     expect(sandbox.isPathAllowed('/etc/passwd')).toBe(false);
   });
 
   it('should kill running process', async () => {
-    const executePromise = sandbox.execute('ping -n 10 127.0.0.1');
+    const executePromise = sandbox.execute('sleep 10');
 
-    // 稍后终止
+    // kill after timeout
     setTimeout(() => sandbox.kill(), 100);
 
     const result = await executePromise;

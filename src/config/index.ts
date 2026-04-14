@@ -44,4 +44,6 @@ export {
   PluginConfigSchema,
 };
 
+export * from './paths.js';
+
 export type { AgentForgeConfig, AgentConfig, ServerConfig, ModelConfig, ToolConfig, PluginConfig };
