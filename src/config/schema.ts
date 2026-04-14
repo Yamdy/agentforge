@@ -7,11 +7,13 @@ export const ModelConfigSchema = z.object({
   baseURL: z.string().optional(),
   temperature: z.number().optional(),
   maxTokens: z.number().optional(),
-  timeout: z.object({
-    total: z.number().optional(),
-    firstToken: z.number().optional(),
-    chunk: z.number().optional(),
-  }).optional(),
+  timeout: z
+    .object({
+      total: z.number().optional(),
+      firstToken: z.number().optional(),
+      chunk: z.number().optional(),
+    })
+    .optional(),
   tlsRejectUnauthorized: z.boolean().optional(),
 });
 
@@ -69,6 +71,15 @@ export const AgentConfigSchema = z.object({
     .object({
       enabled: z.boolean().default(true),
       maxMessages: z.number().default(100),
+    })
+    .optional(),
+  sandbox: z
+    .object({
+      enabled: z.boolean().default(false),
+      allowedPaths: z.array(z.string()).optional(),
+      deniedPaths: z.array(z.string()).optional(),
+      timeout: z.number().optional(),
+      maxOutputSize: z.number().optional(),
     })
     .optional(),
 });

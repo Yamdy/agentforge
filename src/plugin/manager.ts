@@ -1,5 +1,13 @@
 import { Subject, Observable, filter, map, mergeMap, Subscription } from 'rxjs';
-import type { HookFunction, Plugin, ProviderContext, ProviderResult } from './types.js';
+import type {
+  HookFunction,
+  Plugin,
+  ProviderContext,
+  ProviderResult,
+  HookMap,
+  HookEventType,
+  TypedHookFunction,
+} from './types.js';
 import { PluginSchema } from './types.js';
 import { PluginContext, createPluginContext } from './context.js';
 
@@ -172,11 +180,66 @@ export class PluginManager {
     return modifiedOutput;
   }
 
+  /**
+   * 类型安全的 hook 触发
+   * @param event 事件名
+   * @param input 输入对象（只读）
+   * @returns 修改后的输出对象
+   */
+  async triggerHook<E extends HookEventType>(
+    event: E,
+    input: HookMap[E]['input']
+  ): Promise<HookMap[E]['output']> {
+    // 创建输出对象，初始值基于输入默认构造
+    const output: HookMap[E]['output'] = {} as HookMap[E]['output'];
+
+    // Fill default output based on input structure
+    if (event === 'tool.execute.before' && 'args' in input) {
+      (output as HookMap[E]['output'] as HookMap['tool.execute.before']['output']).args = (
+        input as HookMap['tool.execute.before']['input']
+      ).args;
+    } else if (event === 'tool.execute.after' && 'result' in input) {
+      (output as HookMap[E]['output'] as HookMap['tool.execute.after']['output']).result = (
+        input as HookMap['tool.execute.after']['input']
+      ).result;
+    } else if (event === 'system.prompt') {
+      (output as HookMap[E]['output'] as HookMap['system.prompt']['output']).prompt = [];
+    } else if (event === 'message.transform' && 'messages' in output) {
+      (output as HookMap[E]['output'] as HookMap['message.transform']['output']).messages = [];
+    }
+
+    const hooks = this.getTypedEventHooks(event);
+    for (const hook of hooks) {
+      try {
+        await hook(input, output);
+      } catch (err) {
+        this.context.logger.error(`Hook ${event} failed`, {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    const subject = this.getOrCreateSubject(event);
+    subject.next({ event, input, output });
+
+    return output;
+  }
+
   private getEventHooks(event: string): HookFunction[] {
     const hooks: HookFunction[] = [];
     for (const plugin of this.plugins) {
       if (plugin.hooks?.[event]) {
         hooks.push(plugin.hooks[event] as HookFunction);
+      }
+    }
+    return hooks;
+  }
+
+  private getTypedEventHooks<E extends HookEventType>(event: E): TypedHookFunction<E>[] {
+    const hooks: TypedHookFunction<E>[] = [];
+    for (const plugin of this.plugins) {
+      if (plugin.hooks?.[event]) {
+        hooks.push(plugin.hooks[event] as TypedHookFunction<E>);
       }
     }
     return hooks;

@@ -53,8 +53,6 @@ export { Storage } from './storage/index.js';
 
 export { withRetry } from './retry/index.js';
 
-export { toolCache, type ToolCache } from './cache/index.js';
-
 export {
   AppError,
   NotFoundError,

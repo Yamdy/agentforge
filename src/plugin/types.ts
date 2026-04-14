@@ -155,37 +155,96 @@ export interface SessionCompactingOutput {
 
 export type HookFunction = (input: unknown, output: unknown) => Promise<void>;
 
+/**
+ * Hook 类型映射表，将每个事件名映射到其输入输出类型
+ * 用于实现类型安全的 hook 触发
+ */
+export interface HookMap {
+  'tool.execute.before': {
+    input: ToolExecuteBeforeInput;
+    output: ToolExecuteBeforeOutput;
+  };
+  'tool.execute.after': {
+    input: ToolExecuteAfterInput;
+    output: ToolExecuteAfterOutput;
+  };
+  'message.transform': {
+    input: MessageTransformInput;
+    output: MessageTransformOutput;
+  };
+  'system.prompt': {
+    input: SystemPromptInput;
+    output: SystemPromptOutput;
+  };
+  'agent.step': {
+    input: AgentStepInput;
+    output: AgentStepOutput;
+  };
+  'agent.error': {
+    input: AgentErrorInput;
+    output: AgentErrorOutput;
+  };
+  'state.change': {
+    input: StateChangeInput;
+    output: StateChangeOutput;
+  };
+  'agent.start': {
+    input: AgentStartInput;
+    output: AgentStartOutput;
+  };
+  'agent.complete': {
+    input: AgentCompleteInput;
+    output: AgentCompleteOutput;
+  };
+  'llm.request.before': {
+    input: LLMRequestBeforeInput;
+    output: LLMRequestBeforeOutput;
+  };
+  'chat.message': {
+    input: ChatMessageInput;
+    output: ChatMessageOutput;
+  };
+  'chat.params': {
+    input: ChatParamsInput;
+    output: ChatParamsOutput;
+  };
+  'chat.response': {
+    input: ChatResponseInput;
+    output: ChatResponseOutput;
+  };
+  'chat.error': {
+    input: ChatErrorInput;
+    output: ChatErrorOutput;
+  };
+  'session.compacting': {
+    input: SessionCompactingInput;
+    output: SessionCompactingOutput;
+  };
+}
+
+export type HookEventType = keyof HookMap;
+
+export type TypedHookFunction<E extends HookEventType> = (
+  input: Readonly<HookMap[E]['input']>,
+  output: HookMap[E]['output']
+) => Promise<void>;
+
 export interface Hooks {
-  'tool.execute.before'?: (
-    input: ToolExecuteBeforeInput,
-    output: ToolExecuteBeforeOutput
-  ) => Promise<void>;
-  'tool.execute.after'?: (
-    input: ToolExecuteAfterInput,
-    output: ToolExecuteAfterOutput
-  ) => Promise<void>;
-  'message.transform'?: (
-    input: MessageTransformInput,
-    output: MessageTransformOutput
-  ) => Promise<void>;
-  'system.prompt'?: (input: SystemPromptInput, output: SystemPromptOutput) => Promise<void>;
-  'agent.step'?: (input: AgentStepInput, output: AgentStepOutput) => Promise<void>;
-  'agent.error'?: (input: AgentErrorInput, output: AgentErrorOutput) => Promise<void>;
-  'state.change'?: (input: StateChangeInput, output: StateChangeOutput) => Promise<void>;
-  'agent.start'?: (input: AgentStartInput, output: AgentStartOutput) => Promise<void>;
-  'agent.complete'?: (input: AgentCompleteInput, output: AgentCompleteOutput) => Promise<void>;
-  'llm.request.before'?: (
-    input: LLMRequestBeforeInput,
-    output: LLMRequestBeforeOutput
-  ) => Promise<void>;
-  'chat.message'?: (input: ChatMessageInput, output: ChatMessageOutput) => Promise<void>;
-  'chat.params'?: (input: ChatParamsInput, output: ChatParamsOutput) => Promise<void>;
-  'chat.response'?: (input: ChatResponseInput, output: ChatResponseOutput) => Promise<void>;
-  'chat.error'?: (input: ChatErrorInput, output: ChatErrorOutput) => Promise<void>;
-  'session.compacting'?: (
-    input: SessionCompactingInput,
-    output: SessionCompactingOutput
-  ) => Promise<void>;
+  'tool.execute.before'?: TypedHookFunction<'tool.execute.before'>;
+  'tool.execute.after'?: TypedHookFunction<'tool.execute.after'>;
+  'message.transform'?: TypedHookFunction<'message.transform'>;
+  'system.prompt'?: TypedHookFunction<'system.prompt'>;
+  'agent.step'?: TypedHookFunction<'agent.step'>;
+  'agent.error'?: TypedHookFunction<'agent.error'>;
+  'state.change'?: TypedHookFunction<'state.change'>;
+  'agent.start'?: TypedHookFunction<'agent.start'>;
+  'agent.complete'?: TypedHookFunction<'agent.complete'>;
+  'llm.request.before'?: TypedHookFunction<'llm.request.before'>;
+  'chat.message'?: TypedHookFunction<'chat.message'>;
+  'chat.params'?: TypedHookFunction<'chat.params'>;
+  'chat.response'?: TypedHookFunction<'chat.response'>;
+  'chat.error'?: TypedHookFunction<'chat.error'>;
+  'session.compacting'?: TypedHookFunction<'session.compacting'>;
 }
 
 export const PluginSchema = z.object({
