@@ -16,7 +16,9 @@ import { Observable, Subject } from 'rxjs';
 import { setCurrentMemory } from '../context.js';
 import { Middleware } from '../middleware/index.js';
 import { createMiddlewarePipeline } from '../middleware/index.js';
+import { Sandbox } from '../sandbox/index.js';
 import type { MemoryManager } from '../memory/manager.js';
+import type { SandboxConfig } from '../sandbox/types.js';
 
 interface AgentOptions extends AgentConfig {
   registry?: ToolRegistry;
@@ -52,6 +54,7 @@ export class Agent {
   private tracer: ReturnType<typeof getTracer>;
   private memoryManager?: MemoryManager;
   private responseSubject: Subject<Message> = new Subject();
+  private sandbox?: Sandbox;
 
   private middleware: Middleware[] = [];
   private pipeline: Middleware;
@@ -74,6 +77,21 @@ export class Agent {
     this.middleware = options?.middleware ?? [];
     this.pipeline = createMiddlewarePipeline(...this.middleware);
     this.memoryManager = options?.memoryManager;
+
+    // Initialize sandbox if enabled
+    if (options?.sandbox?.enabled) {
+      this.sandbox = new Sandbox({
+        allowedPaths: options.sandbox.allowedPaths,
+        deniedPaths: options.sandbox.deniedPaths,
+        timeout: options.sandbox.timeout,
+        maxOutputSize: options.sandbox.maxOutputSize,
+      });
+      this.log.info('Sandbox initialized', {
+        enabled: true,
+        allowedPaths: options.sandbox.allowedPaths?.length ?? 0,
+        deniedPaths: options.sandbox.deniedPaths?.length ?? 0,
+      });
+    }
   }
 
   get systemPrompt(): string {
@@ -86,6 +104,14 @@ export class Agent {
 
   getMemoryManager(): MemoryManager | undefined {
     return this.memoryManager;
+  }
+
+  getSandbox(): Sandbox | undefined {
+    return this.sandbox;
+  }
+
+  hasSandbox(): boolean {
+    return !!this.sandbox;
   }
 
   observe(message: Message): void {
