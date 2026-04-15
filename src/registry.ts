@@ -28,7 +28,10 @@ export class ToolRegistry {
     if (!tool) {
       throw new Error(`Tool not found: ${name}`);
     }
-    const result = String(await tool.execute(args));
-    return result;
+    const result = await tool.execute(args);
+    if (result == null) {
+      return '';
+    }
+    return String(result);
   }
 }

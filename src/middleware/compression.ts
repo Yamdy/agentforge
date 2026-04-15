@@ -54,7 +54,7 @@ const defaultOptions: Required<CompressionMiddlewareOptions> = {
  * it gets sent to the LLM.
  */
 export function createCompressionMiddleware(
-  options: CompressionMiddlewareOptions = {}
+  options: Partial<CompressionMiddlewareOptions> = {}
 ): Middleware {
   const config = { ...defaultOptions, ...options };
 

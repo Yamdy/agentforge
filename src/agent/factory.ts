@@ -55,18 +55,20 @@ export class AgentFactory {
 
     let modelConfig: ModelConfig;
     if ('model' in this.config && this.config.model && typeof this.config.model === 'object') {
-      const cfgModel = this.config.model as Record<string, unknown>;
+      const cfgModel = this.config.model;
       modelConfig = {
-        model: (cfgModel.model as string) || agentConfig.model,
-        provider: (cfgModel.provider as string) ?? 'openai-compatible',
-        apiKey: (cfgModel.apiKey as string) || agentConfig.apiKey,
-        baseURL: (cfgModel.baseURL as string) || agentConfig.baseURL,
-        temperature: (cfgModel.temperature as number) ?? agentConfig.temperature,
-        maxTokens: (cfgModel.maxTokens as number) ?? agentConfig.maxTokens,
-        timeout: cfgModel.timeout as
-          | { total?: number; firstToken?: number; chunk?: number }
-          | undefined,
-        tlsRejectUnauthorized: cfgModel.tlsRejectUnauthorized as boolean | undefined,
+        model: typeof cfgModel.model === 'string' ? cfgModel.model : agentConfig.model,
+        provider: typeof cfgModel.provider === 'string' ? cfgModel.provider : 'openai-compatible',
+        apiKey: typeof cfgModel.apiKey === 'string' ? cfgModel.apiKey : agentConfig.apiKey,
+        baseURL: typeof cfgModel.baseURL === 'string' ? cfgModel.baseURL : agentConfig.baseURL,
+        temperature: typeof cfgModel.temperature === 'number' ? cfgModel.temperature : agentConfig.temperature,
+        maxTokens: typeof cfgModel.maxTokens === 'number' ? cfgModel.maxTokens : agentConfig.maxTokens,
+        timeout: typeof cfgModel.timeout === 'object' && cfgModel.timeout !== null
+          ? cfgModel.timeout
+          : undefined,
+        tlsRejectUnauthorized: typeof cfgModel.tlsRejectUnauthorized === 'boolean'
+          ? cfgModel.tlsRejectUnauthorized
+          : undefined,
       };
     } else {
       modelConfig = {

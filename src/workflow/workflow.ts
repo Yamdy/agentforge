@@ -8,6 +8,7 @@ import type {
   ParallelOptions,
   BranchOptions,
   LoopOptions,
+  WorkflowSuspendResult,
 } from './types.js';
 import { DefaultExecutor } from './executors/index.js';
 
@@ -100,12 +101,12 @@ class WorkflowBuilder<TInput = unknown, TOutput = unknown> implements Workflow<T
     const executor = this.executor;
     const workflowId = this.id;
 
-    return {
-      id: workflowId,
-      async run(input: TInput): Promise<TOutput> {
-        return executor.execute(input);
-      },
-    };
+     return {
+       id: workflowId,
+       async run(input: TInput): Promise<TOutput | WorkflowSuspendResult> {
+         return executor.execute(input);
+       },
+     };
   }
 }
 

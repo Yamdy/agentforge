@@ -30,39 +30,27 @@ export const Storage = {
   async read<T>(key: string[]): Promise<T> {
     const target = resolve(key);
     return withErrorHandling(async () => {
-      const lock = await Lock.read(target);
-      try {
-        return await readJson<T>(target);
-      } finally {
-        lock[Symbol.dispose]();
-      }
+      using lock = await Lock.read(target);
+      return await readJson<T>(target);
     });
   },
 
   async write<T>(key: string[], content: T): Promise<void> {
     const target = resolve(key);
     return withErrorHandling(async () => {
-      const lock = await Lock.write(target);
-      try {
-        await writeJson(target, content);
-      } finally {
-        lock[Symbol.dispose]();
-      }
+      using lock = await Lock.write(target);
+      await writeJson(target, content);
     });
   },
 
   async update<T>(key: string[], fn: (draft: T) => void): Promise<T> {
     const target = resolve(key);
     return withErrorHandling(async () => {
-      const lock = await Lock.write(target);
-      try {
-        const content = await readJson<T>(target);
-        fn(content);
-        await writeJson(target, content);
-        return content;
-      } finally {
-        lock[Symbol.dispose]();
-      }
+      using lock = await Lock.write(target);
+      const content = await readJson<T>(target);
+      fn(content);
+      await writeJson(target, content);
+      return content;
     });
   },
 

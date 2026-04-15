@@ -201,8 +201,10 @@ export async function compactSession(
   }
 
   const firstMessages = remainingNonSystem.slice(0, keepFirst);
-  const lastMessages = remainingNonSystem.slice(-keepLast);
-  const middleMessages = remainingNonSystem.slice(keepFirst, remainingNonSystem.length - keepLast);
+  // Ensure we don't go out of bounds: if keepLast >= available messages, take all remaining
+  const startSlice = Math.max(keepFirst, remainingNonSystem.length - keepLast);
+  const lastMessages = remainingNonSystem.slice(startSlice);
+  const middleMessages = remainingNonSystem.slice(keepFirst, startSlice);
 
   let summary: string;
 

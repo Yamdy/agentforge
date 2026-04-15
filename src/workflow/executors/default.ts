@@ -1,4 +1,4 @@
-import type { WorkflowStep, WorkflowContext, InputMapping } from '../types.js';
+import type { WorkflowStep, WorkflowContext, InputMapping, WorkflowSuspendResult } from '../types.js';
 import { WorkflowContextImpl } from '../context.js';
 
 interface StepNode {
@@ -91,26 +91,30 @@ export class DefaultExecutor {
         }
 
         case 'parallel': {
-          const results = await Promise.all(
-            node.steps.map(async (stepNode) => {
-              const stepInput = this.resolveInput(stepNode.options?.input, context, currentInput);
-              const result = await stepNode.step.execute(stepInput, context);
-              
-              // If any parallel step suspends, we still return the suspend result
-              if (typeof result === 'object' && result !== null && 'suspended' in result && result.suspended) {
-                return result as WorkflowSuspendResult;
-              }
-              
-              context.setResult(stepNode.id, result);
-              return { id: stepNode.id, result };
-            })
-          );
+           const results = await Promise.all(
+             node.steps.map(async (stepNode) => {
+               const stepInput = this.resolveInput(stepNode.options?.input, context, currentInput);
+               const result = await stepNode.step.execute(stepInput, context);
+               
+               // If any parallel step suspends, we return the suspend result immediately
+               if (typeof result === 'object' && result !== null && 'suspended' in result && result.suspended) {
+                 return result as WorkflowSuspendResult;
+               }
+               
+               context.setResult(stepNode.id, result);
+               return { id: stepNode.id, result: result as unknown };
+             })
+           );
 
-          const parallelResults: Record<string, unknown> = {};
-          for (const { id, result } of results) {
-            parallelResults[id] = result;
-          }
-          currentInput = parallelResults;
+           const parallelResults: Record<string, unknown> = {};
+           for (const item of results) {
+             if ('suspended' in item) {
+               // Found a suspended step, return it immediately
+               return item as WorkflowSuspendResult;
+             }
+             parallelResults[item.id] = item.result;
+           }
+           currentInput = parallelResults;
           break;
         }
 
@@ -134,77 +138,28 @@ export class DefaultExecutor {
           let iteration = 0;
           let lastResult = currentInput;
 
-          while (node.condition(context, iteration) && iteration < node.maxIterations) {
-            const stepInput = this.resolveInput(node.loopStep.options?.input, context, lastResult);
-            const result = await node.loopStep.execute(stepInput, context);
-            
-            // Check if the step requested suspension
-            if (typeof result === 'object' && result !== null && 'suspended' in result && result.suspended) {
-              return result as WorkflowSuspendResult;
-            }
-            
-            context.setResult(node.loopStep.id, result);
+           while (node.condition(context, iteration) && iteration < node.maxIterations) {
+             const stepInput = this.resolveInput(node.loopStep.options?.input, context, lastResult);
+             const result = await node.loopStep.step.execute(stepInput, context);
+             
+             // Check if the step requested suspension
+             if (typeof result === 'object' && result !== null && 'suspended' in result && result.suspended) {
+               return result as WorkflowSuspendResult;
+             }
+             
+             context.setResult(node.loopStep.id, result);
             lastResult = result;
             iteration++;
           }
 
-          currentInput = lastResult;
-          break;
-        }
-      }
-    }
+           currentInput = lastResult;
+           break;
+         }
+       }
+     }
 
-    return currentInput as TOutput;
-  }
-
-        case 'parallel': {
-          const results = await Promise.all(
-            node.steps.map(async (stepNode) => {
-              const stepInput = this.resolveInput(stepNode.options?.input, context, currentInput);
-              const result = await stepNode.step.execute(stepInput, context);
-              context.setResult(stepNode.id, result);
-              return { id: stepNode.id, result };
-            })
-          );
-
-          const parallelResults: Record<string, unknown> = {};
-          for (const { id, result } of results) {
-            parallelResults[id] = result;
-          }
-          currentInput = parallelResults;
-          break;
-        }
-
-        case 'branch': {
-          const conditionResult = node.condition(context);
-          const selectedNode = conditionResult ? node.trueBranch : node.falseBranch;
-          const stepInput = this.resolveInput(selectedNode.options?.input, context, currentInput);
-          const result = await selectedNode.step.execute(stepInput, context);
-          context.setResult(selectedNode.id, result);
-          currentInput = result;
-          break;
-        }
-
-        case 'loop': {
-          let iteration = 0;
-          let lastResult = currentInput;
-
-          while (node.condition(context, iteration) && iteration < node.maxIterations) {
-            const stepInput = this.resolveInput(node.loopStep.options?.input, context, lastResult);
-            const result = await node.loopStep.step.execute(stepInput, context);
-            context.setResult(node.loopStep.id, result);
-            lastResult = result;
-            iteration++;
-          }
-
-          currentInput = lastResult;
-          break;
-        }
-      }
-    }
-
-    return currentInput as TOutput;
-  }
+     return currentInput as TOutput;
+   }
 
   private resolveInput(
     mapping: InputMapping | undefined,

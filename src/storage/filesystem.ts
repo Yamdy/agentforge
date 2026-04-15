@@ -76,7 +76,10 @@ export async function scan(
 
     if (entry.isDirectory()) {
       if (include === 'all' || include === 'dir') {
-        results.push(entry.name + '/');
+        // Check if directory matches pattern
+        if (globMatch(pattern, entry.name + '/')) {
+          results.push(entry.name + '/');
+        }
       }
       const subResults = await scan(pattern, { cwd: fullPath, include });
       for (const sub of subResults) {
@@ -84,12 +87,25 @@ export async function scan(
       }
     } else if (entry.isFile()) {
       if (include === 'all' || include === 'file') {
-        results.push(entry.name);
+        if (globMatch(pattern, entry.name)) {
+          results.push(entry.name);
+        }
       }
     }
   }
 
   return results;
+}
+
+/** Simple glob matching for * pattern only */
+function globMatch(pattern: string, filename: string): boolean {
+  if (pattern === '*') {
+    return true;
+  }
+  // Convert simple glob to regex
+  const regexPattern = '^' + pattern.replace(/[-\/\\^$+?.()|[\]{}]/g, '\\$&').replace(/\*/g, '.*') + '$';
+  const regex = new RegExp(regexPattern);
+  return regex.test(filename);
 }
 
 export function ensureDir(dirPath: string): void {

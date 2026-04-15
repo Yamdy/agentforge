@@ -1,3 +1,5 @@
+import type { WorkflowSuspendResult } from './types.js';
+
 /**
  * Create a suspend result that can be returned from a workflow step when you need to pause
  * execution and wait for external input or user approval before resuming.
@@ -9,6 +11,7 @@
  *   return suspend({
  *     message: 'Please approve this change before proceeding',
  *   });
+ * });
  * });
  * ```
  */

@@ -21,6 +21,6 @@ export function createAgentStep(
   return {
     id,
     description: options?.description,
-    execute: async (input: string) => agent.run(input),
+    execute: async (input: string, _context: WorkflowContext) => agent.run(input),
   };
 }

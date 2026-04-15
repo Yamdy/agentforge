@@ -16,7 +16,10 @@ export function createLoadSkillTool(): Tool {
       required: ['name'],
     },
     execute: async (args: Record<string, unknown>) => {
-      const name = args.name as string;
+      if (typeof args.name !== 'string') {
+        return 'Error: name must be a string';
+      }
+      const name = args.name;
       const skill = discovery.get(name);
 
       if (!skill) {
@@ -76,7 +79,10 @@ export function createSearchSkillsTool(): Tool {
       required: ['query'],
     },
     execute: async (args: Record<string, unknown>) => {
-      const query = args.query as string;
+      if (typeof args.query !== 'string') {
+        return 'Error: query must be a string';
+      }
+      const query = args.query;
       const skills = discovery.findRelevantSkills(query);
 
       if (skills.length === 0) {

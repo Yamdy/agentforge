@@ -24,6 +24,8 @@ export function isolatedMessageFilter(ctx: MessageFilterContext): Message[] {
 }
 
 export class DelegationManager {
+  private currentIteration = 0;
+
   async delegate(
     subAgentName: string,
     prompt: string,
@@ -31,8 +33,7 @@ export class DelegationManager {
     config?: DelegationConfig
   ): Promise<string> {
     const startTime = Date.now();
-    // iteration is a reserved field, currently no retry logic
-    const iteration = 0;
+    const iteration = ++this.currentIteration;
 
     const subAgent = registry.get(subAgentName);
     if (!subAgent) {

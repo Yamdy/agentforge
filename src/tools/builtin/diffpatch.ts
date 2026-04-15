@@ -2,7 +2,8 @@ import fs from 'fs';
 import path from 'path';
 import { z } from 'zod';
 import type { Tool } from '../../types.js';
-import { validatePath } from '../../sandbox/policy.js';
+import { isPathAllowed } from '../../sandbox/policy.js';
+import type { SandboxPolicy } from '../../sandbox/types.js';
 import { createLogger } from '../../logger/index.js';
 
 const log = createLogger('tools:diffpatch');
@@ -56,29 +57,30 @@ You specify:
 - replacement: the new content for this section
 
 This reduces token consumption and is more accurate than full file rewrites for small changes.`,
-  parameters: z.object({
-    filePath: z.string().describe('Absolute or relative path to the file to edit'),
-    startLine: z
-      .number()
-      .int()
-      .min(1)
-      .optional()
-      .describe(
-        'Starting line number (1-indexed) of the section to replace. If not provided with endLine, replaces entire file.'
-      ),
-    endLine: z
-      .number()
-      .int()
-      .min(1)
-      .optional()
-      .describe('Ending line number (1-indexed) of the section to replace'),
-    replacement: z.string().describe('The new content to replace the specified range with'),
-  }),
+  parameters: {
+    type: 'object',
+    properties: {
+      filePath: { type: 'string', description: 'Absolute or relative path to the file to edit' },
+      startLine: {
+        type: 'number',
+        description: 'Starting line number (1-indexed) of the section to replace. If not provided with endLine, replaces entire file.',
+      },
+      endLine: {
+        type: 'number',
+        description: 'Ending line number (1-indexed) of the section to replace',
+      },
+      replacement: { type: 'string', description: 'The new content to replace the specified range with' },
+    },
+    required: ['filePath', 'replacement'],
+  },
   execute: async (args: Record<string, unknown>) => {
-    const filePath = validatePath(args.filePath as string);
-    const startLine = args.startLine as number | undefined;
-    const endLine = args.endLine as number | undefined;
-    const replacement = args.replacement as string;
+    if (typeof args.filePath !== 'string') {
+      throw new Error('filePath must be a string');
+    }
+    const filePath = args.filePath;
+    const startLine = typeof args.startLine === 'number' ? args.startLine : undefined;
+    const endLine = typeof args.endLine === 'number' ? args.endLine : undefined;
+    const replacement = typeof args.replacement === 'string' ? args.replacement : '';
 
     if (!fs.existsSync(filePath)) {
       throw new Error(`File not found: ${filePath}. Cannot edit non-existent file.`);

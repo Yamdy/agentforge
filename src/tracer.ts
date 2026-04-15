@@ -23,9 +23,20 @@ export interface TraceContext {
   operationName: string;
 }
 
+// Create an empty span that will never be used in normal operation
+const emptySpan: Span = {
+  traceId: '',
+  spanId: '',
+  operationName: '',
+  status: 'completed',
+  startTime: new Date(0),
+  tags: {},
+  logs: [],
+};
+
 export class Tracer {
   private spans: Map<string, Span> = new Map();
-  private spanSubject: BehaviorSubject<Span> = new BehaviorSubject<Span>({} as Span);
+  private spanSubject: BehaviorSubject<Span> = new BehaviorSubject<Span>(emptySpan);
   private activeSpans: Map<string, Span> = new Map();
   private logSubject: Subject<LogEntry> = new Subject<LogEntry>();
   private logger: LogService;
@@ -63,8 +74,12 @@ export class Tracer {
   }
 
   private getActiveTraceId(): string | undefined {
-    const activeSpan = this.activeSpans.values().next().value;
-    return activeSpan?.traceId;
+    // Get the most recently started active span
+    const activeSpansArray = Array.from(this.activeSpans.values());
+    // If no active spans, return undefined
+    if (activeSpansArray.length === 0) return undefined;
+    // Return the last active span's trace id (most recently started)
+    return activeSpansArray[activeSpansArray.length - 1].traceId;
   }
 
   log(spanId: string, message: string, fields: Record<string, unknown> = {}): void {
@@ -139,7 +154,10 @@ export class Tracer {
 
   getTraceSummary(traceId: string): { spans: Span[]; totalDuration: number; failed: number } {
     const traceSpans = Array.from(this.spans.values()).filter((s) => s.traceId === traceId);
-    const totalDuration = Math.max(...traceSpans.map((s) => s.duration || 0));
+    let totalDuration = 0;
+    if (traceSpans.length > 0) {
+      totalDuration = Math.max(...traceSpans.map((s) => s.duration || 0));
+    }
     const failed = traceSpans.filter((s) => s.status === 'failed').length;
     return { spans: traceSpans, totalDuration, failed };
   }
@@ -147,6 +165,7 @@ export class Tracer {
   clear(): void {
     this.spans.clear();
     this.activeSpans.clear();
+    this.spanSubject.next(emptySpan);
   }
 }
 

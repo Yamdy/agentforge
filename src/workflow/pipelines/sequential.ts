@@ -6,7 +6,12 @@ export const sequentialPipeline: PipelineFunction = async (
   agents: Agent[],
   msg?: Message | Message[]
 ) => {
-  let currentMsg: Message | Message[] = msg || { role: 'user', content: '' };
+  let currentMsg: Message | Message[];
+  if (!msg || (Array.isArray(msg) && msg.length === 0)) {
+    currentMsg = { role: 'user', content: '' };
+  } else {
+    currentMsg = msg;
+  }
 
   for (const agent of agents) {
     const input = Array.isArray(currentMsg)

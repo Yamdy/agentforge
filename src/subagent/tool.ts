@@ -33,9 +33,16 @@ export function createDelegateToSubAgentTool(): Tool {
       required: ['subagent', 'task'],
     },
     execute: async (args: Record<string, unknown>) => {
-      const subagent = args.subagent as string;
-      const task = args.task as string;
-      const includeContext = (args.includeContext as boolean) !== false;
+      // Runtime validation
+      if (typeof args.subagent !== 'string') {
+        return 'Error: subagent must be a string';
+      }
+      if (typeof args.task !== 'string') {
+        return 'Error: task must be a string';
+      }
+      const subagent = args.subagent;
+      const task = args.task;
+      const includeContext = typeof args.includeContext === 'boolean' ? args.includeContext : true;
 
       const context = getCurrentMemory();
       const parentMessages = includeContext && context?.messages ? [...context.messages] : [];

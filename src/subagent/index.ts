@@ -5,7 +5,7 @@ export { delegation, DelegationManager, isolatedMessageFilter } from './delegati
 export { createDelegateToSubAgentTool, createListSubAgentsTool } from './tool.js';
 
 import { registry } from './registry.js';
-import { delegation } from './delegation.js';
+import { delegation, isolatedMessageFilter } from './delegation.js';
 import { createDelegateToSubAgentTool, createListSubAgentsTool } from './tool.js';
 import type { SubAgentRegistration, DelegationConfig } from './types.js';
 import type { Agent } from '../agent/index.js';

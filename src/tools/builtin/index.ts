@@ -43,7 +43,7 @@ export {
   CalculatorTool,
   CurrentTimeTool,
   SleepTool,
-  Grep,
+  GrepTool,
   GlobTool,
   FindTool,
   EditTool,

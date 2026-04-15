@@ -3,7 +3,6 @@ import { streamSSE } from 'hono/streaming';
 import { cors } from 'hono/cors';
 import { createLogger } from '../logger/index.js';
 import { authMiddleware } from './middleware/auth.js';
-import { errorMiddleware } from './middleware/error.js';
 import { loggingMiddleware } from './middleware/logging.js';
 import { rateLimitMiddleware } from './middleware/rate-limit.js';
 import type { Agent } from '../agent/agent.js';
@@ -71,14 +70,13 @@ export function createApp(config: ServerConfig & { agent?: AgentRunner }) {
     return initPromise;
   };
 
-  app.use(
+   app.use(
     '*',
     cors({
       origin: corsOrigins ?? '*',
     })
   );
 
-  app.use('*', errorMiddleware);
   app.use('*', loggingMiddleware);
   app.use('*', rateLimitMiddleware());
 

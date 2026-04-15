@@ -1,4 +1,7 @@
 import { Storage, NotFoundError } from '../storage/index.js';
+import { createLogger } from '../logger/index.js';
+
+const log = createLogger('session-storage');
 
 export interface SessionMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
@@ -60,12 +63,14 @@ export async function listSessions(options?: {
   let sessions: Session[] = [];
 
   for (const key of allSessions) {
-    try {
-      const session = await Storage.read<Session>(['session', key[key.length - 1]]);
-      sessions.push(session);
-    } catch {
-      // Skip invalid entries
-    }
+     try {
+       const session = await Storage.read<Session>(['session', key[key.length - 1]]);
+       sessions.push(session);
+     } catch (err) {
+       // Skip invalid entries
+       const errorMsg = err instanceof Error ? err.message : String(err);
+       log.warn('Skipping invalid session', { id: key[key.length - 1], error: errorMsg });
+     }
   }
 
   sessions = sessions.sort((a, b) => b.updatedAt - a.updatedAt);

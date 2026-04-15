@@ -4,7 +4,7 @@ export class WorkflowContextImpl implements WorkflowContext {
   private results: Map<string, unknown> = new Map();
   private state: Record<string, unknown> = {};
 
-  getResult<T = unknown>(stepId: string): T | undefined {
+   getResult<T = unknown>(stepId: string): T | undefined {
     return this.results.get(stepId) as T | undefined;
   }
 

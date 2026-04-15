@@ -46,15 +46,17 @@ export class LogService implements Logger {
   }
 
   static setLogSubject(subject: Subject<LogEntry>): void {
-    const instance = LogService.getInstance();
-    instance.logSubject = subject;
-    for (const ref of instance.children) {
-      const child = ref.deref();
-      if (child) {
-        child.logSubject = subject;
+    function updateAll(current: LogService) {
+      current.logSubject = subject;
+      for (const ref of current.children) {
+        const child = ref.deref();
+        if (child) {
+          updateAll(child);
+        }
       }
     }
-    instance.children = [];
+    const instance = LogService.getInstance();
+    updateAll(instance);
   }
 
   setLevel(level: LogLevel): void {
