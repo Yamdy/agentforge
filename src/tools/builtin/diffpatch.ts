@@ -1,9 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { z } from 'zod';
 import type { Tool } from '../../types.js';
-import { isPathAllowed } from '../../sandbox/policy.js';
-import type { SandboxPolicy } from '../../sandbox/types.js';
 import { createLogger } from '../../logger/index.js';
 
 const log = createLogger('tools:diffpatch');
@@ -63,13 +60,17 @@ This reduces token consumption and is more accurate than full file rewrites for 
       filePath: { type: 'string', description: 'Absolute or relative path to the file to edit' },
       startLine: {
         type: 'number',
-        description: 'Starting line number (1-indexed) of the section to replace. If not provided with endLine, replaces entire file.',
+        description:
+          'Starting line number (1-indexed) of the section to replace. If not provided with endLine, replaces entire file.',
       },
       endLine: {
         type: 'number',
         description: 'Ending line number (1-indexed) of the section to replace',
       },
-      replacement: { type: 'string', description: 'The new content to replace the specified range with' },
+      replacement: {
+        type: 'string',
+        description: 'The new content to replace the specified range with',
+      },
     },
     required: ['filePath', 'replacement'],
   },

@@ -2,6 +2,7 @@ import { Tool } from '../../types';
 import { createSandbox, type Sandbox } from '../../sandbox/index.js';
 import type { PolicyOptions } from '../../sandbox/policy.js';
 import type { AgentConfig } from '../../config/index.js';
+import { spawn } from 'child_process';
 
 export class BashToolExecutor {
   private sandbox: Sandbox | null;
@@ -42,7 +43,6 @@ export class BashToolExecutor {
 
     return new Promise<string>((resolve, reject) => {
       const shell = process.platform === 'win32' ? 'powershell' : 'bash';
-      const { spawn } = require('child_process');
       const proc = spawn(command, {
         shell,
         cwd,

@@ -30,7 +30,7 @@ export const Storage = {
   async read<T>(key: string[]): Promise<T> {
     const target = resolve(key);
     return withErrorHandling(async () => {
-      using lock = await Lock.read(target);
+      await Lock.read(target);
       return await readJson<T>(target);
     });
   },
@@ -38,7 +38,7 @@ export const Storage = {
   async write<T>(key: string[], content: T): Promise<void> {
     const target = resolve(key);
     return withErrorHandling(async () => {
-      using lock = await Lock.write(target);
+      await Lock.write(target);
       await writeJson(target, content);
     });
   },
@@ -46,7 +46,7 @@ export const Storage = {
   async update<T>(key: string[], fn: (draft: T) => void): Promise<T> {
     const target = resolve(key);
     return withErrorHandling(async () => {
-      using lock = await Lock.write(target);
+      await Lock.write(target);
       const content = await readJson<T>(target);
       fn(content);
       await writeJson(target, content);

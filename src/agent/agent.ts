@@ -18,7 +18,6 @@ import { Middleware } from '../middleware/index.js';
 import { createMiddlewarePipeline } from '../middleware/index.js';
 import { Sandbox } from '../sandbox/index.js';
 import type { MemoryManager } from '../memory/manager.js';
-import type { SandboxConfig } from '../sandbox/types.js';
 
 interface AgentOptions extends AgentConfig {
   registry?: ToolRegistry;

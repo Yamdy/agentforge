@@ -12,7 +12,6 @@ import {
 } from '../config/index.js';
 import type { LLMAdapter, HistoryManager, RequestInterceptor } from '../types';
 import {
-  createMiddlewarePipeline,
   createLoggingMiddleware,
   createTokenCountingMiddleware,
   createTimeoutMiddleware,
@@ -61,14 +60,18 @@ export class AgentFactory {
         provider: typeof cfgModel.provider === 'string' ? cfgModel.provider : 'openai-compatible',
         apiKey: typeof cfgModel.apiKey === 'string' ? cfgModel.apiKey : agentConfig.apiKey,
         baseURL: typeof cfgModel.baseURL === 'string' ? cfgModel.baseURL : agentConfig.baseURL,
-        temperature: typeof cfgModel.temperature === 'number' ? cfgModel.temperature : agentConfig.temperature,
-        maxTokens: typeof cfgModel.maxTokens === 'number' ? cfgModel.maxTokens : agentConfig.maxTokens,
-        timeout: typeof cfgModel.timeout === 'object' && cfgModel.timeout !== null
-          ? cfgModel.timeout
-          : undefined,
-        tlsRejectUnauthorized: typeof cfgModel.tlsRejectUnauthorized === 'boolean'
-          ? cfgModel.tlsRejectUnauthorized
-          : undefined,
+        temperature:
+          typeof cfgModel.temperature === 'number' ? cfgModel.temperature : agentConfig.temperature,
+        maxTokens:
+          typeof cfgModel.maxTokens === 'number' ? cfgModel.maxTokens : agentConfig.maxTokens,
+        timeout:
+          typeof cfgModel.timeout === 'object' && cfgModel.timeout !== null
+            ? cfgModel.timeout
+            : undefined,
+        tlsRejectUnauthorized:
+          typeof cfgModel.tlsRejectUnauthorized === 'boolean'
+            ? cfgModel.tlsRejectUnauthorized
+            : undefined,
       };
     } else {
       modelConfig = {
@@ -100,7 +103,7 @@ export class AgentFactory {
     const registry = this.options.registry ?? this.createRegistry(agentConfig);
 
     // Build middleware list: combine user provided + auto-added built-ins
-    let middleware = this.options.middleware ?? [];
+    const middleware = [...(this.options.middleware ?? [])];
 
     // Always add logging middleware (configurable via env, defaults to enabled in dev)
     const loggingEnabled = process.env.NODE_ENV !== 'production' || true;

@@ -103,7 +103,8 @@ function globMatch(pattern: string, filename: string): boolean {
     return true;
   }
   // Convert simple glob to regex
-  const regexPattern = '^' + pattern.replace(/[-\/\\^$+?.()|[\]{}]/g, '\\$&').replace(/\*/g, '.*') + '$';
+  const regexPattern =
+    '^' + pattern.replace(/[-/\\^$+?.()|[\]{}]/g, '\\$&').replace(/\*/g, '.*') + '$';
   const regex = new RegExp(regexPattern);
   return regex.test(filename);
 }

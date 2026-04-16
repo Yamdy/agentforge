@@ -8,7 +8,6 @@ import { registry } from './registry.js';
 import { delegation, isolatedMessageFilter } from './delegation.js';
 import { createDelegateToSubAgentTool, createListSubAgentsTool } from './tool.js';
 import type { SubAgentRegistration, DelegationConfig } from './types.js';
-import type { Agent } from '../agent/index.js';
 import type { Message } from '../types.js';
 
 /**
@@ -26,10 +25,6 @@ function registerIsolated(
     }) => Message[];
   }
 ): void {
-  const delegationConfig: DelegationConfig | undefined = config.messageFilter
-    ? { messageFilter: config.messageFilter }
-    : { messageFilter: isolatedMessageFilter };
-
   registry.register({
     ...config,
   });
