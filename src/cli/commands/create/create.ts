@@ -143,6 +143,9 @@ export async function create(projectName?: string, options: CreateOptions = {}):
           dependencies: {
             agentforge: '^0.1.0',
           },
+          devDependencies: {
+            typescript: '^6.0.2',
+          },
         },
         null,
         2
@@ -150,6 +153,29 @@ export async function create(projectName?: string, options: CreateOptions = {}):
     );
 
     fileService.writeFile('.gitignore', TEMPLATES.gitignore);
+
+    fileService.writeFile(
+      'tsconfig.json',
+      JSON.stringify(
+        {
+          compilerOptions: {
+            target: 'ES2022',
+            module: 'ESNext',
+            moduleResolution: 'Bundler',
+            lib: ['ES2022'],
+            strict: true,
+            esModuleInterop: true,
+            skipLibCheck: true,
+            resolveJsonModule: true,
+            isolatedModules: true,
+            noEmit: true,
+          },
+          include: ['src/**/*'],
+        },
+        null,
+        2
+      )
+    );
 
     if (initGit) {
       s.message('Initializing git...');

@@ -18,7 +18,7 @@ describe('CLI create command', () => {
 
   describe('constants', () => {
     it('should have correct DEFAULT_DIR', () => {
-      expect(DEFAULT_DIR).toBe('src/agentforge');
+      expect(DEFAULT_DIR).toBe('src');
     });
 
     it('should have LLM_PROVIDERS defined', () => {
@@ -26,6 +26,7 @@ describe('CLI create command', () => {
       expect(Array.isArray(LLM_PROVIDERS)).toBe(true);
       expect(LLM_PROVIDERS).toContain('openai');
       expect(LLM_PROVIDERS).toContain('anthropic');
+      expect(LLM_PROVIDERS).toContain('doubao');
     });
   });
 });

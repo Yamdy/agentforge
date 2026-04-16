@@ -34,6 +34,11 @@ export async function lint(options: LintOptions = {}): Promise<void> {
       issues.push(`Workflows directory not found: ${workflowDir}`);
     }
 
+    const toolDir = join(dir, 'tools');
+    if (!fileService.exists(toolDir)) {
+      issues.push(`Tools directory not found: ${toolDir}`);
+    }
+
     s.stop('Lint complete!');
 
     if (issues.length === 0) {

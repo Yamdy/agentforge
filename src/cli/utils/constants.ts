@@ -1,4 +1,4 @@
-export const DEFAULT_DIR = 'src/agentforge';
+export const DEFAULT_DIR = 'src';
 export const DEFAULT_PORT = 4111;
 export const DEFAULT_HOST = 'localhost';
 export const OUTPUT_DIR = '.agentforge/output';
