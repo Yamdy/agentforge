@@ -1,0 +1,22 @@
+{
+  "eval_id": 4,
+  "eval_name": "incomplete-hooks-module",
+  "prompt": "在进行代码审查时，我发现 hooks 目录下只有类型定义，没有执行器实现。这个应该怎么处理？",
+  "assertions": [
+    {
+      "text": "识别出这是未完成的功能",
+      "passed": false,
+      "evidence": ""
+    },
+    {
+      "text": "询问实现计划",
+      "passed": false,
+      "evidence": ""
+    },
+    {
+      "text": "给出明确建议",
+      "passed": false,
+      "evidence": ""
+    }
+  ]
+}
