@@ -35,8 +35,8 @@ async function multipleSearchPathsExample() {
 
   // Define multiple search paths in order of priority
   const loader = new ConfigLoader([
-    path.join(process.env.HOME || '', '.config/primo'),
-    path.join('/etc/primo'),
+    path.join(process.env.HOME || '', '.config/agentforge'),
+    path.join('/etc/agentforge'),
     path.join('./config'),
   ]);
 
@@ -57,7 +57,7 @@ async function multipleSearchPathsExample() {
 function loadJsonConfigExample() {
   console.log('\n=== JSON Configuration Example ===\n');
 
-  const jsonPath = path.join(process.cwd(), 'primo.config.json');
+  const jsonPath = path.join(process.cwd(), 'agentforge.config.json');
 
   try {
     const config = loadConfigSync({ filePath: jsonPath });

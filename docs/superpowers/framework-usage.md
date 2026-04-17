@@ -3,7 +3,7 @@
 ## 快速开始
 
 ```typescript
-import { Agent, InMemoryHistory, ToolRegistry, AIAdapter } from 'primo-agent';
+import { Agent, InMemoryHistory, ToolRegistry, AIAdapter } from 'agentforge';
 
 const adapter = new AIAdapter({ model: 'gpt-4-turbo', apiKey: 'xxx' });
 const registry = new ToolRegistry();
@@ -17,7 +17,7 @@ const result = await agent.run('Your prompt');
 ## 配置验证
 
 ```typescript
-import { validateServerConfig, validateAgentConfig } from 'primo-agent';
+import { validateServerConfig, validateAgentConfig } from 'agentforge';
 
 const serverConfig = validateServerConfig({ port: 3000 });
 const agentConfig = validateAgentConfig({ model: 'gpt-4' });
@@ -26,7 +26,7 @@ const agentConfig = validateAgentConfig({ model: 'gpt-4' });
 ## 错误处理
 
 ```typescript
-import { AppError, NotFoundError, ToolExecuteError } from 'primo-agent';
+import { AppError, NotFoundError, ToolExecuteError } from 'agentforge';
 
 try {
   await agent.run('prompt');
@@ -42,7 +42,7 @@ try {
 ## Schema 使用
 
 ```typescript
-import { schemas, MessageSchema } from 'primo-agent';
+import { schemas, MessageSchema } from 'agentforge';
 
 const validMessage = MessageSchema.parse({ role: 'user', content: 'Hello' });
 // 或使用 schemas 对象
@@ -52,7 +52,7 @@ const toolSchema = schemas.Tool;
 ## 重试机制
 
 ```typescript
-import { withRetry } from 'primo-agent';
+import { withRetry } from 'agentforge';
 
 const result = await withRetry(() => someOperation(), { maxAttempts: 3, delayMs: 1000 });
 ```
@@ -60,7 +60,7 @@ const result = await withRetry(() => someOperation(), { maxAttempts: 3, delayMs:
 ## 工具缓存
 
 ```typescript
-import { toolCache } from 'primo-agent';
+import { toolCache } from 'agentforge';
 
 // 手动设置缓存
 toolCache.set('key', value, 60000);

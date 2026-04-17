@@ -40,11 +40,11 @@ tests/
 
 ```json
 {
-  "name": "primo-agent",
+  "name": "agentforge",
   "version": "0.1.0",
   "main": "dist/cli.js",
   "bin": {
-    "primo-agent": "./dist/cli.js"
+    "agentforge": "./dist/cli.js"
   },
   "scripts": {
     "build": "tsc",
@@ -557,7 +557,7 @@ import { OpenAIAdapter } from './adapters/openai';
 
 const program = new Command();
 
-program.name('primo-agent').description('Generic Agent Development Framework').version('0.1.0');
+program.name('agentforge').description('Generic Agent Development Framework').version('0.1.0');
 
 program
   .command('run')

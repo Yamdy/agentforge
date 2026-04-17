@@ -211,12 +211,9 @@ const config: AgentConfig = {
 
 AgentForge 会按以下顺序查找配置文件：
 
-1. `./primo.config.md`
-2. `./primo.config.json`
-3. `./agentforge.config.md`
-4. `./agentforge.config.json`
-5. `./config/primo.config.md`
-6. `./config/agentforge.config.md`
+1. `./agentforge.config.md`
+2. `./agentforge.config.json`
+3. `./config/agentforge.config.md`
 
 ## 完整示例
 

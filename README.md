@@ -73,7 +73,7 @@ pnpm add agentforge
 
 ### Create Configuration
 
-Create `primo.config.md` in your project:
+Create `agentforge.config.md` in your project:
 
 ```markdown
 ---

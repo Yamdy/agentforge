@@ -135,7 +135,7 @@ import type {
   Prompt as MCPPrompt,
 } from '@modelcontextprotocol/sdk/types.js';
 
-// 引用 primo-agent 现有 Tool 类型
+// 引用 agentforge 现有 Tool 类型
 import type { Tool } from '../types.js';
 ```
 
@@ -256,13 +256,13 @@ const agent = new Agent({
 ## CLI 命令
 
 ```bash
-primo-agent mcp list                    # 列出所有服务器
-primo-agent mcp add <name> <config>    # 添加服务器
-primo-agent mcp remove <name>           # 移除服务器
-primo-agent mcp connect <name>          # 连接服务器
-primo-agent mcp disconnect <name>       # 断开连接
-primo-agent mcp auth <name>             # 启动 OAuth 认证
-primo-agent mcp tools                   # 列出所有工具
+agentforge mcp list                    # 列出所有服务器
+agentforge mcp add <name> <config>    # 添加服务器
+agentforge mcp remove <name>           # 移除服务器
+agentforge mcp connect <name>          # 连接服务器
+agentforge mcp disconnect <name>       # 断开连接
+agentforge mcp auth <name>             # 启动 OAuth 认证
+agentforge mcp tools                   # 列出所有工具
 ```
 
 ## HTTP API 端点
@@ -471,7 +471,7 @@ MCP_SERVERS='{"server1":{"type":"local",...}}'
 
 ### OAuth 令牌存储
 
-- **存储位置**: `~/.primo-agent/mcp-auth.json`
+- **存储位置**: `~/.agentforge/mcp-auth.json`
 - **加密**: 使用系统密钥链（如可用），否则使用 AES-256
 - **内容**:
   ```json
@@ -492,7 +492,7 @@ MCP_SERVERS='{"server1":{"type":"local",...}}'
 ### 服务器配置存储
 
 - **优先级**: 代码配置 > 配置文件 > 环境变量
-- **配置文件路径**: `./mcp.config.json` 或 `~/.primo-agent/mcp.config.json`
+- **配置文件路径**: `./mcp.config.json` 或 `~/.agentforge/mcp.config.json`
 
 ## 风险和注意事项
 

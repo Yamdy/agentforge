@@ -4,7 +4,7 @@ AgentForge comes with a powerful, type-safe configuration system that supports m
 
 ## Quick Start
 
-Create a `primo.config.md` in your project root:
+Create a `agentforge.config.md` in your project root:
 
 ```markdown
 ---
@@ -33,18 +33,18 @@ const agent = createAgent(config);
 The ConfigLoader automatically searches for configuration in these locations:
 
 1. Current working directory
-2. `./primo/` directory
-3. `./.primo/` directory
+2. `./agentforge/` directory
+3. `./.agentforge/` directory
 4. Any additional custom paths you specify
 
 It looks for these file names:
 
-- `primo.config.md`
+- `agentforge.config.md`
 - `agent.md`
-- `primo.md`
-- `primo.config.json`
+- `agentforge.md`
+- `agentforge.config.json`
 - `agent.json`
-- `primo.json`
+- `agentforge.json`
 
 ## Markdown with Frontmatter
 
@@ -138,7 +138,11 @@ const config = loadConfigSync({ filePath: './path/to/config.md' });
 ```typescript
 import { ConfigLoader } from 'agentforge/config';
 
-const loader = new ConfigLoader(['/etc/primo/', '/home/user/.config/primo/', './project-configs/']);
+const loader = new ConfigLoader([
+  '/etc/agentforge/',
+  '/home/user/.config/agentforge/',
+  './project-configs/',
+]);
 
 const foundPath = loader.findConfigFile();
 if (foundPath) {

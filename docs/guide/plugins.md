@@ -188,7 +188,7 @@ agent.registerPlugin(middlewarePlugin);
 ### 从配置加载插件
 
 ````typescript
-// primo.config.md
+// agentforge.config.md
 ```markdown
 ---
 name: my-agent
@@ -284,7 +284,7 @@ interface PluginConfig {
 ```
 
 ````typescript
-// primo.config.md
+// agentforge.config.md
 ```markdown
 ---
 plugins:

@@ -21,7 +21,7 @@ console.log(result);
 
 ## 使用配置文件
 
-### primo.config.md
+### agentforge.config.md
 
 ```markdown
 ---

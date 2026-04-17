@@ -6,7 +6,7 @@
 
 ```
 my-agent-app/
-├── primo.config.md          # Agent 配置文件
+├── agentforge.config.md     # Agent 配置文件
 ├── package.json
 ├── tsconfig.json
 ├── src/
@@ -20,7 +20,7 @@ my-agent-app/
 
 ## 配置文件
 
-### primo.config.md
+### agentforge.config.md
 
 主要的 Agent 配置文件，使用 Markdown frontmatter 格式：
 

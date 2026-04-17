@@ -43,7 +43,7 @@ src/skill/
 
 从以下位置扫描 SKILL：
 
-1. `./.primo-agent/skills/`
+1. `./.agentforge/skills/`
 2. `./.agents/skills/`
 3. `./.claude/skills/`
 4. `./.opencode/skills/`
@@ -64,7 +64,7 @@ src/skill/
 name: git-release
 description: Create consistent releases and changelogs
 license: MIT
-compatibility: primo-agent
+  compatibility: agentforge
 metadata:
   audience: maintainers
   workflow: github

@@ -1,8 +1,8 @@
-# Primo Agent 框架架构文档
+# AgentForge 框架架构文档
 
 ## 概述
 
-Primo Agent 是一个通用的 Agent 开发框架，支持工具调用、多轮对话、C/S 架构。用户通过组合核心组件（Tool、LLMAdapter、HistoryManager）来构建自己的 Agent。
+AgentForge 是一个通用的 Agent 开发框架，支持工具调用、多轮对话、C/S 架构。用户通过组合核心组件（Tool、LLMAdapter、HistoryManager）来构建自己的 Agent。
 
 ## 系统架构
 
@@ -153,7 +153,7 @@ agent.cancel(); // 取消任务
 全局日志服务，基于 RxJS Subject 实现可观测日志流。
 
 ```typescript
-import { createLogger, logger } from 'primo-agent';
+import { createLogger, logger } from 'agentforge';
 
 // 全局单例，所有模块共享
 const log = createLogger('moduleName');
@@ -175,7 +175,7 @@ logger.observable().subscribe((entry) => console.log(entry.message));
 链路追踪服务，基于 Span 实现分布式追踪能力。
 
 ```typescript
-import { tracer, getTracer } from 'primo-agent';
+import { tracer, getTracer } from 'agentforge';
 
 const span = tracer.startSpan('operation.name');
 tracer.log(span.spanId, 'Processing...');
@@ -198,7 +198,7 @@ tracer.observable().subscribe((span) => console.log(span.operationName, span.dur
 HTTP 服务器，基于 Hono 框架。
 
 ```typescript
-import { createApp, startServer } from 'primo-agent';
+import { createApp, startServer } from 'agentforge';
 
 const app = createApp({
   apiKey: 'optional-api-key',
@@ -233,7 +233,7 @@ await startServer({
 客户端 SDK，用于连接 Agent Server。
 
 ```typescript
-import { createPrimoClient } from 'primo-agent';
+import { createPrimoClient } from 'agentforge';
 
 const client = createPrimoClient({
   baseUrl: 'http://localhost:3000',
@@ -298,7 +298,7 @@ pluginManager.on('tool.execute.after', async (input, output) => {
 Session 支持多轮对话持久化，包含存储、CRUD API 和上下文压缩。
 
 ```typescript
-import { createSessionAPI } from 'primo-agent';
+import { createSessionAPI } from 'agentforge';
 
 const sessionApi = createSessionAPI();
 await sessionApi.init();
@@ -320,7 +320,7 @@ console.log(history.messages); // [{ role: 'user', content: 'Hello' }, ...]
 当消息数超过阈值时自动压缩，保留首尾消息并生成摘要。
 
 ```typescript
-import { compactSession } from 'primo-agent';
+import { compactSession } from 'agentforge';
 
 const result = await compactSession(session, {
   maxMessages: 50, // 压缩后保留的最大消息数
@@ -346,7 +346,7 @@ await startServer({
 统一错误响应格式。
 
 ```typescript
-import { AppError, NotFoundError, toErrorResponse } from 'primo-agent';
+import { AppError, NotFoundError, toErrorResponse } from 'agentforge';
 
 // 抛出错误
 throw new NotFoundError('Session not found');
@@ -501,7 +501,7 @@ src/
 ### 编程接口 (本地)
 
 ```typescript
-import { Agent, InMemoryHistory, ToolRegistry, AIAdapter, calculatorTool } from 'primo-agent';
+import { Agent, InMemoryHistory, ToolRegistry, AIAdapter, calculatorTool } from 'agentforge';
 
 const adapter = new AIAdapter({ model: 'gpt-4-turbo', apiKey: 'xxx' });
 const registry = new ToolRegistry();
@@ -526,7 +526,7 @@ for await (const event of agent.runStream('Calculate 123 * 456', {
 ### Server 模式
 
 ```typescript
-import { Agent, InMemoryHistory, ToolRegistry, AIAdapter, startServer } from 'primo-agent';
+import { Agent, InMemoryHistory, ToolRegistry, AIAdapter, startServer } from 'agentforge';
 
 const adapter = new AIAdapter({ model: 'gpt-4-turbo', apiKey: 'xxx' });
 const registry = new ToolRegistry();
@@ -548,7 +548,7 @@ await startServer({
 ### SDK 客户端
 
 ```typescript
-import { createPrimoClient } from 'primo-agent';
+import { createPrimoClient } from 'agentforge';
 
 const client = createPrimoClient({
   baseUrl: 'http://localhost:3000',
@@ -607,13 +607,13 @@ await agent.run('Calculate 2+2');
 
 ```bash
 # 单次 prompt
-primo-agent run -p "Calculate 123 * 456"
+agentforge run -p "Calculate 123 * 456"
 
 # 交互模式
-primo-agent run
+agentforge run
 
 # 指定 maxSteps
-primo-agent run -s 5
+agentforge run -s 5
 ```
 
 ### Demo 模式
@@ -797,7 +797,7 @@ export class NewModule {
 配置验证，使用 Zod schemas。
 
 ```typescript
-import { validateServerConfig, validateAgentConfig } from 'primo-agent';
+import { validateServerConfig, validateAgentConfig } from 'agentforge';
 
 const serverConfig = validateServerConfig({ port: 3000 });
 const agentConfig = validateAgentConfig({ model: 'gpt-4-turbo', maxSteps: 10 });
@@ -808,7 +808,7 @@ const agentConfig = validateAgentConfig({ model: 'gpt-4-turbo', maxSteps: 10 });
 统一错误类型体系。
 
 ```typescript
-import { AppError, NotFoundError, ToolExecuteError, LLMError } from 'primo-agent';
+import { AppError, NotFoundError, ToolExecuteError, LLMError } from 'agentforge';
 
 throw new NotFoundError('Session not found');
 throw new ToolExecuteError('calculator', 'Division by zero');
@@ -820,7 +820,7 @@ throw new LLMError('API rate limit exceeded');
 重试机制，支持指数退避。
 
 ```typescript
-import { withRetry } from 'primo-agent';
+import { withRetry } from 'agentforge';
 
 const result = await withRetry(() => apiCall(), { maxAttempts: 3, delayMs: 1000, backoff: 2 });
 ```
@@ -830,7 +830,7 @@ const result = await withRetry(() => apiCall(), { maxAttempts: 3, delayMs: 1000,
 工具结果内存缓存，默认 TTL 60 秒。
 
 ```typescript
-import { toolCache } from 'primo-agent';
+import { toolCache } from 'agentforge';
 
 toolCache.set('key', 'value', 60000);
 const value = toolCache.get<string>('key');

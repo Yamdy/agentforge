@@ -24,7 +24,7 @@ pnpm add agentforge
 
 ### 1. 创建配置文件
 
-在项目根目录创建 `primo.config.md`：
+在项目根目录创建 `agentforge.config.md`：
 
 ```markdown
 ---
