@@ -17,21 +17,25 @@
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint packages/**/*.ts",
     "lint:fix": "eslint packages/**/*.ts --fix",
-    "format": "prettier --write \"**/*.{ts,tsx,md,json}\""
+    "format": "prettier --write \"**/*.{ts,tsx,md,json}\"",
+    "llm": "pnpm -F @agentforge/llm cli"
   },
   "dependencies": {
-    "effect": "4.0.0-beta.43",
+    "@modelcontextprotocol/sdk": "1.27.1",
     "ai": "6.0.149",
-    "zod": "4.1.8",
+    "effect": "4.0.0-beta.43",
     "remeda": "2.26.0",
-    "@modelcontextprotocol/sdk": "1.27.1"
+    "zod": "4.1.8"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "typescript": "^6.0.3",
-    "tsup": "^8.4.0",
+    "@typescript-eslint/eslint-plugin": "^8.58.2",
+    "@typescript-eslint/parser": "^8.58.2",
     "eslint": "^9.0.0",
     "prettier": "^3.0.0",
+    "tsup": "^8.4.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.58.2",
     "vitest": "^3.0.0"
   }
 }

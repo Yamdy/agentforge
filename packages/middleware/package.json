@@ -1,35 +1,24 @@
 {
-  "name": "@agentforge/llm",
+  "name": "@agentforge/middleware",
   "version": "0.1.0",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
-  },
-  "bin": {
-    "agentforge-llm": "./src/cli.ts"
   },
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts",
     "dev": "tsup src/index.ts --format esm --dts --watch",
     "typecheck": "tsc --noEmit",
     "test": "vitest",
-    "test:run": "vitest run",
-    "cli": "tsx src/cli.ts",
-    "stream": "tsx src/stream-cli.ts"
+    "test:run": "vitest run"
   },
   "dependencies": {
     "@agentforge/core": "workspace:*",
-    "effect": "4.0.0-beta.43",
-    "ai": "6.0.149",
-    "@ai-sdk/openai-compatible": "2.0.37",
-    "@ai-sdk/provider": "3.0.8",
-    "zod": "4.1.8",
-    "commander": "^13.1.0"
+    "effect": "4.0.0-beta.43"
   },
   "devDependencies": {
     "typescript": "^6.0.3",
     "tsup": "^8.4.0",
-    "vitest": "^3.0.0",
-    "tsx": "^4.19.4"
+    "vitest": "^3.0.0"
   }
 }

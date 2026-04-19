@@ -1,0 +1,16 @@
+{
+  "name": "@agentforge/examples",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "@agentforge/agents": "workspace:*",
+    "@agentforge/core": "workspace:*",
+    "@agentforge/llm": "workspace:*",
+    "@agentforge/middleware": "workspace:*",
+    "effect": "4.0.0-beta.43"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0"
+  }
+}

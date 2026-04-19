@@ -53,7 +53,7 @@ describe("OpenAICompatibleProvider", () => {
       })
     );
 
-    expect(result).toBe("Test response");
+    expect(result.text).toBe("Test response");
     expect(mockCreateOpenAICompatible).toHaveBeenCalledWith({
       baseURL: testConfig.baseURL,
       apiKey: testConfig.apiKey,
