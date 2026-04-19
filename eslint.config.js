@@ -1,18 +1,19 @@
-import js from '@eslint/js';
-import tseslint from 'typescript-eslint';
-
-export default tseslint.config(
-  js.configs.recommended,
-  ...tseslint.configs.recommended,
+export default [
   {
-    files: ['src/**/*.ts'],
-    rules: {
-      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
-      '@typescript-eslint/no-explicit-any': 'error',
-      'no-console': 'off',
+    files: ["**/*.ts"],
+    languageOptions: {
+      ecmaVersion: "latest",
+      sourceType: "module",
+      globals: {
+        console: "readonly",
+        process: "readonly",
+        module: "readonly"
+      }
     },
-  },
-  {
-    ignores: ['dist', 'node_modules', '*.d.ts'],
+    rules: {
+      "@typescript-eslint/no-explicit-any": "error",
+      "@typescript-eslint/no-unused-vars": "warn",
+      "prefer-const": "error"
+    }
   }
-);
+];
