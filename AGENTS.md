@@ -1,142 +1,121 @@
-# 铁律
+# AGENTS.md 开发铁律
 
-**不要着急实现，先分析必要性**
+## 开发流程铁律
 
-**有库相关问题优先查看库文档**
+### 0. CLI 优先验证
 
-**typescript 绝对不要用 any 类型**
+- 每个功能都要有 CLI 入口，可以直接在命令行验证效果
+- 验证必须使用真实 LLM（支持配置 baseURL、API Key、model）
+- 从最小可用结构开始，每次迭代都确保能在命令行跑通
 
-**修改代码后一定要测试验证**
+### 1. 每步必验证
 
-**架构变化较大要更新文档（/docs）**
+每次代码改动后必须运行以下验证命令：
 
-**特性优先参考opencode（D:\code\opencode）实现**
+- `pnpm typecheck` - 确保无 TypeScript 错误
+- `pnpm lint` - 确保无 ESLint 警告
+- `pnpm test:run` - 确保所有测试通过
+
+### 2. 先写测试再实现 (TDD)
+
+遵循测试驱动开发原则：
+
+1. 先写测试用例（初始为红色失败）
+2. 写最小实现让测试通过（绿色）
+3. 重构代码保持测试通过（重构）
+
+### 3. 小步提交
+
+每次提交只做一件事，提交信息清晰：
+
+- 保持每个提交可独立运行和验证
+- 提交历史可回滚到任意稳定点
+- 提交信息格式：`<类型>: <简短描述>`
+
+### 4. 提交前必 self-review
+
+提交代码前必须自我检查：
+
+- 代码符合项目风格和约定
+- 没有多余的调试代码或注释
+- 所有验证命令通过
+- 测试覆盖了新增功能
 
 ---
 
-## MDX 文档生成规则
+## 代码质量铁律
 
-每次生成新代码时，遵循以下流程：
+### 1. 无 TypeScript 错误
 
-### 生成条件
-- 代码行数 > 20 行
-- 有公开 exports
-- 排除：测试文件、配置文件、.d.ts、examples
+- 严格模式开启：`strict: true`
+- 类型必须 100% 正确，禁止使用 `any`
+- 所有函数都有明确的类型签名
 
-### 流程
-1. 检查是否需要生成配套 MDX
-2. ，先生成 MDX 框架（使用 `prompts/templates/mdx-template.mdx`）
-3. 再生成代码
-4. 最后更新 MDX 中的示例和说明
+### 2. 无 ESLint 警告
 
-### 存放路径
-- 规则文件：`.agent-rules.json`
-- 模板：`prompts/templates/mdx-template.mdx`
-- 自动生成：`prompts/auto-generated/*.mdx`
-- 公共组件：`prompts/common/components.mdx`
+- 所有 ESLint 规则必须通过
+- 禁止禁用规则，除非有充分理由并注释说明
 
-### 必须字段
-- frontmatter: title, type, author, date, version, sourceFile, complexity, tests, dependencies
-- content: Description, Signature, Parameters, Returns, Examples (≥2), Dependencies, Related
+### 3. 高测试覆盖率
 
-<!-- gitnexus:start -->
-# GitNexus — Code Intelligence
+- 核心功能测试覆盖率 >= 80%
+- 关键路径必须有完整测试覆盖
+- 新增功能必须同步添加测试
 
-This project is indexed by GitNexus as **agentforge** (1300 symbols, 3074 relationships, 98 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+### 4. Effect-TS 优先（严格遵循 v4.0 API）
 
-> If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
+- 所有副作用必须用 Effect 封装
+- 禁止裸 Promise，统一使用 Effect
+- 错误处理通过 Effect 的错误通道进行
+- 严格按照 effect-ts-guide 中的 v4.0 API 用法：
+  - 使用 `Effect.sync()` 进行同步操作
+  - 使用 `Effect.tryPromise()` 进行异步操作
+  - 使用 `Context.GenericTag()` 定义服务
+  - 禁止使用 v2/v3 的旧 API
 
-## Always Do
+---
 
-- **MUST run impact analysis before editing any symbol.** Before modifying a function, class, or method, run `gitnexus_impact({target: "symbolName", direction: "upstream"})` and report the blast radius (direct callers, affected processes, risk level) to the user.
-- **MUST run `gitnexus_detect_changes()` before committing** to verify your changes only affect expected symbols and execution flows.
-- **MUST warn the user** if impact analysis returns HIGH or CRITICAL risk before proceeding with edits.
-- When exploring unfamiliar code, use `gitnexus_query({query: "concept"})` to find execution flows instead of grepping. It returns process-grouped results ranked by relevance.
-- When you need full context on a specific symbol — callers, callees, which execution flows it participates in — use `gitnexus_context({name: "symbolName"})`.
+## 架构设计铁律
 
-## When Debugging
+### 0. 真实 LLM 可配置
+- LLM 配置必须支持 baseURL、API Key、model、temperature 等参数
+- 禁止在代码中写死任何 LLM 配置
+- 配置应该可以通过环境变量或配置文件传入
 
-1. `gitnexus_query({query: "<error or symptom>"})` — find execution flows related to the issue
-2. `gitnexus_context({name: "<suspect function>"})` — see all callers, callees, and process participation
-3. `READ gitnexus://repo/agentforge/process/{processName}` — trace the full execution flow step by step
-4. For regressions: `gitnexus_detect_changes({scope: "compare", base_ref: "main"})` — see what your branch changed
+### 1. 从最小结构开始
+- 每次迭代都从最小可用结构（MVP）开始
+- 确保每一步都能独立运行和验证
+- 渐进式增强功能，避免一次性做太多
 
-## When Refactoring
+### 2. 高度模块化
 
-- **Renaming**: MUST use `gitnexus_rename({symbol_name: "old", new_name: "new", dry_run: true})` first. Review the preview — graph edits are safe, text_search edits need manual review. Then run with `dry_run: false`.
-- **Extracting/Splitting**: MUST run `gitnexus_context({name: "target"})` to see all incoming/outgoing refs, then `gitnexus_impact({target: "target", direction: "upstream"})` to find all external callers before moving code.
-- After any refactor: run `gitnexus_detect_changes({scope: "all"})` to verify only expected files changed.
+- 每个功能独立成包，有明确职责边界
+- 包之间通过清晰的接口交互
+- 避免循环依赖
 
-## Never Do
+### 2. 接口先于实现
 
-- NEVER edit a function, class, or method without first running `gitnexus_impact` on it.
-- NEVER ignore HIGH or CRITICAL risk warnings from impact analysis.
-- NEVER rename symbols with find-and-replace — use `gitnexus_rename` which understands the call graph.
-- NEVER commit changes without running `gitnexus_detect_changes()` to check affected scope.
+- 先定义接口和类型
+- 再编写实现代码
+- 面向接口编程，而非面向实现编程
 
-## Tools Quick Reference
+### 3. 可测试性
 
-| Tool | When to use | Command |
-|------|-------------|---------|
-| `query` | Find code by concept | `gitnexus_query({query: "auth validation"})` |
-| `context` | 360-degree view of one symbol | `gitnexus_context({name: "validateUser"})` |
-| `impact` | Blast radius before editing | `gitnexus_impact({target: "X", direction: "upstream"})` |
-| `detect_changes` | Pre-commit scope check | `gitnexus_detect_changes({scope: "staged"})` |
-| `rename` | Safe multi-file rename | `gitnexus_rename({symbol_name: "old", new_name: "new", dry_run: true})` |
-| `cypher` | Custom graph queries | `gitnexus_cypher({query: "MATCH ..."})` |
+- 设计时考虑可测试性
+- 依赖注入，便于 mock
+- 纯函数优先
 
-## Impact Risk Levels
+---
 
-| Depth | Meaning | Action |
-|-------|---------|--------|
-| d=1 | WILL BREAK — direct callers/importers | MUST update these |
-| d=2 | LIKELY AFFECTED — indirect deps | Should test |
-| d=3 | MAY NEED TESTING — transitive | Test if critical path |
+## Monorepo 结构约定
 
-## Resources
-
-| Resource | Use for |
-|----------|---------|
-| `gitnexus://repo/agentforge/context` | Codebase overview, check index freshness |
-| `gitnexus://repo/agentforge/clusters` | All functional areas |
-| `gitnexus://repo/agentforge/processes` | All execution flows |
-| `gitnexus://repo/agentforge/process/{name}` | Step-by-step execution trace |
-
-## Self-Check Before Finishing
-
-Before completing any code modification task, verify:
-1. `gitnexus_impact` was run for all modified symbols
-2. No HIGH/CRITICAL risk warnings were ignored
-3. `gitnexus_detect_changes()` confirms changes match expected scope
-4. All d=1 (WILL BREAK) dependents were updated
-
-## Keeping the Index Fresh
-
-After committing code changes, the GitNexus index becomes stale. Re-run analyze to update it:
-
-```bash
-npx gitnexus analyze
+```md
+agentforge/
+├── packages/       # 核心库包
+│   ├── core/       # 核心抽象和类型
+│   ├── agents/     # Agent 实现
+│   ├── tools/      # Tool 系统
+│   ├── memory/     # Memory 系统
+│   └── llm/        # LLM 集成
+└── examples/       # 示例和演示
 ```
-
-If the index previously included embeddings, preserve them by adding `--embeddings`:
-
-```bash
-npx gitnexus analyze --embeddings
-```
-
-To check whether embeddings exist, inspect `.gitnexus/meta.json` — the `stats.embeddings` field shows the count (0 means no embeddings). **Running analyze without `--embeddings` will delete any previously generated embeddings.**
-
-> Claude Code users: A PostToolUse hook handles this automatically after `git commit` and `git merge`.
-
-## CLI
-
-| Task | Read this skill file |
-|------|---------------------|
-| Understand architecture / "How does X work?" | `.claude/skills/gitnexus/gitnexus-exploring/SKILL.md` |
-| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus/gitnexus-impact-analysis/SKILL.md` |
-| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus/gitnexus-debugging/SKILL.md` |
-| Rename / extract / split / refactor | `.claude/skills/gitnexus/gitnexus-refactoring/SKILL.md` |
-| Tools, resources, schema reference | `.claude/skills/gitnexus/gitnexus-guide/SKILL.md` |
-| Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
-
-<!-- gitnexus:end -->

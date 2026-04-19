@@ -1,0 +1,31 @@
+{
+  "name": "@agentforge/llm",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "bin": {
+    "agentforge-llm": "./src/cli.ts"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts",
+    "dev": "tsup src/index.ts --format esm --dts --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "cli": "tsx src/cli.ts"
+  },
+  "dependencies": {
+    "effect": "4.0.0-beta.43",
+    "zod": "4.1.8",
+    "commander": "^13.1.0",
+    "dotenv": "^16.4.7"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3",
+    "tsup": "^8.4.0",
+    "vitest": "^3.0.0",
+    "tsx": "^4.19.4"
+  }
+}
