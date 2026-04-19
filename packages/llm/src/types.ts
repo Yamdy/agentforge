@@ -18,6 +18,7 @@ export interface LLMGenerateParams {
   model?: string;
   temperature?: number;
   maxTokens?: number;
+  systemPrompt?: string;
 }
 
 export interface LLMProvider {

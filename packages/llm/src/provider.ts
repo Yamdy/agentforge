@@ -9,6 +9,25 @@ import {
   Message,
 } from "./types";
 
+function injectSystemPrompt(
+  messages: Message[],
+  systemPrompt?: string
+): Message[] {
+  if (!systemPrompt) {
+    return messages;
+  }
+
+  const hasSystemMessage = messages.some((m) => m.role === "system");
+  if (hasSystemMessage) {
+    return messages;
+  }
+
+  return [
+    { role: "system", content: systemPrompt },
+    ...messages,
+  ];
+}
+
 export class OpenAICompatibleProvider implements LLMProvider {
   private readonly config: LLMConfig;
 
@@ -28,9 +47,14 @@ export class OpenAICompatibleProvider implements LLMProvider {
           params.model || this.config.model
         ) as any;
 
+        const messages = injectSystemPrompt(
+          params.messages as Message[],
+          params.systemPrompt
+        );
+
         const result = await generateText({
           model,
-          messages: params.messages as Message[],
+          messages,
           temperature: params.temperature ?? this.config.temperature,
         });
 
