@@ -1,4 +1,6 @@
 import { Effect } from "effect";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { generateText } from "ai";
 import {
   LLMProvider,
   LLMGenerateParams,
@@ -17,27 +19,22 @@ export class OpenAICompatibleProvider implements LLMProvider {
   generate(params: LLMGenerateParams): Effect.Effect<string, LLMError> {
     return Effect.tryPromise({
       try: async () => {
-        const response = await fetch(`${this.config.baseURL}/chat/completions`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${this.config.apiKey}`,
-          },
-          body: JSON.stringify({
-            model: params.model || this.config.model,
-            messages: params.messages,
-            temperature: params.temperature ?? this.config.temperature,
-            max_tokens: params.maxTokens ?? this.config.maxTokens,
-          }),
+        const openaiCompatible = createOpenAICompatible({
+          baseURL: this.config.baseURL,
+          apiKey: this.config.apiKey,
+        } as any);
+
+        const model = openaiCompatible.chatModel(
+          params.model || this.config.model
+        ) as any;
+
+        const result = await generateText({
+          model,
+          messages: params.messages as Message[],
+          temperature: params.temperature ?? this.config.temperature,
         });
 
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`HTTP ${response.status}: ${errorText}`);
-        }
-
-        const data = await response.json();
-        return data.choices[0]?.message?.content || "";
+        return result.text;
       },
       catch: (e) =>
         new LLMError(
