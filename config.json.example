@@ -1,0 +1,9 @@
+{
+  "llm": {
+    "baseURL": "https://ark.cn-beijing.volces.com/api/coding/v3",
+    "apiKey": "your-api-key-here",
+    "model": "ark-code-latest",
+    "temperature": 0.7,
+    "maxTokens": 2048
+  }
+}

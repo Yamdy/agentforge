@@ -1,32 +1,42 @@
 import { Effect } from "effect";
+import fs from "fs/promises";
+import path from "path";
 import { LLMConfig, LLMError } from "./types";
+import { fileURLToPath } from "url";
 
-export const loadLLMConfigFromEnv = (): Effect.Effect<LLMConfig, LLMError> => {
-  const baseURL = process.env.LLM_BASE_URL;
-  const apiKey = process.env.LLM_API_KEY;
-  const model = process.env.LLM_MODEL;
-  const temperature = process.env.LLM_TEMPERATURE
-    ? parseFloat(process.env.LLM_TEMPERATURE)
-    : undefined;
-  const maxTokens = process.env.LLM_MAX_TOKENS
-    ? parseInt(process.env.LLM_MAX_TOKENS)
-    : undefined;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-  if (!baseURL) {
-    return Effect.fail(new LLMError("LLM_BASE_URL is required"));
-  }
-  if (!apiKey) {
-    return Effect.fail(new LLMError("LLM_API_KEY is required"));
-  }
-  if (!model) {
-    return Effect.fail(new LLMError("LLM_MODEL is required"));
-  }
+export const loadLLMConfigFromJson = (
+  configPath?: string
+): Effect.Effect<LLMConfig, LLMError> =>
+  Effect.tryPromise({
+    try: async () => {
+      const resolvedPath =
+        configPath || path.join(__dirname, "../../../config.json");
+      const content = await fs.readFile(resolvedPath, "utf-8");
+      const config = JSON.parse(content);
 
-  return Effect.succeed({
-    baseURL,
-    apiKey,
-    model,
-    temperature,
-    maxTokens,
+      if (!config.llm) {
+        throw new Error("Config file missing 'llm' section");
+      }
+
+      const llmConfig = config.llm;
+
+      if (!llmConfig.baseURL) {
+        throw new Error("LLM baseURL is required");
+      }
+      if (!llmConfig.apiKey) {
+        throw new Error("LLM apiKey is required");
+      }
+      if (!llmConfig.model) {
+        throw new Error("LLM model is required");
+      }
+
+      return llmConfig as LLMConfig;
+    },
+    catch: (e) =>
+      new LLMError(
+        `Failed to load config: ${e instanceof Error ? e.message : String(e)}`,
+        e
+      ),
   });
-};

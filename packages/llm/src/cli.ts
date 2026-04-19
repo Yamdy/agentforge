@@ -1,13 +1,9 @@
 #!/usr/bin/env node
 
 import { Effect } from "effect";
-import dotenv from "dotenv";
-import path from "path";
-
-dotenv.config({ path: path.join(import.meta.dirname, "../../../.env") });
 import { Command } from "commander";
 import {
-  loadLLMConfigFromEnv,
+  loadLLMConfigFromJson,
   OpenAICompatibleProvider,
   LLMError,
 } from "./index";
@@ -17,10 +13,11 @@ const program = new Command();
 program
   .name("agentforge-llm")
   .description("CLI for testing LLM integration")
+  .option("-c, --config <path>", "Path to config JSON file")
   .argument("<prompt>", "The prompt to send to the LLM")
-  .action(async (prompt: string) => {
-    const runLLM = (prompt: string) =>
-      loadLLMConfigFromEnv().pipe(
+  .action(async (prompt: string, options: { config?: string }) => {
+    const runLLM = (prompt: string, configPath?: string) =>
+      loadLLMConfigFromJson(configPath).pipe(
         Effect.tap(() => Effect.sync(() => console.log("🤖 Loading LLM config..."))),
         Effect.flatMap((config) =>
           Effect.sync(() => {
@@ -45,7 +42,7 @@ program
       );
 
     try {
-      await Effect.runPromise(runLLM(prompt));
+      await Effect.runPromise(runLLM(prompt, options.config));
     } catch (e) {
       if (e instanceof LLMError) {
         console.error("\n❌ Error:", e.message);
