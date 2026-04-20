@@ -6,6 +6,8 @@ export interface Message {
   content: string;
   toolCallId?: string;
   toolName?: string;
+  metadata?: Record<string, unknown>;
+  createdAt?: Date;
 }
 
 export interface Tool<Params extends Record<string, unknown> = Record<string, unknown>> {
@@ -32,6 +34,9 @@ export interface Session {
   id: string;
   messages: Message[];
   systemPrompt?: string;
+  metadata?: Record<string, unknown>;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export interface SessionManager {
@@ -43,6 +48,7 @@ export interface SessionManager {
 export interface CreateSessionOptions {
   systemPrompt?: string;
   initialMessages?: Message[];
+  metadata?: Record<string, unknown>;
 }
 
 export class SessionError {

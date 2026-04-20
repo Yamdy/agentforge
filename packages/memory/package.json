@@ -1,7 +1,8 @@
 {
-  "name": "@agentforge/middleware",
+  "name": "@agentforge/memory",
   "version": "0.1.0",
   "type": "module",
+  "description": "Memory management for AgentForge",
   "exports": {
     ".": "./dist/index.js"
   },
@@ -9,16 +10,16 @@
     "build": "tsup src/index.ts --format esm --dts",
     "dev": "tsup src/index.ts --format esm --dts --watch",
     "typecheck": "tsc --noEmit",
-    "test": "vitest",
-    "test:run": "vitest run"
+    "test": "vitest run"
   },
   "dependencies": {
     "@agentforge/core": "workspace:*",
-    "effect": "4.0.0-beta.43"
+    "effect": "4.0.0-beta.43",
+    "gpt-3-encoder": "^1.1.4"
   },
   "devDependencies": {
-    "typescript": "^6.0.3",
     "tsup": "^8.4.0",
-    "vitest": "^3.0.0"
+    "typescript": "^6.0.3",
+    "vitest": "^3.0.8"
   }
 }

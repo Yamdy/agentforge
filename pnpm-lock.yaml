@@ -17,6 +17,9 @@ importers:
       effect:
         specifier: 4.0.0-beta.43
         version: 4.0.0-beta.43
+      gpt-3-encoder:
+        specifier: ^1.1.4
+        version: 1.1.4
       remeda:
         specifier: 2.26.0
         version: 2.26.0
@@ -51,6 +54,31 @@ importers:
       vitest:
         specifier: ^3.0.0
         version: 3.2.4(@types/node@20.19.39)(tsx@4.21.0)(yaml@2.8.3)
+
+  examples:
+    dependencies:
+      '@agentforge/agents':
+        specifier: workspace:*
+        version: link:../packages/agents
+      '@agentforge/core':
+        specifier: workspace:*
+        version: link:../packages/core
+      '@agentforge/llm':
+        specifier: workspace:*
+        version: link:../packages/llm
+      '@agentforge/memory':
+        specifier: workspace:*
+        version: link:../packages/memory
+      '@agentforge/middleware':
+        specifier: workspace:*
+        version: link:../packages/middleware
+      effect:
+        specifier: 4.0.0-beta.43
+        version: 4.0.0-beta.43
+    devDependencies:
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
 
   packages/agents:
     dependencies:
@@ -131,6 +159,28 @@ importers:
         version: 6.0.3
       vitest:
         specifier: ^3.0.0
+        version: 3.2.4(@types/node@20.19.39)(tsx@4.21.0)(yaml@2.8.3)
+
+  packages/memory:
+    dependencies:
+      '@agentforge/core':
+        specifier: workspace:*
+        version: link:../core
+      effect:
+        specifier: 4.0.0-beta.43
+        version: 4.0.0-beta.43
+      gpt-3-encoder:
+        specifier: ^1.1.4
+        version: 1.1.4
+    devDependencies:
+      tsup:
+        specifier: ^8.4.0
+        version: 8.5.1(postcss@8.5.10)(tsx@4.21.0)(typescript@6.0.3)(yaml@2.8.3)
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: ^3.0.8
         version: 3.2.4(@types/node@20.19.39)(tsx@4.21.0)(yaml@2.8.3)
 
   packages/middleware:
@@ -1079,6 +1129,9 @@ packages:
   gopd@1.2.0:
     resolution: {integrity: sha512-ZUKRh6/kUFoAiTAtTYPZJ3hw9wNxx+BIBOijnlG9PnrJsCcSjs1wyyD6vJpaYtgnzDrKYRSqf3OO6Rfa93xsRg==}
     engines: {node: '>= 0.4'}
+
+  gpt-3-encoder@1.1.4:
+    resolution: {integrity: sha512-fSQRePV+HUAhCn7+7HL7lNIXNm6eaFWFbNLOOGtmSJ0qJycyQvj60OvRlH7mee8xAMjBDNRdMXlMwjAbMTDjkg==}
 
   has-flag@4.0.0:
     resolution: {integrity: sha512-EykJT/Q1KjTWctppgIAgfSO0tKVuZUjhgMr17kqTumMl6Afv3EISleU7qZUzoXDFTAHTDC4NOoG/ZxU3EvlMPQ==}
@@ -2635,6 +2688,8 @@ snapshots:
   globals@14.0.0: {}
 
   gopd@1.2.0: {}
+
+  gpt-3-encoder@1.1.4: {}
 
   has-flag@4.0.0: {}
 

@@ -7,6 +7,7 @@
     "@agentforge/agents": "workspace:*",
     "@agentforge/core": "workspace:*",
     "@agentforge/llm": "workspace:*",
+    "@agentforge/memory": "workspace:*",
     "@agentforge/middleware": "workspace:*",
     "effect": "4.0.0-beta.43"
   },

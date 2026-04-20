@@ -8,3 +8,5 @@ coverage
 .vscode
 *.tsbuildinfo
 pnpm-lock.yaml
+# Ignore user LLM configuration
+examples/config.json

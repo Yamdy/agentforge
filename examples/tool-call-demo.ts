@@ -1,10 +1,10 @@
 #!/usr/bin/env tsx
 import { z } from "zod";
 import { Effect, pipe } from "effect";
-import { InMemorySessionManager, type Tool } from "../packages/core/src/index";
-import { OpenAICompatibleProvider, loadLLMConfigFromJson } from "../packages/llm/src/index";
-import { ChatAgent } from "../packages/agents/src/index";
-import { MiddlewareEvents, createLoggingMiddleware, createMiddlewarePipeline } from "../packages/middleware/src/index";
+import { InMemorySessionManager, type Tool } from "@agentforge/core";
+import { OpenAICompatibleProvider, loadLLMConfigFromJson } from "@agentforge/llm";
+import { ChatAgent } from "@agentforge/agents";
+import { MiddlewareEvents, createLoggingMiddleware, createMiddlewarePipeline } from "@agentforge/middleware";
 
 const weatherTool: Tool<{ city: string; date?: string }> = {
   name: "get_weather",
