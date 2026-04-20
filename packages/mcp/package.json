@@ -1,0 +1,24 @@
+{
+  "name": "@agentforge/mcp",
+  "version": "0.1.0",
+  "type": "module",
+  "dependencies": {
+    "@agentforge/core": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "effect": "^4.0.0-beta.43",
+    "open": "^10.1.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts",
+    "dev": "tsup src/index.ts --format esm --dts --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  }
+}
