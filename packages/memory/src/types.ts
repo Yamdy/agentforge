@@ -15,6 +15,23 @@ export interface TokenTrimmingConfig {
 }
 
 /**
+ * Compression configuration for LLM-based summarization
+ */
+export interface CompressionConfig {
+  /**
+   * Compression function that takes the old messages and returns compressed messages
+   * Use this to summarize long conversation history into fewer tokens
+   * Return the compressed array of messages (usually a single summary message)
+   */
+  compress: (messages: Message[]) => Effect.Effect<Message[], SessionError>;
+  /**
+   * Only trigger compression when token count exceeds this threshold
+   * If not provided, compression will only run when trimming still exceeds maxTokens
+   */
+  thresholdTokens?: number;
+}
+
+/**
  * Checkpointer stores state snapshots for time travel
  * @template TState The state type being checkpointed
  */
@@ -88,7 +105,7 @@ export interface Memory<TSession, TId = string> {
 
   /**
    * Trim conversation history to keep token count under limit
-   * Keeps the most recent messages
+   * Keeps the most recent messages, can optionally use LLM compression when still over limit
    */
   trim: (
     sessionId: TId, 
@@ -96,6 +113,7 @@ export interface Memory<TSession, TId = string> {
       maxMessages?: number; 
       maxTokens?: number;
       tokenizer?: (text: string) => number;
+      compression?: CompressionConfig;
     }
   ) => Effect.Effect<TSession, SessionError>;
 }

@@ -3,7 +3,7 @@ import { Effect } from "effect";
 import type { Message } from "@agentforge/core";
 import type { Session } from "@agentforge/core";
 import { SessionError } from "@agentforge/core";
-import { Memory } from "./types";
+import type { Memory, CompressionConfig } from "./types";
 
 export class InMemorySession implements Session {
   constructor(
@@ -91,9 +91,10 @@ export class InMemorySessionManager implements Memory<InMemorySession, string> {
       maxMessages?: number; 
       maxTokens?: number;
       tokenizer?: (text: string) => number;
+      compression?: CompressionConfig;
     }
-  ): Effect.Effect<InMemorySession, SessionError> {
-    return Effect.sync(() => {
+  ): Effect.Effect<InMemorySession, SessionError, never> {
+    return Effect.gen(function*(this: InMemorySessionManager) {
       const session = this.sessions.get(sessionId);
       if (!session) {
         throw new SessionError(`Session "${sessionId}" not found`);
@@ -103,14 +104,16 @@ export class InMemorySessionManager implements Memory<InMemorySession, string> {
         maxMessages, 
         maxTokens, 
         tokenizer = this.defaultEstimateTokens,
+        compression,
       } = options || {};
 
       // If no constraints, no trimming needed
-      if (!maxMessages && !maxTokens) {
+      if (!maxMessages && !maxTokens && !compression) {
         return session;
       }
 
       let { messages } = session;
+      const originalSystemPrompt = session.systemPrompt;
 
       // First trim by message count if needed
       if (maxMessages && messages.length > maxMessages) {
@@ -119,7 +122,28 @@ export class InMemorySessionManager implements Memory<InMemorySession, string> {
         messages = messages.slice(startIdx);
       }
 
-      // Then trim by token count if needed
+      // Calculate current total tokens
+      let totalTokens = 0;
+      for (const msg of messages) {
+        totalTokens += tokenizer(msg.content);
+      }
+
+      // If we have compression configured and we're over threshold (or still over maxTokens after trimming)
+      if (compression && (
+        (compression.thresholdTokens && totalTokens > compression.thresholdTokens) ||
+        (maxTokens && totalTokens > maxTokens)
+      )) {
+        // Use compression function to summarize messages
+        const compressed: Message[] = yield compression.compress(messages);
+        // If we have system prompt, keep it separate
+        if (originalSystemPrompt) {
+          session.systemPrompt = originalSystemPrompt;
+        }
+        session.updateMessages(compressed);
+        return session;
+      }
+
+      // If no compression or already under limit after message trimming, just token trim
       if (maxTokens) {
         // Start from the end and accumulate until we hit maxTokens
         let totalTokens = 0;
@@ -141,7 +165,7 @@ export class InMemorySessionManager implements Memory<InMemorySession, string> {
 
       session.updateMessages(messages);
       return session;
-    });
+    }.bind(this));
   }
 
   clear(): Effect.Effect<void, never> {

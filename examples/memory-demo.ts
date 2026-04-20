@@ -126,18 +126,37 @@ const program = Effect.gen(function* () {
   console.log(`📊 当前消息数: ${currentSession?.messages.length ?? 0}`);
   console.log();
 
-  // 演示 Token 裁剪
-  console.log(`✂️ 演示 Token 裁剪 (maxTokens=100, maxMessages=5)`);
+  // 演示 Token 裁剪 + 可选 LLM 压缩
+  console.log(`✂️ 演示 Token 裁剪 + 压缩 (maxTokens=200, thresholdTokens=150)`);
   let originalTotalTokens = 0;
   if (currentSession) {
     originalTotalTokens = gptTokenizer.count(
       currentSession.messages.map(m => m.content).join(' ')
     );
   }
+
+  // 这里展示如何使用 LLM 压缩
+  // 你需要提供一个压缩函数，当 token 超过 thresholdTokens 时会自动调用压缩
+  // 在实际使用中，你可以调用 LLM 来总结历史对话得到压缩结果
+  // 这里我们展示接口，实际压缩逻辑由你自定义
   const trimmed = yield sessionManager.trim(sessionId, {
-    maxTokens: 100,
-    maxMessages: 5,
+    maxTokens: 200,
+    maxMessages: 10,
     tokenizer: (text) => gptTokenizer.count(text),
+    compression: {
+      thresholdTokens: 150,
+      compress: (messages) => {
+        // Example compression: your LLM summarization goes here
+        // const summary = yield* llm.generate([
+        //   { role: "system", content: "Please summarize the following conversation..." },
+        //   { role: "user", content: JSON.stringify(messages) }
+        // ]);
+        // return Effect.succeed([{ role: "assistant", content: summary.text }]);
+        console.log("🧩 Compression would be triggered here (custom compression callback)");
+        // For demo, we just return original messages unchanged
+        return Effect.succeed(messages);
+      }
+    }
   });
   let trimmedTotalTokens = 0;
   if (trimmed.messages.length > 0) {
