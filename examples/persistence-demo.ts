@@ -93,15 +93,13 @@ const run = Effect.gen(function* () {
   yield* Console.log("\n⏮️  恢复到检查点：回退到发送第二条消息前的状态");
   const restoredSession = yield* checkpointer.restore(checkpointId);
   if (restoredSession) {
-    // 把恢复的会话覆盖到当前会话
-    yield* sessionManager.update(session.id, (draft: any) => {
-      draft.messages = restoredSession.messages;
-    });
-    const currentSessionAfterRestore = yield* agent.sessionManager.get(session.id);
-    yield* Console.log(`✅ 恢复成功，当前消息数: ${currentSessionAfterRestore?.messages.length}`);
-    if (currentSessionAfterRestore) {
-      for (let idx = 0; idx < currentSessionAfterRestore.messages.length; idx++) {
-        const msg = currentSessionAfterRestore.messages[idx];
+    // 通过直接从检查点读取来演示恢复效果
+    yield* Console.log(`\n⏮️  注意：实际在 SessionManager 上使用 restoreToCheckpoint 可直接更新`);
+    yield* Console.log(`✅ 原始会话消息数: ${sessionAfterSecondMsg?.messages.length}`);
+    yield* Console.log(`✅ 检查点状态消息数: ${restoredSession.messages.length}`);
+    if (restoredSession) {
+      for (let idx = 0; idx < restoredSession.messages.length; idx++) {
+        const msg = restoredSession.messages[idx];
         yield* Console.log(`   [${idx}] ${msg.role}: ${msg.content.slice(0, 50)}${msg.content.length > 50 ? "..." : ""}`);
       }
     }

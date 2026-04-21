@@ -47,4 +47,10 @@ export class InMemoryCheckpointer<TState> implements Checkpointer<TState> {
       this.checkpoints.clear();
     });
   }
+
+  restore(checkpointId: string): Effect.Effect<TState | undefined, SessionError> {
+    return Effect.sync(() => {
+      return this.checkpoints.get(checkpointId);
+    });
+  }
 }

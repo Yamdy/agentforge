@@ -66,6 +66,13 @@ export interface Checkpointer<TState> {
    * @param threadId The thread identifier to clear
    */
   clear: (threadId: string) => Effect.Effect<void, SessionError>;
+  
+  /**
+   * Restore session from checkpoint
+   * @param checkpointId The checkpoint identifier to restore
+   * @returns The restored state
+   */
+  restore: (checkpointId: string) => Effect.Effect<TState | undefined, SessionError>;
 }
 
 /**
@@ -78,6 +85,7 @@ export interface Memory<TSession, TId = string> {
    * Create a new session
    */
   create: (options?: { 
+    parentId?: TId;
     systemPrompt?: string; 
     initialMessages?: Message[];
     metadata?: Record<string, unknown>;
@@ -116,4 +124,16 @@ export interface Memory<TSession, TId = string> {
       compression?: CompressionConfig;
     }
   ) => Effect.Effect<TSession, SessionError>;
+
+  /**
+   * Fork a session (optional, for session branching)
+   */
+  fork?: (sessionId: TId, options?: {
+    title?: string;
+  }) => Effect.Effect<TSession, SessionError>;
+
+  /**
+   * Restore session to checkpoint (optional, for time travel)
+   */
+  restoreToCheckpoint?: (sessionId: TId, checkpointId: string) => Effect.Effect<TSession, SessionError>;
 }

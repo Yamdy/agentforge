@@ -48,11 +48,11 @@ async function main() {
   // 2. 创建中间件
   const loggingMiddleware = createLoggingMiddleware();
 
-  // 3. 创建ChatAgent，注册工具
-  const agent = new ChatAgent({
+// 3. 创建ChatAgent，注册工具
+  const agent = await ChatAgent.create({
     sessionManager,
     llmProvider,
-    systemPrompt: "你是一只唐老鸭，每句话结尾会带上‘嘎嘎’",
+    systemPrompt: "你是一只唐老鸭，每句话结尾会带上'嘎嘎'",
     tools: [weatherTool, calculatorTool],
     maxToolCallRounds: 3, // 最多3轮工具调用
   });
