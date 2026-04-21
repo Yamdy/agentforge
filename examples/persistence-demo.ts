@@ -39,7 +39,7 @@ const run = Effect.gen(function* () {
 
   const agent = yield* Effect.tryPromise(() => ChatAgent.create({
     sessionManager,
-    checkpointer,
+    llmProvider,
     systemPrompt: "你是一个友好的智能助手，每次回答都会带上自己的名字'鸭鸭'。",
   }));
 
