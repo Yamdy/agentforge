@@ -25,6 +25,21 @@ export class PersistentCheckpointer<T extends Session = Session> implements Chec
   save(checkpointId: string, state: T): Effect.Effect<void, never> {
     return Effect.tryPromise(async () => {
       try {
+        // 获取会话ID（检查点ID的第一部分）
+        const threadId = checkpointId.includes("/") 
+          ? checkpointId.split("/")[0] 
+          : checkpointId;
+        
+        // 检查是否超过最大检查点数量
+        const existing = await Effect.runPromise(this.list(threadId));
+        if (existing.length >= this.maxCheckpointsPerSession) {
+          // 删除最旧的检查点（保留最新的 maxCheckpointsPerSession - 1 个）
+          const toDelete = existing.slice(0, existing.length - this.maxCheckpointsPerSession + 1);
+          await Promise.all(toDelete.map(id => 
+            Effect.runPromise(this.storage.remove(["checkpoint", id])).catch(() => {})
+          ));
+        }
+        
         await Effect.runPromise(this.storage.write(["checkpoint", checkpointId], state));
       } catch (err) {
         console.error("Failed to save checkpoint", err);
@@ -34,8 +49,12 @@ export class PersistentCheckpointer<T extends Session = Session> implements Chec
 
   /**
    * 生成新的检查点ID
+   * @param threadId 会话ID，用于检查点分组
    */
-  generateId(): string {
+  generateId(threadId?: string): string {
+    if (threadId) {
+      return `${threadId}/${randomUUID()}`;
+    }
     return randomUUID();
   }
 
@@ -63,10 +82,12 @@ export class PersistentCheckpointer<T extends Session = Session> implements Chec
   list(threadId: string): Effect.Effect<string[], never> {
     return Effect.tryPromise(async () => {
       try {
-        // 这里简化，直接返回所有checkpoint，实际应该根据threadId过滤
-        // 后续优化存储结构，把checkpoint按threadId分组
+        // 获取所有检查点键
         const keys = await Effect.runPromise(this.storage.list(["checkpoint"]));
-        return keys.map(key => key[0]);
+        const allCheckpointIds = keys.map(key => key[0]);
+        
+        // 按会话ID过滤（检查点ID格式：{threadId}/{checkpointId}）
+        return allCheckpointIds.filter(id => id.startsWith(`${threadId}/`));
       } catch (err) {
         console.error("Failed to list checkpoints", err);
         return [];

@@ -1,6 +1,6 @@
 import path from "path";
 import fs from "fs/promises";
-import { createWriteStream } from "fs";
+import { createWriteStream, statSync } from "fs";
 import z from "zod";
 
 export namespace Log {
@@ -51,10 +51,31 @@ export namespace Log {
   export function file() {
     return logpath;
   }
+  
+  const MAX_LOG_SIZE = 100 * 1024 * 1024; // 100MB
+  
   let write = (msg: any) => {
     process.stderr.write(msg);
     return msg.length;
   };
+
+  let stream: ReturnType<typeof createWriteStream> | null = null;
+  
+  async function check() {
+    try {
+      if (!logpath) return;
+      const stats = await fs.stat(logpath);
+      if (stats.size > MAX_LOG_SIZE) {
+        const rotatedPath = logpath.replace(".log", `.${Date.now()}.log`);
+        await fs.rename(logpath, rotatedPath);
+        
+        stream?.close();
+        await fs.truncate(logpath).catch(() => {});
+        stream = createWriteStream(logpath, { flags: "a" });
+      }
+    } catch {
+    }
+  }
 
   export async function init(options: Options) {
     if (options.level) level = options.level;
@@ -67,9 +88,16 @@ export namespace Log {
       options.dev ? "dev.log" : new Date().toISOString().split(".")[0].replace(/:/g, "") + ".log",
     );
     await fs.truncate(logpath).catch(() => {});
-    const stream = createWriteStream(logpath, { flags: "a" });
+    stream = createWriteStream(logpath, { flags: "a" });
     write = async (msg: any) => {
+      await check();
+      
       return new Promise((resolve, reject) => {
+        if (!stream) {
+          process.stderr.write(msg);
+          resolve(msg.length);
+          return;
+        }
         stream.write(msg, (err) => {
           if (err) reject(err);
           else resolve(msg.length);

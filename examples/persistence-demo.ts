@@ -76,7 +76,7 @@ const run = Effect.gen(function* () {
   // 4. 测试检查点持久化
   // ---------------------------
   yield* Console.log("\n📸 测试检查点持久化...");
-  const checkpointId = checkpointer.generateId();
+  const checkpointId = checkpointer.generateId(session.id);
   yield* checkpointer.save(checkpointId, savedSession as Session);
   yield* Console.log(`✅ 检查点保存成功，ID: ${checkpointId}\n`);
 

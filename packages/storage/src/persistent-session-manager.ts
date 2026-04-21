@@ -14,6 +14,7 @@ interface SessionMeta {
   metadata: Record<string, unknown>;
   createdAt: number;
   updatedAt: number;
+  messageCount?: number;  // 缓存消息数量，避免每次读取所有消息
 }
 
 /**
@@ -56,9 +57,15 @@ export class PersistentSessionManager implements Memory<Session> {
       // 初始消息
       const messages: Message[] = options?.initialMessages ?? [];
 
-      // 持久化
+      // 持久化会话元数据
+      meta.messageCount = messages.length;
       await Effect.runPromise(this.storage.write(["session", id], meta));
-      await Effect.runPromise(this.storage.write(["message", id], messages));
+      
+      // 持久化消息（每个消息单独文件）
+      for (let i = 0; i < messages.length; i++) {
+        const msgId = `msg_${i}_${Date.now()}`;
+        await Effect.runPromise(this.storage.write(["message", id, msgId], messages[i]));
+      }
 
       return {
         id,
@@ -79,7 +86,7 @@ export class PersistentSessionManager implements Memory<Session> {
       try {
         // 读取元数据和消息
         const meta = await Effect.runPromise(this.storage.read<SessionMeta>(["session", id]));
-        const messages = await Effect.runPromise(this.storage.read<Message[]>(["message", id]));
+        const messages = await Effect.runPromise(this._loadMessages(id));
 
         return {
           id: meta.id,
@@ -102,33 +109,71 @@ export class PersistentSessionManager implements Memory<Session> {
    */
   addMessage(sessionId: string, message: Message): Effect.Effect<Session, SessionError> {
     return Effect.tryPromise(async () => {
-      // 更新消息
-      const messages = await Effect.runPromise(this.storage.update<Message[]>(["message", sessionId], (draft: any) => {
-        // 添加时间戳
-        const msgWithTime = { ...message, createdAt: Date.now() };
-        draft.push(msgWithTime);
-      }));
-
-      // 自动裁剪
-      let trimmedMessages = messages;
-      if (this.autoTrim && messages.length > this.maxMessagesPerSession) {
-        trimmedMessages = messages.slice(-this.trimKeepCount);
-        await Effect.runPromise(this.storage.write(["message", sessionId], trimmedMessages));
-      }
-
-      // 更新会话元数据的更新时间
+      // 生成消息ID
+      const msgId = `msg_${Date.now()}_${randomUUID().slice(0, 8)}`;
+      const msgWithTime = { ...message, id: msgId, createdAt: Date.now() };
+      
+      // 写入单个消息文件
+      await Effect.runPromise(this.storage.write(["message", sessionId, msgId], msgWithTime));
+      
+      // 更新会话元数据
       const meta = await Effect.runPromise(this.storage.update<SessionMeta>(["session", sessionId], (draft: any) => {
         draft.updatedAt = Date.now();
+        draft.messageCount = (draft.messageCount || 0) + 1;
       }));
-
+      
+      // 自动裁剪
+      if (this.autoTrim && meta.messageCount! > this.maxMessagesPerSession) {
+        // 获取所有消息ID（按时间排序）
+        const msgKeys = await Effect.runPromise(this.storage.list(["message", sessionId]));
+        // 删除旧消息（保留最新的 trimKeepCount 条）
+        const toDelete = msgKeys.slice(0, msgKeys.length - this.trimKeepCount);
+        for (const key of toDelete) {
+          await Effect.runPromise(this.storage.remove(["message", sessionId, key[0]])).catch(() => {});
+        }
+        meta.messageCount = msgKeys.length - toDelete.length;
+        
+        // 重新写入更新后的元数据
+        await Effect.runPromise(this.storage.write(["session", sessionId], meta));
+      }
+      
+      // 读取所有消息
+      const messages = await Effect.runPromise(this._loadMessages(sessionId));
+      
       return {
         id: sessionId,
         systemPrompt: meta.systemPrompt,
-        messages: trimmedMessages,
+        messages,
         metadata: meta.metadata,
         createdAt: new Date(meta.createdAt),
         updatedAt: new Date(meta.updatedAt)
       };
+    });
+  }
+  
+  /**
+   * 内部方法：加载会话的所有消息
+   */
+  private _loadMessages(sessionId: string): Effect.Effect<Message[], never> {
+    return Effect.tryPromise(async () => {
+      try {
+        const msgKeys = await Effect.runPromise(this.storage.list(["message", sessionId]));
+        const messages: Message[] = [];
+        for (const key of msgKeys) {
+          try {
+            const msg = await Effect.runPromise(this.storage.read<Message>(["message", sessionId, key[0]]));
+            messages.push(msg);
+          } catch {
+            // 忽略损坏的消息文件
+          }
+        }
+        // 按创建时间排序
+        return messages.sort((a, b) => 
+          ((a as any).createdAt || 0) - ((b as any).createdAt || 0)
+        );
+      } catch {
+        return [];
+      }
     });
   }
 
@@ -137,8 +182,15 @@ export class PersistentSessionManager implements Memory<Session> {
    */
   delete(id: string): Effect.Effect<void, SessionError> {
     return Effect.tryPromise(async () => {
+      // 删除会话元数据
       await Effect.runPromise(this.storage.remove(["session", id]));
-      await Effect.runPromise(this.storage.remove(["message", id]));
+      
+      // 删除所有消息文件
+      const msgKeys = await Effect.runPromise(this.storage.list(["message", id]));
+      for (const key of msgKeys) {
+        await Effect.runPromise(this.storage.remove(["message", id, key[0]])).catch(() => {});
+      }
+      
       // 删除相关的检查点和摘要
       await Effect.runPromise(this.storage.remove(["checkpoint", id]));
       await Effect.runPromise(this.storage.remove(["summary", id]));
@@ -189,10 +241,18 @@ export class PersistentSessionManager implements Memory<Session> {
   }): Effect.Effect<Session, SessionError> {
     return Effect.tryPromise(async () => {
       const maxMessages = options?.maxMessages ?? this.trimKeepCount;
-      const messages = await Effect.runPromise(this.storage.update<Message[]>(["message", sessionId], (draft: any) => {
-        // 保留最新的maxMessages条
-        draft.splice(0, draft.length - maxMessages);
-      }));
+      
+      // 获取所有消息ID
+      const msgKeys = await Effect.runPromise(this.storage.list(["message", sessionId]));
+      
+      // 删除旧消息（保留最新的 maxMessages 条）
+      const toDelete = msgKeys.slice(0, msgKeys.length - maxMessages);
+      for (const key of toDelete) {
+        await Effect.runPromise(this.storage.remove(["message", sessionId, key[0]])).catch(() => {});
+      }
+      
+      // 读取剩余消息
+      const messages = await Effect.runPromise(this._loadMessages(sessionId));
 
       // 更新会话更新时间
       const meta = await Effect.runPromise(this.storage.update<SessionMeta>(["session", sessionId], (draft: any) => {
