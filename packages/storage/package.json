@@ -1,0 +1,23 @@
+{
+  "name": "@agentforge/storage",
+  "version": "0.1.0",
+  "type": "module",
+  "dependencies": {
+    "@agentforge/core": "workspace:*",
+    "@agentforge/memory": "workspace:*",
+    "effect": "^4.0.0-beta.43",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts",
+    "dev": "tsup src/index.ts --format esm --dts --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  }
+}
