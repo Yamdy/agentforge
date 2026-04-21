@@ -11,6 +11,13 @@
   "scripts": {
     "build": "pnpm -r build",
     "dev": "pnpm -r dev",
+    "dev:server": "pnpm -F @agentforge/server dev",
+    "start:server": "pnpm -F @agentforge/server start",
+    "deploy": "sst deploy",
+    "deploy:staging": "sst deploy --stage staging",
+    "deploy:production": "sst deploy --stage production",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
