@@ -77,7 +77,7 @@ async function main() {
   );
 
   // 3. 创建 ChatAgent
-  const agent = new ChatAgent({
+  const agent = ChatAgent.createSync({
     sessionManager,
     llmProvider,
     systemPrompt: "你是一个友好的聊天助手。",

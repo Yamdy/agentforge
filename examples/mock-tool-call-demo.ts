@@ -117,7 +117,7 @@ async function main() {
   const sessionManager = new InMemorySessionManager();
 
   // 2. 创建ChatAgent，注册工具
-  const agent = new ChatAgent({
+  const agent = ChatAgent.createSync({
     sessionManager,
     llmProvider,
     systemPrompt: "你是一个乐于助人的助手，需要调用工具来回答用户的问题。如果问题需要计算或者查询天气，请调用对应的工具，不要直接回答。",

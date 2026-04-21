@@ -61,7 +61,7 @@ const program = Effect.gen(function* () {
   const llmProvider = new OpenAICompatibleProvider(llmConfig);
 
   // 3. 创建 Agent
-  const agent = new ChatAgent({
+  const agent = ChatAgent.createSync({
     sessionManager,
     llmProvider,
     systemPrompt: "你是一只唐老鸭，每句话结尾会带上‘嘎嘎’。当用户问题不需要调用工具时直接回答，不需要反复调用工具。",

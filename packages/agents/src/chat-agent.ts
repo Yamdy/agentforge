@@ -1,4 +1,5 @@
 import { Effect, pipe } from "effect";
+import { z } from "zod";
 import {
   Message,
   SessionManager,
@@ -6,7 +7,13 @@ import {
   SessionError,
   Tool,
   ToolCall,
+  ISkill,
+  SkillManager,
+  SkillContext,
+  Log,
 } from "@agentforge/core";
+
+const logger = Log.create({ service: "chat-agent" });
 import {
   type LLMProvider,
   type LLMStreamProvider,
@@ -42,6 +49,8 @@ export interface ChatAgentConfig {
   systemPrompt?: string;
   middleware?: MiddlewarePipeline | Array<AgentMiddleware>;
   tools?: Array<Tool>;
+  skills?: Array<ISkill>;
+  skillManager?: SkillManager;
   maxToolCallRounds?: number;
   /** Enable state management */
   enableState?: boolean;
@@ -53,12 +62,14 @@ export class ChatAgent {
   private readonly llmProvider: LLMProvider & Partial<LLMStreamProvider>;
   private readonly middleware?: MiddlewarePipeline;
   private readonly tools: Map<string, Tool>;
+  private readonly skillManager: SkillManager;
   private readonly maxToolCallRounds: number;
   private readonly agentState: AgentState;
 
-  constructor(config: ChatAgentConfig) {
+  private constructor(config: ChatAgentConfig, session: Session) {
     this.sessionManager = config.sessionManager;
     this.llmProvider = config.llmProvider;
+    this.session = session;
 
     // Initialize agent state
     this.agentState = new AgentState();
@@ -74,6 +85,12 @@ export class ChatAgent {
       }
     }
 
+    // 初始化Skill管理器
+    this.skillManager = config.skillManager ?? new SkillManager();
+    if (config.skills) {
+      this.skillManager.registerAll(config.skills);
+    }
+
     // 初始化工具
     this.tools = new Map();
     if (config.tools) {
@@ -82,14 +99,34 @@ export class ChatAgent {
       });
     }
 
+    // 把所有Skill转换为Tool加入工具列表
+    this.skillManager.getAllSkills().forEach(skill => {
+      const skillAsTool: any = {
+        name: skill.meta.id,
+        description: skill.meta.description,
+        parameters: z.object(skill.parameters.reduce((acc, param) => {
+          acc[param.name] = param.schema;
+          return acc;
+        }, {} as Record<string, z.ZodTypeAny>)),
+        execute: (params: any) => Effect.tryPromise(async () => {
+          const skillCtx: SkillContext = {
+            agentId: this.constructor.name,
+            sessionId: this.session.id,
+            variables: {},
+            metadata: {},
+          };
+          const result = await skill.run(skillCtx, params);
+          if (!result.success) {
+            throw new Error(result.error || 'Skill执行失败');
+          }
+          return typeof result.data === 'string' ? result.data : JSON.stringify(result.data);
+        })
+      };
+      this.tools.set(skillAsTool.name, skillAsTool);
+    });
+
     // 初始化最大工具调用轮次，默认5次防止无限循环
     this.maxToolCallRounds = config.maxToolCallRounds ?? 5;
-
-    this.session = Effect.runSync(
-      this.sessionManager.create({
-        systemPrompt: config.systemPrompt,
-      })
-    );
 
     // Set up status change listener to trigger middleware
     this.agentState.onStatusChange((from, to) => {
@@ -102,6 +139,37 @@ export class ChatAgent {
 
     // 触发启动事件
     this.triggerMiddleware(MiddlewareEvents.AGENT_START, { sessionId: this.session.id });
+    logger.info("ChatAgent 初始化完成", {
+      sessionId: this.session.id,
+      toolsCount: this.tools.size,
+      skillsCount: this.skillManager.getAllSkills().length,
+    });
+  }
+
+  /**
+   * 异步创建ChatAgent实例，支持异步SessionManager（比如持久化存储）
+   */
+  static async create(config: ChatAgentConfig): Promise<ChatAgent> {
+    // 异步创建会话
+    const session = await Effect.runPromise(
+      config.sessionManager.create({
+        systemPrompt: config.systemPrompt,
+      })
+    );
+    return new ChatAgent(config, session);
+  }
+
+  /**
+   * 同步创建ChatAgent实例，仅支持同步SessionManager（比如InMemorySessionManager）
+   */
+  static createSync(config: ChatAgentConfig): ChatAgent {
+    // 同步创建会话，仅支持同步SessionManager
+    const session = Effect.runSync(
+      config.sessionManager.create({
+        systemPrompt: config.systemPrompt,
+      })
+    );
+    return new ChatAgent(config, session);
   }
 
   private triggerMiddleware(
@@ -122,6 +190,7 @@ export class ChatAgent {
     userInput: string
   ): Effect.Effect<string, LLMError | SessionError, never> {
     this.triggerMiddleware(MiddlewareEvents.AGENT_MESSAGE_RECEIVE, { message: userInput });
+    logger.info("收到用户消息", { sessionId: this.session.id, inputLength: userInput.length });
 
     return pipe(
       // 1. 添加用户消息到会话
@@ -268,9 +337,11 @@ export class ChatAgent {
    * 执行单个工具调用
    */
   private executeSingleToolCall(toolCall: ToolCall): Effect.Effect<void, LLMError | SessionError, never> {
+    const timer = logger.time("执行工具调用", { toolName: toolCall.name, toolCallId: toolCall.id });
     const tool = this.tools.get(toolCall.name);
     if (!tool) {
       const errorMsg = `Tool "${toolCall.name}" not found`;
+      logger.error("工具不存在", { toolName: toolCall.name, toolCallId: toolCall.id });
       this.triggerMiddleware(MiddlewareEvents.TOOL_CALL_ERROR, {
         toolCallId: toolCall.id,
         toolName: toolCall.name,
@@ -313,6 +384,8 @@ export class ChatAgent {
           toolName: toolCall.name,
           result: resultContent,
         });
+        logger.info("工具执行成功", { toolName: toolCall.name, toolCallId: toolCall.id });
+        timer.stop();
 
         // 添加工具结果到会话
         return this.sessionManager.addMessage(this.session.id, {
@@ -325,6 +398,8 @@ export class ChatAgent {
       // 处理执行错误
       Effect.mapError((error: unknown) => {
         const errorMsg = error instanceof Error ? error.message : String(error);
+        logger.error("工具执行失败", { toolName: toolCall.name, toolCallId: toolCall.id, error: errorMsg });
+        timer.stop();
         this.triggerMiddleware(MiddlewareEvents.TOOL_CALL_ERROR, {
           toolCallId: toolCall.id,
           toolName: toolCall.name,
@@ -489,6 +564,42 @@ export class ChatAgent {
       // 开始处理循环
       Effect.flatMap(() => processStreamRound(1))
     );
+  }
+
+  /**
+   * 获取所有注册的Skill
+   */
+  get skills(): ISkill[] {
+    return this.skillManager.getAllSkills();
+  }
+
+  /**
+   * 注册单个Skill
+   */
+  public registerSkill(skill: ISkill): void {
+    this.skillManager.register(skill);
+    const skillAsTool: any = {
+      name: skill.meta.id,
+      description: skill.meta.description,
+      parameters: z.object(skill.parameters.reduce((acc, param) => {
+        acc[param.name] = param.schema;
+        return acc;
+      }, {} as Record<string, z.ZodTypeAny>)),
+      execute: (params: any) => Effect.tryPromise(async () => {
+        const skillCtx: SkillContext = {
+          agentId: this.constructor.name,
+          sessionId: this.session.id,
+          variables: {},
+          metadata: {},
+        };
+        const result = await skill.run(skillCtx, params);
+        if (!result.success) {
+          throw new Error(result.error || 'Skill执行失败');
+        }
+        return typeof result.data === 'string' ? result.data : JSON.stringify(result.data);
+      })
+    };
+    this.tools.set(skillAsTool.name, skillAsTool);
   }
 
   getSession(): Effect.Effect<Session, never> {

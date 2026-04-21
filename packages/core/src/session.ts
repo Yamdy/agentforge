@@ -6,6 +6,9 @@ import {
   SessionError,
   Message,
 } from "./types";
+import { Log } from "./log";
+
+const logger = Log.create({ service: "session-manager" });
 
 export class InMemorySessionManager implements SessionManager {
   private sessions = new Map<string, Session>();
@@ -20,18 +23,24 @@ export class InMemorySessionManager implements SessionManager {
         systemPrompt: options?.systemPrompt,
       };
       this.sessions.set(id, session);
+      logger.info("会话创建成功", { sessionId: id, initialMessagesCount: session.messages.length });
       return session;
     });
   }
 
   get(id: string): Effect.Effect<Session | undefined, never> {
-    return Effect.sync(() => this.sessions.get(id));
+    return Effect.sync(() => {
+      const session = this.sessions.get(id);
+      logger.debug("查询会话", { sessionId: id, exists: !!session });
+      return session;
+    });
   }
 
   addMessage(sessionId: string, message: Message): Effect.Effect<Session, SessionError> {
     return Effect.sync(() => {
       const session = this.sessions.get(sessionId);
       if (!session) {
+        logger.error("会话不存在", { sessionId });
         throw new SessionError(`Session not found: ${sessionId}`);
       }
       const updatedSession: Session = {
@@ -39,6 +48,7 @@ export class InMemorySessionManager implements SessionManager {
         messages: [...session.messages, message],
       };
       this.sessions.set(sessionId, updatedSession);
+      logger.info("添加消息到会话", { sessionId, role: message.role, contentLength: message.content?.length || 0 });
       return updatedSession;
     });
   }
