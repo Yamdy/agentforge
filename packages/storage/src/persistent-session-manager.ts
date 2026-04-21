@@ -10,11 +10,17 @@ import type { PersistentSessionManagerConfig, Storage } from "./types";
  */
 interface SessionMeta {
   id: string;
+  parentId?: string;
   systemPrompt?: string;
   metadata: Record<string, unknown>;
   createdAt: number;
   updatedAt: number;
   messageCount?: number;  // 缓存消息数量，避免每次读取所有消息
+  revert?: {
+    checkpointId: string;
+    messageId?: string;
+    description?: string;
+  };
 }
 
 /**
@@ -48,6 +54,7 @@ export class PersistentSessionManager implements Memory<Session> {
       // 会话元数据
       const meta: SessionMeta = {
         id,
+        parentId: options?.parentId,
         systemPrompt: options?.systemPrompt,
         metadata: options?.metadata ?? {},
         createdAt: now,
@@ -197,6 +204,85 @@ export class PersistentSessionManager implements Memory<Session> {
     });
   }
 
+  /**
+   * Fork 会话
+   */
+  fork(sessionId: string, options?: {
+    title?: string;
+  }): Effect.Effect<Session, SessionError> {
+    return Effect.tryPromise(async () => {
+      const source = await Effect.runPromise(this.get(sessionId));
+      if (!source) throw new SessionError(`Session not found: ${sessionId}`);
+      
+      const id = randomUUID();
+      const now = Date.now();
+      
+      const meta: SessionMeta = {
+        id,
+        parentId: sessionId,
+        systemPrompt: source.systemPrompt,
+        metadata: {
+          ...source.metadata,
+          title: options?.title || `Fork of ${(source.metadata as any)?.title || sessionId}`,
+        },
+        createdAt: now,
+        updatedAt: now
+      };
+      
+      // 复制消息
+      const messages = [...source.messages];
+      
+      // 持久化
+      await Effect.runPromise(this.storage.write(["session", id], meta));
+      
+      // 持久化消息（每个消息单独文件）
+      for (let i = 0; i < messages.length; i++) {
+        const msgId = `msg_${i}_${Date.now()}_${randomUUID().slice(0, 8)}`;
+        await Effect.runPromise(this.storage.write(["message", id, msgId], messages[i]));
+      }
+      
+      return {
+        ...meta,
+        messages,
+        createdAt: new Date(now),
+        updatedAt: new Date(now)
+      };
+    });
+  }
+  
+  /**
+   * 恢复到检查点
+   */
+  restoreToCheckpoint(sessionId: string, checkpointId: string): Effect.Effect<Session, SessionError> {
+    return Effect.tryPromise(async () => {
+      const session = await Effect.runPromise(this.get(sessionId));
+      if (!session) throw new SessionError(`Session not found: ${sessionId}`);
+      
+      // 恢复会话状态到检查点
+      const restored: Session = {
+        ...session,
+        revert: {
+          checkpointId,
+          description: "Restored from checkpoint",
+        },
+        updatedAt: new Date(),
+      };
+      
+      // 更新元数据
+      await Effect.runPromise(this.storage.write(["session", sessionId], {
+        parentId: restored.parentId,
+        systemPrompt: restored.systemPrompt,
+        metadata: restored.metadata,
+        createdAt: (restored.createdAt as Date).getTime(),
+        updatedAt: Date.now(),
+        messageCount: restored.messages.length,
+        revert: restored.revert,
+      } as SessionMeta));
+      
+      return restored;
+    });
+  }
+  
   /**
    * 列出所有会话
    */

@@ -2,7 +2,7 @@ import type { Tool as MCPTool } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import type { Tool } from "@agentforge/core";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { CallToolResultSchema, type Content } from "@modelcontextprotocol/sdk/types.js";
+import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { MCPError } from "./types.js";
 import { Effect } from "effect";
 
@@ -21,10 +21,9 @@ export function convertMcpTool(
 ): Tool {
   // 处理 JSON Schema，确保符合 zod 格式要求
   const inputSchema = mcpTool.inputSchema;
-  const schema = z.object(
-    (inputSchema?.properties ?? {}) as any,
-    inputSchema?.required ?? []
-  ).strict();
+  const properties = inputSchema?.properties ?? {};
+  const required = inputSchema?.required ?? [];
+  const schema = z.object(properties as any).strict();
 
   // 生成工具名称，添加服务器前缀避免冲突，替换非字母数字字符为下划线
   const sanitize = (str: string) => str.replace(/[^a-zA-Z0-9_]/g, "_");

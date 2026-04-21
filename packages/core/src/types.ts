@@ -32,23 +32,36 @@ export interface ToolResult {
 
 export interface Session {
   id: string;
+  parentId?: string;
   messages: Message[];
   systemPrompt?: string;
   metadata?: Record<string, unknown>;
   createdAt?: Date;
   updatedAt?: Date;
+  revert?: {
+    checkpointId: string;
+    messageId?: string;
+    description?: string;
+  };
 }
 
 export interface SessionManager {
   create: (options?: CreateSessionOptions) => Effect.Effect<Session, never>;
   get: (id: string) => Effect.Effect<Session | undefined, never>;
   addMessage: (sessionId: string, message: Message) => Effect.Effect<Session, SessionError>;
+  fork?: (sessionId: string, options?: ForkSessionOptions) => Effect.Effect<Session, SessionError>;
+  restoreToCheckpoint?: (sessionId: string, checkpointId: string) => Effect.Effect<Session, SessionError>;
 }
 
 export interface CreateSessionOptions {
+  parentId?: string;
   systemPrompt?: string;
   initialMessages?: Message[];
   metadata?: Record<string, unknown>;
+}
+
+export interface ForkSessionOptions {
+  title?: string;
 }
 
 export class SessionError {

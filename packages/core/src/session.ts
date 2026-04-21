@@ -19,12 +19,62 @@ export class InMemorySessionManager implements SessionManager {
       const id = `session-${this.nextId++}`;
       const session: Session = {
         id,
+        parentId: options?.parentId,
         messages: options?.initialMessages || [],
         systemPrompt: options?.systemPrompt,
       };
       this.sessions.set(id, session);
       logger.info("会话创建成功", { sessionId: id, initialMessagesCount: session.messages.length });
       return session;
+    });
+  }
+  
+  fork(sessionId: string, options?: {
+    title?: string;
+  }): Effect.Effect<Session, SessionError> {
+    return Effect.sync(() => {
+      const source = this.sessions.get(sessionId);
+      if (!source) {
+        throw new SessionError(`Session not found: ${sessionId}`);
+      }
+      
+      const id = `session-${this.nextId++}`;
+      const session: Session = {
+        id,
+        parentId: sessionId,
+        messages: [...source.messages],
+        systemPrompt: source.systemPrompt,
+        metadata: {
+          ...source.metadata,
+          title: options?.title || `Fork of ${(source.metadata as any)?.title || sessionId}`,
+        },
+        createdAt: source.createdAt,
+        updatedAt: new Date(),
+      };
+      this.sessions.set(id, session);
+      logger.info("会话创建成功", { sessionId: id, parentId: sessionId });
+      return session;
+    });
+  }
+  
+  restoreToCheckpoint(sessionId: string, checkpointId: string): Effect.Effect<Session, SessionError> {
+    return Effect.sync(() => {
+      const session = this.sessions.get(sessionId);
+      if (!session) {
+        throw new SessionError(`Session not found: ${sessionId}`);
+      }
+      
+      const restored: Session = {
+        ...session,
+        revert: {
+          checkpointId,
+          description: "Restored from checkpoint",
+        },
+        updatedAt: new Date(),
+      };
+      this.sessions.set(sessionId, restored);
+      logger.info("恢复到检查点", { sessionId, checkpointId });
+      return restored;
     });
   }
 
