@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
+import { Effect } from 'effect';
 import { ChatAgent } from '@agentforge/agents';
 import { OpenAICompatibleProvider, LLMError } from '@agentforge/llm';
 import { InMemorySessionManager } from '@agentforge/memory';
@@ -48,17 +49,16 @@ app.post('/api/chat', zValidator('json', ChatSchema), async (c) => {
       temperature,
     });
 
-    const agent = new ChatAgent({
+    const agent = await ChatAgent.create({
       llmProvider,
       sessionManager,
       systemPrompt: '你是一个乐于助人的助手，回答简洁明了。',
     });
 
-    const result = await agent.chat(message, { sessionId });
+    const response = await Effect.runPromise(agent.sendMessage(message));
 
     return c.json({
-      response: result.response,
-      sessionId: result.sessionId,
+      response,
       // usage: result.usage, // 暂未实现
     });
   } catch (e) {

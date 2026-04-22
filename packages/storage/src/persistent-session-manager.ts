@@ -42,11 +42,7 @@ export class PersistentSessionManager implements Memory<Session> {
   /**
    * 创建新会话
    */
-  create(options?: {
-    systemPrompt?: string;
-    initialMessages?: Message[];
-    metadata?: Record<string, unknown>;
-  }): Effect.Effect<Session, never> {
+  create(options?: any): Effect.Effect<Session, never> {
     return Effect.tryPromise(async () => {
       const id = randomUUID();
       const now = Date.now();
@@ -259,25 +255,26 @@ export class PersistentSessionManager implements Memory<Session> {
       if (!session) throw new SessionError(`Session not found: ${sessionId}`);
       
       // 恢复会话状态到检查点
-      const restored: Session = {
+      const restored = {
         ...session,
         revert: {
           checkpointId,
           description: "Restored from checkpoint",
         },
         updatedAt: new Date(),
-      };
+      } as Session;
       
       // 更新元数据
       await Effect.runPromise(this.storage.write(["session", sessionId], {
-        parentId: restored.parentId,
+        id: sessionId,
+        parentId: (restored as any).parentId,
         systemPrompt: restored.systemPrompt,
         metadata: restored.metadata,
         createdAt: (restored.createdAt as Date).getTime(),
         updatedAt: Date.now(),
         messageCount: restored.messages.length,
-        revert: restored.revert,
-      } as SessionMeta));
+        revert: (restored as any).revert,
+      }));
       
       return restored;
     });

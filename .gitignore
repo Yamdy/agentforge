@@ -10,3 +10,4 @@ coverage
 pnpm-lock.yaml
 # Ignore user LLM configuration
 examples/config.json
+.gitnexus

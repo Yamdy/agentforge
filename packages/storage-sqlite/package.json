@@ -1,0 +1,26 @@
+{
+  "name": "@agentforge/storage-sqlite",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts",
+    "dev": "tsup src/index.ts --format esm --dts --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest",
+    "test:run": "vitest run"
+  },
+  "dependencies": {
+    "@agentforge/storage": "workspace:*",
+    "effect": "4.0.0-beta.43",
+    "better-sqlite3": "^9.2.2"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3",
+    "tsup": "^8.4.0",
+    "vitest": "^3.0.0",
+    "@types/better-sqlite3": "^7.6.13"
+  }
+}
