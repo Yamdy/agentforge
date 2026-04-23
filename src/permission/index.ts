@@ -33,6 +33,7 @@ export type {
   PermissionRequest,
   PermissionResponse,
   PermissionConfig,
+  PermissionManagerConfig,
 } from './types';
 
 // Utilities

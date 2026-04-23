@@ -6,6 +6,7 @@
  * - Rules are evaluated top-to-bottom, last match wins
  * - Supports per-agent rule overrides (agent rules take precedence)
  * - Tracks "always allow" decisions per session
+ * - Configurable default action for unmatched rules (default: 'ask')
  */
 
 import { randomUUID } from 'node:crypto';
@@ -17,7 +18,9 @@ import type {
   PermissionRequest,
   PermissionResponse,
   ToolPermissionCategory,
+  PermissionManagerConfig,
 } from './types';
+import { strictRules } from './presets';
 
 // ========== Wildcard Pattern Matching ==========
 
@@ -77,10 +80,49 @@ export function matchPattern(pattern: string, input: string): boolean {
 // ========== Permission Manager ==========
 
 export class PermissionManager {
+  private config: { defaultAction: PermissionAction };
   private globalRules: Ruleset = [];
   private agentRules: Map<string, Ruleset> = new Map();
   private sessionAlwaysAllowed: Map<string, PermissionRule[]> = new Map();
   private pendingRequests: Map<string, PermissionRequest> = new Map();
+
+  /**
+   * Create a new PermissionManager instance.
+   *
+   * @param config - Configuration options
+   *
+   * @example
+   * ```typescript
+   * // Default safe mode (recommended)
+   * const manager = new PermissionManager();
+   * manager.setRules(defaultRules);
+   *
+   * // Backward-compatible mode
+   * const manager = new PermissionManager({ defaultAction: 'allow' });
+   *
+   * // Strict mode
+   * const manager = new PermissionManager({ strict: true });
+   * ```
+   */
+  constructor(config?: PermissionManagerConfig) {
+    // Strict mode: use strictRules + defaultAction='deny'
+    if (config?.strict) {
+      this.config = { defaultAction: 'deny' };
+      this.globalRules = [...strictRules];
+    } else {
+      // Normal mode: defaultAction='ask'
+      this.config = {
+        defaultAction: config?.defaultAction ?? 'ask',
+      };
+    }
+  }
+
+  /**
+   * Get the current default action configuration.
+   */
+  getDefaultAction(): PermissionAction {
+    return this.config.defaultAction;
+  }
 
   /**
    * Set global permission rules.
@@ -175,9 +217,24 @@ export class PermissionManager {
       }
     }
 
-    // 4. If no rule matched, default to 'allow' (permissive by default)
+    // 4. If no rule matched, use configured default action
     if (!lastMatch) {
-      return { action: 'allow' };
+      const result: PermissionCheckResult = {
+        action: this.config.defaultAction,
+      };
+
+      // 5. If default action is 'ask', prepare the prompt
+      if (this.config.defaultAction === 'ask') {
+        const suggestedPatterns = this.generateSuggestedPatterns(category, input);
+        result.askPrompt = {
+          message: `Permission required: ${category} (no matching rule)`,
+          choices: ['Allow once', 'Always allow', 'Deny'],
+          defaultChoice: 'Deny',
+        };
+        result.suggestedPatterns = suggestedPatterns;
+      }
+
+      return result;
     }
 
     const matchedRule = lastMatch.rule;

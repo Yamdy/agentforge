@@ -1,7 +1,7 @@
 # AgentForge 生产可用增强计划 - 执行状态
 
-> **最后更新**: 2026-04-24 04:20
-> **当前阶段**: P1 全部完成，P2/P3 计划已制定
+> **最后更新**: 2026-04-24 16:50
+> **当前阶段**: P2 Task 1 完成，370/380 测试通过
 
 ---
 
@@ -17,7 +17,7 @@
 | **P1 Task 1: 权限 Ruleset** | ✅ 完成 | `b2f1ae1` |
 | **P1 Task 2: 生命周期 Middleware** | ✅ 完成 | `ee00904` |
 | **P1 Task 3: 持久化存储扩展** | ✅ 完成 | — |
-| **P2 Task 1: 安全默认策略** | 📋 计划中 | — |
+| **P2 Task 1: 安全默认策略** | ✅ 完成 | 待提交 |
 | **P2 Task 2: 存储层外键约束** | 📋 计划中 | — |
 | **P2 Task 3: 错误处理增强** | 📋 计划中 | — |
 | **P2 Task 4: 可观测性集成** | 📋 计划中 | — |
@@ -582,7 +582,7 @@ deleteCheckpoint?(checkpointId: string): Promise<boolean>;
 
 | 项目 | 状态 | 优先级 |
 |------|------|--------|
-| **P2 Task 1: 安全默认策略** | 待开发 | 高 |
+| **P2 Task 1: 安全默认策略** | ✅ 完成 | — |
 | **P2 Task 2: 存储层外键约束** | 待开发 | 中 |
 | **P2 Task 3: 错误处理增强** | 待开发 | 中 |
 | **P2 Task 4: 可观测性集成** | 待开发 | 低 |
@@ -591,42 +591,624 @@ deleteCheckpoint?(checkpointId: string): Promise<boolean>;
 
 **问题来源**: P1 审视问题 #1 - 权限系统默认过于宽松
 
-**当前行为**:
+**目标**: 提供可配置的默认策略，而非硬编码 `allow`
+
+---
+
+## 详细设计
+
+### 1. 问题分析
+
+**当前实现缺陷**:
 ```typescript
-// manager.ts:179-180
+// manager.ts:178-180 (当前代码)
 if (!lastMatch) {
-  return { action: 'allow' };  // 无规则匹配时默认允许
+  return { action: 'allow' };  // 硬编码，无法配置
 }
 ```
 
-**目标**: 提供可配置的默认策略，而非硬编码 `allow`
+**安全风险**:
+1. 无任何规则时，默认允许所有操作
+2. 新工具类别未定义规则时自动放行
+3. 生产环境默认过于宽松
 
-**设计方案**:
+**影响范围**:
+- `src/permission/types.ts` - 新增配置接口
+- `src/permission/manager.ts` - 核心评估逻辑
+- `src/permission/index.ts` - 导出更新
+- `src/config/schema.ts` - Zod schema 扩展（可选）
+- `src/agent/factory.ts` - 配置传递
+- `src/index.ts` - 顶层导出
+- `tests/permission/permission.test.ts` - 测试更新
+
+---
+
+### 2. 核心接口设计
+
+#### 2.1 PermissionManagerConfig 接口（新增）
+
 ```typescript
-// 新增 PermissionManager 配置
-interface PermissionManagerConfig {
-  /** 无规则匹配时的默认动作 (default: 'ask') */
-  defaultAction?: 'allow' | 'deny' | 'ask';
-  /** 是否启用严格模式 (defaultAction='ask', 禁止通配符绕过) */
+// src/permission/types.ts
+
+import type { PermissionAction } from './types';
+
+/**
+ * PermissionManager 配置选项
+ * 
+ * @example
+ * ```typescript
+ * // 默认安全模式 (推荐)
+ * const manager = new PermissionManager();
+ * 
+ * // 向后兼容模式
+ * const manager = new PermissionManager({ defaultAction: 'allow' });
+ * 
+ * // 严格模式
+ * const manager = new PermissionManager({ strict: true });
+ * ```
+ */
+export interface PermissionManagerConfig {
+  /** 
+   * 无规则匹配时的默认动作
+   * - 'ask': 提示用户确认 (推荐，更安全)
+   * - 'allow': 允许执行 (旧行为，向后兼容)
+   * - 'deny': 拒绝执行 (严格模式)
+   * @default 'ask'
+   */
+  defaultAction?: PermissionAction;
+  
+  /**
+   * 严格模式预设
+   * - 启用时: 使用 strictRules + defaultAction='deny'
+   * - 覆盖 defaultAction 配置
+   * @default false
+   */
+  strict?: boolean;
+}
+```
+
+#### 2.2 PermissionManager 类变更
+
+```typescript
+// src/permission/manager.ts
+
+import type { PermissionManagerConfig } from './types';
+import { strictRules, defaultRules } from './presets';
+
+export class PermissionManager {
+  // 新增: 配置属性
+  private config: { defaultAction: PermissionAction };
+  
+  private globalRules: Ruleset = [];
+  private agentRules: Map<string, Ruleset> = new Map();
+  private sessionAlwaysAllowed: Map<string, PermissionRule[]> = new Map();
+  private pendingRequests: Map<string, PermissionRequest> = new Map();
+
+  /**
+   * 创建权限管理器实例
+   * 
+   * @param config - 配置选项
+   * 
+   * @example
+   * ```typescript
+   * // 默认安全模式 (推荐)
+   * const manager = new PermissionManager();
+   * manager.setRules(defaultRules);
+   * 
+   * // 向后兼容模式
+   * const manager = new PermissionManager({ defaultAction: 'allow' });
+   * 
+   * // 严格模式
+   * const manager = new PermissionManager({ strict: true });
+   * ```
+   */
+  constructor(config?: PermissionManagerConfig) {
+    // 严格模式: 使用 strictRules + defaultAction='deny'
+    if (config?.strict) {
+      this.config = { defaultAction: 'deny' };
+      this.globalRules = [...strictRules];
+    } else {
+      // 正常模式: defaultAction='ask'
+      this.config = { 
+        defaultAction: config?.defaultAction ?? 'ask' 
+      };
+    }
+  }
+
+  /**
+   * 获取当前默认动作配置
+   */
+  getDefaultAction(): PermissionAction {
+    return this.config.defaultAction;
+  }
+
+  // ... 其他方法保持不变
+}
+```
+
+---
+
+### 3. manager.ts 核心修改点
+
+#### 3.1 check() 方法完整实现
+
+```typescript
+// src/permission/manager.ts
+
+check(
+  sessionId: string,
+  category: string,
+  input: string,
+  agentName?: string
+): PermissionCheckResult {
+  // 1. Check session "always allowed" rules first (不变)
+  const alwaysRules = this.sessionAlwaysAllowed.get(sessionId);
+  if (alwaysRules) {
+    for (const rule of alwaysRules) {
+      if (rule.permission === category && matchPattern(rule.pattern, input)) {
+        return {
+          action: 'allow',
+          matchedPattern: rule.pattern,
+          matchedRule: rule,
+        };
+      }
+    }
+  }
+
+  // 2. Resolve effective rules (global + agent)
+  const rules = this.resolveRules(agentName);
+
+  // 3. Evaluate rules: last match wins
+  let lastMatch: { rule: PermissionRule; index: number } | null = null;
+
+  for (let i = 0; i < rules.length; i++) {
+    const rule = rules[i];
+    if (rule.permission === category && matchPattern(rule.pattern, input)) {
+      lastMatch = { rule, index: i };
+    }
+    if (rule.permission === '*' && matchPattern(rule.pattern, input)) {
+      lastMatch = { rule, index: i };
+    }
+  }
+
+  // ========== 核心变更: 使用配置的默认动作 ==========
+  
+  // 4. If no rule matched, use configured default action
+  if (!lastMatch) {
+    const result: PermissionCheckResult = {
+      action: this.config.defaultAction,
+    };
+    
+    // 5. If default action is 'ask', prepare the prompt
+    if (this.config.defaultAction === 'ask') {
+      const suggestedPatterns = this.generateSuggestedPatterns(category, input);
+      result.askPrompt = {
+        message: `Permission required: ${category} (no matching rule)`,
+        choices: ['Allow once', 'Always allow', 'Deny'],
+        defaultChoice: 'Deny',
+      };
+      result.suggestedPatterns = suggestedPatterns;
+    }
+    
+    return result;
+  }
+
+  // ========== 原有逻辑（规则匹配时）==========
+  
+  const matchedRule = lastMatch.rule;
+  const result: PermissionCheckResult = {
+    action: matchedRule.action,
+    matchedPattern: matchedRule.pattern,
+    matchedRule,
+  };
+
+  // 6. If action is 'ask', prepare the prompt
+  if (matchedRule.action === 'ask') {
+    const suggestedPatterns = this.generateSuggestedPatterns(category, input);
+    result.askPrompt = {
+      message: `Permission required: ${category}`,
+      choices: ['Allow once', 'Always allow', 'Deny'],
+      defaultChoice: 'Allow once',
+    };
+    result.suggestedPatterns = suggestedPatterns;
+  }
+
+  return result;
+}
+```
+
+#### 3.2 旧代码 vs 新代码对比
+
+```typescript
+// ❌ 旧代码 (硬编码)
+if (!lastMatch) {
+  return { action: 'allow' };
+}
+
+// ✅ 新代码 (可配置)
+if (!lastMatch) {
+  const result: PermissionCheckResult = {
+    action: this.config.defaultAction,  // 使用配置
+  };
+  
+  if (this.config.defaultAction === 'ask') {
+    result.askPrompt = {
+      message: `Permission required: ${category} (no matching rule)`,
+      choices: ['Allow once', 'Always allow', 'Deny'],
+      defaultChoice: 'Deny',
+    };
+    result.suggestedPatterns = this.generateSuggestedPatterns(category, input);
+  }
+  
+  return result;
+}
+```
+
+---
+
+### 4. config/schema.ts 扩展（可选）
+
+```typescript
+// src/config/schema.ts
+
+import { z } from 'zod';
+
+/**
+ * PermissionManager 配置 Schema
+ */
+export const PermissionManagerConfigSchema = z.object({
+  defaultAction: z.enum(['allow', 'deny', 'ask']).default('ask'),
+  strict: z.boolean().default(false),
+});
+
+export type PermissionManagerConfig = z.infer<typeof PermissionManagerConfigSchema>;
+
+// AgentConfigSchema 扩展
+export const AgentConfigSchema = z.object({
+  name: z.string(),
+  description: z.string().optional(),
+  model: z.string().default('gpt-4-turbo'),
+  // ... 现有字段 ...
+  
+  // 新增: 权限配置
+  permission: z.object({
+    defaultAction: z.enum(['allow', 'deny', 'ask']).default('ask'),
+    strict: z.boolean().default(false),
+  }).optional(),
+});
+```
+
+---
+
+### 5. factory.ts 集成
+
+```typescript
+// src/agent/factory.ts
+
+import { PermissionManager } from '../permission/manager.js';
+import type { PermissionManagerConfig } from '../permission/types.js';
+import { defaultRules } from '../permission/presets.js';
+
+export interface AgentFactoryOptions {
+  adapter?: LLMAdapter;
+  history?: HistoryManager;
+  registry?: ToolRegistry;
+  pluginManager?: PluginManager;
+  middleware?: Middleware[];
+  registerBuiltinTools?: boolean;
+  memoryManager?: MemoryManager;
+  memoryConfig?: MemoryManagerConfig;
+  
+  // 新增: 权限配置
+  permissionConfig?: PermissionManagerConfig;
+}
+
+export class AgentFactory {
+  // ...
+
+  async create(): Promise<Agent> {
+    // ... 现有代码 ...
+
+    const registry = this.options.registry ?? this.createRegistry(agentConfig);
+
+    // ========== 新增: 权限管理器配置 ==========
+    if (this.options.permissionConfig) {
+      const permissionManager = new PermissionManager(this.options.permissionConfig);
+      permissionManager.setRules(defaultRules);
+      registry.setPermissionManager(permissionManager);
+      this.log.info('Permission manager configured', { 
+        defaultAction: this.options.permissionConfig.defaultAction ?? 'ask',
+        strict: this.options.permissionConfig.strict ?? false,
+      });
+    }
+
+    const agent = new Agent(adapter, history, registry, {
+      ...agentConfig,
+      pluginManager,
+      middleware,
+      memoryManager,
+    });
+
+    return agent;
+  }
+
+  private createRegistry(_config: AgentConfig): ToolRegistry {
+    const registry = new ToolRegistry();
+
+    if (this.options.registerBuiltinTools) {
+      registry.register(allTools);
+      this.log.debug('Registered all built-in tools', { count: allTools.length });
+    }
+
+    // ========== 新增: 默认权限管理器 ==========
+    // 如果未提供 permissionConfig，使用安全默认
+    const permissionConfig = this.options.permissionConfig ?? { defaultAction: 'ask' as const };
+    const permissionManager = new PermissionManager(permissionConfig);
+    permissionManager.setRules(defaultRules);
+    registry.setPermissionManager(permissionManager);
+
+    return registry;
+  }
+}
+```
+
+---
+
+### 6. types.ts 修改点
+
+```typescript
+// src/permission/types.ts
+
+// 现有类型
+export type PermissionAction = 'allow' | 'deny' | 'ask';
+export interface PermissionRule { /* ... */ }
+export type Ruleset = PermissionRule[];
+
+// ========== 新增 ==========
+/**
+ * PermissionManager 配置选项
+ */
+export interface PermissionManagerConfig {
+  defaultAction?: PermissionAction;
   strict?: boolean;
 }
 
-// 修改 PermissionManager 构造函数
-constructor(config?: PermissionManagerConfig) {
-  this.config = { defaultAction: 'ask', ...config };
-}
-
-// 修改 check() 方法
-if (!lastMatch) {
-  return { action: this.config.defaultAction, ... };
-}
+// ========== 导出更新 ==========
+export type {
+  // 现有
+  PermissionAction,
+  PermissionRule,
+  Ruleset,
+  // ...
+  
+  // 新增
+  PermissionManagerConfig,
+};
 ```
 
-**预期产出**:
-- `PermissionManagerConfig` 接口
-- 构造函数支持配置
-- `strict` 预设修改为 `strictRules + defaultAction='deny'`
-- 5-8 个测试用例
+---
+
+### 7. 文件变更清单
+
+| 文件 | 变更类型 | 变更内容 |
+|------|----------|----------|
+| `src/permission/types.ts` | **Modify** | 新增 `PermissionManagerConfig` 接口 |
+| `src/permission/manager.ts` | **Modify** | 1. 新增 `config` 私有属性<br>2. 构造函数接受配置<br>3. `check()` 使用 `this.config.defaultAction`<br>4. 新增 `getDefaultAction()` 方法 |
+| `src/permission/index.ts` | **Modify** | 导出 `PermissionManagerConfig` 类型 |
+| `src/config/schema.ts` | **Modify** | 新增 `PermissionManagerConfigSchema` |
+| `src/agent/factory.ts` | **Modify** | 1. `AgentFactoryOptions` 新增 `permissionConfig`<br>2. `create()` 传递配置<br>3. `createRegistry()` 创建默认权限管理器 |
+| `src/index.ts` | **Modify** | 导出 `PermissionManagerConfig` 类型 |
+| `tests/permission/permission.test.ts` | **Modify** | 1. 更新现有测试<br>2. 新增 10 个测试用例 |
+
+---
+
+### 8. 测试用例设计
+
+```typescript
+// tests/permission/permission.test.ts
+
+describe('PermissionManager Security Defaults', () => {
+  describe('constructor and default action', () => {
+    it('should default to ask when no config provided', () => {
+      const manager = new PermissionManager();
+      expect(manager.getDefaultAction()).toBe('ask');
+    });
+
+    it('should use defaultAction=allow for backward compatibility', () => {
+      const manager = new PermissionManager({ defaultAction: 'allow' });
+      expect(manager.getDefaultAction()).toBe('allow');
+    });
+
+    it('should use defaultAction=deny when configured', () => {
+      const manager = new PermissionManager({ defaultAction: 'deny' });
+      expect(manager.getDefaultAction()).toBe('deny');
+    });
+
+    it('should return deny when no rules match and defaultAction=deny', () => {
+      const manager = new PermissionManager({ defaultAction: 'deny' });
+      const result = manager.check('s1', 'bash', 'git status');
+      expect(result.action).toBe('deny');
+    });
+
+    it('should return ask with prompt when no rules match and defaultAction=ask', () => {
+      const manager = new PermissionManager({ defaultAction: 'ask' });
+      const result = manager.check('s1', 'bash', 'git status');
+      expect(result.action).toBe('ask');
+      expect(result.askPrompt).toBeDefined();
+      expect(result.askPrompt?.message).toContain('no matching rule');
+      expect(result.askPrompt?.defaultChoice).toBe('Deny');
+    });
+  });
+
+  describe('strict mode', () => {
+    it('should set defaultAction=deny in strict mode', () => {
+      const manager = new PermissionManager({ strict: true });
+      expect(manager.getDefaultAction()).toBe('deny');
+    });
+
+    it('should load strictRules in strict mode', () => {
+      const manager = new PermissionManager({ strict: true });
+      // read is allowed in strictRules (last match wins)
+      expect(manager.check('s1', 'read', 'any').action).toBe('allow');
+      // bash is ask in strictRules
+      expect(manager.check('s1', 'bash', 'git status').action).toBe('ask');
+      // unknown is deny (defaultAction)
+      expect(manager.check('s1', 'unknown', 'any').action).toBe('deny');
+    });
+
+    it('should allow custom rules to override strict defaults', () => {
+      const manager = new PermissionManager({ strict: true });
+      manager.setRules([
+        { permission: 'custom', action: 'allow', pattern: '*' },
+      ]);
+      expect(manager.check('s1', 'custom', 'any').action).toBe('allow');
+      expect(manager.check('s1', 'unknown', 'any').action).toBe('deny');
+    });
+
+    it('strict should override defaultAction config', () => {
+      const manager = new PermissionManager({ 
+        strict: true, 
+        defaultAction: 'allow' 
+      });
+      expect(manager.getDefaultAction()).toBe('deny');
+      expect(manager.check('s1', 'unknown', 'any').action).toBe('deny');
+    });
+  });
+
+  describe('integration with existing features', () => {
+    it('should still respect sessionAlwaysAllowed over defaultAction', () => {
+      const manager = new PermissionManager({ defaultAction: 'deny' });
+      manager.setAlwaysAllowed('s1', 'bash', 'git *');
+      expect(manager.check('s1', 'bash', 'git status').action).toBe('allow');
+    });
+
+    it('should still respect matched rules over defaultAction', () => {
+      const manager = new PermissionManager({ defaultAction: 'deny' });
+      manager.setRules([
+        { permission: 'bash', action: 'ask', pattern: '*' },
+      ]);
+      expect(manager.check('s1', 'bash', 'any').action).toBe('ask');
+    });
+
+    it('should work with defaultRules and ask default', () => {
+      const manager = new PermissionManager({ defaultAction: 'ask' });
+      manager.setRules(defaultRules);
+      // defaultRules covers bash with 'ask'
+      expect(manager.check('s1', 'bash', 'git status').action).toBe('ask');
+      // unknown category uses defaultAction
+      expect(manager.check('s1', 'unknown', 'any').action).toBe('ask');
+    });
+  });
+});
+
+describe('AgentFactory integration', () => {
+  it('should create PermissionManager with permissionConfig', async () => {
+    const agent = await AgentFactory.create(
+      { name: 'test', model: 'gpt-4' },
+      { permissionConfig: { defaultAction: 'deny' } }
+    );
+    const registry = (agent as any).registry;
+    expect(registry.permissionManager.getDefaultAction()).toBe('deny');
+  });
+
+  it('should use safe defaults when no permissionConfig provided', async () => {
+    const agent = await AgentFactory.create(
+      { name: 'test', model: 'gpt-4' }
+    );
+    const registry = (agent as any).registry;
+    expect(registry.permissionManager.getDefaultAction()).toBe('ask');
+  });
+});
+```
+
+---
+
+### 9. Breaking Change 说明
+
+**⚠️ 这是一个破坏性变更**
+
+| 场景 | 旧行为 | 新行为 |
+|------|--------|--------|
+| `new PermissionManager()` 无规则 | `action: 'allow'` | `action: 'ask'` |
+| `AgentFactory.create()` 无配置 | 无权限管理器 | 安全默认配置 |
+| 未定义类别的工具调用 | 自动允许 | 提示用户确认 |
+
+**迁移路径**:
+
+```typescript
+// ❌ 旧行为 (不推荐)
+const manager = new PermissionManager();  // 硬编码 allow
+
+// ✅ 向后兼容 (显式声明)
+const manager = new PermissionManager({ defaultAction: 'allow' });
+
+// ✅ 推荐新用法
+const manager = new PermissionManager();  // 默认 ask
+manager.setRules(defaultRules);
+
+// ✅ 严格模式
+const manager = new PermissionManager({ strict: true });
+```
+
+**影响评估**:
+- 大多数用户已通过 `setRules(defaultRules)` 设置规则，规则匹配部分未受影响
+- 只有依赖"无规则=允许"行为的代码需要更新
+- 新默认值更安全，符合"安全优先"原则
+- `AgentFactory` 自动创建安全默认配置，无需额外代码
+
+---
+
+### 10. 实现步骤
+
+```
+Phase 1: 类型定义
+├── [ ] src/permission/types.ts - 添加 PermissionManagerConfig 接口
+└── [ ] 验证: 类型检查通过 (pnpm tsc --noEmit)
+
+Phase 2: 核心实现
+├── [ ] src/permission/manager.ts - 添加 config 私有属性
+├── [ ] src/permission/manager.ts - 构造函数接受配置
+├── [ ] src/permission/manager.ts - check() 使用 this.config.defaultAction
+├── [ ] src/permission/manager.ts - 无匹配时生成 askPrompt
+├── [ ] src/permission/manager.ts - 新增 getDefaultAction() 方法
+└── [ ] 验证: 编译通过
+
+Phase 3: 导出更新
+├── [ ] src/permission/index.ts - 导出 PermissionManagerConfig 类型
+├── [ ] src/index.ts - 顶层导出 PermissionManagerConfig 类型
+└── [ ] 验证: 导出正确 (pnpm build)
+
+Phase 4: 集成配置
+├── [ ] src/config/schema.ts - 添加 PermissionManagerConfigSchema
+├── [ ] src/agent/factory.ts - AgentFactoryOptions 添加 permissionConfig
+├── [ ] src/agent/factory.ts - createRegistry() 创建默认权限管理器
+└── [ ] 验证: 编译通过
+
+Phase 5: 测试更新
+├── [ ] tests/permission/permission.test.ts - 更新现有测试 (defaultAction: 'allow')
+├── [ ] tests/permission/permission.test.ts - 新增 10 个测试用例
+└── [ ] 验证: 所有测试通过 (pnpm test:run)
+
+Phase 6: 文档更新
+└── [ ] 更新 docs/guide/permissions.md (如有)
+```
+
+---
+
+### 11. 预期产出清单
+
+- [ ] `PermissionManagerConfig` 接口定义
+- [ ] `PermissionManager` 构造函数支持配置
+- [ ] `strict` 模式预设实现
+- [ ] `check()` 方法使用 `this.config.defaultAction`
+- [ ] 无规则匹配时生成 `askPrompt`
+- [ ] `getDefaultAction()` 方法
+- [ ] `AgentFactory` 集成
+- [ ] `PermissionManagerConfigSchema` (Zod)
+- [ ] 10 个新测试用例全部通过
+- [ ] 现有测试更新并全部通过
+- [ ] 类型导出正确
+- [ ] Breaking Change 文档化
 
 ---
 

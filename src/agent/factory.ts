@@ -23,6 +23,9 @@ import { allTools } from '../tools/index.js';
 import type { MemoryManager } from '../memory/manager.js';
 import type { MemoryManagerConfig } from '../memory/types.js';
 import { createMemory } from '../memory/manager.js';
+import { PermissionManager } from '../permission/manager.js';
+import { defaultRules } from '../permission/presets.js';
+import type { PermissionManagerConfig } from '../permission/types.js';
 
 export interface AgentFactoryOptions {
   adapter?: LLMAdapter;
@@ -33,6 +36,8 @@ export interface AgentFactoryOptions {
   registerBuiltinTools?: boolean;
   memoryManager?: MemoryManager;
   memoryConfig?: MemoryManagerConfig;
+  /** Permission manager configuration */
+  permissionConfig?: PermissionManagerConfig;
 }
 
 export class AgentFactory {
@@ -216,6 +221,15 @@ export class AgentFactory {
       registry.register(allTools);
       this.log.debug('Registered all built-in tools', { count: allTools.length });
     }
+
+    // Create PermissionManager with safe defaults
+    const permissionConfig = this.options.permissionConfig ?? { defaultAction: 'ask' };
+    const permissionManager = new PermissionManager(permissionConfig);
+    permissionManager.setRules(defaultRules);
+    registry.setPermissionManager(permissionManager);
+    this.log.debug('Permission manager configured', {
+      defaultAction: permissionManager.getDefaultAction(),
+    });
 
     return registry;
   }

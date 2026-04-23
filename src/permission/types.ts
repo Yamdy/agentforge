@@ -103,6 +103,42 @@ export interface PermissionResponse {
   always?: boolean;
 }
 
+// ========== Manager Configuration ==========
+
+/**
+ * PermissionManager 配置选项
+ *
+ * @example
+ * ```typescript
+ * // 默认安全模式 (推荐)
+ * const manager = new PermissionManager();
+ *
+ * // 向后兼容模式
+ * const manager = new PermissionManager({ defaultAction: 'allow' });
+ *
+ * // 严格模式
+ * const manager = new PermissionManager({ strict: true });
+ * ```
+ */
+export interface PermissionManagerConfig {
+  /**
+   * 无规则匹配时的默认动作
+   * - 'ask': 提示用户确认 (推荐，更安全)
+   * - 'allow': 允许执行 (旧行为，向后兼容)
+   * - 'deny': 拒绝执行 (严格模式)
+   * @default 'ask'
+   */
+  defaultAction?: PermissionAction;
+
+  /**
+   * 严格模式预设
+   * - 启用时: 使用 strictRules + defaultAction='deny'
+   * - 覆盖 defaultAction 配置
+   * @default false
+   */
+  strict?: boolean;
+}
+
 // ========== Utility Types ==========
 
 /**

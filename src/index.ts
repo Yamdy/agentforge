@@ -52,6 +52,7 @@ export type {
   PermissionRequest,
   PermissionResponse,
   PermissionConfig,
+  PermissionManagerConfig,
 } from './permission/types.js';
 export { parsePermissionConfig } from './permission/types.js';
 

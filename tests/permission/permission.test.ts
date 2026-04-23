@@ -9,7 +9,7 @@ import {
   presets,
   parsePermissionConfig,
 } from '../../src/permission/index.js';
-import type { Ruleset, PermissionCheckResult } from '../../src/permission/types.js';
+import type { Ruleset, PermissionCheckResult, PermissionManagerConfig } from '../../src/permission/types.js';
 
 // ========== Pattern Matching Tests ==========
 
@@ -65,8 +65,15 @@ describe('PermissionManager', () => {
   });
 
   describe('basic check', () => {
-    it('should default to allow when no rules are set', () => {
+    it('should default to ask when no config provided', () => {
       const result = manager.check('session-1', 'bash', 'git status');
+      expect(result.action).toBe('ask');
+      expect(result.askPrompt).toBeDefined();
+    });
+
+    it('should use defaultAction=allow for backward compatibility', () => {
+      const managerAllow = new PermissionManager({ defaultAction: 'allow' });
+      const result = managerAllow.check('session-1', 'bash', 'git status');
       expect(result.action).toBe('allow');
     });
 
@@ -316,5 +323,103 @@ describe('PermissionManager + ToolRegistry integration', () => {
 
     // Verify permission manager is set
     expect(registry.permissionManager).toBe(manager);
+  });
+});
+
+// ========== Security Defaults Tests ==========
+
+describe('PermissionManager Security Defaults', () => {
+  describe('constructor and default action', () => {
+    it('should default to ask when no config provided', () => {
+      const manager = new PermissionManager();
+      expect(manager.getDefaultAction()).toBe('ask');
+    });
+
+    it('should use defaultAction=allow for backward compatibility', () => {
+      const manager = new PermissionManager({ defaultAction: 'allow' });
+      expect(manager.getDefaultAction()).toBe('allow');
+    });
+
+    it('should use defaultAction=deny when configured', () => {
+      const manager = new PermissionManager({ defaultAction: 'deny' });
+      expect(manager.getDefaultAction()).toBe('deny');
+    });
+
+    it('should return deny when no rules match and defaultAction=deny', () => {
+      const manager = new PermissionManager({ defaultAction: 'deny' });
+      const result = manager.check('s1', 'bash', 'git status');
+      expect(result.action).toBe('deny');
+    });
+
+    it('should return ask with prompt when no rules match and defaultAction=ask', () => {
+      const manager = new PermissionManager({ defaultAction: 'ask' });
+      const result = manager.check('s1', 'bash', 'git status');
+      expect(result.action).toBe('ask');
+      expect(result.askPrompt).toBeDefined();
+      expect(result.askPrompt?.message).toContain('no matching rule');
+      expect(result.askPrompt?.defaultChoice).toBe('Deny');
+    });
+  });
+
+  describe('strict mode', () => {
+    it('should set defaultAction=deny in strict mode', () => {
+      const manager = new PermissionManager({ strict: true });
+      expect(manager.getDefaultAction()).toBe('deny');
+    });
+
+    it('should load strictRules in strict mode', () => {
+      const manager = new PermissionManager({ strict: true });
+      // read is allowed in strictRules (last match wins)
+      expect(manager.check('s1', 'read', 'any').action).toBe('allow');
+      // bash is ask in strictRules
+      expect(manager.check('s1', 'bash', 'git status').action).toBe('ask');
+      // unknown matches the wildcard rule '*' which is 'ask' in strictRules
+      expect(manager.check('s1', 'unknown', 'any').action).toBe('ask');
+    });
+
+    it('should allow custom rules to override strict defaults', () => {
+      const manager = new PermissionManager({ strict: true });
+      manager.setRules([
+        { permission: 'custom', action: 'allow', pattern: '*' },
+      ]);
+      expect(manager.check('s1', 'custom', 'any').action).toBe('allow');
+      expect(manager.check('s1', 'unknown', 'any').action).toBe('deny');
+    });
+
+    it('strict should override defaultAction config', () => {
+      const manager = new PermissionManager({
+        strict: true,
+        defaultAction: 'allow',
+      });
+      expect(manager.getDefaultAction()).toBe('deny');
+      // unknown matches the wildcard rule '*' which is 'ask' in strictRules
+      // (not the defaultAction, because a rule matched)
+      expect(manager.check('s1', 'unknown', 'any').action).toBe('ask');
+    });
+  });
+
+  describe('integration with existing features', () => {
+    it('should still respect sessionAlwaysAllowed over defaultAction', () => {
+      const manager = new PermissionManager({ defaultAction: 'deny' });
+      manager.setAlwaysAllowed('s1', 'bash', 'git *');
+      expect(manager.check('s1', 'bash', 'git status').action).toBe('allow');
+    });
+
+    it('should still respect matched rules over defaultAction', () => {
+      const manager = new PermissionManager({ defaultAction: 'deny' });
+      manager.setRules([
+        { permission: 'bash', action: 'ask', pattern: '*' },
+      ]);
+      expect(manager.check('s1', 'bash', 'any').action).toBe('ask');
+    });
+
+    it('should work with defaultRules and ask default', () => {
+      const manager = new PermissionManager({ defaultAction: 'ask' });
+      manager.setRules(defaultRules);
+      // defaultRules covers bash with 'ask'
+      expect(manager.check('s1', 'bash', 'git status').action).toBe('ask');
+      // unknown category uses defaultAction
+      expect(manager.check('s1', 'unknown', 'any').action).toBe('ask');
+    });
   });
 });
