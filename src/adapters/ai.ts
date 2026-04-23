@@ -205,15 +205,11 @@ export class AIAdapter implements LLMAdapter {
 
   private toModelMessages(messages: Message[]): Array<{
     role: 'system' | 'user' | 'assistant' | 'tool';
-    content: string;
-    tool_call_id?: string;
-    tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>;
+    content: string | Array<Record<string, unknown>>;
   }> {
     const result: Array<{
       role: 'system' | 'user' | 'assistant' | 'tool';
-      content: string;
-      tool_call_id?: string;
-      tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>;
+      content: string | Array<Record<string, unknown>>;
     }> = [];
 
     const toolMessages = new Map<string, { name: string; arguments: string }>();
@@ -237,27 +233,26 @@ export class AIAdapter implements LLMAdapter {
           pendingToolCallIds.push(msg.toolCallId);
         } else {
           if (pendingToolCallIds.length > 0) {
-            const toolCalls = pendingToolCallIds
-              .map((id) => {
-                const toolInfo = toolMessages.get(id);
-                if (!toolInfo) return null;
-                return {
-                  id,
-                  type: 'function' as const,
-                  function: { name: toolInfo.name, arguments: toolInfo.arguments },
-                };
-              })
-              .filter((tc): tc is NonNullable<typeof tc> => tc !== null);
-
-            if (toolCalls.length > 0) {
-              result.push({
-                role: 'assistant',
-                content: msg.content,
-                tool_calls: toolCalls,
-              });
-            } else {
-              result.push({ role: 'assistant', content: msg.content });
+            // Build assistant message with tool calls (AI SDK v6 format)
+            const content: Array<Record<string, unknown>> = [];
+            
+            if (msg.content) {
+              content.push({ type: 'text', text: msg.content });
             }
+            
+            for (const id of pendingToolCallIds) {
+              const toolInfo = toolMessages.get(id);
+              if (toolInfo) {
+                content.push({
+                  type: 'tool-call',
+                  toolCallId: id,
+                  toolName: toolInfo.name,
+                  input: JSON.parse(toolInfo.arguments || '{}'),
+                });
+              }
+            }
+            
+            result.push({ role: 'assistant', content });
             pendingToolCallIds.length = 0;
           } else {
             result.push({ role: 'assistant', content: msg.content });
@@ -265,56 +260,60 @@ export class AIAdapter implements LLMAdapter {
         }
       } else if (msg.role === 'tool') {
         if (pendingToolCallIds.length > 0) {
-          const toolCalls = pendingToolCallIds
-            .map((id) => {
-              const toolInfo = toolMessages.get(id);
-              if (!toolInfo) return null;
-              return {
-                id,
-                type: 'function' as const,
-                function: { name: toolInfo.name, arguments: toolInfo.arguments },
-              };
-            })
-            .filter((tc): tc is NonNullable<typeof tc> => tc !== null);
-
-          if (toolCalls.length > 0) {
-            result.push({
-              role: 'assistant',
-              content: '',
-              tool_calls: toolCalls,
-            });
+          // Build assistant message with tool calls (AI SDK v6 format)
+          const content: Array<Record<string, unknown>> = [];
+          
+          for (const id of pendingToolCallIds) {
+            const toolInfo = toolMessages.get(id);
+            if (toolInfo) {
+              content.push({
+                type: 'tool-call',
+                toolCallId: id,
+                toolName: toolInfo.name,
+                input: JSON.parse(toolInfo.arguments || '{}'),
+              });
+            }
+          }
+          
+          if (content.length > 0) {
+            result.push({ role: 'assistant', content });
           }
           pendingToolCallIds.length = 0;
         }
+        
+        // Build tool result message (AI SDK v6 format)
         result.push({
           role: 'tool',
-          content: msg.content,
-          tool_call_id: msg.toolCallId ?? '',
+          content: [{
+            type: 'tool-result',
+            toolCallId: msg.toolCallId ?? '',
+            toolName: msg.toolName ?? '',
+            output: { type: 'text', value: msg.content },
+          }],
         });
       } else if (msg.role === 'system') {
         result.push({ role: 'system', content: msg.content });
       }
     }
 
+    // Handle any remaining pending tool calls
     if (pendingToolCallIds.length > 0) {
-      const toolCalls = pendingToolCallIds
-        .map((id) => {
-          const toolInfo = toolMessages.get(id);
-          if (!toolInfo) return null;
-          return {
-            id,
-            type: 'function' as const,
-            function: { name: toolInfo.name, arguments: toolInfo.arguments },
-          };
-        })
-        .filter((tc): tc is NonNullable<typeof tc> => tc !== null);
-
-      if (toolCalls.length > 0) {
-        result.push({
-          role: 'assistant',
-          content: '',
-          tool_calls: toolCalls,
-        });
+      const content: Array<Record<string, unknown>> = [];
+      
+      for (const id of pendingToolCallIds) {
+        const toolInfo = toolMessages.get(id);
+        if (toolInfo) {
+          content.push({
+            type: 'tool-call',
+            toolCallId: id,
+            toolName: toolInfo.name,
+            input: JSON.parse(toolInfo.arguments || '{}'),
+          });
+        }
+      }
+      
+      if (content.length > 0) {
+        result.push({ role: 'assistant', content });
       }
     }
 

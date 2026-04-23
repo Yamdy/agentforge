@@ -48,3 +48,6 @@ coverage/
 
 # Worktrees
 .worktrees/
+
+# Test fixtures (generated)
+tests/__test_project__/
