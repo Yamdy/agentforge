@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { Tool, ToolContext, ToolResult } from '../../types';
 import { existsSync, statSync, readdirSync } from 'fs';
 import { join, isAbsolute } from 'path';
+import { truncateIfNeededAsync } from '../../truncate/index.js';
 
 // ========== Zod Parameter Schema ==========
 
@@ -102,39 +103,34 @@ export const FindTool: Tool<FindParamsType, FindMetadata> = {
     search(startPath, 0);
     results.sort();
 
-    const truncated = results.length >= MAX_RESULTS;
+    const resultTruncated = results.length >= MAX_RESULTS;
     let output = results.join('\n');
 
     if (results.length === 0) {
       output = 'No matching files or directories found.';
     } else {
       output += `\n\nFound ${results.length} matches`;
-      if (truncated) {
+      if (resultTruncated) {
         output += ` (truncated at ${MAX_RESULTS} results)`;
       }
     }
 
-    // TODO(Task 4): Apply truncateIfNeeded for large outputs
-    // const truncatedResult = await truncateIfNeeded(output, {
-    //   maxLines: 2000,
-    //   maxBytes: 50000,
-    //   prefix: `find_${ctx.callId}`,
-    // })
-    // return {
-    //   title: `${results.length} matches`,
-    //   output: truncatedResult.output,
-    //   truncated: truncatedResult.truncated,
-    //   outputPath: truncatedResult.outputPath,
-    //   metadata: { ... }
-    // }
+    // Apply truncate system for large outputs
+    const truncatedResult = await truncateIfNeededAsync(output, {
+      maxLines: 2000,
+      maxBytes: 50000,
+      prefix: `find_${ctx.callId}`,
+    });
 
     return {
       title: `${results.length} matches`,
-      output,
+      output: truncatedResult.output,
+      truncated: truncatedResult.truncated || resultTruncated,
+      outputPath: truncatedResult.outputPath,
       metadata: {
         path: startPath,
         matchCount: results.length,
-        truncated,
+        truncated: truncatedResult.truncated || resultTruncated,
       },
     };
   },

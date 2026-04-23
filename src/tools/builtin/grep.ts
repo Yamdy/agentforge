@@ -3,6 +3,7 @@ import type { Tool, ToolContext, ToolResult } from '../../types';
 import { existsSync, statSync, readFileSync } from 'fs';
 import { join, isAbsolute } from 'path';
 import { glob } from 'glob';
+import { truncateIfNeededAsync } from '../../truncate/index.js';
 
 // ========== Zod Parameter Schema ==========
 
@@ -166,31 +167,26 @@ export const GrepTool: Tool<GrepParamsType, GrepMetadata> = {
     }
 
     const output = `${matches.join('\n')}\n\nFound ${matchCount} matches in ${fileCount} files`;
-    const truncated = matchCount >= maxResults;
+    const resultTruncated = matchCount >= maxResults;
 
-    // TODO(Task 4): Apply truncateIfNeeded for large outputs
-    // const truncatedResult = await truncateIfNeeded(output, {
-    //   maxLines: 2000,
-    //   maxBytes: 50000,
-    //   prefix: `grep_${ctx.callId}`,
-    // })
-    // return {
-    //   title: `${matchCount} matches for ${args.pattern}`,
-    //   output: truncatedResult.output,
-    //   truncated: truncatedResult.truncated,
-    //   outputPath: truncatedResult.outputPath,
-    //   metadata: { ... }
-    // }
+    // Apply truncate system for large outputs
+    const truncatedResult = await truncateIfNeededAsync(output, {
+      maxLines: 2000,
+      maxBytes: 50000,
+      prefix: `grep_${ctx.callId}`,
+    });
 
     return {
       title: `${matchCount} matches for ${args.pattern}`,
-      output,
+      output: truncatedResult.output,
+      truncated: truncatedResult.truncated || resultTruncated,
+      outputPath: truncatedResult.outputPath,
       metadata: {
         pattern: args.pattern,
         path: searchPath,
         matchCount,
         fileCount,
-        truncated,
+        truncated: truncatedResult.truncated || resultTruncated,
       },
     };
   },

@@ -4,6 +4,7 @@ import { createSandbox, type Sandbox } from '../../sandbox/index.js';
 import type { PolicyOptions } from '../../sandbox/policy.js';
 import type { AgentConfig } from '../../config/index.js';
 import { spawn } from 'child_process';
+import { truncateIfNeededAsync } from '../../truncate/index.js';
 
 // ========== Zod Parameter Schema ==========
 
@@ -94,13 +95,13 @@ export class BashToolExecutor {
       });
 
       let output = '';
-      let truncated = false;
+      let outputTruncated = false;
 
       const append = (chunk: Buffer) => {
         output += chunk.toString();
         if (output.length > maxOutput) {
           output = output.slice(0, maxOutput) + '\n\n[Output truncated: exceeded size limit]';
-          truncated = true;
+          outputTruncated = true;
           proc.kill();
         }
       };
@@ -130,7 +131,7 @@ export class BashToolExecutor {
         ctx.abort.removeEventListener('abort', abortHandler);
       };
 
-      proc.once('exit', (code: number | null) => {
+      proc.once('exit', async (code: number | null) => {
         cleanup();
         const duration = Date.now() - start;
 
@@ -144,21 +145,22 @@ export class BashToolExecutor {
           output += `\n\nExit code: ${code}`;
         }
 
-        // TODO(Task 4): Apply truncateIfNeeded for large outputs
-        // const truncatedResult = await truncateIfNeeded(output, {
-        //   maxLines: 2000,
-        //   maxBytes: 50000,
-        //   prefix: `bash_${ctx.callId}`,
-        // })
+        // Apply truncate system for large outputs
+        const truncatedResult = await truncateIfNeededAsync(output, {
+          maxLines: 2000,
+          maxBytes: 50000,
+          prefix: `bash_${ctx.callId}`,
+        });
 
         resolve({
           title: `Exit ${code ?? 'killed'}`,
-          output,
-          truncated,
+          output: truncatedResult.output,
+          truncated: truncatedResult.truncated || outputTruncated,
+          outputPath: truncatedResult.outputPath,
           metadata: {
             exitCode: code,
             duration,
-            truncated,
+            truncated: truncatedResult.truncated || outputTruncated,
           },
         });
       });

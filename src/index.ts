@@ -114,5 +114,19 @@ export * as Workflow from './workflow/index.js';
 export * as Memory from './memory/index.js';
 export * as Observability from './observability/index.js';
 export * as Sandbox from './sandbox/index.js';
+export * as Truncate from './truncate/index.js';
 export * from './context.js';
 export { SQLiteMemoryStorage } from './storage/sqlite-memory.js';
+
+// Truncate system exports
+export {
+  truncate,
+  truncateAndSave,
+  truncateIfNeeded,
+  truncateIfNeededAsync,
+  saveTruncatedOutput,
+  cleanupOldFiles,
+  DEFAULT_TRUNCATE_DIR,
+  DEFAULT_MAX_AGE_DAYS,
+} from './truncate/index.js';
+export type { TruncateOptions, TruncateResult } from './truncate/index.js';

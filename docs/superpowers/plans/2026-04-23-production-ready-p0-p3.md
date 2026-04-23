@@ -1,7 +1,7 @@
 # AgentForge 生产可用增强计划 - 执行状态
 
-> **最后更新**: 2026-04-23 19:25
-> **当前阶段**: P0 Task 3 已完成并合入 main
+> **最后更新**: 2026-04-23 20:00
+> **当前阶段**: P0 Task 4 已完成，待合入 main
 
 ---
 
@@ -12,7 +12,7 @@
 | **P0 Task 1: Provider** | ✅ 完成 | `58ca8b8` |
 | **P0 Task 2: Tool.Context** | ✅ 完成 | `15fdf5a` |
 | **P0 Task 3: 内置工具适配** | ✅ 完成 | `8b141bd` |
-| P0 Task 4: Truncate | ⏳ 待开发 | - |
+| **P0 Task 4: Truncate** | ✅ 完成 | `feature/p0-truncate` |
 | P0 Task 5: 测试验证 | ⏳ 待开发 | - |
 
 ---
@@ -280,9 +280,26 @@ ask_user.ts   → Tool<AskUserParamsType, AskUserMetadata>
 
 ---
 
-### Task 4: 输出截断系统 ⏳ 待开发
+### Task 4: 输出截断系统 ✅ 已完成
 
 **目标**: 自动截断过长输出，防止上下文爆炸。
+
+**已完成内容**:
+- `src/truncate/index.ts` - truncateIfNeeded + truncateAndSave + 字符级截断
+- `src/truncate/storage.ts` - 临时文件存储 (saveTruncatedOutput)
+- `src/truncate/cleanup.ts` - 7天自动清理 (cleanupOldFiles)
+- `src/index.ts` - 导出 truncate 模块 (Truncate namespace + 直接导出)
+- `src/tools/builtin/bash.ts` - 应用 truncateAndSave (移除 TODO)
+- `src/tools/builtin/grep.ts` - 应用 truncateAndSave (移除 TODO)
+- `src/tools/builtin/find.ts` - 应用 truncateAndSave (移除 TODO)
+- 22 个测试用例全部通过
+
+**设计亮点**:
+1. 双层截断策略 - 行级截断 + 字节级截断，确保输出在限制内
+2. 字符级截断 - 单行超长内容通过 findCharBudget 二分查找精确裁剪
+3. 完整内容保存 - 截断后自动保存到临时文件，通过 outputPath 引用
+4. 自动清理 - cleanupOldFiles() 删除7天前的临时文件
+5. 方向控制 - head/tail 方向支持，适应不同场景
 
 **文件列表**:
 ```
@@ -491,16 +508,19 @@ describe('Truncate', () => {
 继续 AgentForge P0 生产可用增强计划。
 
 当前状态：
-- Task 1 (Provider) 已完成并合入 main (commit 58ca8b8)
-- Task 2-5 待开发
+- Task 1 (Provider) ✅ 已合入 main (58ca8b8)
+- Task 2 (Tool.Context) ✅ 已合入 main (15fdf5a)
+- Task 3 (内置工具适配) ✅ 已合入 main (8b141bd)
+- Task 4 (Truncate) ✅ 已完成，待合入 main (feature/p0-truncate)
+- Task 5 (测试验证) ⏳ 待开发
 
 计划文档位置：
 - docs/superpowers/plans/2026-04-23-production-ready-p0-p3.md
 
 下一步：
-- 创建 git worktree: git worktree add agentforge-p0 -b feature/p0-tool-context
-- 开始 Task 2: Tool.Context 上下文系统
-- 参考"src/provider/"模块的实现风格
+- 合入 Task 4: git checkout main && git merge feature/p0-truncate
+- 开始 Task 5: 测试验证
+- 验证所有 P0 功能正常工作
 ```
 
 ---
