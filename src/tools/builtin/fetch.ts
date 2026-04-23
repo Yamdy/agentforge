@@ -1,54 +1,59 @@
-import type { LegacyTool as Tool } from '../../types.js';
+import { z } from 'zod';
+import type { Tool, ToolContext, ToolResult } from '../../types';
 
-export interface FetchToolArgs {
-  url: string;
-  method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
-  headers?: Record<string, string>;
-  body?: string | object;
+// ========== Zod Parameter Schema ==========
+
+const FetchParams = z.object({
+  url: z.string().describe('The URL to fetch'),
+  method: z
+    .enum(['GET', 'POST', 'PUT', 'DELETE', 'PATCH'])
+    .optional()
+    .describe('HTTP method to use (default: GET)'),
+  headers: z
+    .record(z.string(), z.string())
+    .optional()
+    .describe('Optional HTTP headers'),
+  body: z
+    .union([z.string(), z.record(z.string(), z.unknown())])
+    .optional()
+    .describe('Request body for POST/PUT/PATCH'),
+});
+
+type FetchParamsType = z.infer<typeof FetchParams>;
+
+// ========== Metadata Interface ==========
+
+interface FetchMetadata {
+  status: number;
+  statusText: string;
+  truncated: boolean;
 }
 
-export const FetchTool: Tool = {
+// ========== Tool Implementation ==========
+
+export const FetchTool: Tool<FetchParamsType, FetchMetadata> = {
   name: 'fetch',
   description: 'Make an HTTP request to a URL and get the response',
-  parameters: {
-    type: 'object',
-    properties: {
-      url: {
-        type: 'string',
-        description: 'The URL to fetch',
-      },
-      method: {
-        type: 'string',
-        enum: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-        default: 'GET',
-        description: 'HTTP method to use',
-      },
-      headers: {
-        type: 'object',
-        description: 'Optional HTTP headers',
-        additionalProperties: { type: 'string' },
-      },
-      body: {
-        type: ['string', 'object'],
-        description: 'Request body for POST/PUT/PATCH',
-      },
-    },
-    required: ['url'],
-  },
-  execute: async (args: Record<string, unknown>) => {
-    const url = args.url as string;
-    const method = (args.method as 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH') || 'GET';
-    const headers = (args.headers as Record<string, string>) || {};
-    const body = args.body as string | object | undefined;
+  parameters: FetchParams,
+
+  async execute(
+    args: FetchParamsType,
+    ctx: ToolContext
+  ): Promise<ToolResult<FetchMetadata>> {
+    const { url, method = 'GET', headers = {}, body } = args;
 
     const FETCH_TIMEOUT = 30000;
     const MAX_RESPONSE_SIZE = 5 * 1024 * 1024;
+
+    ctx.metadata({ title: `Fetching ${url}...` });
 
     try {
       const options: RequestInit = {
         method,
         headers: new Headers(headers),
-        signal: AbortSignal.timeout(FETCH_TIMEOUT),
+        signal: ctx.abort.aborted
+          ? AbortSignal.abort()
+          : AbortSignal.timeout(FETCH_TIMEOUT),
       };
 
       if (body) {
@@ -67,7 +72,7 @@ export const FetchTool: Tool = {
 
       if (contentType?.includes('application/json')) {
         const result = await response.json();
-        return JSON.stringify(
+        const output = JSON.stringify(
           {
             status: response.status,
             statusText: response.statusText,
@@ -77,10 +82,20 @@ export const FetchTool: Tool = {
           null,
           2
         );
+
+        return {
+          title: `${response.status} ${response.statusText}`,
+          output,
+          metadata: {
+            status: response.status,
+            statusText: response.statusText,
+            truncated: false,
+          },
+        };
       } else {
         const contentLength = response.headers.get('content-length');
         if (contentLength && parseInt(contentLength, 10) > MAX_RESPONSE_SIZE) {
-          return JSON.stringify(
+          const output = JSON.stringify(
             {
               status: response.status,
               statusText: response.statusText,
@@ -89,6 +104,16 @@ export const FetchTool: Tool = {
             null,
             2
           );
+
+          return {
+            title: `${response.status} ${response.statusText}`,
+            output,
+            metadata: {
+              status: response.status,
+              statusText: response.statusText,
+              truncated: true,
+            },
+          };
         }
 
         const text = await response.text();
@@ -97,7 +122,7 @@ export const FetchTool: Tool = {
           ? text.slice(0, MAX_RESPONSE_SIZE) + '\n\n[Response truncated: exceeded 5MB limit]'
           : text;
 
-        return JSON.stringify(
+        const output = JSON.stringify(
           {
             status: response.status,
             statusText: response.statusText,
@@ -108,10 +133,24 @@ export const FetchTool: Tool = {
           null,
           2
         );
+
+        return {
+          title: `${response.status} ${response.statusText}`,
+          output,
+          metadata: {
+            status: response.status,
+            statusText: response.statusText,
+            truncated,
+          },
+        };
       }
-    } catch (error) {
+    } catch (error: unknown) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       throw new Error(`Fetch failed: ${errorMsg}`, { cause: error });
     }
   },
 };
+
+// ========== Legacy Export (for backward compatibility) ==========
+
+export type FetchToolArgs = FetchParamsType;

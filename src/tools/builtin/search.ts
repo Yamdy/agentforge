@@ -1,29 +1,44 @@
-import type { LegacyTool as Tool } from '../../types.js';
+import { z } from 'zod';
+import type { Tool, ToolContext, ToolResult } from '../../types';
 
-export interface SearchToolArgs {
+// ========== Zod Parameter Schema ==========
+
+const SearchParams = z.object({
+  query: z.string().describe('Search query'),
+});
+
+type SearchParamsType = z.infer<typeof SearchParams>;
+
+// ========== Metadata Interface ==========
+
+interface SearchMetadata {
   query: string;
+  resultCount: number;
 }
 
-export function createSearchTool(apiKey?: string): Tool {
+// ========== Tool Factory ==========
+
+export function createSearchTool(apiKey?: string): Tool<SearchParamsType, SearchMetadata> {
   return {
     name: 'web_search',
     description: 'Search the web for information using Brave Search API',
-    parameters: {
-      type: 'object',
-      properties: {
-        query: {
-          type: 'string',
-          description: 'Search query',
-        },
-      },
-      required: ['query'],
-    },
-    execute: async (args: Record<string, unknown>) => {
-      const query = args.query as string;
+    parameters: SearchParams,
+
+    async execute(
+      args: SearchParamsType,
+      ctx: ToolContext
+    ): Promise<ToolResult<SearchMetadata>> {
+      const { query } = args;
       const searchApiKey = apiKey || process.env.BRAVE_API_KEY;
 
+      ctx.metadata({ title: `Searching: ${query}...` });
+
       if (!searchApiKey) {
-        return 'Error: BRAVE_API_KEY not configured. Please set BRAVE_API_KEY environment variable or pass it to createSearchTool. Get one at https://api.search.brave.com/';
+        return {
+          title: 'Error',
+          output: 'Error: BRAVE_API_KEY not configured. Please set BRAVE_API_KEY environment variable or pass it to createSearchTool. Get one at https://api.search.brave.com/',
+          metadata: { query, resultCount: 0 },
+        };
       }
 
       try {
@@ -35,20 +50,31 @@ export function createSearchTool(apiKey?: string): Tool {
               'Accept-Encoding': 'gzip',
               'X-Subscription-Token': searchApiKey,
             },
+            signal: ctx.abort.aborted ? AbortSignal.abort() : undefined,
           }
         );
 
         if (!response.ok) {
-          return `Search failed: ${response.status} ${response.statusText}`;
+          return {
+            title: 'Search failed',
+            output: `Search failed: ${response.status} ${response.statusText}`,
+            metadata: { query, resultCount: 0 },
+          };
         }
 
-        const data = await response.json() as Record<string, unknown>;
+        const data = (await response.json()) as Record<string, unknown>;
         const results = (data.web as Record<string, unknown> | undefined)?.results
-          ? ((data.web as Record<string, unknown>).results as Record<string, unknown>[]).slice(0, 10)
+          ? (
+              (data.web as Record<string, unknown>).results as Record<string, unknown>[]
+            ).slice(0, 10)
           : [];
 
         if (results.length === 0) {
-          return 'No results found.';
+          return {
+            title: `No results: ${query}`,
+            output: 'No results found.',
+            metadata: { query, resultCount: 0 },
+          };
         }
 
         let output = `Search results for "${query}":\n\n`;
@@ -56,14 +82,27 @@ export function createSearchTool(apiKey?: string): Tool {
           output += `${index + 1}. **${result.title}**\n${result.url}\n${result.description}\n\n`;
         });
 
-        return output;
-      } catch (error) {
+        return {
+          title: `${results.length} results for "${query}"`,
+          output,
+          metadata: { query, resultCount: results.length },
+        };
+      } catch (error: unknown) {
         const errorMsg = error instanceof Error ? error.message : String(error);
-        return `Search error: ${errorMsg}`;
+        return {
+          title: 'Search error',
+          output: `Search error: ${errorMsg}`,
+          metadata: { query, resultCount: 0 },
+        };
       }
     },
   };
 }
 
-// Default instance with API key from environment
-export const SearchTool: Tool = createSearchTool();
+// ========== Default Instance ==========
+
+export const SearchTool: Tool<SearchParamsType, SearchMetadata> = createSearchTool();
+
+// ========== Legacy Export (for backward compatibility) ==========
+
+export type SearchToolArgs = SearchParamsType;

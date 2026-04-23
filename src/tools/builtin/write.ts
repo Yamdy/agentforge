@@ -1,38 +1,66 @@
-import { LegacyTool as Tool } from '../../types';
+import { z } from 'zod';
+import type { Tool, ToolContext, ToolResult } from '../../types';
 import { writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, isAbsolute, dirname } from 'path';
 
-export const WriteTool: Tool = {
+// ========== Zod Parameter Schema ==========
+
+const WriteParams = z.object({
+  content: z.string().describe('The content to write to the file'),
+  filePath: z.string().describe('The absolute path to the file to write'),
+});
+
+type WriteParamsType = z.infer<typeof WriteParams>;
+
+// ========== Metadata Interface ==========
+
+interface WriteMetadata {
+  path: string;
+  bytes: number;
+  created: boolean;
+}
+
+// ========== Tool Implementation ==========
+
+export const WriteTool: Tool<WriteParamsType, WriteMetadata> = {
   name: 'write',
   description:
     'Writes a file to the local filesystem. If the directory does not exist, it will be created.',
-  parameters: {
-    type: 'object',
-    properties: {
-      content: {
-        type: 'string',
-        description: 'The content to write to the file',
-      },
-      filePath: {
-        type: 'string',
-        description: 'The absolute path to the file to write',
-      },
-    },
-    required: ['content', 'filePath'],
-  },
-  async execute(args: Record<string, unknown>) {
-    let filepath = args.filePath as string;
+  parameters: WriteParams,
+
+  async execute(
+    args: WriteParamsType,
+    ctx: ToolContext
+  ): Promise<ToolResult<WriteMetadata>> {
+    const { content, filePath: rawPath } = args;
+
+    let filepath = rawPath;
     if (!isAbsolute(filepath)) {
       filepath = join(process.cwd(), filepath);
     }
 
-    // 创建目录（如果不存在）
+    ctx.metadata({ title: `Writing ${filepath}...` });
+
+    // Create directory if it doesn't exist
     const dir = dirname(filepath);
-    if (!existsSync(dir)) {
+    const dirExisted = existsSync(dir);
+    if (!dirExisted) {
       mkdirSync(dir, { recursive: true });
     }
 
-    writeFileSync(filepath, args.content as string);
-    return `File written successfully: ${filepath}`;
+    const fileExisted = existsSync(filepath);
+    writeFileSync(filepath, content);
+
+    const bytes = Buffer.byteLength(content, 'utf8');
+
+    return {
+      title: `File written: ${filepath}`,
+      output: `File written successfully: ${filepath}`,
+      metadata: {
+        path: filepath,
+        bytes,
+        created: !fileExisted,
+      },
+    };
   },
 };

@@ -1,45 +1,48 @@
-import { LegacyTool as Tool } from '../../types';
+import { z } from 'zod';
+import type { Tool, ToolContext, ToolResult } from '../../types';
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { join, isAbsolute, dirname } from 'path';
 import { mkdirSync } from 'fs';
 
-interface EditToolArgs {
-  filePath: string;
-  oldString: string;
-  newString: string;
-  replaceAll?: boolean;
+// ========== Zod Parameter Schema ==========
+
+const EditParams = z.object({
+  filePath: z.string().describe('The path to the file to edit'),
+  oldString: z
+    .string()
+    .describe('The exact string to replace (must match completely including whitespace)'),
+  newString: z.string().describe('The new string to replace it with'),
+  replaceAll: z
+    .boolean()
+    .optional()
+    .describe('Replace all occurrences instead of just the first (default: false)'),
+});
+
+type EditParamsType = z.infer<typeof EditParams>;
+
+// ========== Metadata Interface ==========
+
+interface EditMetadata {
+  path: string;
+  replacements: number;
+  oldLines: number;
+  newLines: number;
+  created: boolean;
 }
 
-export const EditTool: Tool = {
+// ========== Tool Implementation ==========
+
+export const EditTool: Tool<EditParamsType, EditMetadata> = {
   name: 'edit',
   description:
     'Edit a file by replacing an exact string. Can perform single or multiple replacements.',
-  parameters: {
-    type: 'object',
-    properties: {
-      filePath: {
-        type: 'string',
-        description: 'The path to the file to edit',
-      },
-      oldString: {
-        type: 'string',
-        description: 'The exact string to replace (must match completely including whitespace)',
-      },
-      newString: {
-        type: 'string',
-        description: 'The new string to replace it with',
-      },
-      replaceAll: {
-        type: 'boolean',
-        description: 'Replace all occurrences instead of just the first (default: false)',
-        optional: true,
-      },
-    },
-    required: ['filePath', 'oldString', 'newString'],
-  },
-  async execute(args: Record<string, unknown>) {
-    const parsed = args as unknown as EditToolArgs;
-    let filePath = parsed.filePath;
+  parameters: EditParams,
+
+  async execute(
+    args: EditParamsType,
+    ctx: ToolContext
+  ): Promise<ToolResult<EditMetadata>> {
+    let filePath = args.filePath;
     if (!isAbsolute(filePath)) {
       filePath = join(process.cwd(), filePath);
     }
@@ -50,13 +53,36 @@ export const EditTool: Tool = {
       mkdirSync(dir, { recursive: true });
     }
 
+    ctx.metadata({ title: `Editing ${filePath}...` });
+
     // For new files, oldString should be empty
     if (!existsSync(filePath)) {
-      if (parsed.oldString === '') {
-        writeFileSync(filePath, parsed.newString, 'utf8');
-        return `Created new file: ${filePath}\nWrote ${Buffer.byteLength(parsed.newString, 'utf8')} bytes`;
+      if (args.oldString === '') {
+        writeFileSync(filePath, args.newString, 'utf8');
+        const newLines = args.newString.split('\n').length;
+        return {
+          title: `Created: ${filePath}`,
+          output: `Created new file: ${filePath}\nWrote ${Buffer.byteLength(args.newString, 'utf8')} bytes`,
+          metadata: {
+            path: filePath,
+            replacements: 1,
+            oldLines: 0,
+            newLines,
+            created: true,
+          },
+        };
       } else {
-        return `File not found: ${filePath}. To create a new file, oldString must be empty.`;
+        return {
+          title: 'Error',
+          output: `File not found: ${filePath}. To create a new file, oldString must be empty.`,
+          metadata: {
+            path: filePath,
+            replacements: 0,
+            oldLines: 0,
+            newLines: 0,
+            created: false,
+          },
+        };
       }
     }
 
@@ -67,25 +93,45 @@ export const EditTool: Tool = {
     let newContent: string;
     let replacements: number;
 
-    if (parsed.replaceAll) {
-      const regex = new RegExp(parsed.oldString.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
-      newContent = content.replace(regex, parsed.newString);
+    if (args.replaceAll) {
+      const regex = new RegExp(args.oldString.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+      newContent = content.replace(regex, args.newString);
       replacements = (content.match(regex) || []).length;
     } else {
-      const index = content.indexOf(parsed.oldString);
+      const index = content.indexOf(args.oldString);
       if (index === -1) {
-        return `Error: String not found in ${filePath}. Please check the exact string and try again.`;
+        return {
+          title: 'Error',
+          output: `Error: String not found in ${filePath}. Please check the exact string and try again.`,
+          metadata: {
+            path: filePath,
+            replacements: 0,
+            oldLines: content.split('\n').length,
+            newLines: content.split('\n').length,
+            created: false,
+          },
+        };
       }
       newContent =
         content.substring(0, index) +
-        parsed.newString +
-        content.substring(index + parsed.oldString.length);
+        args.newString +
+        content.substring(index + args.oldString.length);
       replacements = 1;
     }
 
     // Check if any replacements were made
     if (newContent === oldContent) {
-      return `No changes made. The string was found but resulted in the same content.`;
+      return {
+        title: 'No changes',
+        output: 'No changes made. The string was found but resulted in the same content.',
+        metadata: {
+          path: filePath,
+          replacements: 0,
+          oldLines: oldContent.split('\n').length,
+          newLines: newContent.split('\n').length,
+          created: false,
+        },
+      };
     }
 
     // Write back
@@ -93,6 +139,16 @@ export const EditTool: Tool = {
     const oldLines = oldContent.split('\n').length;
     const newLines = newContent.split('\n').length;
 
-    return `Successfully edited ${filePath}\nReplaced ${replacements} occurrence(s)\nLines: ${oldLines} → ${newLines}`;
+    return {
+      title: `Edited ${filePath}`,
+      output: `Successfully edited ${filePath}\nReplaced ${replacements} occurrence(s)\nLines: ${oldLines} → ${newLines}`,
+      metadata: {
+        path: filePath,
+        replacements,
+        oldLines,
+        newLines,
+        created: false,
+      },
+    };
   },
 };

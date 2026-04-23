@@ -1,39 +1,65 @@
 import fs from 'fs';
 import path from 'path';
-import type { LegacyTool as Tool } from '../../types.js';
+import { z } from 'zod';
+import type { Tool, ToolContext, ToolResult } from '../../types';
 import { createLogger } from '../../logger/index.js';
 
 const log = createLogger('tools:diffpatch');
 
-export interface DiffPatchEdit {
-  filePath: string;
-  startLine?: number;
-  endLine?: number;
-  replacement: string;
+// ========== Zod Parameter Schema ==========
+
+const DiffPatchParams = z.object({
+  filePath: z.string().describe('Absolute or relative path to the file to edit'),
+  startLine: z
+    .number()
+    .optional()
+    .describe(
+      'Starting line number (1-indexed) of the section to replace. If not provided with endLine, replaces entire file.'
+    ),
+  endLine: z
+    .number()
+    .optional()
+    .describe('Ending line number (1-indexed) of the section to replace'),
+  replacement: z.string().describe('The new content to replace the specified range with'),
+});
+
+type DiffPatchParamsType = z.infer<typeof DiffPatchParams>;
+
+// ========== Metadata Interface ==========
+
+interface DiffPatchMetadata {
+  path: string;
+  originalLines: number;
+  newLines: number;
+  changedLines: number;
 }
+
+// ========== Helper Functions ==========
 
 /**
  * Find the target section in the file content and replace it with the replacement.
  * Uses line numbers for precise targeting.
  */
-function applyDiffPatch(content: string, edit: DiffPatchEdit): string {
+function applyDiffPatch(content: string, startLine: number | undefined, endLine: number | undefined, replacement: string): string {
   const lines = content.split('\n');
 
   // If no line range given, treat as full file replacement
-  if (edit.startLine === undefined && edit.endLine === undefined) {
-    return edit.replacement;
+  if (startLine === undefined && endLine === undefined) {
+    return replacement;
   }
 
-  const start = edit.startLine ?? 1;
-  const end = edit.endLine ?? lines.length;
+  const start = startLine ?? 1;
+  const end = endLine ?? lines.length;
 
   // Lines are 1-indexed in the UI/API
   const before = lines.slice(0, start - 1);
   const after = lines.slice(end);
 
   // Insert the replacement lines
-  return [...before, ...edit.replacement.split('\n'), ...after].join('\n');
+  return [...before, ...replacement.split('\n'), ...after].join('\n');
 }
+
+// ========== Tool Implementation ==========
 
 /**
  * Diff/Patch tool - allows targeted editing of files instead of full rewrites
@@ -43,7 +69,7 @@ function applyDiffPatch(content: string, edit: DiffPatchEdit): string {
  * - Small bug fixes that don't need changing everything
  * - Reduces token usage compared to reading/writing the entire file
  */
-export const diffpatchTool: Tool = {
+export const diffpatchTool: Tool<DiffPatchParamsType, DiffPatchMetadata> = {
   name: 'diff_edit',
   description: `Make a targeted edit to a file by replacing a specific range of lines.
 Use this for incremental changes instead of rewriting the entire file.
@@ -54,46 +80,22 @@ You specify:
 - replacement: the new content for this section
 
 This reduces token consumption and is more accurate than full file rewrites for small changes.`,
-  parameters: {
-    type: 'object',
-    properties: {
-      filePath: { type: 'string', description: 'Absolute or relative path to the file to edit' },
-      startLine: {
-        type: 'number',
-        description:
-          'Starting line number (1-indexed) of the section to replace. If not provided with endLine, replaces entire file.',
-      },
-      endLine: {
-        type: 'number',
-        description: 'Ending line number (1-indexed) of the section to replace',
-      },
-      replacement: {
-        type: 'string',
-        description: 'The new content to replace the specified range with',
-      },
-    },
-    required: ['filePath', 'replacement'],
-  },
-  execute: async (args: Record<string, unknown>) => {
-    if (typeof args.filePath !== 'string') {
-      throw new Error('filePath must be a string');
-    }
-    const filePath = args.filePath;
-    const startLine = typeof args.startLine === 'number' ? args.startLine : undefined;
-    const endLine = typeof args.endLine === 'number' ? args.endLine : undefined;
-    const replacement = typeof args.replacement === 'string' ? args.replacement : '';
+  parameters: DiffPatchParams,
+
+  async execute(
+    args: DiffPatchParamsType,
+    ctx: ToolContext
+  ): Promise<ToolResult<DiffPatchMetadata>> {
+    const { filePath, startLine, endLine, replacement } = args;
+
+    ctx.metadata({ title: `Editing ${filePath}...` });
 
     if (!fs.existsSync(filePath)) {
       throw new Error(`File not found: ${filePath}. Cannot edit non-existent file.`);
     }
 
     const content = await fs.promises.readFile(filePath, 'utf-8');
-    const newContent = applyDiffPatch(content, {
-      filePath,
-      startLine,
-      endLine,
-      replacement,
-    });
+    const newContent = applyDiffPatch(content, startLine, endLine, replacement);
 
     // Ensure directory exists
     const dir = path.dirname(filePath);
@@ -106,11 +108,31 @@ This reduces token consumption and is more accurate than full file rewrites for 
 
     const lineCount = newContent.split('\n').length;
     const originalLineCount = content.split('\n').length;
+    const changedLines = (endLine ?? lineCount) - (startLine ?? 1) + 1;
 
-    return `Successfully edited file: ${filePath}
+    const output = `Successfully edited file: ${filePath}
 - Original: ${originalLineCount} lines
 - New: ${lineCount} lines
-- Changed lines: ${(endLine ?? lineCount) - (startLine ?? 1) + 1} lines changed
-`;
+- Changed lines: ${changedLines} lines changed`;
+
+    return {
+      title: `Edited ${filePath}`,
+      output,
+      metadata: {
+        path: filePath,
+        originalLines: originalLineCount,
+        newLines: lineCount,
+        changedLines,
+      },
+    };
   },
 };
+
+// ========== Legacy Export ==========
+
+export interface DiffPatchEdit {
+  filePath: string;
+  startLine?: number;
+  endLine?: number;
+  replacement: string;
+}

@@ -1,9 +1,42 @@
-import { LegacyTool as Tool } from '../../types';
+import { z } from 'zod';
+import type { Tool, ToolContext, ToolResult } from '../../types';
 import { createSandbox, type Sandbox } from '../../sandbox/index.js';
 import type { PolicyOptions } from '../../sandbox/policy.js';
 import type { AgentConfig } from '../../config/index.js';
 import { spawn } from 'child_process';
 
+// ========== Zod Parameter Schema ==========
+
+const BashParams = z.object({
+  command: z.string().describe('The command to execute'),
+  timeout: z
+    .number()
+    .optional()
+    .describe('Optional timeout in milliseconds. Default: 120000ms (2 minutes)'),
+  workdir: z
+    .string()
+    .optional()
+    .describe('The working directory. Defaults to current working directory.'),
+  description: z
+    .string()
+    .describe('Clear, concise description of what this command does in 5-10 words'),
+});
+
+type BashParamsType = z.infer<typeof BashParams>;
+
+// ========== Metadata Interface ==========
+
+interface BashMetadata {
+  exitCode: number | null;
+  duration: number;
+  truncated: boolean;
+}
+
+// ========== BashToolExecutor Class ==========
+
+/**
+ * BashToolExecutor handles the actual command execution with sandbox support.
+ */
 export class BashToolExecutor {
   private sandbox: Sandbox | null;
 
@@ -21,27 +54,37 @@ export class BashToolExecutor {
     }
   }
 
-  async execute(args: Record<string, unknown>): Promise<string> {
+  async execute(
+    args: BashParamsType,
+    ctx: ToolContext
+  ): Promise<ToolResult<BashMetadata>> {
     const DEFAULT_TIMEOUT = 120000;
     const DEFAULT_MAX_OUTPUT = 1024 * 1024;
 
-    const cwd = (args.workdir as string) || process.cwd();
-    const userTimeout = args.timeout as number;
-    const command = args.command as string;
+    const cwd = args.workdir || process.cwd();
+    const userTimeout = args.timeout;
+    const command = args.command;
+
+    const start = Date.now();
+
+    ctx.metadata({ title: `Running: ${command.slice(0, 30)}...`, progress: 0 });
 
     // If sandbox is enabled, perform path validation first
     if (this.sandbox) {
-      // Check all paths extracted from command
       const validationResult = this.validateCommand(command);
       if (validationResult !== true) {
-        return validationResult;
+        return {
+          title: 'Sandbox violation',
+          output: validationResult,
+          metadata: { exitCode: 1, duration: 0, truncated: false },
+        };
       }
     }
 
     const timeout = userTimeout ?? DEFAULT_TIMEOUT;
     const maxOutput = DEFAULT_MAX_OUTPUT;
 
-    return new Promise<string>((resolve, reject) => {
+    return new Promise<ToolResult<BashMetadata>>((resolve) => {
       const shell = process.platform === 'win32' ? 'powershell' : 'bash';
       const proc = spawn(command, {
         shell,
@@ -51,11 +94,13 @@ export class BashToolExecutor {
       });
 
       let output = '';
+      let truncated = false;
 
       const append = (chunk: Buffer) => {
         output += chunk.toString();
         if (output.length > maxOutput) {
           output = output.slice(0, maxOutput) + '\n\n[Output truncated: exceeded size limit]';
+          truncated = true;
           proc.kill();
         }
       };
@@ -64,9 +109,7 @@ export class BashToolExecutor {
       proc.stderr?.on('data', append);
 
       let timedOut = false;
-      const aborted = false;
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      let exited = false;
+      let aborted = false;
 
       const kill = () => proc.kill();
 
@@ -75,13 +118,22 @@ export class BashToolExecutor {
         kill();
       }, timeout + 100);
 
+      // Handle abort signal
+      const abortHandler = () => {
+        aborted = true;
+        kill();
+      };
+      ctx.abort.addEventListener('abort', abortHandler);
+
       const cleanup = () => {
         clearTimeout(timeoutTimer);
+        ctx.abort.removeEventListener('abort', abortHandler);
       };
 
       proc.once('exit', (code: number | null) => {
-        exited = true;
         cleanup();
+        const duration = Date.now() - start;
+
         if (timedOut) {
           output += `\n\nbash tool terminated command after exceeding timeout ${timeout} ms`;
         }
@@ -91,13 +143,34 @@ export class BashToolExecutor {
         if (this.sandbox && code !== 0) {
           output += `\n\nExit code: ${code}`;
         }
-        resolve(output);
+
+        // TODO(Task 4): Apply truncateIfNeeded for large outputs
+        // const truncatedResult = await truncateIfNeeded(output, {
+        //   maxLines: 2000,
+        //   maxBytes: 50000,
+        //   prefix: `bash_${ctx.callId}`,
+        // })
+
+        resolve({
+          title: `Exit ${code ?? 'killed'}`,
+          output,
+          truncated,
+          metadata: {
+            exitCode: code,
+            duration,
+            truncated,
+          },
+        });
       });
 
       proc.once('error', (error: Error) => {
-        exited = true;
         cleanup();
-        reject(error);
+        const duration = Date.now() - start;
+        resolve({
+          title: 'Error',
+          output: `Error executing command: ${error.message}`,
+          metadata: { exitCode: 1, duration, truncated: false },
+        });
       });
     });
   }
@@ -105,7 +178,7 @@ export class BashToolExecutor {
   private validateCommand(command: string): true | string {
     if (!this.sandbox) return true;
 
-    // Extract paths from command (copied from Sandbox implementation)
+    // Extract paths from command
     const paths: string[] = [];
 
     // Match quoted content
@@ -138,38 +211,23 @@ export class BashToolExecutor {
   }
 }
 
-// Default instance with sandbox disabled
+// ========== Tool Implementation ==========
+
+// Default executor with sandbox disabled
 const defaultExecutor = new BashToolExecutor({ enabled: false });
 
-export const BashTool: Tool = {
+export const BashTool: Tool<BashParamsType, BashMetadata> = {
   name: 'bash',
   description:
     'Executes a given bash command in a shell session. When sandbox is enabled, access is restricted to allowed paths. This tool is for terminal operations like git, npm, docker, etc.',
-  parameters: {
-    type: 'object',
-    properties: {
-      command: {
-        type: 'string',
-        description: 'The command to execute',
-      },
-      timeout: {
-        type: 'number',
-        description:
-          'Optional timeout in milliseconds. If not specified, commands will time out after 120000ms (2 minutes).',
-        optional: true,
-      },
-      workdir: {
-        type: 'string',
-        description:
-          'The working directory to run the command in. Defaults to the current working directory.',
-        optional: true,
-      },
-      description: {
-        type: 'string',
-        description: 'Clear, concise description of what this command does in 5-10 words.',
-      },
-    },
-    required: ['command', 'description'],
+  parameters: BashParams,
+
+  async execute(
+    args: BashParamsType,
+    ctx: ToolContext
+  ): Promise<ToolResult<BashMetadata>> {
+    // Use default executor (sandbox disabled)
+    // For sandbox-enabled execution, create a new executor with config
+    return defaultExecutor.execute(args, ctx);
   },
-  execute: (args: Record<string, unknown>) => defaultExecutor.execute(args),
 };

@@ -3,6 +3,14 @@ import { Observable } from 'rxjs';
 import type { ToolContext } from './tool/context';
 import type { ToolResult } from './tool/result';
 
+// Re-export Tool Context types for convenient single-import usage
+export type { ToolContext } from './tool/context';
+export type { ToolResult } from './tool/result';
+export type { MetadataInput, AskInput, AskResult } from './tool/context';
+export type { Attachment } from './tool/attachment';
+export { textResult, truncatedResult, errorResult, resultWithAttachments } from './tool/result';
+export { imageAttachment, pdfAttachment, textAttachment, jsonAttachment } from './tool/attachment';
+
 export const MessageSchema = z.object({
   role: z.enum(['system', 'user', 'assistant', 'tool']),
   content: z.string(),
