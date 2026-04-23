@@ -55,6 +55,24 @@ export type {
 } from './permission/types.js';
 export { parsePermissionConfig } from './permission/types.js';
 
+// Lifecycle middleware system
+export { ToolLifecycleManager } from './lifecycle/manager.js';
+export {
+  loggingMiddleware,
+  timingMiddleware,
+  retryMiddleware,
+  errorMiddleware,
+} from './lifecycle/middlewares/index.js';
+export type {
+  ToolLifecycleContext,
+  ToolLifecycleResult,
+  ToolLifecycleMiddleware as ToolLifecycleMiddlewareFn,
+  RetryConfig,
+  ErrorMiddlewareConfig,
+  TimingMetadata,
+  RetryMetadata,
+} from './lifecycle/types.js';
+
 export { createApp, startServer, type ServerConfig, type AgentRunner } from './server/index.js';
 export { authMiddleware, type AuthConfig } from './server/middleware/auth.js';
 

@@ -2,6 +2,7 @@ import { Tool, LegacyTool, validateTool, isNewTool, isLegacyTool } from './types
 import type { ToolContext } from './tool/context';
 import type { ToolResult } from './tool/result';
 import type { PermissionManager } from './permission/manager';
+import type { ToolLifecycleManager } from './lifecycle/manager';
 import { errorResult } from './tool/result';
 
 type AnyTool = Tool | LegacyTool;
@@ -9,6 +10,7 @@ type AnyTool = Tool | LegacyTool;
 export class ToolRegistry {
   private tools: Map<string, AnyTool> = new Map();
   private _permissionManager?: PermissionManager;
+  private _lifecycleManager?: ToolLifecycleManager;
 
   register(tool: AnyTool | AnyTool[]): void {
     if (Array.isArray(tool)) {
@@ -46,9 +48,25 @@ export class ToolRegistry {
   }
 
   /**
+   * Set the lifecycle manager for tool execution middleware.
+   * When set, tool execution will pass through the middleware chain.
+   */
+  setLifecycleManager(manager: ToolLifecycleManager): void {
+    this._lifecycleManager = manager;
+  }
+
+  /**
+   * Get the current lifecycle manager.
+   */
+  get lifecycleManager(): ToolLifecycleManager | undefined {
+    return this._lifecycleManager;
+  }
+
+  /**
    * Execute a tool with full context support.
    * Supports both new Tool interface and legacy interface.
    * If a PermissionManager is set, checks permissions before execution.
+   * If a LifecycleManager is set, executes through the middleware chain.
    *
    * @param name - Tool name
    * @param args - Tool arguments
@@ -78,6 +96,17 @@ export class ToolRegistry {
     if (isNewTool(tool)) {
       // Zod validation if schema provided
       const parsedArgs = tool.parameters?.parse(args) ?? args;
+
+      // If lifecycle manager is set, execute through middleware chain
+      if (this._lifecycleManager) {
+        return this._lifecycleManager.execute(
+          { name: tool.name, description: typeof tool.description === 'string' ? tool.description : tool.description(ctx) },
+          parsedArgs as Record<string, unknown>,
+          ctx,
+          (a, c) => tool.execute(a, c)
+        );
+      }
+
       return tool.execute(parsedArgs, ctx);
     }
 
