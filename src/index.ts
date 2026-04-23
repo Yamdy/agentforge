@@ -121,6 +121,7 @@ export type { AgentState } from './memory/types.js';
 export { AgentStateSchema } from './memory/types.js';
 export type { Checkpoint } from './memory/types.js';
 
+// Error system - base and common errors
 export {
   AppError,
   NotFoundError,
@@ -130,6 +131,59 @@ export {
   ToolNotFoundError,
   ToolExecuteError,
   LLMError,
+} from './errors/index.js';
+export type { AppErrorOptions } from './errors/index.js';
+
+// Error system - storage errors
+export {
+  StorageError,
+  StorageNotInitializedError,
+  ThreadNotFoundError,
+  CheckpointNotFoundError,
+  AgentStateNotFoundError,
+  DatabaseCorruptionError,
+  DatabaseWriteError,
+  StorageParseError,
+} from './errors/index.js';
+export type { StorageOperation } from './errors/index.js';
+
+// Error system - permission errors
+export {
+  PermissionError,
+  PermissionDeniedError,
+  InvalidPermissionRuleError,
+} from './errors/index.js';
+
+// Error system - config errors
+export {
+  ConfigError,
+  ConfigNotFoundError,
+  ConfigValidationError,
+  ConfigParseError,
+} from './errors/index.js';
+
+// Error system - agent errors
+export {
+  AgentError,
+  AgentMaxStepsError,
+  AgentTimeoutError,
+  AgentCancelledError,
+} from './errors/index.js';
+
+// Error system - type guards and helpers
+export {
+  isAppError,
+  isStorageError,
+  isPermissionError,
+  isConfigError,
+  isAgentError,
+  isNotFoundError,
+  isRecoverable,
+  isClientError,
+  isServerError,
+  toAppError,
+  getErrorChain,
+  formatErrorMessage,
   toErrorResponse,
 } from './errors/index.js';
 

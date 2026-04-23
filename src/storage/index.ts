@@ -2,7 +2,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { readJson, writeJson, remove as fsRemove, scan, ensureDir } from './filesystem.js';
 import { Lock } from './lock.js';
-import { NotFoundError } from './filesystem.js';
+import { NotFoundError } from '../errors/index.js';
 export { SQLiteMemoryStorage } from './sqlite-memory.js';
 
 export { NotFoundError };

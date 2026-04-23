@@ -11,6 +11,13 @@ import type {
 } from '../memory/types.js';
 import type { Checkpoint } from '../session/types.js';
 import type { Message } from '../types.js';
+import {
+  StorageNotInitializedError,
+  DatabaseWriteError,
+  StorageParseError,
+  type StorageOperation,
+} from '../errors/index.js';
+import { isAppError } from '../errors/guards.js';
 
 export class SQLiteMemoryStorage implements MemoryStorage {
   private db: Database | null = null;
@@ -22,16 +29,24 @@ export class SQLiteMemoryStorage implements MemoryStorage {
   }
 
   async initialize(): Promise<void> {
-    const SQL = await initSqlJs();
-    let buffer: Buffer | undefined;
+    try {
+      const SQL = await initSqlJs();
+      let buffer: Buffer | undefined;
 
-    if (fsSync.existsSync(this.dbPath)) {
-      buffer = await fs.readFile(this.dbPath);
+      if (fsSync.existsSync(this.dbPath)) {
+        buffer = await fs.readFile(this.dbPath);
+      }
+
+      this.db = new SQL.Database(buffer);
+      await this.createTables();
+      this.initialized = true;
+    } catch (err) {
+      if (isAppError(err)) throw err;
+      throw new DatabaseWriteError('initialize', 'Failed to initialize database', {
+        cause: err instanceof Error ? err : undefined,
+        context: { dbPath: this.dbPath },
+      });
     }
-
-    this.db = new SQL.Database(buffer);
-    await this.createTables();
-    this.initialized = true;
   }
 
   async close(): Promise<void> {
@@ -42,6 +57,7 @@ export class SQLiteMemoryStorage implements MemoryStorage {
     try {
       await fs.writeFile(this.dbPath, buffer);
     } catch (writeError) {
+      // Log but don't throw on close — best-effort persistence
       console.error('Failed to save database to disk:', writeError);
     } finally {
       this.db.close();
@@ -132,15 +148,15 @@ export class SQLiteMemoryStorage implements MemoryStorage {
     }
   }
 
-  private ensureInitialized(): void {
+  private ensureInitialized(operation: StorageOperation = 'getThread'): void {
     if (!this.initialized || !this.db) {
-      throw new Error('SQLiteMemoryStorage not initialized. Call initialize() first.');
+      throw new StorageNotInitializedError(operation);
     }
   }
 
   // Thread operations
   async getThread(threadId: string): Promise<Thread | null> {
-    this.ensureInitialized();
+    this.ensureInitialized('getThread');
     const result = this.db!.exec(
       'SELECT id, title, created_at, updated_at FROM threads WHERE id = ?',
       [threadId]
@@ -160,7 +176,7 @@ export class SQLiteMemoryStorage implements MemoryStorage {
   }
 
   async saveThread(thread: Thread): Promise<Thread> {
-    this.ensureInitialized();
+    this.ensureInitialized('saveThread');
     this.db!.run(
       `INSERT OR REPLACE INTO threads (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)`,
       [thread.id, thread.title ?? null, thread.createdAt.getTime(), thread.updatedAt.getTime()]
@@ -169,7 +185,7 @@ export class SQLiteMemoryStorage implements MemoryStorage {
   }
 
   async deleteThread(threadId: string): Promise<void> {
-    this.ensureInitialized();
+    this.ensureInitialized('deleteThread');
     // Delete in correct order: child tables first, then parent
     // 1. Delete agent_state (references session_id = threadId)
     this.db!.run('DELETE FROM agent_state WHERE session_id = ?', [threadId]);
@@ -186,7 +202,7 @@ export class SQLiteMemoryStorage implements MemoryStorage {
   }
 
   async listThreads(options: ListThreadsOptions = {}): Promise<Thread[]> {
-    this.ensureInitialized();
+    this.ensureInitialized('listThreads');
     const limit = options.limit ?? 50;
     const offset = options.offset ?? 0;
 
@@ -211,7 +227,7 @@ export class SQLiteMemoryStorage implements MemoryStorage {
 
   // Message operations
   async getMessages(threadId: string): Promise<Message[]> {
-    this.ensureInitialized();
+    this.ensureInitialized('getMessages');
     const result = this.db!.exec(
       'SELECT role, content, tool_call_id, tool_name FROM messages WHERE thread_id = ? ORDER BY id ASC',
       [threadId]
@@ -235,7 +251,7 @@ export class SQLiteMemoryStorage implements MemoryStorage {
   }
 
   async addMessage(threadId: string, message: Message): Promise<void> {
-    this.ensureInitialized();
+    this.ensureInitialized('addMessage');
     const timestamp = Date.now();
     const toolCallId = (message as Record<string, unknown>).toolCallId as string | undefined;
     const toolName = (message as Record<string, unknown>).toolName as string | undefined;
@@ -249,7 +265,7 @@ export class SQLiteMemoryStorage implements MemoryStorage {
 
   // Working memory
   async getWorkingMemory(threadId: string): Promise<WorkingMemory | null> {
-    this.ensureInitialized();
+    this.ensureInitialized('getWorkingMemory');
     const result = this.db!.exec(
       'SELECT content, updated_at FROM working_memory WHERE thread_id = ?',
       [threadId]
@@ -267,7 +283,7 @@ export class SQLiteMemoryStorage implements MemoryStorage {
   }
 
   async saveWorkingMemory(threadId: string, memory: WorkingMemory): Promise<void> {
-    this.ensureInitialized();
+    this.ensureInitialized('saveWorkingMemory');
     this.db!.run(
       `INSERT OR REPLACE INTO working_memory (thread_id, content, updated_at) VALUES (?, ?, ?)`,
       [threadId, memory.content, memory.updatedAt.getTime()]
@@ -276,7 +292,7 @@ export class SQLiteMemoryStorage implements MemoryStorage {
 
   // Observational memory
   async getObservationalMemory(threadId: string): Promise<Observation[] | null> {
-    this.ensureInitialized();
+    this.ensureInitialized('getObservationalMemory');
     const result = this.db!.exec(
       'SELECT id, content, timestamp, compression_level FROM observations WHERE thread_id = ? ORDER BY timestamp ASC',
       [threadId]
@@ -293,7 +309,7 @@ export class SQLiteMemoryStorage implements MemoryStorage {
   }
 
   async saveObservationalMemory(threadId: string, observations: Observation[]): Promise<void> {
-    this.ensureInitialized();
+    this.ensureInitialized('saveObservationalMemory');
 
     // Delete existing and insert new ones
     this.db!.run('DELETE FROM observations WHERE thread_id = ?', [threadId]);
@@ -309,7 +325,7 @@ export class SQLiteMemoryStorage implements MemoryStorage {
   // ========== AgentState operations ==========
 
   async getAgentState(sessionId: string, agentName: string): Promise<AgentState | null> {
-    this.ensureInitialized();
+    this.ensureInitialized('getAgentState');
     const result = this.db!.exec(
       `SELECT id, session_id, agent_name, status, step, max_steps, error, created_at, updated_at
        FROM agent_state WHERE session_id = ? AND agent_name = ?`,
@@ -335,7 +351,7 @@ export class SQLiteMemoryStorage implements MemoryStorage {
   }
 
   async saveAgentState(state: AgentState): Promise<AgentState> {
-    this.ensureInitialized();
+    this.ensureInitialized('saveAgentState');
     this.db!.run(
       `INSERT OR REPLACE INTO agent_state
        (id, session_id, agent_name, status, step, max_steps, error, created_at, updated_at)
@@ -356,12 +372,12 @@ export class SQLiteMemoryStorage implements MemoryStorage {
   }
 
   async deleteAgentState(sessionId: string, agentName: string): Promise<void> {
-    this.ensureInitialized();
+    this.ensureInitialized('deleteAgentState');
     this.db!.run('DELETE FROM agent_state WHERE session_id = ? AND agent_name = ?', [sessionId, agentName]);
   }
 
   async listAgentStates(sessionId: string): Promise<AgentState[]> {
-    this.ensureInitialized();
+    this.ensureInitialized('listAgentStates');
     const result = this.db!.exec(
       `SELECT id, session_id, agent_name, status, step, max_steps, error, created_at, updated_at
        FROM agent_state WHERE session_id = ? ORDER BY updated_at DESC`,
@@ -386,7 +402,7 @@ export class SQLiteMemoryStorage implements MemoryStorage {
   // ========== Checkpoint operations ==========
 
   async getCheckpoint(checkpointId: string): Promise<Checkpoint | null> {
-    this.ensureInitialized();
+    this.ensureInitialized('getCheckpoint');
     const result = this.db!.exec(
       `SELECT id, session_id, step_index, messages, tool_calls, state, created_at, metadata
        FROM checkpoints WHERE id = ?`,
@@ -398,20 +414,24 @@ export class SQLiteMemoryStorage implements MemoryStorage {
     }
 
     const [id, sessionId, stepIndex, messages, toolCalls, state, createdAt, metadata] = result[0].values[0];
-    return {
-      id: id as string,
-      sessionId: sessionId as string,
-      stepIndex: stepIndex as number,
-      messages: JSON.parse(messages as string),
-      toolCalls: JSON.parse(toolCalls as string),
-      state: JSON.parse(state as string),
-      createdAt: createdAt as number,
-      metadata: metadata ? JSON.parse(metadata as string) : undefined,
-    };
+    try {
+      return {
+        id: id as string,
+        sessionId: sessionId as string,
+        stepIndex: stepIndex as number,
+        messages: JSON.parse(messages as string),
+        toolCalls: JSON.parse(toolCalls as string),
+        state: JSON.parse(state as string),
+        createdAt: createdAt as number,
+        metadata: metadata ? JSON.parse(metadata as string) : undefined,
+      };
+    } catch (err) {
+      throw new StorageParseError('getCheckpoint', 'checkpoint data', err instanceof Error ? err : undefined);
+    }
   }
 
   async saveCheckpoint(checkpoint: Checkpoint): Promise<Checkpoint> {
-    this.ensureInitialized();
+    this.ensureInitialized('saveCheckpoint');
     this.db!.run(
       `INSERT OR REPLACE INTO checkpoints
        (id, session_id, step_index, messages, tool_calls, state, created_at, metadata)
@@ -431,7 +451,7 @@ export class SQLiteMemoryStorage implements MemoryStorage {
   }
 
   async listCheckpoints(sessionId: string): Promise<Checkpoint[]> {
-    this.ensureInitialized();
+    this.ensureInitialized('listCheckpoints');
     const result = this.db!.exec(
       `SELECT id, session_id, step_index, messages, tool_calls, state, created_at, metadata
        FROM checkpoints WHERE session_id = ? ORDER BY step_index DESC`,
@@ -440,20 +460,26 @@ export class SQLiteMemoryStorage implements MemoryStorage {
 
     if (result.length === 0) return [];
 
-    return result[0].values.map(([id, sessionIdDb, stepIndex, messages, toolCalls, state, createdAt, metadata]) => ({
-      id: id as string,
-      sessionId: sessionIdDb as string,
-      stepIndex: stepIndex as number,
-      messages: JSON.parse(messages as string),
-      toolCalls: JSON.parse(toolCalls as string),
-      state: JSON.parse(state as string),
-      createdAt: createdAt as number,
-      metadata: metadata ? JSON.parse(metadata as string) : undefined,
-    }));
+    return result[0].values.map(([id, sessionIdDb, stepIndex, messages, toolCalls, state, createdAt, metadata]) => {
+      try {
+        return {
+          id: id as string,
+          sessionId: sessionIdDb as string,
+          stepIndex: stepIndex as number,
+          messages: JSON.parse(messages as string),
+          toolCalls: JSON.parse(toolCalls as string),
+          state: JSON.parse(state as string),
+          createdAt: createdAt as number,
+          metadata: metadata ? JSON.parse(metadata as string) : undefined,
+        };
+      } catch (err) {
+        throw new StorageParseError('listCheckpoints', 'checkpoint data', err instanceof Error ? err : undefined);
+      }
+    });
   }
 
   async deleteCheckpoint(checkpointId: string): Promise<boolean> {
-    this.ensureInitialized();
+    this.ensureInitialized('deleteCheckpoint');
     const existing = await this.getCheckpoint(checkpointId);
     if (!existing) return false;
 

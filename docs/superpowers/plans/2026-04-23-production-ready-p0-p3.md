@@ -1,7 +1,7 @@
 # AgentForge 生产可用增强计划 - 执行状态
 
-> **最后更新**: 2026-04-24 16:50
-> **当前阶段**: P2 Task 1 完成，370/380 测试通过
+> **最后更新**: 2026-04-24 23:55
+> **当前阶段**: P2 Task 3 完成
 
 ---
 
@@ -18,8 +18,8 @@
 | **P1 Task 2: 生命周期 Middleware** | ✅ 完成 | `ee00904` |
 | **P1 Task 3: 持久化存储扩展** | ✅ 完成 | — |
 | **P2 Task 1: 安全默认策略** | ✅ 完成 | 待提交 |
-| **P2 Task 2: 存储层外键约束** | ✅ 设计完成 | 待实现 |
-| **P2 Task 3: 错误处理增强** | 📋 计划中 | — |
+| **P2 Task 2: 存储层外键约束** | ✅ 完成 | `de1ab1a` |
+| **P2 Task 3: 错误处理增强** | ✅ 完成 | — |
 | **P2 Task 4: 可观测性集成** | 📋 计划中 | — |
 | **P3 Task 1: CheckpointManager 迁移** | 📋 计划中 | — |
 | **P3 Task 2: Session/Thread 术语统一** | 📋 计划中 | — |
@@ -583,7 +583,7 @@ deleteCheckpoint?(checkpointId: string): Promise<boolean>;
 | 项目 | 状态 | 优先级 |
 |------|------|--------|
 | **P2 Task 1: 安全默认策略** | ✅ 完成 | — |
-| **P2 Task 2: 存储层外键约束** | 待开发 | 中 |
+| **P2 Task 2: 存储层外键约束** | ✅ 完成 | — |
 | **P2 Task 3: 错误处理增强** | 待开发 | 中 |
 | **P2 Task 4: 可观测性集成** | 待开发 | 低 |
 
@@ -1607,20 +1607,1037 @@ Phase 2: 测试更新
 
 ### P2 Task 3: 错误处理增强
 
-**目标**: 统一错误类型，提供更好的错误信息
+**目标**: 统一错误类型，提供更好的错误信息和调试体验
 
-**预期产出**:
+---
+
+## 详细设计
+
+### 1. 现状分析
+
+**已有错误类** (`src/errors/types.ts`):
+```typescript
+AppError              // 基类 (code, message, status)
+├── NotFoundError     // 404
+├── BadRequestError   // 400
+├── UnauthorizedError // 401
+├── ValidationError   // 400 + errors[]
+├── ToolNotFoundError // 404
+├── ToolExecuteError  // 500
+└── LLMError          // 500
+```
+
+**问题识别**:
+
+| 问题 | 描述 | 影响 |
+|------|------|------|
+| **存储层错误缺失** | `SQLiteMemoryStorage` 使用 `throw new Error()` | 无法区分错误类型 |
+| **错误信息不完整** | 缺少操作上下文、表名、查询参数 | 调试困难 |
+| **重复定义** | `storage/filesystem.ts` 定义了独立的 `NotFoundError` | 与 `errors/types.ts` 冲突 |
+| **错误恢复困难** | 无法通过 code 判断是否可重试 | 需要字符串匹配 |
+| **结构化数据丢失** | 错误信息只有字符串 | 无法程序化处理 |
+
+**错误使用统计**:
+- `throw new Error()`: 41 处
+- `catch` 块: 69 处
+- 现有自定义错误类: 7 个
+
+---
+
+### 2. 设计目标
+
+1. **类型安全**: 每种错误场景有对应的错误类
+2. **信息丰富**: 包含操作名、表名、查询参数、原因
+3. **可恢复性**: 提供 `recoverable` 标记，支持自动重试
+4. **向后兼容**: 不破坏现有 API
+5. **调试友好**: 包含调用栈和上下文
+
+---
+
+### 3. 核心接口设计
+
+#### 3.1 AppError 增强
+
+```typescript
+// src/errors/types.ts
+
+/**
+ * 应用错误基类
+ * 
+ * @example
+ * ```typescript
+ * throw new AppError('CONFIG_ERROR', 'Invalid configuration', 500, {
+ *   recoverable: false,
+ *   context: { configPath: '/path/to/config.json' }
+ * })
+ * ```
+ */
+export class AppError extends Error {
+  public readonly timestamp: Date;
+
+  constructor(
+    public readonly code: string,
+    message: string,
+    public readonly status: number = 500,
+    public readonly options?: {
+      /** 是否可恢复（重试可能成功） */
+      recoverable?: boolean;
+      /** 原始错误（用于错误链追踪） */
+      cause?: Error;
+      /** 额外上下文信息 */
+      context?: Record<string, unknown>;
+    }
+  ) {
+    super(message, { cause: options?.cause });
+    this.name = 'AppError';
+    this.timestamp = new Date();
+  }
+
+  /** 是否可恢复 */
+  get recoverable(): boolean {
+    return this.options?.recoverable ?? false;
+  }
+
+  /** 获取上下文信息 */
+  get context(): Record<string, unknown> | undefined {
+    return this.options?.context;
+  }
+
+  /** 获取原始错误 */
+  get cause(): Error | undefined {
+    return this.options?.cause;
+  }
+
+  toJSON(): {
+    error: {
+      code: string;
+      message: string;
+      status: number;
+      recoverable: boolean;
+      timestamp: string;
+      context?: Record<string, unknown>;
+    };
+  } {
+    return {
+      error: {
+        code: this.code,
+        message: this.message,
+        status: this.status,
+        recoverable: this.recoverable,
+        timestamp: this.timestamp.toISOString(),
+        context: this.context,
+      },
+    };
+  }
+
+  /** 格式化为可读字符串 */
+  toString(): string {
+    const parts = [`[${this.code}] ${this.message}`];
+    if (this.context) {
+      parts.push(`Context: ${JSON.stringify(this.context)}`);
+    }
+    if (this.cause) {
+      parts.push(`Caused by: ${this.cause.message}`);
+    }
+    return parts.join('\n');
+  }
+}
+```
+
+#### 3.2 存储层错误
+
 ```typescript
 // src/errors/storage.ts
+
+import { AppError } from './types.js';
+
+/**
+ * 存储操作名称
+ */
+export type StorageOperation =
+  | 'initialize'
+  | 'close'
+  | 'getThread'
+  | 'saveThread'
+  | 'deleteThread'
+  | 'listThreads'
+  | 'getMessages'
+  | 'addMessage'
+  | 'getWorkingMemory'
+  | 'saveWorkingMemory'
+  | 'getObservationalMemory'
+  | 'saveObservationalMemory'
+  | 'getAgentState'
+  | 'saveAgentState'
+  | 'deleteAgentState'
+  | 'listAgentStates'
+  | 'getCheckpoint'
+  | 'saveCheckpoint'
+  | 'listCheckpoints'
+  | 'deleteCheckpoint';
+
+/**
+ * 存储层错误基类
+ */
 export class StorageError extends AppError {
-  constructor(message: string, public readonly operation: string, public readonly table?: string) {
-    super(message);
+  constructor(
+    operation: StorageOperation,
+    message: string,
+    options?: {
+      recoverable?: boolean;
+      cause?: Error;
+      context?: Record<string, unknown>;
+      table?: string;
+    }
+  ) {
+    super('STORAGE_ERROR', message, 500, {
+      ...options,
+      context: {
+        operation,
+        table: options?.table,
+        ...options?.context,
+      },
+    });
+    this.name = 'StorageError';
   }
 }
 
-export class CheckpointNotFoundError extends StorageError { ... }
-export class AgentStateNotFoundError extends StorageError { ... }
-export class DatabaseCorruptionError extends StorageError { ... }
+/**
+ * 存储未初始化错误
+ */
+export class StorageNotInitializedError extends StorageError {
+  constructor(operation: StorageOperation) {
+    super(operation, 'Storage not initialized. Call initialize() first.', {
+      recoverable: true,
+    });
+    this.name = 'StorageNotInitializedError';
+    this.code = 'STORAGE_NOT_INITIALIZED';
+  }
+}
+
+/**
+ * Thread 未找到错误
+ */
+export class ThreadNotFoundError extends StorageError {
+  constructor(threadId: string) {
+    super('getThread', `Thread not found: ${threadId}`, {
+      context: { threadId },
+    });
+    this.name = 'ThreadNotFoundError';
+    this.code = 'THREAD_NOT_FOUND';
+    this.status = 404;
+  }
+}
+
+/**
+ * Checkpoint 未找到错误
+ */
+export class CheckpointNotFoundError extends StorageError {
+  constructor(checkpointId: string) {
+    super('getCheckpoint', `Checkpoint not found: ${checkpointId}`, {
+      context: { checkpointId },
+    });
+    this.name = 'CheckpointNotFoundError';
+    this.code = 'CHECKPOINT_NOT_FOUND';
+    this.status = 404;
+  }
+}
+
+/**
+ * AgentState 未找到错误
+ */
+export class AgentStateNotFoundError extends StorageError {
+  constructor(sessionId: string, agentName: string) {
+    super('getAgentState', `Agent state not found: ${sessionId}/${agentName}`, {
+      context: { sessionId, agentName },
+    });
+    this.name = 'AgentStateNotFoundError';
+    this.code = 'AGENT_STATE_NOT_FOUND';
+    this.status = 404;
+  }
+}
+
+/**
+ * 数据库损坏错误
+ */
+export class DatabaseCorruptionError extends StorageError {
+  constructor(
+    operation: StorageOperation,
+    message: string,
+    options?: {
+      cause?: Error;
+      context?: Record<string, unknown>;
+    }
+  ) {
+    super(operation, message, {
+      ...options,
+      recoverable: false,
+    });
+    this.name = 'DatabaseCorruptionError';
+    this.code = 'DATABASE_CORRUPTION';
+  }
+}
+
+/**
+ * 数据库写入错误
+ */
+export class DatabaseWriteError extends StorageError {
+  constructor(
+    operation: StorageOperation,
+    message: string,
+    options?: {
+      cause?: Error;
+      table?: string;
+    }
+  ) {
+    super(operation, message, {
+      ...options,
+      recoverable: true, // 写入失败通常可以重试
+    });
+    this.name = 'DatabaseWriteError';
+    this.code = 'DATABASE_WRITE_ERROR';
+  }
+}
+
+/**
+ * JSON 解析错误（存储层）
+ */
+export class StorageParseError extends StorageError {
+  constructor(
+    operation: StorageOperation,
+    field: string,
+    cause?: Error
+  ) {
+    super(operation, `Failed to parse JSON field: ${field}`, {
+      cause,
+      context: { field },
+      recoverable: false,
+    });
+    this.name = 'StorageParseError';
+    this.code = 'STORAGE_PARSE_ERROR';
+  }
+}
+```
+
+#### 3.3 权限错误
+
+```typescript
+// src/errors/permission.ts
+
+import { AppError } from './types.js';
+
+/**
+ * 权限错误基类
+ */
+export class PermissionError extends AppError {
+  constructor(
+    message: string,
+    options?: {
+      recoverable?: boolean;
+      cause?: Error;
+      context?: Record<string, unknown>;
+    }
+  ) {
+    super('PERMISSION_ERROR', message, 403, options);
+    this.name = 'PermissionError';
+  }
+}
+
+/**
+ * 权限被拒绝错误
+ */
+export class PermissionDeniedError extends PermissionError {
+  constructor(
+    category: string,
+    input: string,
+    agentName?: string
+  ) {
+    super(`Permission denied: ${category} "${input}"`, {
+      context: { category, input, agentName },
+    });
+    this.name = 'PermissionDeniedError';
+    this.code = 'PERMISSION_DENIED';
+  }
+}
+
+/**
+ * 权限规则无效错误
+ */
+export class InvalidPermissionRuleError extends PermissionError {
+  constructor(rule: string, reason: string) {
+    super(`Invalid permission rule: ${rule}. ${reason}`, {
+      context: { rule, reason },
+      recoverable: false,
+    });
+    this.name = 'InvalidPermissionRuleError';
+    this.code = 'INVALID_PERMISSION_RULE';
+    this.status = 400;
+  }
+}
+```
+
+#### 3.4 配置错误
+
+```typescript
+// src/errors/config.ts
+
+import { AppError } from './types.js';
+
+/**
+ * 配置错误基类
+ */
+export class ConfigError extends AppError {
+  constructor(
+    message: string,
+    options?: {
+      recoverable?: boolean;
+      cause?: Error;
+      context?: Record<string, unknown>;
+    }
+  ) {
+    super('CONFIG_ERROR', message, 400, options);
+    this.name = 'ConfigError';
+  }
+}
+
+/**
+ * 配置文件未找到错误
+ */
+export class ConfigNotFoundError extends ConfigError {
+  constructor(configPath: string) {
+    super(`Configuration file not found: ${configPath}`, {
+      context: { configPath },
+    });
+    this.name = 'ConfigNotFoundError';
+    this.code = 'CONFIG_NOT_FOUND';
+    this.status = 404;
+  }
+}
+
+/**
+ * 配置验证错误
+ */
+export class ConfigValidationError extends ConfigError {
+  constructor(
+    message: string,
+    errors: { field: string; message: string }[]
+  ) {
+    super(message, {
+      context: { errors },
+    });
+    this.name = 'ConfigValidationError';
+    this.code = 'CONFIG_VALIDATION_ERROR';
+  }
+}
+
+/**
+ * 配置解析错误
+ */
+export class ConfigParseError extends ConfigError {
+  constructor(configPath: string, cause?: Error) {
+    super(`Failed to parse configuration: ${configPath}`, {
+      cause,
+      context: { configPath },
+    });
+    this.name = 'ConfigParseError';
+    this.code = 'CONFIG_PARSE_ERROR';
+  }
+}
+```
+
+#### 3.5 Agent 错误
+
+```typescript
+// src/errors/agent.ts
+
+import { AppError } from './types.js';
+
+/**
+ * Agent 错误基类
+ */
+export class AgentError extends AppError {
+  constructor(
+    message: string,
+    options?: {
+      recoverable?: boolean;
+      cause?: Error;
+      context?: Record<string, unknown>;
+    }
+  ) {
+    super('AGENT_ERROR', message, 500, options);
+    this.name = 'AgentError';
+  }
+}
+
+/**
+ * Agent 执行超限错误
+ */
+export class AgentMaxStepsError extends AgentError {
+  constructor(maxSteps: number, currentStep: number) {
+    super(`Agent exceeded maximum steps: ${currentStep}/${maxSteps}`, {
+      context: { maxSteps, currentStep },
+      recoverable: false,
+    });
+    this.name = 'AgentMaxStepsError';
+    this.code = 'AGENT_MAX_STEPS';
+  }
+}
+
+/**
+ * Agent 超时错误
+ */
+export class AgentTimeoutError extends AgentError {
+  constructor(timeout: number) {
+    super(`Agent execution timed out after ${timeout}ms`, {
+      context: { timeout },
+      recoverable: true,
+    });
+    this.name = 'AgentTimeoutError';
+    this.code = 'AGENT_TIMEOUT';
+  }
+}
+
+/**
+ * Agent 被取消错误
+ */
+export class AgentCancelledError extends AgentError {
+  constructor(reason?: string) {
+    super(`Agent execution cancelled${reason ? `: ${reason}` : ''}`, {
+      context: { reason },
+      recoverable: false,
+    });
+    this.name = 'AgentCancelledError';
+    this.code = 'AGENT_CANCELLED';
+  }
+}
+```
+
+---
+
+### 4. 类型守卫和辅助函数
+
+```typescript
+// src/errors/guards.ts
+
+import { AppError } from './types.js';
+import {
+  StorageError,
+  StorageNotInitializedError,
+  ThreadNotFoundError,
+  CheckpointNotFoundError,
+  AgentStateNotFoundError,
+} from './storage.js';
+import {
+  PermissionError,
+  PermissionDeniedError,
+} from './permission.js';
+import {
+  ConfigError,
+  ConfigNotFoundError,
+  ConfigValidationError,
+} from './config.js';
+import {
+  AgentError,
+  AgentMaxStepsError,
+  AgentTimeoutError,
+  AgentCancelledError,
+} from './agent.js';
+
+/** 类型守卫：是否为 AppError */
+export function isAppError(err: unknown): err is AppError {
+  return err instanceof AppError;
+}
+
+/** 类型守卫：是否为存储错误 */
+export function isStorageError(err: unknown): err is StorageError {
+  return err instanceof StorageError;
+}
+
+/** 类型守卫：是否为权限错误 */
+export function isPermissionError(err: unknown): err is PermissionError {
+  return err instanceof PermissionError;
+}
+
+/** 类型守卫：是否为配置错误 */
+export function isConfigError(err: unknown): err is ConfigError {
+  return err instanceof ConfigError;
+}
+
+/** 类型守卫：是否为 Agent 错误 */
+export function isAgentError(err: unknown): err is AgentError {
+  return err instanceof AgentError;
+}
+
+/** 类型守卫：是否为 404 错误 */
+export function isNotFoundError(err: unknown): err is AppError {
+  return isAppError(err) && err.status === 404;
+}
+
+/** 类型守卫：是否可恢复 */
+export function isRecoverable(err: unknown): boolean {
+  return isAppError(err) && err.recoverable;
+}
+
+/**
+ * 将任意错误转换为 AppError
+ */
+export function toAppError(err: unknown): AppError {
+  if (isAppError(err)) return err;
+  
+  const message = err instanceof Error ? err.message : String(err);
+  const cause = err instanceof Error ? err : undefined;
+  
+  return new AppError('INTERNAL_ERROR', message, 500, { cause });
+}
+
+/**
+ * 获取错误链（从 cause 向上追溯）
+ */
+export function getErrorChain(err: Error): Error[] {
+  const chain: Error[] = [err];
+  let current = err;
+  
+  while (current.cause instanceof Error) {
+    chain.push(current.cause);
+    current = current.cause;
+  }
+  
+  return chain;
+}
+```
+
+---
+
+### 5. 模块导出
+
+```typescript
+// src/errors/index.ts
+
+// 基类
+export { AppError } from './types.js';
+
+// 通用错误
+export {
+  NotFoundError,
+  BadRequestError,
+  UnauthorizedError,
+  ValidationError,
+  ToolNotFoundError,
+  ToolExecuteError,
+  LLMError,
+} from './types.js';
+
+// 存储错误
+export {
+  StorageError,
+  StorageNotInitializedError,
+  ThreadNotFoundError,
+  CheckpointNotFoundError,
+  AgentStateNotFoundError,
+  DatabaseCorruptionError,
+  DatabaseWriteError,
+  StorageParseError,
+} from './storage.js';
+export type { StorageOperation } from './storage.js';
+
+// 权限错误
+export {
+  PermissionError,
+  PermissionDeniedError,
+  InvalidPermissionRuleError,
+} from './permission.js';
+
+// 配置错误
+export {
+  ConfigError,
+  ConfigNotFoundError,
+  ConfigValidationError,
+  ConfigParseError,
+} from './config.js';
+
+// Agent 错误
+export {
+  AgentError,
+  AgentMaxStepsError,
+  AgentTimeoutError,
+  AgentCancelledError,
+} from './agent.js';
+
+// 类型守卫和辅助函数
+export {
+  isAppError,
+  isStorageError,
+  isPermissionError,
+  isConfigError,
+  isAgentError,
+  isNotFoundError,
+  isRecoverable,
+  toAppError,
+  getErrorChain,
+} from './guards.js';
+
+// 类型导出
+export type { AppError as AppErrorType } from './types.js';
+```
+
+---
+
+### 6. SQLiteMemoryStorage 改造示例
+
+```typescript
+// src/storage/sqlite-memory.ts
+
+import {
+  StorageNotInitializedError,
+  ThreadNotFoundError,
+  CheckpointNotFoundError,
+  AgentStateNotFoundError,
+  DatabaseWriteError,
+  StorageParseError,
+} from '../errors/index.js';
+
+export class SQLiteMemoryStorage implements MemoryStorage {
+  // ...
+
+  private ensureInitialized(): void {
+    if (!this.initialized || !this.db) {
+      throw new StorageNotInitializedError('unknown');
+    }
+  }
+
+  async initialize(): Promise<void> {
+    try {
+      const SQL = await initSqlJs();
+      // ...
+    } catch (err) {
+      throw new DatabaseWriteError('initialize', 'Failed to initialize database', {
+        cause: err instanceof Error ? err : undefined,
+      });
+    }
+  }
+
+  async getThread(threadId: string): Promise<Thread | null> {
+    this.ensureInitialized();
+    
+    try {
+      const result = this.db!.exec(
+        'SELECT id, title, created_at, updated_at FROM threads WHERE id = ?',
+        [threadId]
+      );
+
+      if (result.length === 0 || result[0].values.length === 0) {
+        return null; // 返回 null 而非抛出，符合接口约定
+      }
+      // ...
+    } catch (err) {
+      if (err instanceof StorageError) throw err;
+      throw new DatabaseWriteError('getThread', 'Failed to get thread', {
+        cause: err instanceof Error ? err : undefined,
+        context: { threadId },
+      });
+    }
+  }
+
+  async getCheckpoint(checkpointId: string): Promise<Checkpoint | null> {
+    this.ensureInitialized();
+    
+    try {
+      const result = this.db!.exec(
+        `SELECT id, session_id, step_index, messages, tool_calls, state, created_at, metadata
+         FROM checkpoints WHERE id = ?`,
+        [checkpointId]
+      );
+
+      if (result.length === 0 || result[0].values.length === 0) {
+        return null;
+      }
+
+      const [id, sessionId, stepIndex, messages, toolCalls, state, createdAt, metadata] = result[0].values[0];
+      
+      return {
+        id: id as string,
+        sessionId: sessionId as string,
+        stepIndex: stepIndex as number,
+        messages: JSON.parse(messages as string),
+        toolCalls: JSON.parse(toolCalls as string),
+        state: JSON.parse(state as string),
+        createdAt: createdAt as number,
+        metadata: metadata ? JSON.parse(metadata as string) : undefined,
+      };
+    } catch (err) {
+      // JSON 解析错误
+      if (err instanceof SyntaxError) {
+        throw new StorageParseError('getCheckpoint', 'unknown', err);
+      }
+      if (err instanceof StorageError) throw err;
+      throw new DatabaseWriteError('getCheckpoint', 'Failed to get checkpoint', {
+        cause: err instanceof Error ? err : undefined,
+        context: { checkpointId },
+      });
+    }
+  }
+}
+```
+
+---
+
+### 7. 文件变更清单
+
+| 文件 | 变更类型 | 变更内容 |
+|------|----------|----------|
+| `src/errors/types.ts` | **Modify** | 增强 AppError 类（options, recoverable, cause, context） |
+| `src/errors/storage.ts` | **Create** | StorageError + 7 个子类 |
+| `src/errors/permission.ts` | **Create** | PermissionError + 2 个子类 |
+| `src/errors/config.ts` | **Create** | ConfigError + 3 个子类 |
+| `src/errors/agent.ts` | **Create** | AgentError + 3 个子类 |
+| `src/errors/guards.ts` | **Create** | 类型守卫 + 辅助函数 |
+| `src/errors/index.ts` | **Modify** | 导出所有新错误类 |
+| `src/storage/sqlite-memory.ts` | **Modify** | 使用新错误类替换 `throw new Error()` |
+| `src/storage/filesystem.ts` | **Modify** | 移除重复 NotFoundError，使用 errors 模块 |
+| `src/index.ts` | **Modify** | 导出错误模块 |
+| `tests/errors/errors.test.ts` | **Create** | 错误类测试 |
+
+---
+
+### 8. 测试用例设计
+
+```typescript
+// tests/errors/errors.test.ts
+
+import { describe, it, expect } from 'vitest';
+import {
+  AppError,
+  StorageError,
+  StorageNotInitializedError,
+  ThreadNotFoundError,
+  CheckpointNotFoundError,
+  AgentStateNotFoundError,
+  DatabaseCorruptionError,
+  PermissionDeniedError,
+  ConfigNotFoundError,
+  AgentMaxStepsError,
+  isAppError,
+  isStorageError,
+  isRecoverable,
+  getErrorChain,
+} from '../src/errors/index.js';
+
+describe('AppError', () => {
+  it('should create basic error', () => {
+    const err = new AppError('TEST_ERROR', 'Test message', 400);
+    expect(err.code).toBe('TEST_ERROR');
+    expect(err.message).toBe('Test message');
+    expect(err.status).toBe(400);
+    expect(err.recoverable).toBe(false);
+  });
+
+  it('should support options', () => {
+    const cause = new Error('Original error');
+    const err = new AppError('TEST_ERROR', 'Test', 500, {
+      recoverable: true,
+      cause,
+      context: { foo: 'bar' },
+    });
+    expect(err.recoverable).toBe(true);
+    expect(err.cause).toBe(cause);
+    expect(err.context).toEqual({ foo: 'bar' });
+  });
+
+  it('should serialize to JSON', () => {
+    const err = new AppError('TEST', 'Message', 500, {
+      context: { key: 'value' },
+    });
+    const json = err.toJSON();
+    expect(json.error.code).toBe('TEST');
+    expect(json.error.message).toBe('Message');
+    expect(json.error.context).toEqual({ key: 'value' });
+    expect(json.error.timestamp).toBeDefined();
+  });
+});
+
+describe('Storage Errors', () => {
+  it('StorageNotInitializedError should be recoverable', () => {
+    const err = new StorageNotInitializedError('getThread');
+    expect(err.recoverable).toBe(true);
+    expect(err.code).toBe('STORAGE_NOT_INITIALIZED');
+  });
+
+  it('ThreadNotFoundError should have 404 status', () => {
+    const err = new ThreadNotFoundError('thread-123');
+    expect(err.status).toBe(404);
+    expect(err.context).toEqual({ threadId: 'thread-123' });
+  });
+
+  it('CheckpointNotFoundError should have correct context', () => {
+    const err = new CheckpointNotFoundError('cp-456');
+    expect(err.code).toBe('CHECKPOINT_NOT_FOUND');
+    expect(err.context).toEqual({ checkpointId: 'cp-456' });
+  });
+
+  it('AgentStateNotFoundError should include session and agent', () => {
+    const err = new AgentStateNotFoundError('session-1', 'agent-1');
+    expect(err.context).toEqual({ sessionId: 'session-1', agentName: 'agent-1' });
+  });
+
+  it('DatabaseCorruptionError should not be recoverable', () => {
+    const err = new DatabaseCorruptionError('getThread', 'Corrupted data');
+    expect(err.recoverable).toBe(false);
+  });
+});
+
+describe('Permission Errors', () => {
+  it('PermissionDeniedError should have 403 status', () => {
+    const err = new PermissionDeniedError('bash', 'rm -rf /', 'agent-1');
+    expect(err.status).toBe(403);
+    expect(err.context).toEqual({
+      category: 'bash',
+      input: 'rm -rf /',
+      agentName: 'agent-1',
+    });
+  });
+});
+
+describe('Config Errors', () => {
+  it('ConfigNotFoundError should have 404 status', () => {
+    const err = new ConfigNotFoundError('/path/to/config.json');
+    expect(err.status).toBe(404);
+    expect(err.context).toEqual({ configPath: '/path/to/config.json' });
+  });
+});
+
+describe('Agent Errors', () => {
+  it('AgentMaxStepsError should not be recoverable', () => {
+    const err = new AgentMaxStepsError(10, 11);
+    expect(err.recoverable).toBe(false);
+    expect(err.context).toEqual({ maxSteps: 10, currentStep: 11 });
+  });
+
+  it('AgentTimeoutError should be recoverable', () => {
+    const err = new AgentTimeoutError(30000);
+    expect(err.recoverable).toBe(true);
+  });
+});
+
+describe('Type Guards', () => {
+  it('isAppError should work', () => {
+    const err = new AppError('TEST', 'message');
+    expect(isAppError(err)).toBe(true);
+    expect(isAppError(new Error('test'))).toBe(false);
+  });
+
+  it('isStorageError should work', () => {
+    const err = new ThreadNotFoundError('t1');
+    expect(isStorageError(err)).toBe(true);
+  });
+
+  it('isRecoverable should work', () => {
+    const err1 = new AgentTimeoutError(1000);
+    const err2 = new AgentMaxStepsError(10, 11);
+    expect(isRecoverable(err1)).toBe(true);
+    expect(isRecoverable(err2)).toBe(false);
+  });
+});
+
+describe('getErrorChain', () => {
+  it('should return error chain', () => {
+    const cause1 = new Error('Cause 1');
+    const cause2 = new Error('Cause 2');
+    Object.assign(cause2, { cause: cause1 });
+    
+    const err = new AppError('TEST', 'Main error', 500, { cause: cause2 });
+    const chain = getErrorChain(err);
+    
+    expect(chain).toHaveLength(3);
+    expect(chain[0]).toBe(err);
+    expect(chain[1]).toBe(cause2);
+    expect(chain[2]).toBe(cause1);
+  });
+});
+```
+
+---
+
+### 9. 实现步骤
+
+```
+Phase 1: 增强基类
+├── [ ] src/errors/types.ts - AppError 增加 options 参数
+├── [ ] src/errors/types.ts - 增加 recoverable, cause, context 属性
+├── [ ] src/errors/types.ts - 增强 toJSON() 和 toString()
+└── [ ] 验证: 编译通过
+
+Phase 2: 创建错误子类
+├── [ ] src/errors/storage.ts - StorageError 基类
+├── [ ] src/errors/storage.ts - 7 个存储错误子类
+├── [ ] src/errors/permission.ts - PermissionError + 2 个子类
+├── [ ] src/errors/config.ts - ConfigError + 3 个子类
+├── [ ] src/errors/agent.ts - AgentError + 3 个子类
+└── [ ] 验证: 编译通过
+
+Phase 3: 类型守卫
+├── [ ] src/errors/guards.ts - 8 个类型守卫函数
+├── [ ] src/errors/guards.ts - toAppError 辅助函数
+├── [ ] src/errors/guards.ts - getErrorChain 辅助函数
+└── [ ] 验证: 编译通过
+
+Phase 4: 模块导出
+├── [ ] src/errors/index.ts - 导出所有新错误类
+├── [ ] src/index.ts - 顶层导出
+└── [ ] 验证: 导出正确
+
+Phase 5: 存储层改造
+├── [ ] src/storage/sqlite-memory.ts - ensureInitialized 使用 StorageNotInitializedError
+├── [ ] src/storage/sqlite-memory.ts - JSON.parse 使用 StorageParseError
+├── [ ] src/storage/sqlite-memory.ts - 数据库操作使用 DatabaseWriteError
+├── [ ] src/storage/filesystem.ts - 移除重复 NotFoundError
+└── [ ] 验证: 编译通过
+
+Phase 6: 测试
+├── [ ] tests/errors/errors.test.ts - AppError 测试
+├── [ ] tests/errors/errors.test.ts - 存储错误测试
+├── [ ] tests/errors/errors.test.ts - 权限错误测试
+├── [ ] tests/errors/errors.test.ts - 配置错误测试
+├── [ ] tests/errors/errors.test.ts - Agent 错误测试
+├── [ ] tests/errors/errors.test.ts - 类型守卫测试
+└── [ ] 验证: 所有测试通过
+```
+
+---
+
+### 10. 预期产出清单
+
+- [ ] AppError 基类增强（recoverable, cause, context）
+- [ ] StorageError 基类 + 7 个子类
+- [ ] PermissionError 基类 + 2 个子类
+- [ ] ConfigError 基类 + 3 个子类
+- [ ] AgentError 基类 + 3 个子类
+- [ ] 8 个类型守卫函数
+- [ ] 2 个辅助函数（toAppError, getErrorChain）
+- [ ] SQLiteMemoryStorage 改造
+- [ ] filesystem.ts 移除重复定义
+- [ ] 25+ 测试用例全部通过
+- [ ] 类型导出正确
+
+---
+
+### 11. 向后兼容说明
+
+**兼容性**:
+- 现有 `AppError` 构造函数签名保持兼容（options 为可选参数）
+- 所有现有错误类（NotFoundError, BadRequestError 等）保持不变
+- 新增错误类不影响现有代码
+
+**迁移路径**:
+```typescript
+// 旧代码（继续工作）
+throw new AppError('TEST', 'message', 500);
+
+// 新代码（推荐）
+throw new AppError('TEST', 'message', 500, {
+  recoverable: true,
+  cause: originalError,
+  context: { foo: 'bar' },
+});
 ```
 
 ---

@@ -2,12 +2,8 @@ import fs from 'fs/promises';
 import fsSync from 'fs';
 import path from 'path';
 
-export class NotFoundError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'NotFoundError';
-  }
-}
+// Note: NotFoundError is now imported from '../errors/index.js' in storage/index.ts
+// This file no longer defines its own NotFoundError to avoid duplication
 
 export async function readJson<T>(filePath: string): Promise<T> {
   const content = await fs.readFile(filePath, 'utf-8');

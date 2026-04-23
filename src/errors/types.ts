@@ -1,20 +1,89 @@
+/**
+ * AppError 构造选项
+ */
+export interface AppErrorOptions {
+  /** 是否可恢复（重试可能成功） */
+  recoverable?: boolean;
+  /** 原始错误（用于错误链追踪） */
+  cause?: Error;
+  /** 额外上下文信息 */
+  context?: Record<string, unknown>;
+}
+
+/**
+ * 应用错误基类
+ *
+ * @example
+ * ```typescript
+ * throw new AppError('CONFIG_ERROR', 'Invalid configuration', 500, {
+ *   recoverable: false,
+ *   context: { configPath: '/path/to/config.json' }
+ * })
+ * ```
+ */
 export class AppError extends Error {
+  public readonly timestamp: Date;
+  public readonly options?: AppErrorOptions;
+
   constructor(
-    public code: string,
+    public readonly code: string,
     message: string,
-    public status: number = 500
+    public readonly status: number = 500,
+    options?: AppErrorOptions
   ) {
-    super(message);
+    super(message, { cause: options?.cause });
     this.name = 'AppError';
+    this.timestamp = new Date();
+    this.options = options;
   }
 
-  toJSON(): { error: { code: string; message: string } } {
+  /** 是否可恢复 */
+  get recoverable(): boolean {
+    return this.options?.recoverable ?? false;
+  }
+
+  /** 获取上下文信息 */
+  get context(): Record<string, unknown> | undefined {
+    return this.options?.context;
+  }
+
+  /** 获取原始错误链 */
+  get causeChain(): Error | undefined {
+    return this.options?.cause;
+  }
+
+  toJSON(): {
+    error: {
+      code: string;
+      message: string;
+      status: number;
+      recoverable: boolean;
+      timestamp: string;
+      context?: Record<string, unknown>;
+    };
+  } {
     return {
       error: {
         code: this.code,
         message: this.message,
+        status: this.status,
+        recoverable: this.recoverable,
+        timestamp: this.timestamp.toISOString(),
+        context: this.context,
       },
     };
+  }
+
+  /** 格式化为可读字符串 */
+  toString(): string {
+    const parts = [`[${this.code}] ${this.message}`];
+    if (this.context) {
+      parts.push(`Context: ${JSON.stringify(this.context)}`);
+    }
+    if (this.options?.cause) {
+      parts.push(`Caused by: ${this.options.cause.message}`);
+    }
+    return parts.join('\n');
   }
 }
 
@@ -48,7 +117,7 @@ export class ValidationError extends AppError {
     this.name = 'ValidationError';
   }
 
-  toJSON(): { error: { code: string; message: string; details?: { field: string; message: string }[] } } {
+  toJSON(): { error: { code: string; message: string; status: number; recoverable: boolean; timestamp: string; context?: Record<string, unknown>; details?: { field: string; message: string }[] } } {
     const base = super.toJSON();
     if (this.errors && this.errors.length > 0) {
       return { error: { ...base.error, details: this.errors } };
