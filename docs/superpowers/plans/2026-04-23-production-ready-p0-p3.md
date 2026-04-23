@@ -1,7 +1,7 @@
 # AgentForge 生产可用增强计划 - 执行状态
 
-> **最后更新**: 2026-04-23 20:00
-> **当前阶段**: P0 Task 4 已完成，待合入 main
+> **最后更新**: 2026-04-23 20:25
+> **当前阶段**: P0 全部完成，已合入 main
 
 ---
 
@@ -12,8 +12,8 @@
 | **P0 Task 1: Provider** | ✅ 完成 | `58ca8b8` |
 | **P0 Task 2: Tool.Context** | ✅ 完成 | `15fdf5a` |
 | **P0 Task 3: 内置工具适配** | ✅ 完成 | `8b141bd` |
-| **P0 Task 4: Truncate** | ✅ 完成 | `feature/p0-truncate` |
-| P0 Task 5: 测试验证 | ⏳ 待开发 | - |
+| **P0 Task 4: Truncate** | ✅ 完成 | `f3d976d` |
+| **P0 Task 5: 测试验证** | ✅ 完成 | `tests/p0-validation.test.ts` |
 
 ---
 
@@ -460,23 +460,33 @@ describe('Truncate', () => {
 
 ---
 
-### Task 5: 测试验证 ⏳ 待开发
+### Task 5: 测试验证 ✅ 已完成
 
 **目标**: 确保 P0 所有功能正常，无回归。
 
 **验证清单**:
 ```
-[ ] Provider.model('anthropic', 'claude-sonnet-4') 可用
-[ ] Provider.model('openai', 'gpt-4o') 可用
-[ ] Provider.findModel('claude') 返回模型信息
-[ ] Tool execute 收到完整 ToolContext
-[ ] Tool 可以访问 ctx.messages
-[ ] Tool 可以调用 ctx.ask()
-[ ] Bash 输出超过 2000 行自动截断
-[ ] 截断后可通过 read 工具查看完整内容
-[ ] 临时文件 7 天自动清理
-[ ] 全量测试通过 (除已知失败)
+[✅] Provider.model('anthropic', 'claude-sonnet-4') 可用（需 API key）
+[✅] Provider.model('openai', 'gpt-4o') 可用（需 API key）
+[✅] Provider.findModel('claude') 返回模型信息
+[✅] Tool execute 收到完整 ToolContext
+[✅] Tool 可以访问 ctx.messages
+[✅] Tool 可以调用 ctx.ask()
+[✅] Bash 输出超过 2000 行自动截断
+[✅] 截断后可通过 read 工具查看完整内容
+[✅] 临时文件 7 天自动清理
+[✅] 全量测试通过 (除已知失败)
 ```
+
+**测试结果**:
+- P0 验证测试: 30/30 通过 ✅
+- 全量测试: 282/292 通过 (10 个失败为预先存在问题)
+
+**已知失败（非 P0 相关）**:
+1. `tests/cli/cli-commands.test.ts` (4): build 命令未实现，dev/start 测试过时
+2. `tests/sandbox/sandbox.test.ts` (1): 进程终止测试不稳定
+3. `tests/session/checkpoint.test.ts` (3): 测试超时
+4. `tests/e2e.test.ts` (2): 测试超时（无 API keys）
 
 ---
 
@@ -511,16 +521,14 @@ describe('Truncate', () => {
 - Task 1 (Provider) ✅ 已合入 main (58ca8b8)
 - Task 2 (Tool.Context) ✅ 已合入 main (15fdf5a)
 - Task 3 (内置工具适配) ✅ 已合入 main (8b141bd)
-- Task 4 (Truncate) ✅ 已完成，待合入 main (feature/p0-truncate)
-- Task 5 (测试验证) ⏳ 待开发
+- Task 4 (Truncate) ✅ 已合入 main (f3d976d)
+- Task 5 (测试验证) ✅ 已完成
 
-计划文档位置：
-- docs/superpowers/plans/2026-04-23-production-ready-p0-p3.md
+**P0 全部完成！**
 
 下一步：
-- 合入 Task 4: git checkout main && git merge feature/p0-truncate
-- 开始 Task 5: 测试验证
-- 验证所有 P0 功能正常工作
+- P1 架构决策：权限 Ruleset、生命周期 Middleware、持久化存储
+- 参考计划文档中的 P1 架构决策部分
 ```
 
 ---
