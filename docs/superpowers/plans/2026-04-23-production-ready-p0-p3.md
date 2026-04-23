@@ -1,7 +1,7 @@
 # AgentForge 生产可用增强计划 - 执行状态
 
-> **最后更新**: 2026-04-23 20:25
-> **当前阶段**: P0 全部完成，已合入 main
+> **最后更新**: 2026-04-24 00:35
+> **当前阶段**: P1 Task 1-2 完成，已合入 main
 
 ---
 
@@ -494,8 +494,8 @@ describe('Truncate', () => {
 
 | 项目 | 状态 | 提交 |
 |------|------|------|
-| **P1 Task 1: 权限 Ruleset** | ✅ 完成 | 待提交 |
-| 生命周期 Middleware | 待开发 | — |
+| **P1 Task 1: 权限 Ruleset** | ✅ 完成 | b2f1ae1 |
+| **P1 Task 2: 生命周期 Middleware** | ✅ 完成 | ee00904 |
 | 持久化存储 (SQLite) | 待开发 | — |
 
 ### P1 Task 1: 权限 Ruleset ✅ 已完成
@@ -546,6 +546,57 @@ describe('Truncate', () => {
 
 ---
 
+### P1 Task 2: 生命周期 Middleware ✅ 已完成
+
+**设计参考**: Agentscope 洋葱模型 + LangChain ToolRetryMiddleware + OpenCode Plugin hooks
+
+**已完成内容**:
+- `src/lifecycle/types.ts` - 核心类型 (ToolLifecycleContext, ToolLifecycleResult, ToolLifecycleMiddleware, RetryConfig, ErrorMiddlewareConfig, TimingMetadata, RetryMetadata)
+- `src/lifecycle/manager.ts` - ToolLifecycleManager 类 + 洋葱链构建 + 上下文传递
+- `src/lifecycle/middlewares/logging.middleware.ts` - 日志中间件 (执行前后 + 错误日志)
+- `src/lifecycle/middlewares/timing.middleware.ts` - 计时中间件 (duration + startTime)
+- `src/lifecycle/middlewares/retry.middleware.ts` - 重试中间件 (指数退避 + retryIf 谓词)
+- `src/lifecycle/middlewares/error.middleware.ts` - 错误处理中间件 (catch + transform)
+- `src/lifecycle/middlewares/index.ts` - 中间件导出
+- `src/lifecycle/index.ts` - 模块主导出
+- `src/registry.ts` - setLifecycleManager() + execute() 集成
+- `src/index.ts` - 导出 lifecycle 模块
+- `tests/lifecycle/lifecycle.test.ts` - 22 个测试用例全部通过
+
+**核心设计**:
+1. 洋葱模型中间件链 - `(context, next) => Promise<ToolLifecycleResult>`
+2. First-registered = outermost - 第一个注册的中间件包裹最外层
+3. 可修改 args/result - 中间件可以修改工具参数和结果
+4. 可跳过执行 - 中间件可以不调用 next() 直接返回
+5. 可选集成 - 通过 `registry.setLifecycleManager()` 启用
+6. 权限优先 - 权限检查在 lifecycle 之前执行
+
+**中间件使用示例**:
+```typescript
+import { ToolLifecycleManager, loggingMiddleware, timingMiddleware, retryMiddleware, errorMiddleware } from 'agentforge'
+
+const manager = new ToolLifecycleManager()
+  .use(loggingMiddleware())
+  .use(timingMiddleware())
+  .use(retryMiddleware({ maxRetries: 2, initialDelay: 1000 }))
+  .use(errorMiddleware({ includeStack: true }))
+
+registry.setLifecycleManager(manager)
+```
+
+**自定义中间件**:
+```typescript
+const auditMiddleware: ToolLifecycleMiddleware = async (context, next) => {
+  auditLog('before', context.tool.name, context.args)
+  const result = await next()
+  auditLog('after', context.tool.name, result.result.output.length)
+  return result
+}
+manager.use(auditMiddleware)
+```
+
+---
+
 ## 工作目录信息
 
 - **主仓库**: `C:\Users\90514\bug\agentforge`
@@ -570,10 +621,11 @@ describe('Truncate', () => {
 - Task 5 (测试验证) ✅ 1635c41
 
 **P1 进行中：**
-- Task 1 (权限 Ruleset) ✅ 已实现，待提交
+- Task 1 (权限 Ruleset) ✅ b2f1ae1
+- Task 2 (生命周期 Middleware) ✅ ee00904
 
 下一步：
-- P1 Task 2: 生命周期 Middleware 或 P1 Task 3: 持久化存储
+- P1 Task 3: 持久化存储扩展
 - 参考 docs/superpowers/plans/2026-04-23-production-ready-p0-p3.md
 ```
 
