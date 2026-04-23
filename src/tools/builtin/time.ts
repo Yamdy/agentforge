@@ -1,4 +1,4 @@
-import type { Tool } from '../../types.js';
+import type { LegacyTool as Tool } from '../../types.js';
 
 export const CurrentTimeTool: Tool = {
   name: 'current_time',

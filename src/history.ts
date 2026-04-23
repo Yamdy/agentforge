@@ -1,9 +1,9 @@
-import { HistoryManager, validateMessage, Message, ToolResult } from './types';
+import { HistoryManager, validateMessage, Message, ToolCallResult } from './types';
 
 interface HistoryEntry {
   type: 'message' | 'toolResult';
   message?: Message;
-  toolResult?: ToolResult;
+  toolResult?: ToolCallResult;
   order: number;
 }
 
@@ -32,7 +32,7 @@ export class InMemoryHistory implements HistoryManager {
     });
   }
 
-  getToolResult(toolCallId: string): ToolResult | undefined {
+  getToolResult(toolCallId: string): ToolCallResult | undefined {
     const entry = this.entries.find(
       (e) => e.type === 'toolResult' && e.toolResult?.toolCallId === toolCallId
     );

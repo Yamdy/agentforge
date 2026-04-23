@@ -9,7 +9,7 @@
  * - Insecure configurations
  */
 
-import type { Tool } from '../../../src/types.js';
+import type { LegacyTool as Tool } from '../../../src/types.js';
 import * as fs from 'fs';
 import * as path from 'path';
 

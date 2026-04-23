@@ -1,4 +1,4 @@
-import type { Tool } from '../../types.js';
+import type { LegacyTool as Tool } from '../../types.js';
 import { evaluate } from 'mathjs';
 
 export interface CalculatorToolArgs {

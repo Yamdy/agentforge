@@ -1,4 +1,4 @@
-import { Tool } from '../../types';
+import { LegacyTool as Tool } from '../../types';
 import { writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, isAbsolute, dirname } from 'path';
 

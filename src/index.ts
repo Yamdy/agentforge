@@ -10,6 +10,29 @@ export * as MCP from './mcp/index.js';
 export * as Skill from './skill/index.js';
 export * as SubAgent from './subagent/index.js';
 
+// Tool context system
+export type {
+  ToolContext,
+  MetadataInput,
+  AskInput,
+  AskResult,
+} from './tool/context';
+export { createMockToolContext } from './tool/context';
+export type { ToolResult as ToolExecutionResult } from './tool/result';
+export {
+  textResult,
+  truncatedResult,
+  resultWithAttachments,
+  errorResult,
+} from './tool/result';
+export type { Attachment } from './tool/attachment';
+export {
+  imageAttachment,
+  pdfAttachment,
+  textAttachment,
+  jsonAttachment,
+} from './tool/attachment';
+
 export { createApp, startServer, type ServerConfig, type AgentRunner } from './server/index.js';
 export { authMiddleware, type AuthConfig } from './server/middleware/auth.js';
 
@@ -23,9 +46,10 @@ export {
 export type {
   Message,
   Tool,
+  LegacyTool,
   ToolCall,
   ToolParameters,
-  ToolResult,
+  ToolCallResult,
   LLMResponse,
   StreamEvent,
   LLMAdapter,
@@ -37,7 +61,7 @@ export type {
   RequestInterceptor,
   TimeoutConfig,
 } from './types.js';
-export { schemas } from './types.js';
+export { schemas, isNewTool, isLegacyTool, validateTool } from './types.js';
 export type { AgentConfig } from './config/index.js';
 export type { Plugin, Hooks, HookEvent, ProviderContext, ProviderResult } from './plugin/types.js';
 export type { Logger, LogEntry, LogLevel } from './logger/index.js';

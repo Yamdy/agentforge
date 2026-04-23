@@ -1,4 +1,4 @@
-import { Tool } from '../types';
+import { LegacyTool as Tool } from '../types';
 
 export const calculatorTool: Tool = {
   name: 'calculator',

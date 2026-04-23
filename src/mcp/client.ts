@@ -4,7 +4,7 @@ import {
   type Tool as MCPToolDef,
   ToolListChangedNotificationSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { type Tool, type ToolParameters } from '../types.js';
+import { type LegacyTool as Tool, type ToolParameters } from '../types.js';
 import { config } from './config.js';
 import type { McpServerConfig, McpStatus } from './types.js';
 import { createStdioTransport, createStreamableHTTPTransport } from './transport/index.js';

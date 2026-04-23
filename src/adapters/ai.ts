@@ -6,6 +6,8 @@ import {
   LLMAdapter,
   Message,
   Tool,
+  LegacyTool,
+  isNewTool,
   StreamEvent,
   LLMResponse,
   RequestInterceptor,
@@ -27,11 +29,13 @@ interface AIAdapterConfig {
   fetch?: FetchFn;
 }
 
+type AnyTool = Tool | LegacyTool;
+
 export class AIAdapter implements LLMAdapter {
   private modelId: string;
   private apiKey: string;
   private baseURL: string;
-  private tools: Record<string, Tool> = {};
+  private tools: Record<string, AnyTool> = {};
   private useTools: boolean;
   private interceptors: RequestInterceptor[];
   private timeout: TimeoutConfig;
@@ -49,11 +53,11 @@ export class AIAdapter implements LLMAdapter {
     this.customFetch = config.fetch;
   }
 
-  setTools(tools: Tool[]): void {
-    this.tools = tools.reduce((acc, t) => ({ ...acc, [t.name]: t }), {} as Record<string, Tool>);
+  setTools(tools: AnyTool[]): void {
+    this.tools = tools.reduce((acc, t) => ({ ...acc, [t.name]: t }), {} as Record<string, AnyTool>);
   }
 
-  getTool(name: string): Tool | undefined {
+  getTool(name: string): AnyTool | undefined {
     return this.tools[name];
   }
 
@@ -169,9 +173,20 @@ export class AIAdapter implements LLMAdapter {
   private getTools() {
     const result: Record<string, unknown> = {};
     for (const [name, t] of Object.entries(this.tools)) {
+      // Handle new Tool interface with Zod schema parameters
+      if (isNewTool(t) && t.parameters) {
+        result[name] = {
+          description: typeof t.description === 'function' ? t.description({} as never) : t.description,
+          parameters: t.parameters,
+        };
+        continue;
+      }
+
+      // Handle legacy Tool interface with JSON Schema parameters
       const properties: Record<string, z.ZodType> = {};
-      if (t.parameters?.properties) {
-        for (const [key, prop] of Object.entries(t.parameters.properties)) {
+      const legacyParams = (t as LegacyTool).parameters;
+      if (legacyParams?.properties) {
+        for (const [key, prop] of Object.entries(legacyParams.properties)) {
           const propSchema = prop as { type?: string; enum?: unknown[] };
           if (propSchema.type === 'string') {
             let schema: z.ZodType = z.string();

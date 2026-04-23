@@ -18,6 +18,8 @@ import { Middleware } from '../middleware/index.js';
 import { createMiddlewarePipeline } from '../middleware/index.js';
 import { Sandbox } from '../sandbox/index.js';
 import type { MemoryManager } from '../memory/manager.js';
+import type { ToolContext, AskInput, AskResult } from '../tool/context';
+import type { ToolResult } from '../tool/result';
 
 interface AgentOptions extends AgentConfig {
   registry?: ToolRegistry;
@@ -58,6 +60,15 @@ export class Agent {
   private middleware: Middleware[] = [];
   private pipeline: Middleware;
 
+  /** Abort controller for tool execution cancellation */
+  private abortController: AbortController;
+  /** Current session ID */
+  private sessionId: string;
+  /** Current message ID being processed */
+  private currentMessageId: string;
+  /** Agent name for context */
+  private agentName: string;
+
   constructor(
     adapter: LLMAdapter,
     history: HistoryManager,
@@ -76,6 +87,10 @@ export class Agent {
     this.middleware = options?.middleware ?? [];
     this.pipeline = createMiddlewarePipeline(...this.middleware);
     this.memoryManager = options?.memoryManager;
+    this.abortController = new AbortController();
+    this.sessionId = `session_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    this.currentMessageId = '';
+    this.agentName = 'AgentForge';
 
     // Initialize sandbox if enabled
     if (options?.sandbox?.enabled) {
@@ -132,6 +147,7 @@ export class Agent {
 
   cancel(): void {
     this.stateMachine.cancel();
+    this.abortController.abort();
     this.log.warn('Agent cancelled by user');
   }
 
@@ -209,6 +225,10 @@ export class Agent {
       let unsubscribeState: (() => void) | null = null;
 
       const initAndRun = async () => {
+        // Reset abort controller for each run
+        this.abortController = new AbortController();
+        this.currentMessageId = `msg_${Date.now()}`;
+
         if (this.memoryManager && !this.memoryManager.isLoaded()) {
           await this.memoryManager.load();
         }
@@ -420,27 +440,51 @@ export class Agent {
             { args }
           );
 
+          // Build ToolContext
+          const ctx: ToolContext = {
+            sessionId: this.sessionId,
+            messageId: this.currentMessageId,
+            callId: toolCall.id,
+            agent: this.agentName,
+            abort: this.abortController.signal,
+            messages: this.history.getMessages(),
+            metadata: (input) => {
+              // Emit metadata event (can be extended)
+              this.log.debug('Tool metadata', { toolCallId: toolCall.id, ...input });
+            },
+            ask: async (input: AskInput): Promise<AskResult> => {
+              // This can be extended with actual user interaction
+              this.log.info('Tool asking user', { toolCallId: toolCall.id, ...input });
+              // Default: return first choice or 'yes' for approval
+              return {
+                choice: input.defaultChoice ?? input.choices?.[0] ?? 'yes',
+                isCustom: false,
+              };
+            },
+          };
+
           this.log.info('Executing tool', { tool: toolCall.name, args });
-          const execResult = await this.registry.execute(toolCall.name, args);
+          const execResult: ToolResult = await this.registry.execute(toolCall.name, args, ctx);
+          const outputString = execResult.output ?? '';
           this.log.info('Tool executed', {
             tool: toolCall.name,
-            result: execResult.slice(0, 50),
+            result: outputString.slice(0, 50),
           });
 
           await this.pluginManager.trigger(
             'tool.execute.after',
-            { tool: toolCall.name, args, result: execResult },
-            { result: execResult }
+            { tool: toolCall.name, args, result: outputString },
+            { result: outputString }
           );
 
           this.tracer.endSpan(toolSpan.spanId, 'completed');
 
-          this.history.addToolResult(toolCall.id, toolCall.name, execResult, toolCall.arguments);
-          handler?.onToolCallEnd?.(toolCall.id, execResult);
+          this.history.addToolResult(toolCall.id, toolCall.name, outputString, toolCall.arguments);
+          handler?.onToolCallEnd?.(toolCall.id, outputString);
           observer.next({
             type: 'tool_call_end',
             id: toolCall.id,
-            result: execResult,
+            result: outputString,
           });
         } catch (err) {
           const errorMsg = err instanceof Error ? err.message : String(err);

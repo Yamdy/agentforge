@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { Observable } from 'rxjs';
+import type { ToolContext } from './tool/context';
+import type { ToolResult } from './tool/result';
 
 export const MessageSchema = z.object({
   role: z.enum(['system', 'user', 'assistant', 'tool']),
@@ -23,7 +25,57 @@ export const ToolParametersSchema = z.object({
 });
 export type ToolParameters = z.infer<typeof ToolParametersSchema>;
 
-export const ToolSchema = z.object({
+// ========== Tool Interface (New) ==========
+
+/**
+ * Modern Tool interface with full context support.
+ *
+ * @template P - Parameter type (Zod schema inference)
+ * @template M - Metadata type
+ *
+ * @example
+ * ```typescript
+ * const ReadTool: Tool<ReadParams, ReadMetadata> = {
+ *   name: 'read',
+ *   description: 'Read file contents',
+ *   parameters: ReadParamsSchema,
+ *   async execute(args, ctx) {
+ *     ctx.metadata({ title: `Reading ${args.file}...` })
+ *     const content = await readFile(args.file, 'utf-8')
+ *     return { title: 'Read', output: content, metadata: { path: args.file } }
+ *   }
+ * }
+ * ```
+ */
+export interface Tool<P = unknown, M = unknown> {
+  /** Tool name (unique identifier) */
+  name: string;
+
+  /** Tool description (static or dynamic based on context) */
+  description: string | ((ctx: ToolContext) => string);
+
+  /** Zod schema for parameter validation */
+  parameters?: z.ZodType<P>;
+
+  /** Execute function with full context */
+  execute(args: P, ctx: ToolContext): Promise<ToolResult<M>>;
+}
+
+// ========== Legacy Tool Interface ==========
+
+/**
+ * Legacy Tool interface for backward compatibility.
+ * Tools using this interface receive no context.
+ */
+export interface LegacyTool {
+  name: string;
+  description: string;
+  parameters?: ToolParameters;
+  execute(args: Record<string, unknown>): Promise<string>;
+}
+
+/** Schema for legacy tool validation */
+export const LegacyToolSchema = z.object({
   name: z.string().min(1, 'Tool name is required'),
   description: z.string(),
   parameters: ToolParametersSchema.optional(),
@@ -32,15 +84,47 @@ export const ToolSchema = z.object({
     { message: 'Tool must have an execute function' }
   ),
 });
-export type Tool = z.infer<typeof ToolSchema>;
 
-export const ToolResultSchema = z.object({
+// ========== Type Guards ==========
+
+/**
+ * Check if a tool uses the new interface (receives context).
+ */
+export function isNewTool(tool: unknown): tool is Tool<unknown, unknown> {
+  if (typeof tool !== 'object' || tool === null) return false;
+  const t = tool as Record<string, unknown>;
+  return (
+    typeof t['name'] === 'string' &&
+    (typeof t['description'] === 'string' || typeof t['description'] === 'function') &&
+    typeof t['execute'] === 'function' &&
+    t['execute'].length >= 2 // New interface has 2 parameters
+  );
+}
+
+/**
+ * Check if a tool uses the legacy interface (no context).
+ */
+export function isLegacyTool(tool: unknown): tool is LegacyTool {
+  return LegacyToolSchema.safeParse(tool).success;
+}
+
+/**
+ * Validate and normalize a tool to either new or legacy interface.
+ * @throws Error if tool is invalid
+ */
+export function validateTool(tool: unknown): Tool | LegacyTool {
+  if (isNewTool(tool)) return tool;
+  if (isLegacyTool(tool)) return tool;
+  throw new Error('Invalid tool: must implement either Tool or LegacyTool interface');
+}
+
+export const ToolCallResultSchema = z.object({
   toolCallId: z.string(),
   toolName: z.string(),
   result: z.string(),
   toolArguments: z.string().optional(),
 });
-export type ToolResult = z.infer<typeof ToolResultSchema>;
+export type ToolCallResult = z.infer<typeof ToolCallResultSchema>;
 
 export const LLMResponseSchema = z.object({
   content: z.string().nullable(),
@@ -208,10 +292,6 @@ export function createTaskStateMachine(maxSteps: number): TaskStateMachine {
   };
 }
 
-export function validateTool(tool: unknown): Tool {
-  return ToolSchema.parse(tool);
-}
-
 export function validateMessage(message: unknown): Message {
   return MessageSchema.parse(message);
 }
@@ -222,12 +302,20 @@ export function validateLLMResponse(response: unknown): LLMResponse {
 
 export const schemas = {
   Message: MessageSchema,
-  Tool: ToolSchema,
+  LegacyTool: LegacyToolSchema,
   ToolCall: ToolCallSchema,
-  ToolResult: ToolResultSchema,
+  ToolCallResult: ToolCallResultSchema,
   LLMResponse: LLMResponseSchema,
   StreamEvent: StreamEventSchema,
   TaskStatus: TaskStatusSchema,
 } as const;
 
 export type Schemas = typeof schemas;
+
+// ========== Backward Compatibility ==========
+
+/**
+ * @deprecated Use `Tool<P, M>` with context support instead.
+ * This alias is provided for backward compatibility.
+ */
+export type LegacyToolType = LegacyTool;

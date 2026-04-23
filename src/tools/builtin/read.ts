@@ -1,4 +1,4 @@
-import { Tool } from '../../types';
+import { LegacyTool as Tool } from '../../types';
 import { existsSync, statSync } from 'fs';
 import { join, isAbsolute } from 'path';
 import { createInterface } from 'readline';

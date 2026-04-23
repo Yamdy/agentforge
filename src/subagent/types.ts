@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { Agent } from '../agent/index.js';
-import type { Tool, Message } from '../types.js';
+import type { LegacyTool as Tool, Message } from '../types.js';
 
 export const SubAgentModeSchema = z.enum(['primary', 'subagent']);
 export type SubAgentMode = z.infer<typeof SubAgentModeSchema>;

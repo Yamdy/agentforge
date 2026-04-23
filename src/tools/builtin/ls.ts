@@ -1,4 +1,4 @@
-import { Tool } from '../../types';
+import { LegacyTool as Tool } from '../../types';
 import { readdirSync, statSync, existsSync } from 'fs';
 import { join, isAbsolute } from 'path';
 

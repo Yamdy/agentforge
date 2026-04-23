@@ -1,4 +1,4 @@
-import { Tool } from '../../types';
+import { LegacyTool as Tool } from '../../types';
 import { createSandbox, type Sandbox } from '../../sandbox/index.js';
 import type { PolicyOptions } from '../../sandbox/policy.js';
 import type { AgentConfig } from '../../config/index.js';

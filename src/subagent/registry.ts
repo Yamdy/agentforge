@@ -1,5 +1,5 @@
 import type { Agent } from '../agent/index.js';
-import type { Tool } from '../types.js';
+import type { LegacyTool as Tool } from '../types.js';
 import type { SubAgentRegistration, SubAgentConfig } from './types.js';
 
 class SubAgentRegistry {

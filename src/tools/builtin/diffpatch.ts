@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import type { Tool } from '../../types.js';
+import type { LegacyTool as Tool } from '../../types.js';
 import { createLogger } from '../../logger/index.js';
 
 const log = createLogger('tools:diffpatch');

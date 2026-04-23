@@ -1,4 +1,4 @@
-import type { Tool, Message } from '../types.js';
+import type { LegacyTool as Tool, Message } from '../types.js';
 import { registry } from './registry.js';
 import { delegation } from './delegation.js';
 import { getCurrentMemory } from '../context.js';

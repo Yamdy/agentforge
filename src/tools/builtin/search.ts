@@ -1,4 +1,4 @@
-import type { Tool } from '../../types.js';
+import type { LegacyTool as Tool } from '../../types.js';
 
 export interface SearchToolArgs {
   query: string;

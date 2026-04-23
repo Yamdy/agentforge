@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { ToolRegistry } from '../../src/registry';
+import { createMockToolContext } from '../../src/tool/context';
 
 describe('ToolRegistry', () => {
   let registry: ToolRegistry;
+  const mockCtx = createMockToolContext();
 
   beforeEach(() => {
     registry = new ToolRegistry();
@@ -33,16 +35,16 @@ describe('ToolRegistry', () => {
   });
 
   it('should throw error for missing tool', async () => {
-    await expect(() => registry.execute('missing', {})).rejects.toThrow('Tool not found');
+    await expect(() => registry.execute('missing', {}, mockCtx)).rejects.toThrow('Tool not found');
   });
 
-  it('should execute a tool', async () => {
+  it('should execute a legacy tool', async () => {
     registry.register({
       name: 'echo',
       description: 'Echoes input',
       execute: async (args: Record<string, unknown>) => JSON.stringify(args),
     });
-    const result = await registry.execute('echo', { foo: 'bar' });
-    expect(result).toBe('{"foo":"bar"}');
+    const result = await registry.execute('echo', { foo: 'bar' }, mockCtx);
+    expect(result.output).toBe('{"foo":"bar"}');
   });
 });
