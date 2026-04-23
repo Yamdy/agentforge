@@ -30,6 +30,10 @@ export const LsTool: Tool<LsParamsType, LsMetadata> = {
   description:
     'List files in a directory. If no path is specified, lists the current working directory.',
   parameters: LsParams,
+  permission: {
+    category: 'ls',
+    extractInput: (args) => (args as LsParamsType).directory ?? '',
+  },
 
   async execute(
     args: LsParamsType,

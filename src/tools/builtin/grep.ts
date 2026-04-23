@@ -43,6 +43,10 @@ export const GrepTool: Tool<GrepParamsType, GrepMetadata> = {
   description:
     'Search for a regex pattern in files within a directory. Returns matching lines with line numbers.',
   parameters: GrepParams,
+  permission: {
+    category: 'grep',
+    extractInput: (args) => (args as GrepParamsType).pattern,
+  },
 
   async execute(
     args: GrepParamsType,

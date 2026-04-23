@@ -81,6 +81,10 @@ You specify:
 
 This reduces token consumption and is more accurate than full file rewrites for small changes.`,
   parameters: DiffPatchParams,
+  permission: {
+    category: 'edit',
+    extractInput: (args) => (args as DiffPatchParamsType).filePath,
+  },
 
   async execute(
     args: DiffPatchParamsType,

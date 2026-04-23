@@ -27,6 +27,10 @@ export const WriteTool: Tool<WriteParamsType, WriteMetadata> = {
   description:
     'Writes a file to the local filesystem. If the directory does not exist, it will be created.',
   parameters: WriteParams,
+  permission: {
+    category: 'edit',
+    extractInput: (args) => (args as WriteParamsType).filePath,
+  },
 
   async execute(
     args: WriteParamsType,

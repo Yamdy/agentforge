@@ -492,13 +492,57 @@ describe('Truncate', () => {
 
 ## P1 架构决策 (P0 完成后)
 
-| 项目 | 工作量 | 依赖 |
-|------|--------|------|
-| 权限 Ruleset | 1 周 | Tool.Context |
-| 生命周期 Middleware | 1 周 | Tool.Context |
-| 持久化存储 (SQLite) | 1 周 | 无 |
+| 项目 | 状态 | 提交 |
+|------|------|------|
+| **P1 Task 1: 权限 Ruleset** | ✅ 完成 | 待提交 |
+| 生命周期 Middleware | 待开发 | — |
+| 持久化存储 (SQLite) | 待开发 | — |
 
-**权限系统已在计划文档 Chunk 4 中有详细架构设计**。
+### P1 Task 1: 权限 Ruleset ✅ 已完成
+
+**设计参考**: OpenCode pattern-based permission system
+
+**已完成内容**:
+- `src/permission/types.ts` - 核心类型 (PermissionAction, PermissionRule, Ruleset, ToolPermissionCategory, PermissionCheckResult, PermissionConfig)
+- `src/permission/manager.ts` - PermissionManager 类 + glob pattern 匹配 + session always-allowed + per-agent rules
+- `src/permission/presets.ts` - 4 个预设 (default, strict, permissive, read-only)
+- `src/permission/index.ts` - 模块导出
+- `src/types.ts` - Tool 接口添加 `permission?: ToolPermissionCategory`
+- `src/registry.ts` - setPermissionManager() + checkPermission() 集成
+- `src/index.ts` - 导出 permission 模块
+- 10 个内置工具添加 permission 声明 (bash, write, edit, read, glob, grep, find, ls, fetch, diffpatch)
+- `tests/permission/permission.test.ts` - 29 个测试用例全部通过
+
+**核心设计**:
+1. Pattern-based rules (inspired by OpenCode) - `allow`/`deny`/`ask` 三态
+2. Last-match-wins - 最后匹配的规则生效
+3. Per-agent overrides - Agent 级规则覆盖全局
+4. Session always-allowed - 用户选择"总是允许"后缓存
+5. 工具自声明 category - Tool.permission 声明权限类别和输入提取
+
+**配置格式** (兼容 opencode.json):
+```json
+{
+  "permission": {
+    "bash": { "*": "ask", "git *": "allow", "rm *": "deny" },
+    "edit": { "*": "ask", "src/**": "allow" }
+  }
+}
+```
+
+**权限类别映射**:
+| 工具 | Category | 提取输入 |
+|------|----------|----------|
+| bash | bash | command |
+| write | edit | filePath |
+| edit | edit | filePath |
+| diffpatch | edit | filePath |
+| read | read | filePath |
+| glob | glob | pattern |
+| grep | grep | pattern |
+| find | find | path |
+| ls | ls | directory |
+| fetch | webfetch | url |
 
 ---
 
@@ -515,20 +559,22 @@ describe('Truncate', () => {
 复制以下内容到新会话：
 
 ```
-继续 AgentForge P0 生产可用增强计划。
+继续 AgentForge P1 生产可用增强计划。
 
 当前状态：
-- Task 1 (Provider) ✅ 已合入 main (58ca8b8)
-- Task 2 (Tool.Context) ✅ 已合入 main (15fdf5a)
-- Task 3 (内置工具适配) ✅ 已合入 main (8b141bd)
-- Task 4 (Truncate) ✅ 已合入 main (f3d976d)
-- Task 5 (测试验证) ✅ 已完成
+**P0 全部完成：**
+- Task 1 (Provider) ✅ 58ca8b8
+- Task 2 (Tool.Context) ✅ 15fdf5a
+- Task 3 (内置工具适配) ✅ 8b141bd
+- Task 4 (Truncate) ✅ f3d976d
+- Task 5 (测试验证) ✅ 1635c41
 
-**P0 全部完成！**
+**P1 进行中：**
+- Task 1 (权限 Ruleset) ✅ 已实现，待提交
 
 下一步：
-- P1 架构决策：权限 Ruleset、生命周期 Middleware、持久化存储
-- 参考计划文档中的 P1 架构决策部分
+- P1 Task 2: 生命周期 Middleware 或 P1 Task 3: 持久化存储
+- 参考 docs/superpowers/plans/2026-04-23-production-ready-p0-p3.md
 ```
 
 ---

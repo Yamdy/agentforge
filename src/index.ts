@@ -33,6 +33,28 @@ export {
   jsonAttachment,
 } from './tool/attachment';
 
+// Permission system
+export {
+  PermissionManager,
+  matchPattern,
+  defaultRules,
+  strictRules,
+  permissiveRules,
+  readOnlyRules,
+  presets,
+} from './permission/index.js';
+export type {
+  PermissionAction,
+  PermissionRule,
+  Ruleset,
+  ToolPermissionCategory,
+  PermissionCheckResult,
+  PermissionRequest,
+  PermissionResponse,
+  PermissionConfig,
+} from './permission/types.js';
+export { parsePermissionConfig } from './permission/types.js';
+
 export { createApp, startServer, type ServerConfig, type AgentRunner } from './server/index.js';
 export { authMiddleware, type AuthConfig } from './server/middleware/auth.js';
 

@@ -32,6 +32,10 @@ export const ReadTool: Tool<ReadParamsType, ReadMetadata> = {
   description:
     'Read a file or directory from the local filesystem. If the path does not exist, an error is returned.',
   parameters: ReadParams,
+  permission: {
+    category: 'read',
+    extractInput: (args) => (args as ReadParamsType).filePath,
+  },
 
   async execute(
     args: ReadParamsType,

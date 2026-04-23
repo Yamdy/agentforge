@@ -35,6 +35,10 @@ export const FetchTool: Tool<FetchParamsType, FetchMetadata> = {
   name: 'fetch',
   description: 'Make an HTTP request to a URL and get the response',
   parameters: FetchParams,
+  permission: {
+    category: 'webfetch',
+    extractInput: (args) => (args as FetchParamsType).url,
+  },
 
   async execute(
     args: FetchParamsType,

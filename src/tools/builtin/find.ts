@@ -33,6 +33,10 @@ export const FindTool: Tool<FindParamsType, FindMetadata> = {
   description:
     'Recursively find files and directories by name pattern. Supports simple substring matching.',
   parameters: FindParams,
+  permission: {
+    category: 'find',
+    extractInput: (args) => (args as FindParamsType).path,
+  },
 
   async execute(
     args: FindParamsType,

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { Observable } from 'rxjs';
 import type { ToolContext } from './tool/context';
 import type { ToolResult } from './tool/result';
+import type { ToolPermissionCategory } from './permission/types';
 
 // Re-export Tool Context types for convenient single-import usage
 export type { ToolContext } from './tool/context';
@@ -64,6 +65,9 @@ export interface Tool<P = unknown, M = unknown> {
 
   /** Zod schema for parameter validation */
   parameters?: z.ZodType<P>;
+
+  /** Permission category for this tool (optional) */
+  permission?: ToolPermissionCategory;
 
   /** Execute function with full context */
   execute(args: P, ctx: ToolContext): Promise<ToolResult<M>>;
@@ -326,4 +330,7 @@ export type Schemas = typeof schemas;
  * @deprecated Use `Tool<P, M>` with context support instead.
  * This alias is provided for backward compatibility.
  */
+// Re-export permission types for convenience
+export type { ToolPermissionCategory } from './permission/types';
+
 export type LegacyToolType = LegacyTool;

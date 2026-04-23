@@ -213,16 +213,22 @@ export class BashToolExecutor {
   }
 }
 
-// ========== Tool Implementation ==========
+// ========== Default Executor ==========
 
-// Default executor with sandbox disabled
-const defaultExecutor = new BashToolExecutor({ enabled: false });
+/** Default executor instance (sandbox disabled) */
+const defaultExecutor = new BashToolExecutor();
+
+// ========== Tool Implementation ==========
 
 export const BashTool: Tool<BashParamsType, BashMetadata> = {
   name: 'bash',
-  description:
-    'Executes a given bash command in a shell session. When sandbox is enabled, access is restricted to allowed paths. This tool is for terminal operations like git, npm, docker, etc.',
+  description: (ctx) =>
+    `Execute a bash command. User will be asked for approval for non-allowlisted commands.`,
   parameters: BashParams,
+  permission: {
+    category: 'bash',
+    extractInput: (args) => (args as BashParamsType).command,
+  },
 
   async execute(
     args: BashParamsType,

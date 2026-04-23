@@ -37,6 +37,10 @@ export const EditTool: Tool<EditParamsType, EditMetadata> = {
   description:
     'Edit a file by replacing an exact string. Can perform single or multiple replacements.',
   parameters: EditParams,
+  permission: {
+    category: 'edit',
+    extractInput: (args) => (args as EditParamsType).filePath,
+  },
 
   async execute(
     args: EditParamsType,

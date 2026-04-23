@@ -36,6 +36,10 @@ export const GlobTool: Tool<GlobParamsType, GlobMetadata> = {
   description:
     'Find files using glob pattern matching. Supports wildcards and pattern matching.',
   parameters: GlobParams,
+  permission: {
+    category: 'glob',
+    extractInput: (args) => (args as GlobParamsType).pattern,
+  },
 
   async execute(
     args: GlobParamsType,
