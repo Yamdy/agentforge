@@ -170,10 +170,19 @@ export class SQLiteMemoryStorage implements MemoryStorage {
 
   async deleteThread(threadId: string): Promise<void> {
     this.ensureInitialized();
-    this.db!.run('DELETE FROM threads WHERE id = ?', [threadId]);
+    // Delete in correct order: child tables first, then parent
+    // 1. Delete agent_state (references session_id = threadId)
+    this.db!.run('DELETE FROM agent_state WHERE session_id = ?', [threadId]);
+    // 2. Delete checkpoints (references session_id = threadId)
+    this.db!.run('DELETE FROM checkpoints WHERE session_id = ?', [threadId]);
+    // 3. Delete messages (has FK CASCADE, but delete explicitly for clarity)
     this.db!.run('DELETE FROM messages WHERE thread_id = ?', [threadId]);
+    // 4. Delete working_memory (has FK CASCADE, but delete explicitly for clarity)
     this.db!.run('DELETE FROM working_memory WHERE thread_id = ?', [threadId]);
+    // 5. Delete observations (has FK CASCADE, but delete explicitly for clarity)
     this.db!.run('DELETE FROM observations WHERE thread_id = ?', [threadId]);
+    // 6. Finally delete the thread itself
+    this.db!.run('DELETE FROM threads WHERE id = ?', [threadId]);
   }
 
   async listThreads(options: ListThreadsOptions = {}): Promise<Thread[]> {

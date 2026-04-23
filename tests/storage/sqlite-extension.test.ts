@@ -370,6 +370,184 @@ describe('SQLiteMemoryStorage - AgentState & Checkpoint', () => {
     });
   });
 
+  // ========== Cascade Delete Tests ==========
+
+  describe('Cascade Delete', () => {
+    describe('deleteThread cascade', () => {
+      it('should delete agent_state when thread is deleted', async () => {
+        // Setup: create thread and agent_state
+        await storage.saveThread({
+          id: 'thread-cascade-1',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+        await storage.saveAgentState({
+          id: 'state-cascade-1',
+          sessionId: 'thread-cascade-1',
+          agentName: 'test-agent',
+          status: 'running',
+          step: 1,
+          maxSteps: 10,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+
+        // Verify setup
+        const stateBefore = await storage.getAgentState('thread-cascade-1', 'test-agent');
+        expect(stateBefore).not.toBeNull();
+
+        // Act: delete thread
+        await storage.deleteThread('thread-cascade-1');
+
+        // Assert: agent_state should be deleted
+        const state = await storage.getAgentState('thread-cascade-1', 'test-agent');
+        expect(state).toBeNull();
+      });
+
+      it('should delete checkpoints when thread is deleted', async () => {
+        // Setup: create thread and checkpoint
+        await storage.saveThread({
+          id: 'thread-cascade-2',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+        await storage.saveCheckpoint({
+          id: 'checkpoint-cascade-1',
+          sessionId: 'thread-cascade-2',
+          stepIndex: 1,
+          messages: [],
+          toolCalls: [],
+          state: { status: 'running', step: 1, maxSteps: 10 },
+          createdAt: Date.now(),
+        });
+
+        // Verify setup
+        const cpBefore = await storage.getCheckpoint('checkpoint-cascade-1');
+        expect(cpBefore).not.toBeNull();
+
+        // Act: delete thread
+        await storage.deleteThread('thread-cascade-2');
+
+        // Assert: checkpoint should be deleted
+        const checkpoint = await storage.getCheckpoint('checkpoint-cascade-1');
+        expect(checkpoint).toBeNull();
+      });
+
+      it('should delete all related data when thread is deleted', async () => {
+        // Setup: create thread with all related data
+        const threadId = 'thread-full-cascade';
+        await storage.saveThread({
+          id: threadId,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+
+        // Add messages
+        await storage.addMessage(threadId, { role: 'user', content: 'test' });
+
+        // Add working memory
+        await storage.saveWorkingMemory(threadId, {
+          content: 'working memory',
+          updatedAt: new Date(),
+        });
+
+        // Add agent_state
+        await storage.saveAgentState({
+          id: 'state-full',
+          sessionId: threadId,
+          agentName: 'agent-1',
+          status: 'running',
+          step: 1,
+          maxSteps: 10,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+
+        // Add checkpoint
+        await storage.saveCheckpoint({
+          id: 'checkpoint-full',
+          sessionId: threadId,
+          stepIndex: 1,
+          messages: [],
+          toolCalls: [],
+          state: { status: 'running', step: 1, maxSteps: 10 },
+          createdAt: Date.now(),
+        });
+
+        // Act: delete thread
+        await storage.deleteThread(threadId);
+
+        // Assert: all related data should be deleted
+        const thread = await storage.getThread(threadId);
+        expect(thread).toBeNull();
+
+        const messages = await storage.getMessages(threadId);
+        expect(messages).toHaveLength(0);
+
+        const wm = await storage.getWorkingMemory(threadId);
+        expect(wm).toBeNull();
+
+        const states = await storage.listAgentStates(threadId);
+        expect(states).toHaveLength(0);
+
+        const checkpoints = await storage.listCheckpoints(threadId);
+        expect(checkpoints).toHaveLength(0);
+      });
+
+      it('should not affect other threads data', async () => {
+        // Setup: create two threads with data
+        await storage.saveThread({
+          id: 'thread-keep',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+        await storage.saveThread({
+          id: 'thread-delete',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+
+        await storage.saveAgentState({
+          id: 'state-keep',
+          sessionId: 'thread-keep',
+          agentName: 'agent-keep',
+          status: 'running',
+          step: 1,
+          maxSteps: 10,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+
+        await storage.saveAgentState({
+          id: 'state-delete',
+          sessionId: 'thread-delete',
+          agentName: 'agent-delete',
+          status: 'running',
+          step: 1,
+          maxSteps: 10,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+
+        // Act: delete one thread
+        await storage.deleteThread('thread-delete');
+
+        // Assert: other thread's data should remain
+        const keepState = await storage.getAgentState('thread-keep', 'agent-keep');
+        expect(keepState).not.toBeNull();
+        expect(keepState!.id).toBe('state-keep');
+
+        const deleteState = await storage.getAgentState('thread-delete', 'agent-delete');
+        expect(deleteState).toBeNull();
+      });
+
+      it('should handle deleting non-existent thread gracefully', async () => {
+        // Act: delete non-existent thread (should not throw)
+        await expect(storage.deleteThread('non-existent-thread')).resolves.toBeUndefined();
+      });
+    });
+  });
+
   // ========== Existing functionality regression ==========
 
   describe('Existing MemoryStorage regression', () => {

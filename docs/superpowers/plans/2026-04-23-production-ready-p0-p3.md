@@ -18,7 +18,7 @@
 | **P1 Task 2: 生命周期 Middleware** | ✅ 完成 | `ee00904` |
 | **P1 Task 3: 持久化存储扩展** | ✅ 完成 | — |
 | **P2 Task 1: 安全默认策略** | ✅ 完成 | 待提交 |
-| **P2 Task 2: 存储层外键约束** | 📋 计划中 | — |
+| **P2 Task 2: 存储层外键约束** | ✅ 设计完成 | 待实现 |
 | **P2 Task 3: 错误处理增强** | 📋 计划中 | — |
 | **P2 Task 4: 可观测性集成** | 📋 计划中 | — |
 | **P3 Task 1: CheckpointManager 迁移** | 📋 计划中 | — |
@@ -1214,32 +1214,394 @@ Phase 6: 文档更新
 
 ### P2 Task 2: 存储层外键约束
 
-**问题来源**: P1 审视问题 #3 - AgentState/Checkpoint 表缺乏外键
+**问题来源**: P1 审视问题 #3 - AgentState/Checkpoint 表缺乏级联删除
 
 **当前问题**: Thread 删除时，相关数据不会级联删除
 
-**设计方案**:
+---
 
-Option A: 添加外键约束 (推荐)
+## 详细设计
+
+### 1. 问题分析
+
+**当前表结构**:
+
 ```sql
-ALTER TABLE agent_state ADD FOREIGN KEY (session_id) REFERENCES threads(id) ON DELETE CASCADE;
-ALTER TABLE checkpoints ADD FOREIGN KEY (session_id) REFERENCES threads(id) ON DELETE CASCADE;
+-- 已有外键约束的表
+messages          → FOREIGN KEY (thread_id) REFERENCES threads(id) ON DELETE CASCADE
+working_memory    → FOREIGN KEY (thread_id) REFERENCES threads(id) ON DELETE CASCADE
+observations      → FOREIGN KEY (thread_id) REFERENCES threads(id) ON DELETE CASCADE
+
+-- 缺乏外键约束的表 (P1 新增)
+agent_state       → 无外键，只有索引 idx_agent_state_session_id
+checkpoints       → 无外键，只有索引 idx_checkpoints_session_id
 ```
 
-Option B: 手动级联删除
+**当前 deleteThread() 实现**:
+
 ```typescript
-// 在 deleteThread() 中添加
+// src/storage/sqlite-memory.ts:171-177
 async deleteThread(threadId: string): Promise<void> {
-  this.db!.run('DELETE FROM agent_state WHERE session_id = ?', [threadId]);
-  this.db!.run('DELETE FROM checkpoints WHERE session_id = ?', [threadId]);
-  // ... existing deletes
+  this.db!.run('DELETE FROM threads WHERE id = ?', [threadId]);
+  this.db!.run('DELETE FROM messages WHERE thread_id = ?', [threadId]);
+  this.db!.run('DELETE FROM working_memory WHERE thread_id = ?', [threadId]);
+  this.db!.run('DELETE FROM observations WHERE thread_id = ?', [threadId]);
+  // ❌ 缺少: agent_state, checkpoints
 }
 ```
 
-**预期产出**:
-- SQLite 表结构迁移脚本
-- 级联删除测试用例
-- 数据一致性验证
+**数据孤岛问题**:
+1. 删除 Thread 后，`agent_state` 和 `checkpoints` 数据残留
+2. 残留数据占用存储空间
+3. 可能导致数据不一致（孤儿记录）
+
+**技术约束**:
+1. sql.js 是 WebAssembly 版本的 SQLite，数据在内存中
+2. SQLite 不支持 `ALTER TABLE ADD CONSTRAINT` 添加外键
+3. SQLite 外键默认禁用，需要 `PRAGMA foreign_keys = ON`
+4. `session_id` 与 `thread_id` 术语不一致（P3 Task 2 将统一）
+
+---
+
+### 2. 设计方案选择
+
+#### Option A: 添加外键约束
+
+```sql
+-- 需要重建表才能添加外键
+CREATE TABLE agent_state_new (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  agent_name TEXT NOT NULL,
+  status TEXT NOT NULL,
+  step INTEGER NOT NULL,
+  max_steps INTEGER NOT NULL,
+  error TEXT,
+  created_at REAL NOT NULL,
+  updated_at REAL NOT NULL,
+  UNIQUE(session_id, agent_name),
+  FOREIGN KEY (session_id) REFERENCES threads(id) ON DELETE CASCADE
+);
+
+INSERT INTO agent_state_new SELECT * FROM agent_state;
+DROP TABLE agent_state;
+ALTER TABLE agent_state_new RENAME TO agent_state;
+```
+
+**优点**: 数据库级别保证一致性
+**缺点**: 
+- sql.js 每次启动都是新实例，迁移脚本每次都要执行
+- 需要启用 `PRAGMA foreign_keys = ON`
+- 复杂度高，容易出错
+
+#### Option B: 手动级联删除（推荐）
+
+```typescript
+async deleteThread(threadId: string): Promise<void> {
+  this.db!.run('DELETE FROM agent_state WHERE session_id = ?', [threadId]);
+  this.db!.run('DELETE FROM checkpoints WHERE session_id = ?', [threadId]);
+  this.db!.run('DELETE FROM messages WHERE thread_id = ?', [threadId]);
+  this.db!.run('DELETE FROM working_memory WHERE thread_id = ?', [threadId]);
+  this.db!.run('DELETE FROM observations WHERE thread_id = ?', [threadId]);
+  this.db!.run('DELETE FROM threads WHERE id = ?', [threadId]);
+}
+```
+
+**优点**: 
+- 简单可靠，不依赖 SQLite pragma 状态
+- 易于测试和验证
+- 保持向后兼容
+- 适用于 sql.js 内存数据库特性
+
+**缺点**: 
+- 代码级保证，非数据库级保证
+- 删除顺序需要正确（先删子表，后删主表）
+
+**决策**: 采用 **Option B（手动级联删除）**
+
+---
+
+### 3. 代码实现
+
+#### 3.1 deleteThread() 方法完整实现
+
+```typescript
+// src/storage/sqlite-memory.ts
+
+/**
+ * Delete a thread and all associated data.
+ * Cascade deletes to: messages, working_memory, observations, agent_state, checkpoints
+ */
+async deleteThread(threadId: string): Promise<void> {
+  this.ensureInitialized();
+  
+  // Delete in correct order: child tables first, then parent
+  // 1. Delete agent_state (references session_id = threadId)
+  this.db!.run('DELETE FROM agent_state WHERE session_id = ?', [threadId]);
+  
+  // 2. Delete checkpoints (references session_id = threadId)
+  this.db!.run('DELETE FROM checkpoints WHERE session_id = ?', [threadId]);
+  
+  // 3. Delete messages (has FK CASCADE, but delete explicitly for clarity)
+  this.db!.run('DELETE FROM messages WHERE thread_id = ?', [threadId]);
+  
+  // 4. Delete working_memory (has FK CASCADE, but delete explicitly for clarity)
+  this.db!.run('DELETE FROM working_memory WHERE thread_id = ?', [threadId]);
+  
+  // 5. Delete observations (has FK CASCADE, but delete explicitly for clarity)
+  this.db!.run('DELETE FROM observations WHERE thread_id = ?', [threadId]);
+  
+  // 6. Finally delete the thread itself
+  this.db!.run('DELETE FROM threads WHERE id = ?', [threadId]);
+}
+```
+
+#### 3.2 旧代码 vs 新代码对比
+
+```typescript
+// ❌ 旧代码 (缺失 agent_state, checkpoints)
+async deleteThread(threadId: string): Promise<void> {
+  this.db!.run('DELETE FROM threads WHERE id = ?', [threadId]);
+  this.db!.run('DELETE FROM messages WHERE thread_id = ?', [threadId]);
+  this.db!.run('DELETE FROM working_memory WHERE thread_id = ?', [threadId]);
+  this.db!.run('DELETE FROM observations WHERE thread_id = ?', [threadId]);
+}
+
+// ✅ 新代码 (完整级联删除)
+async deleteThread(threadId: string): Promise<void> {
+  // 新增: 删除 agent_state
+  this.db!.run('DELETE FROM agent_state WHERE session_id = ?', [threadId]);
+  // 新增: 删除 checkpoints
+  this.db!.run('DELETE FROM checkpoints WHERE session_id = ?', [threadId]);
+  // 原有: 删除 messages, working_memory, observations, threads
+  this.db!.run('DELETE FROM messages WHERE thread_id = ?', [threadId]);
+  this.db!.run('DELETE FROM working_memory WHERE thread_id = ?', [threadId]);
+  this.db!.run('DELETE FROM observations WHERE thread_id = ?', [threadId]);
+  this.db!.run('DELETE FROM threads WHERE id = ?', [threadId]);
+}
+```
+
+---
+
+### 4. 文件变更清单
+
+| 文件 | 变更类型 | 变更内容 |
+|------|----------|----------|
+| `src/storage/sqlite-memory.ts` | **Modify** | `deleteThread()` 添加 agent_state 和 checkpoints 删除 |
+| `tests/storage/sqlite-extension.test.ts` | **Modify** | 新增级联删除测试用例 |
+
+---
+
+### 5. 测试用例设计
+
+```typescript
+// tests/storage/sqlite-extension.test.ts
+
+describe('Cascade Delete', () => {
+  describe('deleteThread cascade', () => {
+    it('should delete agent_state when thread is deleted', async () => {
+      // Setup: create thread and agent_state
+      await storage.saveThread({
+        id: 'thread-cascade-1',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      await storage.saveAgentState({
+        id: 'state-cascade-1',
+        sessionId: 'thread-cascade-1',
+        agentName: 'test-agent',
+        status: 'running',
+        step: 1,
+        maxSteps: 10,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      // Act: delete thread
+      await storage.deleteThread('thread-cascade-1');
+
+      // Assert: agent_state should be deleted
+      const state = await storage.getAgentState('thread-cascade-1', 'test-agent');
+      expect(state).toBeNull();
+    });
+
+    it('should delete checkpoints when thread is deleted', async () => {
+      // Setup: create thread and checkpoint
+      await storage.saveThread({
+        id: 'thread-cascade-2',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      await storage.saveCheckpoint({
+        id: 'checkpoint-cascade-1',
+        sessionId: 'thread-cascade-2',
+        stepIndex: 1,
+        messages: [],
+        toolCalls: [],
+        state: { status: 'running', step: 1, maxSteps: 10 },
+        createdAt: Date.now(),
+      });
+
+      // Act: delete thread
+      await storage.deleteThread('thread-cascade-2');
+
+      // Assert: checkpoint should be deleted
+      const checkpoint = await storage.getCheckpoint('checkpoint-cascade-1');
+      expect(checkpoint).toBeNull();
+    });
+
+    it('should delete all related data when thread is deleted', async () => {
+      // Setup: create thread with all related data
+      const threadId = 'thread-full-cascade';
+      await storage.saveThread({
+        id: threadId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      // Add messages
+      await storage.addMessage(threadId, { role: 'user', content: 'test' });
+
+      // Add working memory
+      await storage.saveWorkingMemory(threadId, {
+        content: 'working memory',
+        updatedAt: new Date(),
+      });
+
+      // Add agent_state
+      await storage.saveAgentState({
+        id: 'state-full',
+        sessionId: threadId,
+        agentName: 'agent-1',
+        status: 'running',
+        step: 1,
+        maxSteps: 10,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      // Add checkpoint
+      await storage.saveCheckpoint({
+        id: 'checkpoint-full',
+        sessionId: threadId,
+        stepIndex: 1,
+        messages: [],
+        toolCalls: [],
+        state: { status: 'running', step: 1, maxSteps: 10 },
+        createdAt: Date.now(),
+      });
+
+      // Act: delete thread
+      await storage.deleteThread(threadId);
+
+      // Assert: all related data should be deleted
+      const thread = await storage.getThread(threadId);
+      expect(thread).toBeNull();
+
+      const messages = await storage.getMessages(threadId);
+      expect(messages).toHaveLength(0);
+
+      const wm = await storage.getWorkingMemory(threadId);
+      expect(wm).toBeNull();
+
+      const states = await storage.listAgentStates(threadId);
+      expect(states).toHaveLength(0);
+
+      const checkpoints = await storage.listCheckpoints(threadId);
+      expect(checkpoints).toHaveLength(0);
+    });
+
+    it('should not affect other threads data', async () => {
+      // Setup: create two threads with data
+      await storage.saveThread({
+        id: 'thread-keep',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      await storage.saveThread({
+        id: 'thread-delete',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      await storage.saveAgentState({
+        id: 'state-keep',
+        sessionId: 'thread-keep',
+        agentName: 'agent-keep',
+        status: 'running',
+        step: 1,
+        maxSteps: 10,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      await storage.saveAgentState({
+        id: 'state-delete',
+        sessionId: 'thread-delete',
+        agentName: 'agent-delete',
+        status: 'running',
+        step: 1,
+        maxSteps: 10,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      // Act: delete one thread
+      await storage.deleteThread('thread-delete');
+
+      // Assert: other thread's data should remain
+      const keepState = await storage.getAgentState('thread-keep', 'agent-keep');
+      expect(keepState).not.toBeNull();
+      expect(keepState!.id).toBe('state-keep');
+    });
+
+    it('should handle deleting non-existent thread gracefully', async () => {
+      // Act: delete non-existent thread (should not throw)
+      await expect(storage.deleteThread('non-existent-thread')).resolves.toBeUndefined();
+    });
+  });
+});
+```
+
+---
+
+### 6. 实现步骤
+
+```
+Phase 1: 代码修改
+├── [ ] src/storage/sqlite-memory.ts - deleteThread() 添加 agent_state 删除
+├── [ ] src/storage/sqlite-memory.ts - deleteThread() 添加 checkpoints 删除
+└── [ ] 验证: 编译通过
+
+Phase 2: 测试更新
+├── [ ] tests/storage/sqlite-extension.test.ts - 新增 Cascade Delete 测试套件
+├── [ ] tests/storage/sqlite-extension.test.ts - 5 个新测试用例
+└── [ ] 验证: 所有测试通过
+```
+
+---
+
+### 7. 预期产出清单
+
+- [ ] `deleteThread()` 方法完整级联删除
+- [ ] agent_state 随 thread 删除
+- [ ] checkpoints 随 thread 删除
+- [ ] 5 个级联删除测试用例全部通过
+- [ ] 不影响其他 thread 数据
+- [ ] 删除不存在的 thread 不报错
+
+---
+
+### 8. 注意事项
+
+**删除顺序很重要**:
+1. 先删除子表数据 (agent_state, checkpoints, messages, etc.)
+2. 最后删除主表 (threads)
+3. 避免外键约束冲突（即使当前 agent_state/checkpoints 没有外键）
+
+**术语说明**:
+- `thread_id` = `session_id` (P3 Task 2 将统一术语)
+- 当前 `agent_state.session_id` 和 `checkpoints.session_id` 对应 `threads.id`
 
 ---
 
