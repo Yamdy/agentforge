@@ -115,6 +115,11 @@ export type { Session, SessionMessage } from './session/index.js';
 
 export { Storage } from './storage/index.js';
 
+// Memory storage types - AgentState & Checkpoint
+export type { AgentState } from './memory/types.js';
+export { AgentStateSchema } from './memory/types.js';
+export type { Checkpoint } from './memory/types.js';
+
 export {
   AppError,
   NotFoundError,

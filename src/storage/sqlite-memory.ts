@@ -7,7 +7,9 @@ import type {
   Observation,
   WorkingMemory,
   ListThreadsOptions,
+  AgentState,
 } from '../memory/types.js';
+import type { Checkpoint } from '../session/types.js';
 import type { Message } from '../types.js';
 
 export class SQLiteMemoryStorage implements MemoryStorage {
@@ -82,6 +84,34 @@ export class SQLiteMemoryStorage implements MemoryStorage {
       );`,
       `CREATE INDEX IF NOT EXISTS idx_messages_thread_id ON messages(thread_id);`,
       `CREATE INDEX IF NOT EXISTS idx_observations_thread_id ON observations(thread_id);`,
+
+      // AgentState table
+      `CREATE TABLE IF NOT EXISTS agent_state (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        agent_name TEXT NOT NULL,
+        status TEXT NOT NULL,
+        step INTEGER NOT NULL,
+        max_steps INTEGER NOT NULL,
+        error TEXT,
+        created_at REAL NOT NULL,
+        updated_at REAL NOT NULL,
+        UNIQUE(session_id, agent_name)
+      );`,
+      `CREATE INDEX IF NOT EXISTS idx_agent_state_session_id ON agent_state(session_id);`,
+
+      // Checkpoints table
+      `CREATE TABLE IF NOT EXISTS checkpoints (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        step_index INTEGER NOT NULL,
+        messages TEXT NOT NULL,
+        tool_calls TEXT NOT NULL,
+        state TEXT NOT NULL,
+        created_at REAL NOT NULL,
+        metadata TEXT
+      );`,
+      `CREATE INDEX IF NOT EXISTS idx_checkpoints_session_id ON checkpoints(session_id);`,
     ];
 
     for (const query of queries) {
@@ -265,5 +295,160 @@ export class SQLiteMemoryStorage implements MemoryStorage {
         [obs.id, threadId, obs.content, obs.timestamp.getTime(), obs.compressionLevel ?? null]
       );
     }
+  }
+
+  // ========== AgentState operations ==========
+
+  async getAgentState(sessionId: string, agentName: string): Promise<AgentState | null> {
+    this.ensureInitialized();
+    const result = this.db!.exec(
+      `SELECT id, session_id, agent_name, status, step, max_steps, error, created_at, updated_at
+       FROM agent_state WHERE session_id = ? AND agent_name = ?`,
+      [sessionId, agentName]
+    );
+
+    if (result.length === 0 || result[0].values.length === 0) {
+      return null;
+    }
+
+    const [id, sessionIdDb, agentNameDb, status, step, maxSteps, error, createdAt, updatedAt] = result[0].values[0];
+    return {
+      id: id as string,
+      sessionId: sessionIdDb as string,
+      agentName: agentNameDb as string,
+      status: status as AgentState['status'],
+      step: step as number,
+      maxSteps: maxSteps as number,
+      error: error ? (error as string) : undefined,
+      createdAt: new Date(createdAt as number),
+      updatedAt: new Date(updatedAt as number),
+    };
+  }
+
+  async saveAgentState(state: AgentState): Promise<AgentState> {
+    this.ensureInitialized();
+    this.db!.run(
+      `INSERT OR REPLACE INTO agent_state
+       (id, session_id, agent_name, status, step, max_steps, error, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        state.id,
+        state.sessionId,
+        state.agentName,
+        state.status,
+        state.step,
+        state.maxSteps,
+        state.error ?? null,
+        state.createdAt.getTime(),
+        state.updatedAt.getTime(),
+      ]
+    );
+    return state;
+  }
+
+  async deleteAgentState(sessionId: string, agentName: string): Promise<void> {
+    this.ensureInitialized();
+    this.db!.run('DELETE FROM agent_state WHERE session_id = ? AND agent_name = ?', [sessionId, agentName]);
+  }
+
+  async listAgentStates(sessionId: string): Promise<AgentState[]> {
+    this.ensureInitialized();
+    const result = this.db!.exec(
+      `SELECT id, session_id, agent_name, status, step, max_steps, error, created_at, updated_at
+       FROM agent_state WHERE session_id = ? ORDER BY updated_at DESC`,
+      [sessionId]
+    );
+
+    if (result.length === 0) return [];
+
+    return result[0].values.map(([id, sessionIdDb, agentName, status, step, maxSteps, error, createdAt, updatedAt]) => ({
+      id: id as string,
+      sessionId: sessionIdDb as string,
+      agentName: agentName as string,
+      status: status as AgentState['status'],
+      step: step as number,
+      maxSteps: maxSteps as number,
+      error: error ? (error as string) : undefined,
+      createdAt: new Date(createdAt as number),
+      updatedAt: new Date(updatedAt as number),
+    }));
+  }
+
+  // ========== Checkpoint operations ==========
+
+  async getCheckpoint(checkpointId: string): Promise<Checkpoint | null> {
+    this.ensureInitialized();
+    const result = this.db!.exec(
+      `SELECT id, session_id, step_index, messages, tool_calls, state, created_at, metadata
+       FROM checkpoints WHERE id = ?`,
+      [checkpointId]
+    );
+
+    if (result.length === 0 || result[0].values.length === 0) {
+      return null;
+    }
+
+    const [id, sessionId, stepIndex, messages, toolCalls, state, createdAt, metadata] = result[0].values[0];
+    return {
+      id: id as string,
+      sessionId: sessionId as string,
+      stepIndex: stepIndex as number,
+      messages: JSON.parse(messages as string),
+      toolCalls: JSON.parse(toolCalls as string),
+      state: JSON.parse(state as string),
+      createdAt: createdAt as number,
+      metadata: metadata ? JSON.parse(metadata as string) : undefined,
+    };
+  }
+
+  async saveCheckpoint(checkpoint: Checkpoint): Promise<Checkpoint> {
+    this.ensureInitialized();
+    this.db!.run(
+      `INSERT OR REPLACE INTO checkpoints
+       (id, session_id, step_index, messages, tool_calls, state, created_at, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        checkpoint.id,
+        checkpoint.sessionId,
+        checkpoint.stepIndex,
+        JSON.stringify(checkpoint.messages),
+        JSON.stringify(checkpoint.toolCalls),
+        JSON.stringify(checkpoint.state),
+        checkpoint.createdAt,
+        checkpoint.metadata ? JSON.stringify(checkpoint.metadata) : null,
+      ]
+    );
+    return checkpoint;
+  }
+
+  async listCheckpoints(sessionId: string): Promise<Checkpoint[]> {
+    this.ensureInitialized();
+    const result = this.db!.exec(
+      `SELECT id, session_id, step_index, messages, tool_calls, state, created_at, metadata
+       FROM checkpoints WHERE session_id = ? ORDER BY step_index DESC`,
+      [sessionId]
+    );
+
+    if (result.length === 0) return [];
+
+    return result[0].values.map(([id, sessionIdDb, stepIndex, messages, toolCalls, state, createdAt, metadata]) => ({
+      id: id as string,
+      sessionId: sessionIdDb as string,
+      stepIndex: stepIndex as number,
+      messages: JSON.parse(messages as string),
+      toolCalls: JSON.parse(toolCalls as string),
+      state: JSON.parse(state as string),
+      createdAt: createdAt as number,
+      metadata: metadata ? JSON.parse(metadata as string) : undefined,
+    }));
+  }
+
+  async deleteCheckpoint(checkpointId: string): Promise<boolean> {
+    this.ensureInitialized();
+    const existing = await this.getCheckpoint(checkpointId);
+    if (!existing) return false;
+
+    this.db!.run('DELETE FROM checkpoints WHERE id = ?', [checkpointId]);
+    return true;
   }
 }

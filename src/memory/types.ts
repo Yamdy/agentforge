@@ -1,6 +1,28 @@
 import { z } from 'zod';
 import type { Message } from '../types.js';
 
+// Re-export Checkpoint type from session for convenience
+export type { Checkpoint } from '../session/types.js';
+
+// === AgentState ===
+/**
+ * Represents the persistent state of an agent within a session.
+ * Used for checkpointing and resuming agent execution.
+ */
+export const AgentStateSchema = z.object({
+  id: z.string(),
+  sessionId: z.string(),
+  agentName: z.string(),
+  status: z.enum(['pending', 'running', 'paused', 'completed', 'cancelled', 'error']),
+  step: z.number().int().nonnegative(),
+  maxSteps: z.number().int().positive(),
+  error: z.string().optional(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+
+export type AgentState = z.infer<typeof AgentStateSchema>;
+
 // === Thread ===
 export const ThreadSchema = z.object({
   id: z.string(),
@@ -55,6 +77,18 @@ export interface MemoryStorage {
   // ObservationalMemory operations (optional)
   getObservationalMemory?(threadId: string): Promise<Observation[] | null>;
   saveObservationalMemory?(threadId: string, observations: Observation[]): Promise<void>;
+
+  // AgentState operations (optional)
+  getAgentState?(sessionId: string, agentName: string): Promise<AgentState | null>;
+  saveAgentState?(state: AgentState): Promise<AgentState>;
+  deleteAgentState?(sessionId: string, agentName: string): Promise<void>;
+  listAgentStates?(sessionId: string): Promise<AgentState[]>;
+
+  // Checkpoint operations (optional)
+  getCheckpoint?(checkpointId: string): Promise<import('../session/types.js').Checkpoint | null>;
+  saveCheckpoint?(checkpoint: import('../session/types.js').Checkpoint): Promise<import('../session/types.js').Checkpoint>;
+  listCheckpoints?(sessionId: string): Promise<import('../session/types.js').Checkpoint[]>;
+  deleteCheckpoint?(checkpointId: string): Promise<boolean>;
 }
 
 // === Configs ===
@@ -96,6 +130,7 @@ export const schemas = {
   Thread: ThreadSchema,
   Observation: ObservationSchema,
   WorkingMemory: WorkingMemorySchema,
+  AgentState: AgentStateSchema,
   MessageHistoryConfig: MessageHistoryConfigSchema,
   WorkingMemoryConfig: WorkingMemoryConfigSchema,
   ObservationalMemoryConfig: ObservationalMemoryConfigSchema,
