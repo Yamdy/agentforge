@@ -1,7 +1,7 @@
 # AgentForge 生产可用增强计划 - 执行状态
 
-> **最后更新**: 2026-04-24 00:35
-> **当前阶段**: P1 Task 1-2 完成，已合入 main
+> **最后更新**: 2026-04-24 04:20
+> **当前阶段**: P1 全部完成，P2/P3 计划已制定
 
 ---
 
@@ -14,6 +14,17 @@
 | **P0 Task 3: 内置工具适配** | ✅ 完成 | `8b141bd` |
 | **P0 Task 4: Truncate** | ✅ 完成 | `f3d976d` |
 | **P0 Task 5: 测试验证** | ✅ 完成 | `tests/p0-validation.test.ts` |
+| **P1 Task 1: 权限 Ruleset** | ✅ 完成 | `b2f1ae1` |
+| **P1 Task 2: 生命周期 Middleware** | ✅ 完成 | `ee00904` |
+| **P1 Task 3: 持久化存储扩展** | ✅ 完成 | — |
+| **P2 Task 1: 安全默认策略** | 📋 计划中 | — |
+| **P2 Task 2: 存储层外键约束** | 📋 计划中 | — |
+| **P2 Task 3: 错误处理增强** | 📋 计划中 | — |
+| **P2 Task 4: 可观测性集成** | 📋 计划中 | — |
+| **P3 Task 1: CheckpointManager 迁移** | 📋 计划中 | — |
+| **P3 Task 2: Session/Thread 术语统一** | 📋 计划中 | — |
+| **P3 Task 3: 配置格式数组化** | 📋 计划中 | — |
+| **P3 Task 4: 文档与示例完善** | 📋 计划中 | — |
 
 ---
 
@@ -496,9 +507,312 @@ describe('Truncate', () => {
 |------|------|------|
 | **P1 Task 1: 权限 Ruleset** | ✅ 完成 | b2f1ae1 |
 | **P1 Task 2: 生命周期 Middleware** | ✅ 完成 | ee00904 |
-| 持久化存储 (SQLite) | 待开发 | — |
+| **P1 Task 3: 持久化存储扩展** | ✅ 完成 | — |
 
-### P1 Task 1: 权限 Ruleset ✅ 已完成
+### P1 Task 3: 持久化存储扩展 ✅ 已完成
+
+**设计参考**: OpenCode SQLite WAL/session tables + Mastra persistWorkflowSnapshot + Agentscope JSON serialization
+
+**已完成内容**:
+- `src/memory/types.ts` - 新增 AgentState 接口和 Zod schema
+- `src/memory/types.ts` - MemoryStorage 接口扩展 (可选方法)
+- `src/storage/sqlite-memory.ts` - agent_state 表 + checkpoints 表
+- `src/storage/sqlite-memory.ts` - AgentState CRUD 方法实现
+- `src/storage/sqlite-memory.ts` - Checkpoint CRUD 方法实现
+- `src/memory/index.ts` - AgentState/Checkpoint 类型导出
+- `src/index.ts` - AgentState/Checkpoint 顶层导出
+- `tests/storage/sqlite-extension.test.ts` - 24 个测试用例全部通过
+
+**核心设计**:
+1. AgentState 表 - 按 (sessionId, agentName) 唯一索引，支持 upsert
+2. Checkpoints 表 - 按 sessionId 索引，JSON 序列化复杂字段
+3. 可选方法 - 所有新方法为可选，不破坏现有 MemoryStorage 实现
+4. SQLite WAL - 继承原有 SQLite 配置，支持持久化
+5. NULL 转换 - 正确处理 null → undefined 转换
+
+**新增表结构**:
+```sql
+-- agent_state
+CREATE TABLE agent_state (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  agent_name TEXT NOT NULL,
+  status TEXT NOT NULL,
+  step INTEGER NOT NULL,
+  max_steps INTEGER NOT NULL,
+  error TEXT,
+  created_at REAL NOT NULL,
+  updated_at REAL NOT NULL,
+  UNIQUE(session_id, agent_name)
+);
+
+-- checkpoints
+CREATE TABLE checkpoints (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  step_index INTEGER NOT NULL,
+  messages TEXT NOT NULL,
+  tool_calls TEXT NOT NULL,
+  state TEXT NOT NULL,
+  created_at REAL NOT NULL,
+  metadata TEXT
+);
+```
+
+**新增 MemoryStorage 方法**:
+```typescript
+// AgentState (optional)
+getAgentState?(sessionId: string, agentName: string): Promise<AgentState | null>;
+saveAgentState?(state: AgentState): Promise<AgentState>;
+deleteAgentState?(sessionId: string, agentName: string): Promise<void>;
+listAgentStates?(sessionId: string): Promise<AgentState[]>;
+
+// Checkpoint (optional)
+getCheckpoint?(checkpointId: string): Promise<Checkpoint | null>;
+saveCheckpoint?(checkpoint: Checkpoint): Promise<Checkpoint>;
+listCheckpoints?(sessionId: string): Promise<Checkpoint[]>;
+deleteCheckpoint?(checkpointId: string): Promise<boolean>;
+```
+
+---
+
+## P2 生产稳定性增强 (计划)
+
+> **目标**: 解决 P1 遗留问题，增强生产环境稳定性
+
+| 项目 | 状态 | 优先级 |
+|------|------|--------|
+| **P2 Task 1: 安全默认策略** | 待开发 | 高 |
+| **P2 Task 2: 存储层外键约束** | 待开发 | 中 |
+| **P2 Task 3: 错误处理增强** | 待开发 | 中 |
+| **P2 Task 4: 可观测性集成** | 待开发 | 低 |
+
+### P2 Task 1: 安全默认策略
+
+**问题来源**: P1 审视问题 #1 - 权限系统默认过于宽松
+
+**当前行为**:
+```typescript
+// manager.ts:179-180
+if (!lastMatch) {
+  return { action: 'allow' };  // 无规则匹配时默认允许
+}
+```
+
+**目标**: 提供可配置的默认策略，而非硬编码 `allow`
+
+**设计方案**:
+```typescript
+// 新增 PermissionManager 配置
+interface PermissionManagerConfig {
+  /** 无规则匹配时的默认动作 (default: 'ask') */
+  defaultAction?: 'allow' | 'deny' | 'ask';
+  /** 是否启用严格模式 (defaultAction='ask', 禁止通配符绕过) */
+  strict?: boolean;
+}
+
+// 修改 PermissionManager 构造函数
+constructor(config?: PermissionManagerConfig) {
+  this.config = { defaultAction: 'ask', ...config };
+}
+
+// 修改 check() 方法
+if (!lastMatch) {
+  return { action: this.config.defaultAction, ... };
+}
+```
+
+**预期产出**:
+- `PermissionManagerConfig` 接口
+- 构造函数支持配置
+- `strict` 预设修改为 `strictRules + defaultAction='deny'`
+- 5-8 个测试用例
+
+---
+
+### P2 Task 2: 存储层外键约束
+
+**问题来源**: P1 审视问题 #3 - AgentState/Checkpoint 表缺乏外键
+
+**当前问题**: Thread 删除时，相关数据不会级联删除
+
+**设计方案**:
+
+Option A: 添加外键约束 (推荐)
+```sql
+ALTER TABLE agent_state ADD FOREIGN KEY (session_id) REFERENCES threads(id) ON DELETE CASCADE;
+ALTER TABLE checkpoints ADD FOREIGN KEY (session_id) REFERENCES threads(id) ON DELETE CASCADE;
+```
+
+Option B: 手动级联删除
+```typescript
+// 在 deleteThread() 中添加
+async deleteThread(threadId: string): Promise<void> {
+  this.db!.run('DELETE FROM agent_state WHERE session_id = ?', [threadId]);
+  this.db!.run('DELETE FROM checkpoints WHERE session_id = ?', [threadId]);
+  // ... existing deletes
+}
+```
+
+**预期产出**:
+- SQLite 表结构迁移脚本
+- 级联删除测试用例
+- 数据一致性验证
+
+---
+
+### P2 Task 3: 错误处理增强
+
+**目标**: 统一错误类型，提供更好的错误信息
+
+**预期产出**:
+```typescript
+// src/errors/storage.ts
+export class StorageError extends AppError {
+  constructor(message: string, public readonly operation: string, public readonly table?: string) {
+    super(message);
+  }
+}
+
+export class CheckpointNotFoundError extends StorageError { ... }
+export class AgentStateNotFoundError extends StorageError { ... }
+export class DatabaseCorruptionError extends StorageError { ... }
+```
+
+---
+
+### P2 Task 4: 可观测性集成
+
+**目标**: 集成 OpenTelemetry/Sentry 风格的 tracing
+
+**预期产出**:
+- `src/observability/tracing.ts` - Span 创建和管理
+- Permission check spans
+- Tool execution spans
+- Storage operation spans
+
+---
+
+## P3 架构优化 (计划)
+
+> **目标**: 统一架构，完善功能
+
+| 项目 | 状态 | 优先级 |
+|------|------|--------|
+| **P3 Task 1: CheckpointManager 迁移** | 待开发 | 高 |
+| **P3 Task 2: Session/Thread 术语统一** | 待开发 | 中 |
+| **P3 Task 3: 配置格式数组化** | 待开发 | 低 |
+| **P3 Task 4: 文档与示例完善** | 待开发 | 中 |
+
+### P3 Task 1: CheckpointManager 迁移
+
+**问题来源**: P1 审视问题 #4 - CheckpointManager 未迁移到 SQLite
+
+**当前状态**:
+- `CheckpointManager` 使用 JSON 文件存储
+- `SQLiteMemoryStorage` 支持 Checkpoint 存储
+- 两套系统并存
+
+**设计方案**:
+
+Option A: 适配器模式
+```typescript
+interface CheckpointStorage {
+  get(id: string): Promise<Checkpoint | null>;
+  save(checkpoint: Checkpoint): Promise<void>;
+  list(sessionId: string): Promise<Checkpoint[]>;
+  delete(id: string): Promise<boolean>;
+}
+
+// 实现
+class JsonCheckpointStorage implements CheckpointStorage { ... }
+class SqliteCheckpointStorage implements CheckpointStorage { ... }
+
+// CheckpointManager 使用
+class CheckpointManager {
+  constructor(private storage: CheckpointStorage) { ... }
+}
+```
+
+Option B: 直接迁移
+```typescript
+// CheckpointManager 内部使用 SQLiteMemoryStorage
+class CheckpointManager {
+  private storage: SQLiteMemoryStorage;
+  constructor(dbPath?: string) {
+    this.storage = new SQLiteMemoryStorage(dbPath);
+  }
+}
+```
+
+**预期产出**:
+- `CheckpointStorage` 接口
+- 两套实现 (JSON/SQLite)
+- 迁移测试用例
+- 向后兼容指南
+
+---
+
+### P3 Task 2: Session/Thread 术语统一
+
+**问题来源**: P1 审视 - 命名不一致
+
+**当前问题**:
+- `Thread.id` (memory 模块)
+- `AgentState.sessionId` (storage 模块)
+- `Checkpoint.sessionId` (session 模块)
+
+**设计方案**:
+统一为 `threadId` 或明确区分用途：
+- `Thread` = 对话线程 (用户可见)
+- `Session` = 执行会话 (agent 运行时状态)
+
+**预期产出**:
+- 术语定义文档
+- 类型别名或重命名
+- 迁移指南
+
+---
+
+### P3 Task 3: 配置格式数组化
+
+**问题来源**: P1 审视问题 #2 - JSON 对象顺序不确定
+
+**当前问题**:
+```json
+{
+  "permission": {
+    "bash": { "*": "ask", "git *": "allow" }  // 顺序不确定
+  }
+}
+```
+
+**设计方案**:
+```json
+{
+  "permission": {
+    "bash": [
+      { "pattern": "*", "action": "ask" },
+      { "pattern": "git *", "action": "allow" }
+    ]
+  }
+}
+```
+
+**预期产出**:
+- 支持数组格式解析
+- 向后兼容对象格式
+- 文档说明推荐数组格式
+
+---
+
+### P3 Task 4: 文档与示例完善
+
+**预期产出**:
+- `docs/permission.md` - 权限系统使用指南
+- `docs/lifecycle.md` - 中间件开发指南
+- `docs/storage.md` - 存储层架构文档
+- `examples/` - 完整使用示例
 
 **设计参考**: OpenCode pattern-based permission system
 
@@ -610,7 +924,7 @@ manager.use(auditMiddleware)
 复制以下内容到新会话：
 
 ```
-继续 AgentForge P1 生产可用增强计划。
+继续 AgentForge 生产可用增强计划。
 
 当前状态：
 **P0 全部完成：**
@@ -620,12 +934,25 @@ manager.use(auditMiddleware)
 - Task 4 (Truncate) ✅ f3d976d
 - Task 5 (测试验证) ✅ 1635c41
 
-**P1 进行中：**
+**P1 全部完成：**
 - Task 1 (权限 Ruleset) ✅ b2f1ae1
 - Task 2 (生命周期 Middleware) ✅ ee00904
+- Task 3 (持久化存储扩展) ✅ 已完成
+
+**P2 待开发：**
+- Task 1: 安全默认策略 (高优先级)
+- Task 2: 存储层外键约束 (中优先级)
+- Task 3: 错误处理增强 (中优先级)
+- Task 4: 可观测性集成 (低优先级)
+
+**P3 待开发：**
+- Task 1: CheckpointManager 迁移 (高优先级)
+- Task 2: Session/Thread 术语统一 (中优先级)
+- Task 3: 配置格式数组化 (低优先级)
+- Task 4: 文档与示例完善 (中优先级)
 
 下一步：
-- P1 Task 3: 持久化存储扩展
+- 开始 P2 Task 1: 安全默认策略
 - 参考 docs/superpowers/plans/2026-04-23-production-ready-p0-p3.md
 ```
 
