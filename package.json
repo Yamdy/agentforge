@@ -57,8 +57,12 @@
   },
   "dependencies": {
     "@agents-mdx/runtime": "0.0.15",
+    "@ai-sdk/amazon-bedrock": "^4.0.96",
+    "@ai-sdk/anthropic": "^3.0.71",
+    "@ai-sdk/google-vertex": "^4.0.112",
     "@ai-sdk/openai": "^3.0.50",
     "@ai-sdk/openai-compatible": "^2.0.38",
+    "@ai-sdk/provider": "^3.0.8",
     "@clack/prompts": "^0.7.0",
     "@modelcontextprotocol/sdk": "^1.0.1",
     "@primno/dpapi": "^2.0.1",
