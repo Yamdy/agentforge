@@ -2,12 +2,16 @@
  * AgentForge Skill 系统示例
  *
  * 本示例展示：
- * 1. 如何使用 SkillLoader 加载 SKILL.md 文件
- * 2. 如何使用 SkillParser 解析 YAML frontmatter
- * 3. SkillRegistry 的注册和查询功能
- * 4. SkillWatcher 实现热加载
+ * 1. 使用真实 Skills 目录加载技能
+ * 2. 如何使用 SkillLoader 加载 SKILL.md 文件
+ * 3. 如何使用 SkillParser 解析 YAML frontmatter
+ * 4. SkillRegistry 的注册和查询功能
+ * 5. SkillWatcher 实现热加载
  *
  * 运行方式：npx tsx examples/12-skill.ts
+ *
+ * 真实 Skills 目录：C:\Users\90514\.config\opencode\skills
+ * 包含：effect-ts-guide, xlsx, pptx, pdf, webapp-testing 等
  */
 
 import { writeFileSync, mkdirSync, rmSync, existsSync } from 'fs';
@@ -39,6 +43,93 @@ import {
   watchSkills,
   type SkillReloadEvent,
 } from '../src/skill/index.js';
+
+// ============================================================
+// 真实 Skills 目录路径
+// ============================================================
+
+/**
+ * 真实的 Skills 目录（用户配置）
+ * 包含多个真实技能：effect-ts-guide, xlsx, pptx, pdf, webapp-testing 等
+ */
+const REAL_SKILLS_DIR = 'C:\\Users\\90514\\.config\\opencode\\skills';
+
+// ============================================================
+// 示例 0：加载真实 Skills 目录
+// ============================================================
+
+/**
+ * 加载真实 Skills 目录示例
+ *
+ * 从用户的 skills 目录加载真实的技能文件，展示实际使用场景。
+ */
+async function example0_LoadRealSkills(): Promise<void> {
+  console.log('=== 示例 0：加载真实 Skills 目录 ===\n');
+
+  if (!existsSync(REAL_SKILLS_DIR)) {
+    console.log(`Skills 目录不存在: ${REAL_SKILLS_DIR}\n`);
+    return;
+  }
+
+  console.log(`从真实目录加载技能: ${REAL_SKILLS_DIR}\n`);
+
+  // 使用 loadSkillsFromDirectory 批量加载
+  console.log('使用 loadSkillsFromDirectory 批量加载:');
+  const skills = await loadSkillsFromDirectory(REAL_SKILLS_DIR);
+
+  console.log(`加载成功！共发现 ${skills.length} 个技能\n`);
+
+  // 显示所有加载的技能
+  for (const skill of skills) {
+    console.log(`技能: ${skill.frontmatter.name}`);
+    console.log(`  描述: ${skill.frontmatter.description?.slice(0, 80) ?? '无描述'}...`);
+    console.log(`  位置: ${skill.location}`);
+    console.log(`  内容长度: ${skill.content.length} 字符`);
+    console.log('');
+  }
+  console.log('\n');
+
+  // 使用 SkillRegistry 从目录加载
+  console.log('使用 SkillRegistry 从目录加载:');
+  const registry = new SkillRegistry({
+    hooks: [createLoggingHook()],
+  });
+
+  const registeredSkills = await registry.loadDirectory(REAL_SKILLS_DIR);
+  console.log(`注册了 ${registeredSkills.length} 个技能`);
+
+  // 列出所有已注册技能
+  console.log('\n已注册的技能名称:');
+  for (const name of registry.list()) {
+    console.log(`  - ${name}`);
+  }
+  console.log('\n');
+
+  // 按关键词搜索
+  console.log('按关键词搜索:');
+  const effectSkills = registry.findByKeywords(['effect']);
+  console.log(`  包含 'effect' 关键词: ${effectSkills.length} 个`);
+
+  const testSkills = registry.findByKeywords(['testing']);
+  console.log(`  包含 'testing' 关键词: ${testSkills.length} 个`);
+  console.log('\n');
+
+  // 获取特定技能详情
+  const effectTsSkill = registry.get('effect-ts-guide');
+  if (effectTsSkill !== undefined) {
+    console.log('effect-ts-guide 技能详情:');
+    console.log(`  名称: ${effectTsSkill.frontmatter.name}`);
+    console.log(`  描述: ${effectTsSkill.frontmatter.description?.slice(0, 100)}...`);
+    console.log(`  许可证: ${effectTsSkill.frontmatter.license ?? '未指定'}`);
+    console.log('');
+  }
+
+  // 检查技能是否存在
+  console.log('检查技能是否存在:');
+  console.log(`  effect-ts-guide 存在: ${registry.has('effect-ts-guide')}`);
+  console.log(`  nonexistent-skill 存在: ${registry.has('nonexistent-skill')}`);
+  console.log('\n');
+}
 
 // ============================================================
 // Mock SKILL.md 内容
@@ -606,17 +697,49 @@ async function example5_HotReload(): Promise<void> {
 // ============================================================
 
 async function main(): Promise<void> {
-  console.log('╔════════════════════════════════════════════════════════╗');
-  console.log('║        AgentForge Skill 系统示例                        ║');
-  console.log('╚════════════════════════════════════════════════════════╝\n');
+  const example = process.argv[2] ?? 'all';
 
-  await example1_LoadSkill();
-  await example2_ParseSkillFile();
-  await example3_SkillRegistry();
-  await example4_DiscoverSkills();
-  await example5_HotReload();
+  switch (example) {
+    case 'real':
+      await example0_LoadRealSkills();
+      break;
+    case '1':
+      await example1_LoadSkill();
+      break;
+    case '2':
+      await example2_ParseSkillFile();
+      break;
+    case '3':
+      await example3_SkillRegistry();
+      break;
+    case '4':
+      await example4_DiscoverSkills();
+      break;
+    case '5':
+      await example5_HotReload();
+      break;
+    case 'all':
+    default:
+      console.log('╔════════════════════════════════════════════════════════╗');
+      console.log('║        AgentForge Skill 系统示例                        ║');
+      console.log('╚════════════════════════════════════════════════════════╝\n');
 
-  console.log('=== 所有示例完成 ===');
+      console.log('用法: npx tsx examples/12-skill.ts <示例编号>\n');
+      console.log('可用示例:');
+      console.log('  real - 加载真实 Skills 目录 (推荐先试这个)');
+      console.log('  1    - 加载单个 SKILL.md 文件');
+      console.log('  2    - 解析 YAML Frontmatter');
+      console.log('  3    - SkillRegistry 集成');
+      console.log('  4    - 技能发现');
+      console.log('  5    - 热加载监听');
+      console.log('  all  - 运行所有示例（默认）\n');
+
+      // 运行真实示例
+      await example0_LoadRealSkills();
+      break;
+  }
+
+  console.log('=== 示例完成 ===');
 }
 
 // 运行示例

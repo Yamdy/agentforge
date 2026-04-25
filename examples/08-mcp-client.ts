@@ -2,7 +2,7 @@
  * AgentForge MCP (Model Context Protocol) 客户端示例
  *
  * 本示例展示：
- * 1. Stdio 传输层连接 MCP 服务器
+ * 1. Stdio 传输层连接 MCP 服务器（使用 Puppeteer MCP Server）
  * 2. HTTP 传输层连接 MCP 服务器
  * 3. 工具发现与执行
  * 4. MCP 工具集成到 ToolRegistry
@@ -11,13 +11,13 @@
  * MCP 协议基于 JSON-RPC 2.0，支持 Stdio 和 HTTP 两种传输方式。
  *
  * 运行方式：
+ * - Puppeteer 示例：npx tsx examples/08-mcp-client.ts puppeteer
  * - Stdio 示例：npx tsx examples/08-mcp-client.ts stdio
  * - HTTP 示例：npx tsx examples/08-mcp-client.ts http
  * - 工具集成示例：npx tsx examples/08-mcp-client.ts integration
  *
- * 注意：运行此示例需要实际的 MCP 服务器。
- * Stdio 示例可使用 @modelcontextprotocol/server-filesystem：
- *   npx -y @modelcontextprotocol/server-filesystem /tmp
+ * 推荐使用 Puppeteer MCP Server 进行浏览器自动化测试：
+ *   配置: { command: 'npx', args: ['-y', '@modelcontextprotocol/server-puppeteer'] }
  */
 
 import {
@@ -40,11 +40,120 @@ import { SimpleToolRegistry } from '../src/core/index.js';
 import type { MCPServerConfig } from '../src/core/interfaces.js';
 
 // ============================================================
-// 示例 1: Stdio 传输层连接
+// 示例 1: Puppeteer MCP Server (真实示例)
 // ============================================================
 
 /**
- * Stdio 传输层示例
+ * Puppeteer MCP Server 示例
+ *
+ * 使用 @modelcontextprotocol/server-puppeteer 进行浏览器自动化。
+ * 这是一个真实的 MCP 服务器，提供浏览器操作能力。
+ *
+ * 可用工具:
+ * - puppeteer_navigate: 导航到 URL
+ * - puppeteer_screenshot: 截取屏幕截图
+ * - puppeteer_click: 点击元素
+ * - puppeteer_fill: 填充输入框
+ * - puppeteer_select: 选择下拉框
+ * - puppeteer_hover: 悬停元素
+ * - puppeteer_evaluate: 执行 JavaScript
+ */
+async function examplePuppeteerMCP(): Promise<void> {
+  console.log('=== 示例 1: Puppeteer MCP Server (真实示例) ===\n');
+
+  // Puppeteer MCP 服务器配置（来自用户配置）
+  const config: MCPServerConfig = {
+    name: 'puppeteer',
+    type: 'stdio',
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-puppeteer'],
+  };
+
+  // 收集事件
+  const events: MCPEvent[] = [];
+
+  // 创建 MCP 客户端
+  const client = createMCPClient(config, {
+    serverName: 'puppeteer',
+    sessionId: 'puppeteer-demo-' + Date.now(),
+    timeout: 60000, // Puppeteer 可能需要更长时间
+    emitEvent: (event: MCPEvent) => {
+      events.push(event);
+      console.log(`[MCP 事件] ${event.type}`);
+    },
+  });
+
+  try {
+    // 连接到 Puppeteer MCP 服务器
+    console.log('正在连接 Puppeteer MCP 服务器...');
+    console.log('命令: npx -y @modelcontextprotocol/server-puppeteer\n');
+    await client.connect();
+    console.log('连接成功！\n');
+
+    // 获取可用工具列表
+    console.log('获取 Puppeteer 工具列表:');
+    const tools = await client.tools();
+    for (const tool of tools) {
+      console.log(`  - ${tool.name}: ${tool.description?.slice(0, 60) ?? '无描述'}...`);
+    }
+    console.log(`\n共发现 ${tools.length} 个浏览器自动化工具\n`);
+
+    // 示例：导航到网页
+    const navigateTool = tools.find((t) => t.name === 'puppeteer_navigate');
+    if (navigateTool !== undefined) {
+      console.log('执行 puppeteer_navigate:');
+      console.log('  参数: { url: "https://example.com" }');
+      try {
+        const result = await client.callTool('puppeteer_navigate', {
+          url: 'https://example.com',
+        });
+        console.log(`  导航成功！\n`);
+      } catch (navError) {
+        const message = navError instanceof Error ? navError.message : String(navError);
+        console.log(`  导航失败: ${message}\n`);
+      }
+    }
+
+    // 示例：截取屏幕截图
+    const screenshotTool = tools.find((t) => t.name === 'puppeteer_screenshot');
+    if (screenshotTool !== undefined) {
+      console.log('执行 puppeteer_screenshot:');
+      try {
+        const result = await client.callTool('puppeteer_screenshot', {
+          name: 'example-page',
+        });
+        console.log(`  截图成功！结果长度: ${result.length} 字符\n`);
+      } catch (ssError) {
+        const message = ssError instanceof Error ? ssError.message : String(ssError);
+        console.log(`  截图失败: ${message}\n`);
+      }
+    }
+
+    // 显示收集的事件
+    console.log('收集的 MCP 事件:');
+    for (const event of events) {
+      console.log(`  - ${event.type}`);
+    }
+    console.log('\n');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.log(`Puppeteer MCP 连接失败: ${message}`);
+    console.log('提示：请确保已安装 Node.js 并可访问 npx');
+    console.log('      首次运行需要下载 puppeteer，可能需要几分钟\n');
+  } finally {
+    // 断开连接
+    console.log('断开 Puppeteer MCP 连接...');
+    await client.disconnect();
+    console.log('已断开\n');
+  }
+}
+
+// ============================================================
+// 示例 2: Stdio 传输层连接 (Filesystem)
+// ============================================================
+
+/**
+ * Stdio 传输层示例（Filesystem MCP Server）
  *
  * Stdio 传输通过 stdin/stdout 与子进程通信，
  * 适用于本地 MCP 服务器（如 @modelcontextprotocol/server-filesystem）。
@@ -52,7 +161,7 @@ import type { MCPServerConfig } from '../src/core/interfaces.js';
  * 协议：换行分隔的 JSON（每行一个 JSON-RPC 消息）
  */
 async function exampleStdioTransport(): Promise<void> {
-  console.log('=== 示例 1: Stdio 传输层连接 ===\n');
+  console.log('=== 示例 2: Stdio 传输层连接 (Filesystem) ===\n');
 
   // MCP 服务器配置
   const config: MCPServerConfig = {
@@ -134,7 +243,7 @@ async function exampleStdioTransport(): Promise<void> {
  * 会话管理：通过 mcp-session-id 头部
  */
 async function exampleHTTPTransport(): Promise<void> {
-  console.log('=== 示例 2: HTTP 传输层连接 ===\n');
+  console.log('=== 示例 3: HTTP 传输层连接 ===\n');
 
   // HTTP 服务器配置
   const config: MCPServerConfig = {
@@ -188,7 +297,7 @@ async function exampleHTTPTransport(): Promise<void> {
  * 而不通过 MCP 客户端封装。
  */
 async function exampleDirectTransport(): Promise<void> {
-  console.log('=== 示例 3: 直接使用传输层 ===\n');
+  console.log('=== 示例 4: 直接使用传输层 ===\n');
 
   // StdioTransport 直接使用
   console.log('StdioTransport 直接使用:');
@@ -260,7 +369,7 @@ async function exampleDirectTransport(): Promise<void> {
  * 3. 处理工具返回结果
  */
 async function exampleToolDiscovery(): Promise<void> {
-  console.log('=== 示例 4: 工具发现与执行 ===\n');
+  console.log('=== 示例 5: 工具发现与执行 ===\n');
 
   const config: MCPServerConfig = {
     name: 'filesystem',
@@ -344,7 +453,7 @@ async function exampleToolDiscovery(): Promise<void> {
  * AgentForge 的 ToolDefinition，并注册到 SimpleToolRegistry。
  */
 async function exampleToolRegistryIntegration(): Promise<void> {
-  console.log('=== 示例 5: 集成到 ToolRegistry ===\n');
+  console.log('=== 示例 6: 集成到 ToolRegistry ===\n');
 
   const config: MCPServerConfig = {
     name: 'filesystem',
@@ -440,7 +549,7 @@ async function exampleToolRegistryIntegration(): Promise<void> {
  * 4. 传输层错误
  */
 async function exampleErrorHandling(): Promise<void> {
-  console.log('=== 示例 6: 错误处理 ===\n');
+  console.log('=== 示例 7: 错误处理 ===\n');
 
   // 场景 1: 连接失败（无效命令）
   console.log('场景 1: 连接失败 - 无效命令');
@@ -560,7 +669,7 @@ async function exampleErrorHandling(): Promise<void> {
  * 6. 断开连接
  */
 async function exampleCompleteWorkflow(): Promise<void> {
-  console.log('=== 示例 7: 完整工作流 ===\n');
+  console.log('=== 示例 8: 完整工作流 ===\n');
 
   // 收集所有事件
   const events: MCPEvent[] = [];
@@ -675,6 +784,9 @@ async function main(): Promise<void> {
   const example = process.argv[2] ?? 'all';
 
   switch (example) {
+    case 'puppeteer':
+      await examplePuppeteerMCP();
+      break;
     case 'stdio':
       await exampleStdioTransport();
       break;
@@ -701,7 +813,8 @@ async function main(): Promise<void> {
       console.log('AgentForge MCP 客户端示例\n');
       console.log('用法: npx tsx examples/08-mcp-client.ts <示例名称>\n');
       console.log('可用示例:');
-      console.log('  stdio       - Stdio 传输层连接');
+      console.log('  puppeteer   - Puppeteer MCP Server (浏览器自动化)');
+      console.log('  stdio       - Stdio 传输层连接 (Filesystem)');
       console.log('  http        - HTTP 传输层连接');
       console.log('  transport   - 直接使用传输层');
       console.log('  discovery   - 工具发现与执行');
