@@ -1,7 +1,8 @@
 # AgentForge 事件流架构设计
 
 > 设计日期: 2026-04-24
-> 状态: 设计稿
+> 最后更新: 2026-04-26 (P0 核心实现完成)
+> 状态: **已实现**
 > 核心理念: RxJS 事件流 + Zod 类型安全 = Agent 框架底座
 
 ---
@@ -120,3 +121,28 @@
 | v3 | 2026-04-24 | 添加流层陷阱与约束：生命周期/竞态/错误边界 |
 | v4 | 2026-04-25 | 按模块拆分为独立文档 |
 | v5 | 2026-04-25 | HITL Observable 模式：`ask()` 返回 `Observable<string>`，事件 schema 添加 `toolCallId/toolName` |
+| v6 | 2026-04-26 | **实现完成**: SubAgent/Workflow/MCP/Memory/Observability 全部实现 |
+
+---
+
+## 实现状态矩阵
+
+| 模块 | 文档 | 实现文件 | 状态 |
+|------|------|---------|------|
+| **核心事件** | 01-CORE-TYPES.md | `src/core/events.ts` | ✅ 已实现 |
+| **状态机** | 01-CORE-TYPES.md | `src/core/state-machine.ts` | ✅ 已实现 |
+| **依赖注入** | 03-DI.md | `src/core/context.ts`, `context-builder.ts` | ✅ 已实现 |
+| **插件系统** | 07-PLUGIN-SYSTEM.md | `src/plugins/*.ts` | ✅ 已实现 |
+| **操作符库** | 11-OPERATORS.md | `src/operators/*.ts` | ✅ 已实现 |
+| **Agent Loop** | 05-EVENT-STREAM.md | `src/loop/agent-loop.ts` | ✅ 已实现 |
+| **HITL** | 10-FEATURES.md | `src/core/context.ts` (DefaultHITLController) | ✅ 已实现 |
+| **Checkpoint** | 01-CORE-TYPES.md | `src/core/checkpoint.ts` | ✅ 已实现 |
+| **A2A 协议** | 09-A2A.md | `src/a2a/*.ts` | ✅ 已实现 |
+| **Skill 系统** | 08-SUBSYSTEMS.md | `src/skill/*.ts` | ✅ 已实现 |
+| **SubAgent** | 08-SUBSYSTEMS.md | `src/subagent/*.ts` | ✅ 已实现 |
+| **Workflow** | 08-SUBSYSTEMS.md | `src/workflow/*.ts` | ✅ 已实现 |
+| **MCP Client** | 08-SUBSYSTEMS.md | `src/mcp/*.ts` | ✅ 已实现 |
+| **CompactionManager** | 14-OBSERVABILITY.md | `src/memory/*.ts` | ✅ 已实现 |
+| **ResourceMonitor** | 14-OBSERVABILITY.md | `src/observability/*.ts` | ✅ 已实现 |
+| **LLM Adapter** | - | `src/adapters/*.ts` | ✅ 已实现 |
+| **API 层** | 12-API-DESIGN.md | `src/api/*.ts` | ✅ 已实现 |

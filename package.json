@@ -14,7 +14,8 @@
     "lint:fix": "eslint src --ext .ts --fix",
     "format": "prettier --write \"src/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\"",
-    "clean": "rimraf dist"
+    "clean": "rimraf dist",
+    "prepare": "husky"
   },
   "keywords": [
     "agent",
@@ -27,19 +28,24 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "ai": "^4.0.0",
+    "@ai-sdk/openai": "^1.0.0",
+    "@ai-sdk/anthropic": "^1.0.0",
     "rxjs": "^7.8.1",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/node": "^20.14.10",
-    "typescript": "^5.5.3",
-    "vitest": "^1.6.0",
-    "eslint": "^8.57.0",
     "@typescript-eslint/eslint-plugin": "^7.16.0",
     "@typescript-eslint/parser": "^7.16.0",
+    "eslint": "^8.57.0",
     "eslint-config-prettier": "^9.1.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
     "prettier": "^3.3.3",
-    "rimraf": "^5.0.7"
+    "rimraf": "^5.0.7",
+    "typescript": "^5.5.3",
+    "vitest": "^1.6.0"
   },
   "engines": {
     "node": ">=18.0.0"
@@ -47,5 +53,17 @@
   "files": [
     "dist",
     "README.md"
-  ]
+  ],
+  "lint-staged": {
+    "src/**/*.ts": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md}": [
+      "prettier --write"
+    ],
+    "examples/**/*.ts": [
+      "prettier --write"
+    ]
+  }
 }

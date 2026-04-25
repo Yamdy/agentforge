@@ -155,9 +155,30 @@ Requires Node.js >= 18.0.0
 
 1. **Layer 2 Events**: SubAgent/MCP/Workflow lifecycle events not yet implemented
 2. **Real LLM Adapters**: OpenAI/Anthropic production adapters (current: mock for testing)
-3. **Husky + lint-staged**: Pre-commit hooks for code quality
-4. **Performance Metrics**: Built-in timing and throughput tracking
+3. **Performance Metrics**: Built-in timing and throughput tracking
 
 ### Completed Previously
 
 - **HITL Observable Pattern**: Now uses `Observable<string>` with `observeOn(asyncScheduler)` to enable true stream-based pause/resume. UI subscribes to `onAsk()`, answers via `answer()`.
+- **Husky + lint-staged**: Pre-commit hooks for code quality (see Git Hooks section).
+
+## Git Hooks
+
+Pre-commit and pre-push hooks are configured via Husky + lint-staged:
+
+### Pre-commit Hook
+Runs lint-staged on staged files:
+- `*.ts` files: `eslint --fix` → `prettier --write`
+- `*.{json,md}` files: `prettier --write`
+
+### Pre-push Hook
+Runs build + tests before pushing:
+```bash
+npm run build && npm test
+```
+
+### Bypassing Hooks (Emergency Only)
+```bash
+git commit --no-verify   # Skip pre-commit
+git push --no-verify     # Skip pre-push
+```
