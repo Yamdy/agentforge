@@ -266,6 +266,8 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
     sessionId: z.string(),
     askId: z.string(),
     question: z.string(),
+    toolCallId: z.string(),
+    toolName: z.string(),
     options: z.string().array().optional(),
     metadata: z.record(z.string(), z.unknown()).optional(),
   }),
@@ -277,6 +279,8 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
     sessionId: z.string(),
     askId: z.string(),
     answer: z.string(),
+    toolCallId: z.string(),
+    toolName: z.string(),
   }),
   
   // state.change
@@ -289,13 +293,15 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
   }),
   
   // checkpoint
+  // 注：state 使用 z.unknown() 是为了避免与 state.ts 的循环依赖。
+  // 实际运行时校验由 CheckpointSchema (checkpoint.ts) 使用 AgentStateSchema 完成。
   z.object({
     type: z.literal('checkpoint'),
     timestamp: z.number(),
     sessionId: z.string(),
     checkpointId: z.string(),
     position: z.enum(['before_llm', 'after_llm', 'before_tool', 'after_tool']),
-    state: z.unknown(), // AgentState snapshot
+    state: z.unknown(), // AgentState snapshot - validated by CheckpointSchema
   }),
   
   // cancel

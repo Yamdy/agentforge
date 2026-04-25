@@ -119,3 +119,4 @@
 | v2 | 2026-04-24 | 添加 Skill 分类与 PromptBuilder 动态注入 |
 | v3 | 2026-04-24 | 添加流层陷阱与约束：生命周期/竞态/错误边界 |
 | v4 | 2026-04-25 | 按模块拆分为独立文档 |
+| v5 | 2026-04-25 | HITL Observable 模式：`ask()` 返回 `Observable<string>`，事件 schema 添加 `toolCallId/toolName` |

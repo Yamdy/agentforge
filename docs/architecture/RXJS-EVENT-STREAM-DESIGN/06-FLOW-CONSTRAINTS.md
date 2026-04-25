@@ -561,6 +561,7 @@ const agent = createAgent({
 | **全局防重入** | 单 Agent 同时只执行一轮 Loop | 上下文混乱，结果错乱 |
 | **错误必须透传** | 禁止 `catchError(() => EMPTY)` | 错误被吞，无法排查 |
 | **重试策略解耦** | 策略注入，不硬编码 | 不可配置，僵化 |
+| **🔴 P0 新增：Subscription Safety** | 状态化 operator 必须用 `defer()` 包裹，确保每次订阅有独立状态 | 多订阅共享状态导致数据污染、事件丢失、竞态条件 |
 
 ---
 
@@ -645,20 +646,23 @@ export function applyBackpressure<T>(
         );
         
       case 'drop':
+        // 🔴 P0 修复：使用 defer() 确保每次订阅有独立 buffer
         // 超过缓冲区时丢弃新事件
-        let buffer: T[] = [];
-        return source.pipe(
-          tap((item) => {
-            if (buffer.length < (config.bufferSize ?? 100)) {
-              buffer.push(item);
-            } else if (config.emitBackpressureEvents) {
-              // 发出背压事件（可被外部观测）
-              console.warn(`[Backpressure] Dropped event, buffer full: ${config.bufferSize}`);
-            }
-          }),
-          filter(() => buffer.length > 0),
-          map(() => buffer.shift()!),
-        );
+        return defer(() => {
+          const buffer: T[] = [];
+          return source.pipe(
+            tap((item) => {
+              if (buffer.length < (config.bufferSize ?? 100)) {
+                buffer.push(item);
+              } else if (config.emitBackpressureEvents) {
+                // 发出背压事件（可被外部观测）
+                console.warn(`[Backpressure] Dropped event, buffer full: ${config.bufferSize}`);
+              }
+            }),
+            filter(() => buffer.length > 0),
+            map(() => buffer.shift()!),
+          );
+        });
         
       case 'throttle':
         return source.pipe(
@@ -728,6 +732,7 @@ agent.run(input).pipe(
 | **A2A 必配背压** | 跨 Agent 通信必须配置背压，防止消息堆积 |
 | **监控缓冲使用** | 通过 Metrics 监控 `agent.backpressure.buffer_usage` |
 | **禁止无限缓冲** | bufferSize 必须有上限，禁止 `Infinity`（开发环境除外） |
+| **🔴 P0 新增：状态隔离** | 所有状态化 operator（drop策略、buffer等）必须用 `defer()` 包裹，确保订阅独立状态 |
 
 ---
 

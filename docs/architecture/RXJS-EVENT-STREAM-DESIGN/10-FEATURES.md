@@ -195,36 +195,40 @@ agent.run(input).pipe(
 ## 7. HITL
 
 ```typescript
-// HITL 控制器
+// HITL 控制器 - Observable 模式实现 NEVER-blocking
 class HITLController {
   private asks$ = new Subject<Extract<AgentEvent, { type: 'hitl.ask' }>>();
-  private answers$ = new Subject<{ askId: string; answer: string }>();
+  private pendingAsks = new Map<string, Subject<string>>();
   
-  // Agent 调用：发出询问
-  ask(question: string, options?: string[]): Observable<string> {
-    const askId = generateId();
+  // Agent 调用：发出询问，返回 Observable
+  // Observable 不 emit 时 expand 自然暂停（等效 NEVER）
+  ask(options: HITLAskOptions): Observable<string> {
+    const answerSubject = new Subject<string>();
+    this.pendingAsks.set(options.askId, answerSubject);
     
     // 发出 hitl.ask 事件
     this.asks$.next({
       type: 'hitl.ask',
       timestamp: Date.now(),
       sessionId: '', // 由 Agent 填充
-      askId,
-      question,
-      options,
+      askId: options.askId,
+      question: options.question,
+      toolCallId: options.toolCallId,
+      toolName: options.toolName,
+      options: options.options,
     });
     
-    // 等待回答
-    return this.answers$.pipe(
-      filter((a) => a.askId === askId),
-      take(1),
-      map((a) => a.answer),
-    );
+    return answerSubject.asObservable();
   }
   
   // 外部调用：提供回答
   answer(askId: string, answer: string): void {
-    this.answers$.next({ askId, answer });
+    const subject = this.pendingAsks.get(askId);
+    if (subject) {
+      subject.next(answer);
+      subject.complete();
+      this.pendingAsks.delete(askId);
+    }
   }
   
   // 供 UI 订阅：显示询问
@@ -236,14 +240,21 @@ class HITLController {
 // 使用
 const hitl = new HITLController();
 
-// Agent 侧：在工具中触发 HITL
-const permissionTool: Tool = {
-  name: 'permission_check',
-  async execute(args, ctx) {
-    const answer = await hitl.ask(`Allow ${args.action}?`, ['yes', 'no']);
-    return answer === 'yes' ? 'allowed' : 'denied';
-  },
-};
+// Agent 侧：在 step() 的 hitl.ask case 中
+function handleHITLAsk(event, state) {
+  return ctx.hitl.ask({
+    question: event.question,
+    askId: event.askId,
+    toolCallId: event.toolCallId,
+    toolName: event.toolName,
+  }).pipe(
+    observeOn(asyncScheduler),  // 避免同步死锁
+    mergeMap(answer => from([
+      { event: { type: 'hitl.answer', answer, ...event }, state },
+      { event: { type: 'tool.result', result: answer, ...event }, state },
+    ]))
+  );
+}
 
 // UI 侧：监听询问并响应
 hitl.onAsk().subscribe((ask) => {

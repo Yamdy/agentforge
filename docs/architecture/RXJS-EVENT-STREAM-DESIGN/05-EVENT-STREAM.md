@@ -475,7 +475,7 @@ Observable<AgentEvent>
          │
          ├─ tool.result → agent.step + llm.request (循环)
          │
-         ├─ hitl.ask → 等待 hitl.answer (暂停)
+         ├─ hitl.ask → 订阅 ctx.hitl.ask() Observable (暂停直到 answer)
          │
          ├─ context.updated → 继续当前流程（上下文已更新）
          │
