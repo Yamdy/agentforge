@@ -66,22 +66,127 @@ export interface LLMOptions {
  *
  * Abstracts LLM provider communication.
  * Implementations: OpenAIAdapter, AnthropicAdapter, OllamaAdapter, etc.
+ *
+ * Design patterns from multi-provider research:
+ * - AgentScope: Vendor-specific formatToolsJsonSchemas() + formatToolChoice()
+ * - OpenCode: Pre-registered factory functions + string model spec
+ * - Mastra: Gateway abstraction + schema compat layer
  */
 export interface LLMAdapter {
+  /** Adapter name for debugging/logging */
+  readonly name: string;
+
+  /** Provider identifier (e.g., 'openai', 'anthropic', 'ollama') */
+  readonly provider: string;
+
   /** Non-streaming chat completion */
   chat(messages: Message[], options?: LLMOptions): Promise<LLMResponse>;
 
   /** Streaming chat completion */
   stream(messages: Message[], options?: LLMOptions): Observable<LLMChunk>;
+
+  // ===== Provider-specific normalization methods =====
+
+  /**
+   * Format tool definitions to provider-compatible schema.
+   *
+   * Different providers have different tool schema formats:
+   * - OpenAI: { type: "function", function: { name, description, parameters } }
+   * - Anthropic: { name, description, input_schema }
+   * - AI SDK: { toolName: { description, parameters, execute } }
+   * - Gemini: { function_declarations: [...] }
+   *
+   * @param tools - AgentForge FunctionDefinition[]
+   * @returns Provider-specific tool schema format
+   */
+  formatTools?(tools: FunctionDefinition[]): unknown;
+
+  /**
+   * Normalize messages to provider-compatible format.
+   *
+   * Handles multi-turn tool calling message sequence:
+   * - OpenAI: user → assistant(tool_calls) → tool(content)
+   * - AI SDK v6: user → assistant(content: [{ type: "tool-call" }]) → tool(content: [{ type: "tool-result", output }])
+   * - Anthropic: user → assistant(content: [..., tool_use]) → user(content: [..., tool_result])
+   *
+   * @param messages - AgentForge Message[]
+   * @returns Provider-specific message format
+   */
+  normalizeMessages?(messages: Message[]): unknown[];
+
+  /**
+   * Format tool choice to provider-compatible format.
+   *
+   * @param choice - "auto" | "none" | "required" | { name: string }
+   * @returns Provider-specific tool choice format
+   */
+  formatToolChoice?(choice: ToolChoice): unknown;
 }
+
+/**
+ * Tool choice options
+ */
+export type ToolChoice = 'auto' | 'none' | 'required' | { name: string };
+
+/**
+ * Model specification string format
+ *
+ * Supported formats:
+ * - "provider/model": "openai/gpt-4o", "anthropic/claude-sonnet-4-5"
+ * - "model" (auto-detect): "gpt-4o" → openai, "claude-3-5-sonnet" → anthropic
+ */
+export type ModelSpec = string;
 
 /**
  * LLM Adapter Factory Interface
  *
- * Creates LLM adapter instances based on model configuration.
+ * Creates LLM adapter instances based on model specification.
+ *
+ * Usage:
+ * ```typescript
+ * const factory = new LLMAdapterFactory();
+ * const adapter = factory.create("openai/gpt-4o", { apiKey: "..." });
+ * ```
  */
 export interface LLMAdapterFactory {
-  create(config: ModelConfig): LLMAdapter;
+  /**
+   * Create an LLM adapter from model specification.
+   *
+   * @param spec - Model specification string (e.g., "openai/gpt-4o")
+   * @param options - Provider-specific options (apiKey, baseURL, etc.)
+   * @returns LLMAdapter instance
+   */
+  create(spec: ModelSpec, options?: ProviderOptions): LLMAdapter;
+
+  /**
+   * List available providers.
+   */
+  listProviders(): string[];
+
+  /**
+   * Check if a provider is supported.
+   */
+  hasProvider(provider: string): boolean;
+}
+
+/**
+ * Provider-specific options
+ */
+export interface ProviderOptions {
+  /** API key (or read from env: PROVIDER_API_KEY) */
+  apiKey?: string;
+
+  /** Custom base URL for OpenAI-compatible providers */
+  baseURL?: string;
+
+  /** Request timeout in milliseconds */
+  timeout?: number;
+
+  /** Additional headers */
+  headers?: Record<string, string>;
+
+  /** Provider allows additional options */
+  [key: string]: unknown;
 }
 
 // ============================================================
