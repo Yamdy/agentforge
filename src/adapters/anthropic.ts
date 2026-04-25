@@ -18,6 +18,7 @@ import type {
   FunctionDefinition,
   ToolChoice,
 } from '../core/interfaces.js';
+import type { JSONSchema7 } from 'json-schema';
 import type { Message, ToolCall } from '../core/events.js';
 
 // ============================================================
@@ -83,24 +84,28 @@ export class AnthropicAdapter implements LLMAdapter {
     const systemMessages = messages.filter(m => m.role === 'system');
     const otherMessages = messages.filter(m => m.role !== 'system');
 
-    const systemPrompt = systemMessages.length > 0
-      ? systemMessages.map(m => m.content).join('\n\n')
-      : undefined;
+    const systemPrompt =
+      systemMessages.length > 0 ? systemMessages.map(m => m.content).join('\n\n') : undefined;
 
     return { systemPrompt, filteredMessages: otherMessages };
   }
 
   private convertTools(
     tools: FunctionDefinition[] | undefined
-  ): Record<string, { description: string; parameters: ReturnType<typeof jsonSchema> }> | undefined {
+  ):
+    | Record<string, { description: string; parameters: ReturnType<typeof jsonSchema> }>
+    | undefined {
     if (!tools || tools.length === 0) return undefined;
 
-    const result: Record<string, { description: string; parameters: ReturnType<typeof jsonSchema> }> = {};
+    const result: Record<
+      string,
+      { description: string; parameters: ReturnType<typeof jsonSchema> }
+    > = {};
 
     for (const tool of tools) {
       result[tool.name] = {
         description: tool.description,
-        parameters: jsonSchema(tool.parameters),
+        parameters: jsonSchema(tool.parameters as JSONSchema7),
       };
     }
 
@@ -235,10 +240,16 @@ export class AnthropicAdapter implements LLMAdapter {
   }
 }
 
-export function createAnthropicAdapter(model: string, options?: AnthropicAdapterOptions): LLMAdapter {
+export function createAnthropicAdapter(
+  model: string,
+  options?: AnthropicAdapterOptions
+): LLMAdapter {
   return new AnthropicAdapter(model, options);
 }
 
-export function anthropicAdapterFactory(model: string, options: Record<string, unknown>): LLMAdapter {
+export function anthropicAdapterFactory(
+  model: string,
+  options: Record<string, unknown>
+): LLMAdapter {
   return createAnthropicAdapter(model, options as AnthropicAdapterOptions);
 }

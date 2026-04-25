@@ -18,6 +18,7 @@ import type {
   FunctionDefinition,
   ToolChoice,
 } from '../core/interfaces.js';
+import type { JSONSchema7 } from 'json-schema';
 import type { Message, ToolCall } from '../core/events.js';
 
 // ============================================================
@@ -77,11 +78,21 @@ export class OpenAIAdapter implements LLMAdapter {
    */
   private convertMessages(messages: Message[]): Array<{
     role: 'system' | 'user' | 'assistant' | 'tool';
-    content: string | Array<{ type: 'text'; text: string } | { type: 'tool-result'; toolCallId: string; toolName: string; output: unknown }>;
+    content:
+      | string
+      | Array<
+          | { type: 'text'; text: string }
+          | { type: 'tool-result'; toolCallId: string; toolName: string; output: unknown }
+        >;
   }> {
     const result: Array<{
       role: 'system' | 'user' | 'assistant' | 'tool';
-      content: string | Array<{ type: 'text'; text: string } | { type: 'tool-result'; toolCallId: string; toolName: string; output: unknown }>;
+      content:
+        | string
+        | Array<
+            | { type: 'text'; text: string }
+            | { type: 'tool-result'; toolCallId: string; toolName: string; output: unknown }
+          >;
     }> = [];
 
     for (const msg of messages) {
@@ -106,7 +117,7 @@ export class OpenAIAdapter implements LLMAdapter {
       } else {
         // Standard role messages (system, user, assistant)
         result.push({
-          role: msg.role as 'system' | 'user' | 'assistant',
+          role: msg.role,
           content,
         });
       }
@@ -161,15 +172,18 @@ export class OpenAIAdapter implements LLMAdapter {
       // AI SDK v6: tools as Record<string, Tool> with jsonSchema
       const tools = options?.tools as FunctionDefinition[] | undefined;
       if (tools && tools.length > 0) {
-        const toolsRecord: Record<string, { description: string; parameters: ReturnType<typeof jsonSchema> }> = {};
+        const toolsRecord: Record<
+          string,
+          { description: string; parameters: ReturnType<typeof jsonSchema> }
+        > = {};
         for (const tool of tools) {
           toolsRecord[tool.name] = {
             description: tool.description,
-            parameters: jsonSchema(tool.parameters),
+            parameters: jsonSchema(tool.parameters as JSONSchema7),
           };
         }
         config.tools = toolsRecord;
-        
+
         const toolChoice = this.convertToolChoice(options?.toolChoice as ToolChoice | undefined);
         if (toolChoice) {
           config.toolChoice = toolChoice;
@@ -199,7 +213,7 @@ export class OpenAIAdapter implements LLMAdapter {
       if (toolCalls) {
         response.toolCalls = toolCalls;
       }
-      
+
       // AI SDK v6: usage uses inputTokens/outputTokens
       if (result.usage) {
         response.usage = {
@@ -246,16 +260,21 @@ export class OpenAIAdapter implements LLMAdapter {
 
           const tools = options?.tools as FunctionDefinition[] | undefined;
           if (tools && tools.length > 0) {
-            const toolsRecord: Record<string, { description: string; parameters: ReturnType<typeof jsonSchema> }> = {};
+            const toolsRecord: Record<
+              string,
+              { description: string; parameters: ReturnType<typeof jsonSchema> }
+            > = {};
             for (const tool of tools) {
               toolsRecord[tool.name] = {
                 description: tool.description,
-                parameters: jsonSchema(tool.parameters),
+                parameters: jsonSchema(tool.parameters as JSONSchema7),
               };
             }
             config.tools = toolsRecord;
-            
-            const toolChoice = this.convertToolChoice(options?.toolChoice as ToolChoice | undefined);
+
+            const toolChoice = this.convertToolChoice(
+              options?.toolChoice as ToolChoice | undefined
+            );
             if (toolChoice) {
               config.toolChoice = toolChoice;
             }
