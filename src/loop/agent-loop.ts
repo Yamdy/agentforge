@@ -25,6 +25,7 @@ import {
   type BatchContext,
   type Checkpoint,
   type CheckpointPosition,
+  type LLMOptions,
   isTerminalEvent,
   serializeError,
   generateId,
@@ -707,7 +708,12 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
   // ============================================================
 
   function callLLM(state: AgentState, repairAttempt: number = 0): Observable<StepContext> {
-    return from(ctx.llm.chat(state.messages)).pipe(
+    // Build LLM options with tools
+    const llmOptions: LLMOptions = {
+      tools: ctx.tools.getFunctionDefs(),
+    };
+    
+    return from(ctx.llm.chat(state.messages, llmOptions)).pipe(
       mergeMap(response => {
         const responseEvent: AgentEvent = {
           type: 'llm.response',
@@ -777,7 +783,12 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       const toolCallBuffers: Map<string, { name: string; argsDelta: string }> = new Map();
 
       // Subscribe to the LLM stream
-      const subscription = ctx.llm.stream(state.messages).subscribe({
+      // Build LLM options with tools
+      const llmOptions: LLMOptions = {
+        tools: ctx.tools.getFunctionDefs(),
+      };
+      
+      const subscription = ctx.llm.stream(state.messages, llmOptions).subscribe({
         next(chunk) {
           // Handle text chunks
           if (chunk.text) {

@@ -542,10 +542,8 @@ export function createAgent(config: AgentConfig): CreateAgentResult {
     builder = builder.withLLM(placeholderLLM);
   }
 
-  // Add tools
-  if (resolved.tools.length > 0) {
-    builder = builder.withTools(resolved.tools);
-  }
+  // Add tools (always create a ToolRegistry, even if empty)
+  builder = builder.withTools(resolved.tools);
 
   // Add checkpoint storage
   if (resolved.checkpoint) {

@@ -5,7 +5,7 @@
  * 使用 @ai-sdk/openai-compatible 适配器，支持任何 OpenAI-compatible API。
  *
  * 运行前准备:
- * 1. 安装依赖: npm install ai @ai-sdk/openai-compatible
+ * 1. 安装依赖: npm install ai @ai-sdk/openai-compatible zod
  * 2. 设置环境变量: OPENAI_API_KEY 或 OPENAI_BASE_URL（用于自定义 endpoint）
  * 3. 运行: npx tsx examples/05-real-llm.ts
  *
@@ -18,18 +18,18 @@
  * - 任何 OpenAI-compatible API
  */
 
-import { generateText, streamText } from 'ai';
+import { generateText, streamText, tool } from 'ai';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import { Observable, from, map } from 'rxjs';
+import { Observable } from 'rxjs';
+import { z } from 'zod';
 
 // ============================================================
 // 导入 AgentForge
 // ============================================================
 
 import { createAgent, type AgentConfig } from '../src/api/create-agent.js';
-import type { AgentEvent } from '../src/core/events.js';
-import type { LLMAdapter, LLMResponse, LLMChunk, LLMOptions } from '../src/core/interfaces.js';
-import type { Message } from '../src/core/state.js';
+import type { AgentEvent, Message } from '../src/core/events.js';
+import type { LLMAdapter, LLMResponse, LLMChunk, LLMOptions, ToolDefinition, FunctionDefinition } from '../src/core/interfaces.js';
 
 // ============================================================
 // 配置 - 从环境变量读取
@@ -79,19 +79,154 @@ class AISDKAdapter implements LLMAdapter {
 
   /**
    * 将 AgentForge Message 格式转换为 AI SDK 格式
+   * 
+   * AI SDK v6 的 ModelMessage 格式要求:
+   * - system/user/assistant: { role, content }
+   * - assistant with tool-call: { role: 'assistant', content: [{ type: 'tool-call', ... }] }
+   * - tool: { role: 'tool', content: [{ type: 'tool-result', toolCallId, toolName, output }] }
+   * 
+   * 重要: AI SDK 要求 tool 消息之前必须有包含 tool-call 的 assistant 消息
+   * AgentForge 的 state.messages 不包含 assistant(tool-call)，需要在此补全
    */
-  private convertMessages(messages: Message[]): Array<{
-    role: 'system' | 'user' | 'assistant';
-    content: string;
-  }> {
-    return messages.map(msg => {
-      // AI SDK 使用简单的 role/content 格式
-      const role = msg.role as 'system' | 'user' | 'assistant';
+  private convertMessages(messages: Message[]): Array<
+    | { role: 'system'; content: string }
+    | { role: 'user'; content: string }
+    | { role: 'assistant'; content: string | Array<{ type: 'tool-call'; toolCallId: string; toolName: string; args: Record<string, unknown> }> }
+    | { role: 'tool'; content: Array<{ type: 'tool-result'; toolCallId: string; toolName: string; output: unknown }> }
+  > {
+    const result: Array<{
+      role: 'system' | 'user' | 'assistant' | 'tool';
+      content: string | unknown[];
+    }> = [];
+    
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i]!;
       const content = typeof msg.content === 'string'
         ? msg.content
         : JSON.stringify(msg.content);
-      return { role, content };
-    });
+      
+      // Tool 消息需要特殊处理
+      if (msg.role === 'tool') {
+        const toolMsg = msg as unknown as Record<string, unknown>;
+        const toolCallId = (toolMsg['toolCallId'] as string) ?? '';
+        const toolName = (toolMsg['name'] as string) ?? '';
+        
+        // 检查前一条消息是否是 assistant with tool-call
+        // 如果不是，需要插入一个 assistant 消息
+        const prevMsg = result[result.length - 1];
+        const needsAssistant = !prevMsg || 
+          prevMsg.role !== 'assistant' ||
+          !Array.isArray(prevMsg.content) ||
+          !(prevMsg.content as Array<unknown>).some(
+            (c: unknown) => (c as { type?: string })?.type === 'tool-call'
+          );
+        
+        if (needsAssistant) {
+          // 插入 assistant 消息（包含 tool-call）
+          result.push({
+            role: 'assistant' as const,
+            content: [{
+              type: 'tool-call',
+              toolCallId,
+              toolName,
+              args: {},  // AgentForge 不存储原始 args，用空对象
+            }],
+          });
+        }
+        
+        // 添加 tool 消息
+        result.push({
+          role: 'tool' as const,
+          content: [{
+            type: 'tool-result',
+            toolCallId,
+            toolName,
+            // AI SDK v6 要求 output 必须是 { type: 'text', value: string } 或 { type: 'json', value: unknown }
+            output: { type: 'text' as const, value: content },
+          }],
+        });
+      } else {
+        // 其他角色 - 直接添加
+        result.push({
+          role: msg.role as 'system' | 'user' | 'assistant',
+          content,
+        });
+      }
+    }
+    
+    return result as Array<
+      | { role: 'system'; content: string }
+      | { role: 'user'; content: string }
+      | { role: 'assistant'; content: string | Array<{ type: 'tool-call'; toolCallId: string; toolName: string; args: Record<string, unknown> }> }
+      | { role: 'tool'; content: Array<{ type: 'tool-result'; toolCallId: string; toolName: string; output: unknown }> }
+    >;
+  }
+
+  /**
+   * 将 AgentForge FunctionDefinition[] 转换为 AI SDK tools 格式
+   * 
+   * AI SDK tools 格式: { toolName: { description, parameters, execute } }
+   * 注意: AI SDK 需要 execute 函数来执行工具，但 AgentForge 的工具执行由框架处理
+   * 这里我们只传递工具定义给 LLM，工具执行由 AgentForge 的 ToolRegistry 处理
+   */
+  private convertTools(tools: FunctionDefinition[] | undefined): Record<string, ReturnType<typeof tool>> | undefined {
+    if (!tools || tools.length === 0) {
+      return undefined;
+    }
+
+    const result: Record<string, ReturnType<typeof tool>> = {};
+    for (const t of tools) {
+      // 将 JSON Schema properties 转换为 Zod schema
+      const properties = t.parameters.properties as Record<string, z.ZodTypeAny>;
+      const required = t.parameters.required ?? [];
+      
+      // 构建 Zod object schema
+      const schemaShape: Record<string, z.ZodTypeAny> = {};
+      for (const [key, prop] of Object.entries(properties)) {
+        const propDef = prop as { type?: string; description?: string };
+        let zodType: z.ZodTypeAny;
+        
+        // 根据 JSON Schema type 转换为 Zod type
+        switch (propDef.type) {
+          case 'string':
+            zodType = z.string().describe(propDef.description ?? '');
+            break;
+          case 'number':
+            zodType = z.number().describe(propDef.description ?? '');
+            break;
+          case 'boolean':
+            zodType = z.boolean().describe(propDef.description ?? '');
+            break;
+          case 'array':
+            zodType = z.array(z.unknown()).describe(propDef.description ?? '');
+            break;
+          case 'object':
+            zodType = z.record(z.unknown()).describe(propDef.description ?? '');
+            break;
+          default:
+            zodType = z.unknown().describe(propDef.description ?? '');
+        }
+        
+        // 如果不是必需的，设为可选
+        if (!required.includes(key)) {
+          zodType = zodType.optional();
+        }
+        
+        schemaShape[key] = zodType;
+      }
+      
+      result[t.name] = tool({
+        description: t.description,
+        parameters: z.object(schemaShape),
+        // execute 由 AgentForge 框架处理，这里返回占位符
+        execute: async (args: unknown) => {
+          // 工具执行由 AgentForge 的 ToolRegistry 处理
+          // 这个 execute 不会被调用，因为 AgentForge 会拦截工具调用
+          return JSON.stringify(args);
+        },
+      });
+    }
+    return result;
   }
 
   /**
@@ -100,28 +235,34 @@ class AISDKAdapter implements LLMAdapter {
    * AgentForge 接口: chat(messages: Message[], options?: LLMOptions): Promise<LLMResponse>
    */
   async chat(messages: Message[], options?: LLMOptions): Promise<LLMResponse> {
+    // 转换工具定义
+    const tools = this.convertTools(options?.tools as FunctionDefinition[] | undefined);
+    
+    // 转换消息 - 补全 AI SDK 要求的消息格式
+    const convertedMessages = this.convertMessages(messages);
+    
     const result = await generateText({
       model,
-      messages: this.convertMessages(messages),
+      messages: convertedMessages,
       temperature: options?.temperature ?? 0.7,
-      maxTokens: options?.maxTokens ?? 4096,
+      ...(tools ? { tools } : {}),
     });
 
     // 转换结果为 AgentForge LLMResponse 格式
     const toolCalls = result.toolCalls?.map(tc => ({
       id: tc.toolCallId,
       name: tc.toolName,
-      args: tc.args as Record<string, unknown>,
+      args: (tc as { args?: Record<string, unknown> }).args ?? {},
     }));
 
     return {
       content: result.text,
-      toolCalls: toolCalls?.length > 0 ? toolCalls : undefined,
+      toolCalls: toolCalls && toolCalls.length > 0 ? toolCalls : undefined,
       finishReason: result.finishReason as 'stop' | 'tool_calls' | 'length' | 'error' | 'cancelled',
-      usage: {
-        promptTokens: result.usage.promptTokens,
-        completionTokens: result.usage.completionTokens,
-      },
+      usage: result.usage ? {
+        promptTokens: (result.usage as { promptTokens?: number }).promptTokens ?? 0,
+        completionTokens: (result.usage as { completionTokens?: number }).completionTokens ?? 0,
+      } : undefined,
     };
   }
 
@@ -131,34 +272,46 @@ class AISDKAdapter implements LLMAdapter {
    * AgentForge 接口: stream(messages: Message[], options?: LLMOptions): Observable<LLMChunk>
    * 
    * 注意: 返回类型是 Observable<LLMChunk>，不是 AsyncGenerator
+   * 
+   * 使用 fullStream 以确保文本和工具调用块的正确顺序
    */
   stream(messages: Message[], options?: LLMOptions): Observable<LLMChunk> {
     return new Observable<LLMChunk>((subscriber) => {
       const run = async () => {
         try {
-          const stream = await streamText({
+          // 转换工具定义
+          const tools = this.convertTools(options?.tools as FunctionDefinition[] | undefined);
+          
+          // 使用 fullStream 以获得所有块类型（包括文本和工具调用）
+          const { fullStream } = await streamText({
             model,
             messages: this.convertMessages(messages),
             temperature: options?.temperature ?? 0.7,
-            maxTokens: options?.maxTokens ?? 4096,
+            ...(tools ? { tools } : {}),
           });
 
-          // 流式输出文本块
-          for await (const textChunk of stream.textStream) {
-            if (textChunk) {
-              subscriber.next({ text: textChunk });
-            }
-          }
-
-          // 流式输出工具调用块
-          for await (const chunk of stream.fullStream) {
-            if (chunk.type === 'tool-call') {
+          // 从 fullStream 迭代，保持正确的块顺序
+          for await (const chunk of fullStream) {
+            if (chunk.type === 'text-delta') {
+              // 文本块 - AI SDK uses 'text' property for text-delta chunks
+              const textDelta = (chunk as { text?: string }).text;
+              if (textDelta) {
+                subscriber.next({ text: textDelta });
+              }
+            } else if (chunk.type === 'tool-call') {
+              // 工具调用块 - AI SDK uses 'input' property for args
+              const toolCallChunk = chunk as {
+                toolCallId: string;
+                toolName: string;
+                input?: unknown;
+              };
               subscriber.next({
-                toolCallId: chunk.toolCallId,
-                toolName: chunk.toolName,
-                argsDelta: JSON.stringify(chunk.args),
+                toolCallId: toolCallChunk.toolCallId,
+                toolName: toolCallChunk.toolName,
+                argsDelta: JSON.stringify(toolCallChunk.input ?? {}),
               });
             }
+            // 其他块类型（如 tool-call-delta）可以按需处理
           }
 
           subscriber.complete();
@@ -224,9 +377,10 @@ async function example2_withTools() {
   const adapter = new AISDKAdapter();
 
   // 定义简单工具 - 计算器
+  // 注意: ToolDefinition 需要包含 execute 函数
   const calculatorTool: ToolDefinition = {
     name: 'calculator',
-    description: '执行简单的数学计算。输入数学表达式，返回计算结果。',
+    description: '执行简单的数学计算。输入数学表达式，返回计算结果。例如: "2 + 3 * 4"',
     parameters: {
       type: 'object',
       properties: {
@@ -236,6 +390,17 @@ async function example2_withTools() {
         },
       },
       required: ['expression'],
+    },
+    execute: async (args: unknown) => {
+      const { expression } = args as { expression: string };
+      try {
+        // 使用 Function 构造函数安全地计算表达式
+        // 注意: 生产环境应使用更安全的表达式解析库
+        const result = Function('"use strict"; return (' + expression + ')')();
+        return String(result);
+      } catch {
+        return '计算错误：无法解析表达式';
+      }
     },
   };
 
@@ -291,8 +456,17 @@ async function example3_streaming() {
 
   try {
     await agent.stream('写一首关于人工智能的短诗', {
-      onLLMStreamText: (text) => {
-        process.stdout.write(text);
+      onText: (delta) => {
+        // Stream text chunks in real-time
+        process.stdout.write(delta);
+      },
+      onEvent: (event) => {
+        // Optional: log all events for debugging
+        if (event.type === 'llm.stream.start') {
+          console.log('\n[流式开始]');
+        } else if (event.type === 'llm.stream.end') {
+          console.log('\n[流式结束]');
+        }
       },
       onComplete: (output) => {
         console.log('\n\n[完成] 最终输出:', output.substring(0, 100) + '...');
