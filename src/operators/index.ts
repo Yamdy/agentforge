@@ -347,3 +347,54 @@ export function withLatency(
     latencyMs: (getSentAt(event) ?? Date.now()) - Date.now(),
   }));
 }
+
+// ============================================================
+// Transform Operators (from transform.ts)
+// ============================================================
+
+export {
+  transformLLMParams,
+  transformToolArgs,
+  compressMessages,
+  injectSystemPrompt,
+  type LLMTransformParams,
+} from './transform.js';
+
+// ============================================================
+// Notification Operators (from notify.ts)
+// ============================================================
+
+export {
+  logEvents,
+  traceEvents,
+  recordMetrics,
+  exportEvents,
+  checkpoint,
+  type Logger,
+} from './notify.js';
+
+// ============================================================
+// Control Operators (from control.ts)
+// ============================================================
+
+export {
+  retryOnEventType,
+  timeoutOnEventType,
+  requirePermission,
+  maxStepsLimit,
+  pauseOnSignal,
+} from './control.js';
+
+// ============================================================
+// Operator Presets (from presets.ts)
+// ============================================================
+
+export {
+  productionPreset,
+  debugPreset,
+  testPreset,
+  createPreset,
+  type ProductionPresetConfig,
+  type DebugPresetConfig,
+  type TestPresetConfig,
+} from './presets.js';
