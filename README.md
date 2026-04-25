@@ -129,6 +129,27 @@ loop.run$('Hello!')
 | [02-operators.ts](./examples/02-operators.ts) | 操作符组合使用 |
 | [03-tools.ts](./examples/03-tools.ts) | 工具定义与注册 |
 | [04-checkpoint.ts](./examples/04-checkpoint.ts) | 检查点保存与恢复 |
+| [05-real-llm.ts](./examples/05-real-llm.ts) | **真实 LLM 示例** (AI SDK) |
+
+### 真实 LLM 集成
+
+使用 `@ai-sdk/openai-compatible` 支持 OpenAI、Groq、DeepSeek 等 Provider：
+
+```bash
+# 安装依赖
+npm install ai @ai-sdk/openai-compatible
+
+# 设置环境变量
+export OPENAI_API_KEY=your-api-key
+
+# 或使用其他 Provider
+export OPENAI_BASE_URL=https://api.deepseek.com/v1
+export OPENAI_API_KEY=your-deepseek-key
+export MODEL_NAME=deepseek-chat
+
+# 运行示例
+npx tsx examples/05-real-llm.ts
+```
 
 ## 项目结构
 
