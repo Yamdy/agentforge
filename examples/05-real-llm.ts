@@ -16,6 +16,21 @@
  * - DeepSeek
  * - Together AI
  * - 任何 OpenAI-compatible API
+ *
+ * 新功能: model 字符串格式 (简化配置)
+ * ─────────────────────────────────────────
+ * 现在支持三种 model 配置方式:
+ *
+ * 1. 字符串格式 (推荐，最简单):
+ *    model: "openai/gpt-4o"           // 指定 provider/model
+ *    model: "gpt-4o"                  // 自动检测 provider
+ *    model: "anthropic/claude-3-sonnet"
+ *
+ * 2. 对象格式 (向后兼容):
+ *    model: { provider: 'openai', model: 'gpt-4o', apiKey: '...' }
+ *
+ * 3. 显式 llmAdapter (高级用户):
+ *    llmAdapter: new MyCustomAdapter()
  */
 
 import { generateText, streamText, tool } from 'ai';
@@ -249,10 +264,11 @@ class AISDKAdapter implements LLMAdapter {
     });
 
     // 转换结果为 AgentForge LLMResponse 格式
+    // AI SDK v5+ uses 'input' property for tool call arguments (renamed from 'args')
     const toolCalls = result.toolCalls?.map(tc => ({
       id: tc.toolCallId,
       name: tc.toolName,
-      args: (tc as { args?: Record<string, unknown> }).args ?? {},
+      args: (tc as { input?: Record<string, unknown> }).input ?? {},
     }));
 
     return {
@@ -360,6 +376,53 @@ async function example1_basicChat() {
   } catch (error) {
     console.error('执行失败:', error);
   }
+}
+
+// ============================================================
+// 示例 1b: 简化字符串 model 格式 (新功能)
+// ============================================================
+
+async function example1b_stringModelFormat() {
+  console.log('\n=== 示例 1b: 简化字符串 model 格式 ===\n');
+
+  if (!OPENAI_API_KEY) {
+    console.log('⚠️  请设置 OPENAI_API_KEY 环境变量');
+    return;
+  }
+
+  // 新功能: 使用字符串格式指定 model
+  // 支持格式:
+  //   "provider/model" - 如 "openai/gpt-4o", "anthropic/claude-3-sonnet"
+  //   "model"          - 自动检测 provider，如 "gpt-4o" → "openai"
+  //
+  // 注意: 当前为 stub 实现，需要先注册真实的 adapter 工厂
+  // 完整实现需要安装 @ai-sdk/openai 等包并注册工厂
+
+  const config: AgentConfig = {
+    name: 'simple-agent',
+    model: 'gpt-4o-mini',  // 字符串格式 - 自动检测为 openai
+    // 或者显式指定:
+    // model: 'openai/gpt-4o-mini',
+    // model: 'anthropic/claude-3-sonnet',
+    // model: 'deepseek/deepseek-chat',
+    maxSteps: 5,
+
+    // 可选: 通过 llmOptions 传递额外配置
+    llmOptions: {
+      apiKey: OPENAI_API_KEY,
+      baseURL: OPENAI_BASE_URL,
+    },
+  };
+
+  console.log('使用字符串 model 格式:');
+  console.log(`  model: "${config.model}"`);
+  console.log('  llmOptions: { apiKey, baseURL }');
+  console.log('\n注意: 当前为 stub 实现，需要注册真实 adapter');
+  console.log('请参见 example1_basicChat() 使用显式 adapter');
+
+  // 完整实现时的用法:
+  // const agent = createAgent(config);
+  // const result = await agent.run('你好');
 }
 
 // ============================================================
@@ -531,6 +594,7 @@ async function main() {
   console.log(`  API Key: ${OPENAI_API_KEY ? '已设置 ✓' : '未设置 ✗'}`);
 
   await example1_basicChat();
+  example1b_stringModelFormat();  // 展示新功能
   await example2_withTools();
   await example3_streaming();
   example4_customProvider();
