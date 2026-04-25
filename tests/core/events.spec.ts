@@ -26,6 +26,11 @@ import {
   isHITLEvent,
   isAgentLifecycleEvent,
   isTerminalEvent,
+  isSubagentEvent,
+  isMCPEvent,
+  isWorkflowEvent,
+  isCompactionEvent,
+  isPermissionEvent,
   serializeError,
   generateId,
 } from '../../src/core/events.js';
@@ -85,12 +90,14 @@ describe('AgentEventTypeSchema', () => {
       'mcp.connected',
       'mcp.disconnected',
       'mcp.tools_changed',
+      'mcp.error',
       'workflow.start',
       'workflow.step.start',
       'workflow.step.end',
       'workflow.suspend',
       'workflow.resume',
       'workflow.complete',
+      'workflow.error',
       'compaction.start',
       'compaction.complete',
     ];
@@ -101,11 +108,7 @@ describe('AgentEventTypeSchema', () => {
   });
 
   it('should validate cross-cutting events', () => {
-    const crossCuttingEvents = [
-      'permission.prompt',
-      'permission.decision',
-      'context.updated',
-    ];
+    const crossCuttingEvents = ['permission.prompt', 'permission.decision', 'context.updated'];
 
     for (const event of crossCuttingEvents) {
       expect(AgentEventTypeSchema.safeParse(event).success).toBe(true);
@@ -333,9 +336,7 @@ describe('AgentEventSchema', () => {
         timestamp: Date.now(),
         sessionId: 'session-123',
         content: '',
-        toolCalls: [
-          { id: 'tc-1', name: 'weather', args: { city: 'Beijing' } },
-        ],
+        toolCalls: [{ id: 'tc-1', name: 'weather', args: { city: 'Beijing' } }],
         finishReason: 'tool_calls' as const,
         usage: { promptTokens: 100, completionTokens: 20 },
       };
@@ -519,6 +520,16 @@ describe('AgentEventSchema', () => {
       expect(AgentEventSchema.safeParse(event).success).toBe(true);
     });
 
+    it('should validate subagent.step event', () => {
+      const event = {
+        type: 'subagent.step' as const,
+        timestamp: Date.now(),
+        sessionId: 'sub-session-1',
+        step: 2,
+      };
+      expect(AgentEventSchema.safeParse(event).success).toBe(true);
+    });
+
     it('should validate subagent.complete event', () => {
       const event = {
         type: 'subagent.complete' as const,
@@ -528,9 +539,29 @@ describe('AgentEventSchema', () => {
       };
       expect(AgentEventSchema.safeParse(event).success).toBe(true);
     });
+
+    it('should validate subagent.error event', () => {
+      const event = {
+        type: 'subagent.error' as const,
+        timestamp: Date.now(),
+        sessionId: 'sub-session-1',
+        error: { name: 'TimeoutError', message: 'Subagent timed out' },
+      };
+      expect(AgentEventSchema.safeParse(event).success).toBe(true);
+    });
   });
 
   describe('mcp events', () => {
+    it('should validate mcp.connecting event', () => {
+      const event = {
+        type: 'mcp.connecting' as const,
+        timestamp: Date.now(),
+        sessionId: 'session-123',
+        serverName: 'filesystem',
+      };
+      expect(AgentEventSchema.safeParse(event).success).toBe(true);
+    });
+
     it('should validate mcp.connected event', () => {
       const event = {
         type: 'mcp.connected' as const,
@@ -538,6 +569,205 @@ describe('AgentEventSchema', () => {
         sessionId: 'session-123',
         serverName: 'filesystem',
         tools: ['read_file', 'write_file'],
+      };
+      expect(AgentEventSchema.safeParse(event).success).toBe(true);
+    });
+
+    it('should validate mcp.connected event without tools', () => {
+      const event = {
+        type: 'mcp.connected' as const,
+        timestamp: Date.now(),
+        sessionId: 'session-123',
+        serverName: 'filesystem',
+      };
+      expect(AgentEventSchema.safeParse(event).success).toBe(true);
+    });
+
+    it('should validate mcp.disconnected event', () => {
+      const event = {
+        type: 'mcp.disconnected' as const,
+        timestamp: Date.now(),
+        sessionId: 'session-123',
+        serverName: 'filesystem',
+        reason: 'Connection lost',
+      };
+      expect(AgentEventSchema.safeParse(event).success).toBe(true);
+    });
+
+    it('should validate mcp.tools_changed event', () => {
+      const event = {
+        type: 'mcp.tools_changed' as const,
+        timestamp: Date.now(),
+        sessionId: 'session-123',
+        serverName: 'filesystem',
+        added: ['new_tool'],
+        removed: ['old_tool'],
+      };
+      expect(AgentEventSchema.safeParse(event).success).toBe(true);
+    });
+
+    it('should validate mcp.error event', () => {
+      const event = {
+        type: 'mcp.error' as const,
+        timestamp: Date.now(),
+        sessionId: 'session-123',
+        serverName: 'filesystem',
+        error: { name: 'ConnectionError', message: 'Failed to connect' },
+      };
+      expect(AgentEventSchema.safeParse(event).success).toBe(true);
+    });
+  });
+
+  describe('workflow events', () => {
+    it('should validate workflow.start event', () => {
+      const event = {
+        type: 'workflow.start' as const,
+        timestamp: Date.now(),
+        sessionId: 'session-123',
+        workflowId: 'wf-1',
+        workflowName: 'Data Processing',
+      };
+      expect(AgentEventSchema.safeParse(event).success).toBe(true);
+    });
+
+    it('should validate workflow.step.start event', () => {
+      const event = {
+        type: 'workflow.step.start' as const,
+        timestamp: Date.now(),
+        sessionId: 'session-123',
+        workflowId: 'wf-1',
+        stepId: 'step-1',
+        stepName: 'Extract Data',
+      };
+      expect(AgentEventSchema.safeParse(event).success).toBe(true);
+    });
+
+    it('should validate workflow.step.end event', () => {
+      const event = {
+        type: 'workflow.step.end' as const,
+        timestamp: Date.now(),
+        sessionId: 'session-123',
+        workflowId: 'wf-1',
+        stepId: 'step-1',
+        result: 'success' as const,
+      };
+      expect(AgentEventSchema.safeParse(event).success).toBe(true);
+    });
+
+    it('should validate workflow.suspend event', () => {
+      const event = {
+        type: 'workflow.suspend' as const,
+        timestamp: Date.now(),
+        sessionId: 'session-123',
+        workflowId: 'wf-1',
+        reason: 'Waiting for approval',
+        waitingFor: 'user_confirm',
+      };
+      expect(AgentEventSchema.safeParse(event).success).toBe(true);
+    });
+
+    it('should validate workflow.resume event', () => {
+      const event = {
+        type: 'workflow.resume' as const,
+        timestamp: Date.now(),
+        sessionId: 'session-123',
+        workflowId: 'wf-1',
+        resumeFrom: 'step-2',
+      };
+      expect(AgentEventSchema.safeParse(event).success).toBe(true);
+    });
+
+    it('should validate workflow.complete event', () => {
+      const event = {
+        type: 'workflow.complete' as const,
+        timestamp: Date.now(),
+        sessionId: 'session-123',
+        workflowId: 'wf-1',
+        result: { status: 'success', items: 10 },
+      };
+      expect(AgentEventSchema.safeParse(event).success).toBe(true);
+    });
+
+    it('should validate workflow.error event', () => {
+      const event = {
+        type: 'workflow.error' as const,
+        timestamp: Date.now(),
+        sessionId: 'session-123',
+        workflowId: 'wf-1',
+        error: { name: 'WorkflowError', message: 'Step failed' },
+      };
+      expect(AgentEventSchema.safeParse(event).success).toBe(true);
+    });
+
+    it('should validate workflow.error event with stepId', () => {
+      const event = {
+        type: 'workflow.error' as const,
+        timestamp: Date.now(),
+        sessionId: 'session-123',
+        workflowId: 'wf-1',
+        error: { name: 'WorkflowError', message: 'Step failed' },
+        stepId: 'step-3',
+      };
+      expect(AgentEventSchema.safeParse(event).success).toBe(true);
+    });
+  });
+
+  describe('compaction events', () => {
+    it('should validate compaction.start event', () => {
+      const event = {
+        type: 'compaction.start' as const,
+        timestamp: Date.now(),
+        sessionId: 'session-123',
+        strategy: 'truncate-oldest' as const,
+        tokensBefore: 10000,
+      };
+      expect(AgentEventSchema.safeParse(event).success).toBe(true);
+    });
+
+    it('should validate compaction.complete event', () => {
+      const event = {
+        type: 'compaction.complete' as const,
+        timestamp: Date.now(),
+        sessionId: 'session-123',
+        tokensAfter: 5000,
+        removedMessages: 10,
+      };
+      expect(AgentEventSchema.safeParse(event).success).toBe(true);
+    });
+
+    it('should validate compaction.complete event with summarizedMessages', () => {
+      const event = {
+        type: 'compaction.complete' as const,
+        timestamp: Date.now(),
+        sessionId: 'session-123',
+        tokensAfter: 5000,
+        removedMessages: 5,
+        summarizedMessages: 10,
+      };
+      expect(AgentEventSchema.safeParse(event).success).toBe(true);
+    });
+  });
+
+  describe('permission events', () => {
+    it('should validate permission.prompt event', () => {
+      const event = {
+        type: 'permission.prompt' as const,
+        timestamp: Date.now(),
+        sessionId: 'session-123',
+        promptId: 'perm-1',
+        permission: 'file_write',
+        context: { path: '/data/output.txt' },
+      };
+      expect(AgentEventSchema.safeParse(event).success).toBe(true);
+    });
+
+    it('should validate permission.decision event', () => {
+      const event = {
+        type: 'permission.decision' as const,
+        timestamp: Date.now(),
+        sessionId: 'session-123',
+        promptId: 'perm-1',
+        decision: 'allow' as const,
       };
       expect(AgentEventSchema.safeParse(event).success).toBe(true);
     });
@@ -678,6 +908,111 @@ describe('Type Guards', () => {
       expect(isTerminalEvent(event)).toBe(false);
     });
   });
+
+  describe('isSubagentEvent', () => {
+    it('should return true for subagent events', () => {
+      const event: AgentEvent = {
+        ...baseEvent,
+        type: 'subagent.start',
+        parentSessionId: 'parent-1',
+        subagentName: 'researcher',
+        input: 'Search',
+      };
+      expect(isSubagentEvent(event)).toBe(true);
+    });
+
+    it('should return false for non-subagent events', () => {
+      const event: AgentEvent = { ...baseEvent, type: 'done', reason: 'stop' };
+      expect(isSubagentEvent(event)).toBe(false);
+    });
+  });
+
+  describe('isMCPEvent', () => {
+    it('should return true for MCP events', () => {
+      const event: AgentEvent = {
+        ...baseEvent,
+        type: 'mcp.connected',
+        serverName: 'filesystem',
+      };
+      expect(isMCPEvent(event)).toBe(true);
+    });
+
+    it('should return true for mcp.error events', () => {
+      const event: AgentEvent = {
+        ...baseEvent,
+        type: 'mcp.error',
+        serverName: 'filesystem',
+        error: { name: 'Error', message: 'test' },
+      };
+      expect(isMCPEvent(event)).toBe(true);
+    });
+
+    it('should return false for non-MCP events', () => {
+      const event: AgentEvent = { ...baseEvent, type: 'done', reason: 'stop' };
+      expect(isMCPEvent(event)).toBe(false);
+    });
+  });
+
+  describe('isWorkflowEvent', () => {
+    it('should return true for workflow events', () => {
+      const event: AgentEvent = {
+        ...baseEvent,
+        type: 'workflow.start',
+        workflowId: 'wf-1',
+        workflowName: 'Test',
+      };
+      expect(isWorkflowEvent(event)).toBe(true);
+    });
+
+    it('should return true for workflow.error events', () => {
+      const event: AgentEvent = {
+        ...baseEvent,
+        type: 'workflow.error',
+        workflowId: 'wf-1',
+        error: { name: 'Error', message: 'test' },
+      };
+      expect(isWorkflowEvent(event)).toBe(true);
+    });
+
+    it('should return false for non-workflow events', () => {
+      const event: AgentEvent = { ...baseEvent, type: 'done', reason: 'stop' };
+      expect(isWorkflowEvent(event)).toBe(false);
+    });
+  });
+
+  describe('isCompactionEvent', () => {
+    it('should return true for compaction events', () => {
+      const event: AgentEvent = {
+        ...baseEvent,
+        type: 'compaction.start',
+        strategy: 'truncate-oldest',
+        tokensBefore: 1000,
+      };
+      expect(isCompactionEvent(event)).toBe(true);
+    });
+
+    it('should return false for non-compaction events', () => {
+      const event: AgentEvent = { ...baseEvent, type: 'done', reason: 'stop' };
+      expect(isCompactionEvent(event)).toBe(false);
+    });
+  });
+
+  describe('isPermissionEvent', () => {
+    it('should return true for permission events', () => {
+      const event: AgentEvent = {
+        ...baseEvent,
+        type: 'permission.prompt',
+        promptId: 'perm-1',
+        permission: 'file_write',
+      };
+      expect(isPermissionEvent(event)).toBe(true);
+    });
+
+    it('should return false for non-permission events', () => {
+      const event: AgentEvent = { ...baseEvent, type: 'done', reason: 'stop' };
+      expect(isPermissionEvent(event)).toBe(false);
+    });
+  });
 });
 
 // ============================================================
@@ -688,7 +1023,7 @@ describe('serializeError', () => {
   it('should serialize Error instance', () => {
     const error = new Error('Test error');
     const serialized = serializeError(error);
-    
+
     expect(serialized.name).toBe('Error');
     expect(serialized.message).toBe('Test error');
     expect(serialized.stack).toBeDefined();
@@ -697,7 +1032,7 @@ describe('serializeError', () => {
   it('should serialize TypeError', () => {
     const error = new TypeError('Type error');
     const serialized = serializeError(error);
-    
+
     expect(serialized.name).toBe('TypeError');
     expect(serialized.message).toBe('Type error');
   });
@@ -729,7 +1064,7 @@ describe('generateId', () => {
   it('should generate unique IDs', () => {
     const id1 = generateId();
     const id2 = generateId();
-    
+
     expect(id1).not.toBe(id2);
     expect(typeof id1).toBe('string');
     expect(id1.length).toBeGreaterThan(0);
@@ -737,14 +1072,14 @@ describe('generateId', () => {
 
   it('should generate IDs with prefix', () => {
     const id = generateId('session');
-    
+
     expect(id.startsWith('session-')).toBe(true);
   });
 
   it('should generate IDs with different prefixes', () => {
     const sessionId = generateId('session');
     const toolId = generateId('tool');
-    
+
     expect(sessionId.startsWith('session-')).toBe(true);
     expect(toolId.startsWith('tool-')).toBe(true);
     expect(sessionId).not.toBe(toolId);

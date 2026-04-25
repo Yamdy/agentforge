@@ -63,6 +63,7 @@ export const AgentEventTypeSchema = z.enum([
   'mcp.connected',
   'mcp.disconnected',
   'mcp.tools_changed',
+  'mcp.error',
 
   'workflow.start',
   'workflow.step.start',
@@ -70,6 +71,7 @@ export const AgentEventTypeSchema = z.enum([
   'workflow.suspend',
   'workflow.resume',
   'workflow.complete',
+  'workflow.error',
 
   'compaction.start',
   'compaction.complete',
@@ -452,6 +454,14 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
     removed: z.string().array().optional(),
   }),
 
+  z.object({
+    type: z.literal('mcp.error'),
+    timestamp: z.number(),
+    sessionId: z.string(),
+    serverName: z.string(),
+    error: SerializedErrorSchema,
+  }),
+
   // ----- workflow.* -----
   z.object({
     type: z.literal('workflow.start'),
@@ -502,6 +512,15 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
     sessionId: z.string(),
     workflowId: z.string(),
     result: z.unknown(),
+  }),
+
+  z.object({
+    type: z.literal('workflow.error'),
+    timestamp: z.number(),
+    sessionId: z.string(),
+    workflowId: z.string(),
+    error: SerializedErrorSchema,
+    stepId: z.string().optional(),
   }),
 
   // ----- compaction.* -----
@@ -583,6 +602,41 @@ export function isAgentLifecycleEvent(
 /** Check if event is a terminal event (indicates loop should stop) */
 export function isTerminalEvent(event: AgentEvent): boolean {
   return event.type === 'done' || event.type === 'agent.error' || event.type === 'cancel';
+}
+
+/** Check if event is a SubAgent lifecycle event */
+export function isSubagentEvent(
+  event: AgentEvent
+): event is Extract<AgentEvent, { type: `subagent.${string}` }> {
+  return event.type.startsWith('subagent.');
+}
+
+/** Check if event is an MCP lifecycle event */
+export function isMCPEvent(
+  event: AgentEvent
+): event is Extract<AgentEvent, { type: `mcp.${string}` }> {
+  return event.type.startsWith('mcp.');
+}
+
+/** Check if event is a Workflow lifecycle event */
+export function isWorkflowEvent(
+  event: AgentEvent
+): event is Extract<AgentEvent, { type: `workflow.${string}` }> {
+  return event.type.startsWith('workflow.');
+}
+
+/** Check if event is a Compaction event */
+export function isCompactionEvent(
+  event: AgentEvent
+): event is Extract<AgentEvent, { type: `compaction.${string}` }> {
+  return event.type.startsWith('compaction.');
+}
+
+/** Check if event is a Permission event */
+export function isPermissionEvent(
+  event: AgentEvent
+): event is Extract<AgentEvent, { type: `permission.${string}` }> {
+  return event.type.startsWith('permission.');
 }
 
 // ============================================================
