@@ -8,7 +8,7 @@
  */
 
 import { Observable } from 'rxjs';
-import { generateText, streamText, type CoreMessage, type Tool } from 'ai';
+import { generateText, streamText, jsonSchema } from 'ai';
 import { openai, createOpenAI } from '@ai-sdk/openai';
 import type {
   LLMAdapter,
@@ -45,7 +45,7 @@ export interface OpenAIAdapterOptions {
 /**
  * OpenAI LLM Adapter
  *
- * Implements the LLMAdapter interface using Vercel AI SDK's OpenAI provider.
+ * Implements the LLMAdapter interface using Vercel AI SDK v6's OpenAI provider.
  */
 export class OpenAIAdapter implements LLMAdapter {
   readonly name: string;
@@ -73,10 +73,16 @@ export class OpenAIAdapter implements LLMAdapter {
   }
 
   /**
-   * Convert AgentForge Message[] to AI SDK CoreMessage[]
+   * Convert AgentForge Message[] to AI SDK v6 message format
    */
-  private convertMessages(messages: Message[]): CoreMessage[] {
-    const result: CoreMessage[] = [];
+  private convertMessages(messages: Message[]): Array<{
+    role: 'system' | 'user' | 'assistant' | 'tool';
+    content: string | Array<{ type: 'text'; text: string } | { type: 'tool-result'; toolCallId: string; toolName: string; output: unknown }>;
+  }> {
+    const result: Array<{
+      role: 'system' | 'user' | 'assistant' | 'tool';
+      content: string | Array<{ type: 'text'; text: string } | { type: 'tool-result'; toolCallId: string; toolName: string; output: unknown }>;
+    }> = [];
 
     for (const msg of messages) {
       const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
@@ -93,37 +99,17 @@ export class OpenAIAdapter implements LLMAdapter {
               type: 'tool-result',
               toolCallId,
               toolName,
-              result: content,
+              output: content,
             },
           ],
-        } as CoreMessage);
+        });
       } else {
         // Standard role messages (system, user, assistant)
         result.push({
-          role: msg.role,
+          role: msg.role as 'system' | 'user' | 'assistant',
           content,
-        } as CoreMessage);
+        });
       }
-    }
-
-    return result;
-  }
-
-  /**
-   * Convert AgentForge FunctionDefinition[] to AI SDK tools format
-   */
-  private convertTools(tools: FunctionDefinition[] | undefined): Record<string, Tool> | undefined {
-    if (!tools || tools.length === 0) {
-      return undefined;
-    }
-
-    const result: Record<string, Tool> = {};
-
-    for (const tool of tools) {
-      result[tool.name] = {
-        description: tool.description,
-        parameters: tool.parameters as Record<string, unknown>,
-      };
     }
 
     return result;
@@ -134,7 +120,7 @@ export class OpenAIAdapter implements LLMAdapter {
    */
   private convertToolChoice(
     choice: ToolChoice | undefined
-  ): 'auto' | 'none' | 'required' | undefined {
+  ): 'auto' | 'none' | 'required' | { type: 'tool'; toolName: string } | undefined {
     if (!choice) return undefined;
 
     if (typeof choice === 'string') {
@@ -144,9 +130,8 @@ export class OpenAIAdapter implements LLMAdapter {
       return 'auto';
     }
 
-    // { name: string } format - AI SDK doesn't directly support this
-    // Return 'required' to force tool use
-    return 'required';
+    // { name: string } format
+    return { type: 'tool', toolName: choice.name };
   }
 
   /**
@@ -154,9 +139,6 @@ export class OpenAIAdapter implements LLMAdapter {
    */
   async chat(messages: Message[], options?: LLMOptions): Promise<LLMResponse> {
     try {
-      const tools = this.convertTools(options?.tools as FunctionDefinition[] | undefined);
-      const toolChoice = this.convertToolChoice(options?.toolChoice as ToolChoice | undefined);
-
       // Build config with only defined options (exactOptionalPropertyTypes)
       const config: Record<string, unknown> = {
         model: this.model,
@@ -175,8 +157,20 @@ export class OpenAIAdapter implements LLMAdapter {
       if (options?.stopSequences && options.stopSequences.length > 0) {
         config.stopSequences = options.stopSequences;
       }
-      if (tools) {
-        config.tools = tools;
+
+      // AI SDK v6: tools as Record<string, Tool> with jsonSchema
+      const tools = options?.tools as FunctionDefinition[] | undefined;
+      if (tools && tools.length > 0) {
+        const toolsRecord: Record<string, { description: string; parameters: ReturnType<typeof jsonSchema> }> = {};
+        for (const tool of tools) {
+          toolsRecord[tool.name] = {
+            description: tool.description,
+            parameters: jsonSchema(tool.parameters),
+          };
+        }
+        config.tools = toolsRecord;
+        
+        const toolChoice = this.convertToolChoice(options?.toolChoice as ToolChoice | undefined);
         if (toolChoice) {
           config.toolChoice = toolChoice;
         }
@@ -185,12 +179,14 @@ export class OpenAIAdapter implements LLMAdapter {
       const result = await generateText(config as Parameters<typeof generateText>[0]);
 
       // Convert tool calls to AgentForge format
+      // AI SDK v6: toolCalls have toolCallId, toolName, and input (not args)
       const toolCalls: ToolCall[] | undefined =
         result.toolCalls && result.toolCalls.length > 0
           ? result.toolCalls.map(tc => ({
               id: tc.toolCallId,
               name: tc.toolName,
-              args: tc.args as Record<string, unknown>,
+              // AI SDK v6 uses 'input' instead of 'args'
+              args: (tc as { input?: Record<string, unknown> }).input ?? {},
             }))
           : undefined;
 
@@ -203,10 +199,12 @@ export class OpenAIAdapter implements LLMAdapter {
       if (toolCalls) {
         response.toolCalls = toolCalls;
       }
+      
+      // AI SDK v6: usage uses inputTokens/outputTokens
       if (result.usage) {
         response.usage = {
-          promptTokens: result.usage.promptTokens,
-          completionTokens: result.usage.completionTokens,
+          promptTokens: result.usage.inputTokens ?? 0,
+          completionTokens: result.usage.outputTokens ?? 0,
         };
       }
 
@@ -227,9 +225,6 @@ export class OpenAIAdapter implements LLMAdapter {
     return new Observable<LLMChunk>(subscriber => {
       const run = async (): Promise<void> => {
         try {
-          const tools = this.convertTools(options?.tools as FunctionDefinition[] | undefined);
-          const toolChoice = this.convertToolChoice(options?.toolChoice as ToolChoice | undefined);
-
           // Build config with only defined options
           const config: Record<string, unknown> = {
             model: this.model,
@@ -248,8 +243,19 @@ export class OpenAIAdapter implements LLMAdapter {
           if (options?.stopSequences && options.stopSequences.length > 0) {
             config.stopSequences = options.stopSequences;
           }
-          if (tools) {
-            config.tools = tools;
+
+          const tools = options?.tools as FunctionDefinition[] | undefined;
+          if (tools && tools.length > 0) {
+            const toolsRecord: Record<string, { description: string; parameters: ReturnType<typeof jsonSchema> }> = {};
+            for (const tool of tools) {
+              toolsRecord[tool.name] = {
+                description: tool.description,
+                parameters: jsonSchema(tool.parameters),
+              };
+            }
+            config.tools = toolsRecord;
+            
+            const toolChoice = this.convertToolChoice(options?.toolChoice as ToolChoice | undefined);
             if (toolChoice) {
               config.toolChoice = toolChoice;
             }
