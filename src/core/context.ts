@@ -446,6 +446,20 @@ export class DefaultHITLController implements HITLController {
     }
     // If no pending ask, silently ignore (idempotent)
   }
+
+  /**
+   * Destroy the controller - cleanup all pending asks and complete subjects.
+   */
+  destroy(): void {
+    // Complete all pending answer subjects
+    for (const answerSubject of Array.from(this.pendingAsks.values())) {
+      answerSubject.complete();
+    }
+    this.pendingAsks.clear();
+
+    // Complete the ask notification subject
+    this.askSubject.complete();
+  }
 }
 
 /**

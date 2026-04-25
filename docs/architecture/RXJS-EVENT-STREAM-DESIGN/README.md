@@ -54,6 +54,12 @@
 | [13-EXAMPLES.md](./13-EXAMPLES.md) | 使用示例：最简使用、带操作符、可中断、可恢复、HITL、生产环境 |
 | [14-OBSERVABILITY.md](./14-OBSERVABILITY.md) | 可观测与管控：全链路埋点、状态机、配置热更新、管道模板、上下文压缩 |
 
+### 基础设施
+
+| 文档 | 描述 |
+|------|------|
+| [16-CONFIG-MODULE.md](./16-CONFIG-MODULE.md) | 配置模块设计、Schema 定义、Profile 系统、热更新支持 |
+
 ### 总览
 
 | 文档 | 描述 |
@@ -122,6 +128,7 @@
 | v4 | 2026-04-25 | 按模块拆分为独立文档 |
 | v5 | 2026-04-25 | HITL Observable 模式：`ask()` 返回 `Observable<string>`，事件 schema 添加 `toolCallId/toolName` |
 | v6 | 2026-04-26 | **实现完成**: SubAgent/Workflow/MCP/Memory/Observability 全部实现 |
+| v7 | 2026-04-26 | **性能优化**: 修复 O(n²) 算法、并行化 Skill 加载、添加资源清理约束 |
 
 ---
 
@@ -146,3 +153,4 @@
 | **ResourceMonitor** | 14-OBSERVABILITY.md | `src/observability/*.ts` | ✅ 已实现 |
 | **LLM Adapter** | - | `src/adapters/*.ts` | ✅ 已实现 |
 | **API 层** | 12-API-DESIGN.md | `src/api/*.ts` | ✅ 已实现 |
+| **配置模块** | 16-CONFIG-MODULE.md | `src/core/config/*.ts` | 📝 设计完成 |

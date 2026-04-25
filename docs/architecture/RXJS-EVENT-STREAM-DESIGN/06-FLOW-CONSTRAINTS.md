@@ -736,6 +736,82 @@ agent.run(input).pipe(
 
 ---
 
+## 6. 性能约束（P0 新增）
+
+> 基于代码审计发现的性能问题，新增以下约束。
+
+### 6.1 算法复杂度约束
+
+| 约束 | 描述 | 违反后果 |
+|------|------|---------|
+| **禁止 O(n²) 在热路径** | 内存压缩、消息处理等高频操作必须 O(n log n) 或更好 | 大上下文时性能急剧下降 |
+| **禁止 indexOf 在循环** | 使用 Map/Set 替代 O(n) 查找 | 1000条消息 = 百万次比较 |
+| **Object spread 适度使用** | 热路径避免频繁 `{ ...state }` | 每次 expand 创建新对象 |
+
+**已修复问题**:
+- `memory/strategies.ts` importanceWeighted(): 从 O(n²) 优化为 O(n)
+
+### 6.2 异步并行化约束
+
+| 约束 | 描述 | 违反后果 |
+|------|------|---------|
+| **禁止 await 在 for-of** | 独立操作用 `Promise.all` 并行化 | N 个操作 = Nx 延迟 |
+| **文件 IO 并行化** | 多文件读取使用 `Promise.all` | 加载速度慢 |
+
+**已修复问题**:
+- `skill/loader.ts`: 技能加载并行化
+
+### 6.3 资源清理约束
+
+| 约束 | 描述 | 违反后果 |
+|------|------|---------|
+| **Timer 必须存储引用** | setTimeout 返回值存储在类属性 | close() 后仍触发回调 |
+| **无界缓冲区禁止** | 操作符缓冲必须有 maxBufferSize | 长时间暂停内存耗尽 |
+| **Controller 必须有 destroy()** | 状态化组件必须提供清理方法 | Agent 频繁创建销毁时泄漏 |
+
+**已修复问题**:
+- `operators/control.ts` pauseOnSignal: 添加 maxBufferSize 选项
+- `core/context.ts` DefaultHITLController: 添加 destroy() 方法
+- `mcp/http-transport.ts`: 存储 reconnect timer 引用
+
+### 6.4 性能约束清单
+
+```typescript
+// ✅ 正确：O(n) 收集保持顺序
+const compacted: Message[] = [];
+for (let i = 0; i < messages.length; i++) {
+  if (selectedIndices.has(i)) {
+    compacted.push(messages[i]!);
+  }
+}
+
+// ❌ 错误：O(n²) indexOf 在 sort
+messages.filter(...).sort((a, b) => {
+  const aIdx = messages.indexOf(a);  // O(n) 每次调用
+  return aIdx - messages.indexOf(b);
+});
+
+// ✅ 正确：并行加载
+const results = await Promise.all(
+  entries.map(entry => loadSkill(entry.path))
+);
+
+// ❌ 错误：顺序加载
+for (const entry of entries) {
+  await loadSkill(entry.path);  // 串行 = Nx 延迟
+}
+
+// ✅ 正确：Timer 存储引用
+this._reconnectTimer = setTimeout(() => {...}, delay);
+// 在 close() 中清理
+if (this._reconnectTimer) clearTimeout(this._reconnectTimer);
+
+// ❌ 错误：Timer 未存储
+setTimeout(() => this.reconnect(), delay);  // 无法取消
+```
+
+---
+
 ## 相关文档
 
 - [00-OVERVIEW.md](./00-OVERVIEW.md) - 架构总览
@@ -746,3 +822,13 @@ agent.run(input).pipe(
 - [07-PLUGIN-SYSTEM.md](./07-PLUGIN-SYSTEM.md) - Hook + 插件系统
 - [10-FEATURES.md](./10-FEATURES.md) - 特性实现
 - [11-OPERATORS.md](./11-OPERATORS.md) - 操作符库
+
+---
+
+## 版本历史
+
+| 版本 | 日期 | 变更 |
+|------|------|------|
+| v1 | 2026-04-24 | 初始设计 - 生命周期/竞态/错误边界 |
+| v2 | 2026-04-25 | 新增背压策略配置 |
+| v3 | 2026-04-26 | **新增性能约束** - 算法复杂度/异步并行化/资源清理 |

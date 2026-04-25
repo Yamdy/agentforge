@@ -9,11 +9,8 @@
 
 import { readdir, readFile, stat } from 'fs/promises';
 import { join, resolve } from 'path';
-import type {
-  SkillInfo,
-  SkillLoadResult,
-  SkillDiscoveryOptions,
-} from './types.js';
+import type { SkillInfo, SkillLoadResult, SkillDiscoveryOptions } from './types.js';
+import { isSuccessfulLoadResult } from './types.js';
 import { parseSkillFile } from './parser.js';
 import type { SkillLoadHook } from './hooks.js';
 
@@ -140,18 +137,31 @@ export async function loadSkillsFromDirectory(
     // List directory contents
     const entries = await readdir(dir, { withFileTypes: true });
 
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      if (!cfg.debug && entry.name.startsWith('.')) continue;
+    // Filter valid directories to process
+    const dirsToProcess = entries.filter(
+      entry => entry.isDirectory() && (cfg.debug || !entry.name.startsWith('.'))
+    );
 
-      // Look for SKILL.md in subdirectory
+    // Load all skills in parallel
+    const loadPromises = dirsToProcess.map(entry => {
       const skillPath = join(dir, entry.name, cfg.skillFileName);
+      return loadSkill(skillPath, config);
+    });
 
-      const result = await loadSkill(skillPath, config);
-      if (result.success) {
+    const loadResults = await Promise.all(loadPromises);
+
+    for (let i = 0; i < loadResults.length; i++) {
+      const result = loadResults[i];
+      if (!result) continue;
+
+      if (isSuccessfulLoadResult(result)) {
         results.push(result.skill);
       } else if (cfg.debug) {
-        console.warn(`Failed to load ${skillPath}:`, result.error);
+        const entry = dirsToProcess[i];
+        if (entry) {
+          const skillPath = join(dir, entry.name, cfg.skillFileName);
+          console.warn(`Failed to load ${skillPath}:`, result.error);
+        }
       }
     }
   } catch {
@@ -211,35 +221,32 @@ export async function discoverSkills(
         }
       }
 
-      // Scan subdirectories
+      // Scan subdirectories in parallel
       if (recursive) {
-        for (const entry of entries) {
-          if (!entry.isDirectory()) continue;
-          if (!options.includeHidden && entry.name.startsWith('.')) continue;
+        const subdirs = entries.filter(
+          entry => entry.isDirectory() && (options.includeHidden || !entry.name.startsWith('.'))
+        );
 
-          await scanDirectory(join(dir, entry.name), depth + 1);
-        }
+        await Promise.all(subdirs.map(entry => scanDirectory(join(dir, entry.name), depth + 1)));
       }
     } catch {
       // Skip unreadable directories
     }
   }
 
-  for (const path of searchPaths) {
-    await scanDirectory(path, 0);
-  }
+  await Promise.all(searchPaths.map(path => scanDirectory(path, 0)));
 
   // Apply filters
   let filtered = results;
 
   if (options.nameFilter) {
-    filtered = filtered.filter((s) => options.nameFilter?.test(s.frontmatter.name));
+    filtered = filtered.filter(s => options.nameFilter?.test(s.frontmatter.name));
   }
 
   if (options.keywordFilter && options.keywordFilter.length > 0) {
-    filtered = filtered.filter((s) => {
+    filtered = filtered.filter(s => {
       const keywords = s.frontmatter.keywords ?? [];
-      return options.keywordFilter?.some((k) => keywords.includes(k));
+      return options.keywordFilter?.some(k => keywords.includes(k));
     });
   }
 
@@ -347,9 +354,9 @@ export class SkillRegistry {
    * Find skills matching keywords
    */
   findByKeywords(keywords: string[]): SkillInfo[] {
-    return this.getAll().filter((skill) => {
+    return this.getAll().filter(skill => {
       const skillKeywords = skill.frontmatter.keywords ?? [];
-      return keywords.some((k) => skillKeywords.includes(k));
+      return keywords.some(k => skillKeywords.includes(k));
     });
   }
 
@@ -357,9 +364,9 @@ export class SkillRegistry {
    * Find skills matching trigger phrases
    */
   findByTriggers(triggers: string[]): SkillInfo[] {
-    return this.getAll().filter((skill) => {
+    return this.getAll().filter(skill => {
       const skillTriggers = skill.frontmatter.triggers ?? [];
-      return triggers.some((t) => skillTriggers.includes(t));
+      return triggers.some(t => skillTriggers.includes(t));
     });
   }
 }

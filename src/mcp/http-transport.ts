@@ -82,6 +82,7 @@ export class StreamableHTTPTransport implements MCPTransport {
   private _sseAbortController?: AbortController;
   private _status: TransportStatus = 'disconnected';
   private _sseReader?: ReadableStreamDefaultReader<Uint8Array>;
+  private _reconnectTimer?: ReturnType<typeof setTimeout>;
 
   onmessage?: (message: JSONRPCMessage) => void;
   onerror?: (error: Error) => void;
@@ -184,6 +185,12 @@ export class StreamableHTTPTransport implements MCPTransport {
    * Close the connection gracefully.
    */
   async close(): Promise<void> {
+    // Cancel reconnect timer
+    if (this._reconnectTimer) {
+      clearTimeout(this._reconnectTimer);
+      delete this._reconnectTimer;
+    }
+
     // Cancel ongoing requests
     this._abortController?.abort();
     this._sseAbortController?.abort();
@@ -309,7 +316,8 @@ export class StreamableHTTPTransport implements MCPTransport {
 
     const delay = Math.min(initialDelay * Math.pow(growFactor, attempt), maxDelay);
 
-    setTimeout(() => {
+    this._reconnectTimer = setTimeout(() => {
+      delete this._reconnectTimer;
       void this.reconnectAsync(attempt);
     }, delay);
   }

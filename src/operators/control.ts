@@ -10,16 +10,8 @@
 
 import { Observable, defer, from } from 'rxjs';
 import type { MonoTypeOperatorFunction } from 'rxjs';
-import {
-  tap,
-  mergeMap,
-  catchError,
-} from 'rxjs/operators';
-import {
-  type AgentEvent,
-  type AgentEventType,
-  serializeError,
-} from '../core/index.js';
+import { tap, mergeMap, catchError } from 'rxjs/operators';
+import { type AgentEvent, type AgentEventType, serializeError } from '../core/index.js';
 
 // ============================================================
 // Error Event Factory
@@ -30,11 +22,7 @@ import {
  *
  * @internal
  */
-function createErrorEvent(
-  error: unknown,
-  sessionId: string,
-  step?: number
-): AgentEvent {
+function createErrorEvent(error: unknown, sessionId: string, step?: number): AgentEvent {
   return {
     type: 'agent.error',
     timestamp: Date.now(),
@@ -49,7 +37,10 @@ function createErrorEvent(
  *
  * @internal
  */
-function createDoneEvent(sessionId: string, reason: 'stop' | 'error' | 'cancelled' | 'length' = 'error'): AgentEvent {
+function createDoneEvent(
+  sessionId: string,
+  reason: 'stop' | 'error' | 'cancelled' | 'length' = 'error'
+): AgentEvent {
   return {
     type: 'done',
     timestamp: Date.now(),
@@ -141,10 +132,13 @@ export function retryOnEventType(
               // Then check retry
               if (retryCount < count) {
                 retryCount++;
-                timeoutId = setTimeout(() => {
-                  timeoutId = null;
-                  subscribe();
-                }, delay * Math.pow(2, retryCount - 1));
+                timeoutId = setTimeout(
+                  () => {
+                    timeoutId = null;
+                    subscribe();
+                  },
+                  delay * Math.pow(2, retryCount - 1)
+                );
               } else {
                 subscriber.complete();
               }
@@ -401,9 +395,7 @@ export function maxStepsLimit(max: number): MonoTypeOperatorFunction<AgentEvent>
               currentStep = (event as { step: number }).step;
 
               if (currentStep > max) {
-                const limitError = new Error(
-                  `Maximum steps limit exceeded: ${max}`
-                );
+                const limitError = new Error(`Maximum steps limit exceeded: ${max}`);
                 limitError.name = 'MaxStepsExceededError';
 
                 subscriber.next(createErrorEvent(limitError, currentSessionId, currentStep));
@@ -458,8 +450,10 @@ export function maxStepsLimit(max: number): MonoTypeOperatorFunction<AgentEvent>
  * source.pipe(pauseOnSignal(pause$))
  */
 export function pauseOnSignal(
-  signal$: Observable<boolean>
+  signal$: Observable<boolean>,
+  options?: { maxBufferSize?: number }
 ): MonoTypeOperatorFunction<AgentEvent> {
+  const maxBufferSize = options?.maxBufferSize ?? 1000;
   return source =>
     defer(() => {
       let currentSessionId = '';
@@ -467,6 +461,7 @@ export function pauseOnSignal(
       // Initialize paused state from signal if it's a BehaviorSubject-like observable
       let isPaused = 'value' in signal$ ? (signal$ as { value: boolean }).value : false;
       let sourceCompleted = false;
+      let bufferOverflow = false;
 
       return new Observable<AgentEvent>(subscriber => {
         // Subscribe to pause signal to track state changes
@@ -503,8 +498,22 @@ export function pauseOnSignal(
             }
 
             if (isPaused) {
-              // Buffer the event when paused
-              buffer.push(event);
+              // Buffer overflow protection
+              if (buffer.length >= maxBufferSize) {
+                // Only emit error once on first overflow
+                if (!bufferOverflow) {
+                  bufferOverflow = true;
+                  subscriber.next(
+                    createErrorEvent(
+                      new Error(`Buffer overflow: paused too long (max ${maxBufferSize} events)`),
+                      currentSessionId
+                    )
+                  );
+                }
+                // Drop the event - buffer is full
+              } else {
+                buffer.push(event);
+              }
             } else {
               // Release buffered events first, then emit current
               while (buffer.length > 0) {
@@ -549,7 +558,4 @@ export function pauseOnSignal(
 // Re-exports for Convenience
 // ============================================================
 
-export {
-  createErrorEvent as _createErrorEvent,
-  createDoneEvent as _createDoneEvent,
-};
+export { createErrorEvent as _createErrorEvent, createDoneEvent as _createDoneEvent };

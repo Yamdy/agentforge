@@ -260,19 +260,16 @@ export async function summarize(
   const recentMessages = messages.slice(messages.length - preserveRecent);
 
   // Build history string for summarization
-  const historyText = toSummarize
-    .map(m => `[${m.role}]: ${m.content}`)
-    .join('\n\n');
+  const historyText = toSummarize.map(m => `[${m.role}]: ${m.content}`).join('\n\n');
 
-  const prompt = SUMMARIZATION_PROMPT
-    .replace('{maxLength}', String(maxSummaryLength))
-    .replace('{history}', historyText);
+  const prompt = SUMMARIZATION_PROMPT.replace('{maxLength}', String(maxSummaryLength)).replace(
+    '{history}',
+    historyText
+  );
 
   try {
     // Call LLM for summarization
-    const response = await llmAdapter.chat([
-      { role: 'user', content: prompt },
-    ]);
+    const response = await llmAdapter.chat([{ role: 'user', content: prompt }]);
 
     const summary = response.content.slice(0, maxSummaryLength);
     const summaryMessage = createSummaryMessage(summary);
@@ -403,14 +400,13 @@ export function importanceWeighted(
     currentTokens += estimateMessageTokens(messages[item.index]!);
   }
 
-  // Ensure we maintain message order
-  const compacted = messages
-    .filter((_, i) => selectedIndices.has(i))
-    .sort((a, b) => {
-      const aIdx = messages.indexOf(a);
-      const bIdx = messages.indexOf(b);
-      return aIdx - bIdx;
-    });
+  // Ensure we maintain message order (O(n) instead of O(n²))
+  const compacted: Message[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    if (selectedIndices.has(i)) {
+      compacted.push(messages[i]!);
+    }
+  }
 
   const tokensAfter = estimateTokens(compacted);
 
