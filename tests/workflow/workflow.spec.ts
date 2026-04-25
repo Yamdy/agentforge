@@ -6,14 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import {
-  Observable,
-  of,
-  from,
-  Subject,
-  firstValueFrom,
-  toArray,
-} from 'rxjs';
+import { Observable, of, from, Subject, firstValueFrom, toArray } from 'rxjs';
 import { filter, take, tap, map } from 'rxjs/operators';
 import {
   Workflow,
@@ -148,11 +141,7 @@ class MockToolRegistry implements ToolRegistry {
     return this.list().map(n => this.getFunctionDef(n)!);
   }
 
-  async execute(
-    name: string,
-    args: Record<string, unknown>,
-    _ctx?: unknown,
-  ): Promise<string> {
+  async execute(name: string, args: Record<string, unknown>, _ctx?: unknown): Promise<string> {
     const tool = this.tools.get(name);
     if (!tool) {
       throw new Error(`Tool "${name}" not found`);
@@ -167,10 +156,7 @@ class MockToolRegistry implements ToolRegistry {
 // Test Helpers
 // ============================================================
 
-function createTestContext(
-  llm: MockLLMAdapter,
-  toolRegistry: MockToolRegistry,
-): AgentContext {
+function createTestContext(llm: MockLLMAdapter, toolRegistry: MockToolRegistry): AgentContext {
   const sessionId = `test-session-${Date.now()}`;
 
   return {
@@ -250,9 +236,7 @@ describe('Workflow Subsystem', () => {
       const config = createTestWorkflowConfig();
       const workflow = new Workflow(config, ctx);
 
-      const events = await firstValueFrom(
-        workflow.run('test input').pipe(toArray())
-      );
+      const events = await firstValueFrom(workflow.run('test input').pipe(toArray()));
 
       const types = events.map(e => e.type);
       expect(types).toContain('workflow.start');
@@ -276,9 +260,7 @@ describe('Workflow Subsystem', () => {
       const config = createTestWorkflowConfig();
       const workflow = new Workflow(config, ctx);
 
-      const events = await firstValueFrom(
-        workflow.run('test input').pipe(toArray())
-      );
+      const events = await firstValueFrom(workflow.run('test input').pipe(toArray()));
 
       const types = events.map(e => e.type);
 
@@ -301,14 +283,14 @@ describe('Workflow Subsystem', () => {
         steps: [
           {
             id: 'step-1',
-            prompt: (input) => {
+            prompt: input => {
               stepResults.push(`step-1: ${String(input)}`);
               return `Process: ${input}`;
             },
           },
           {
             id: 'step-2',
-            prompt: (input) => {
+            prompt: input => {
               stepResults.push(`step-2: ${String(input)}`);
               return `Analyze: ${input}`;
             },
@@ -378,15 +360,13 @@ describe('Workflow Subsystem', () => {
     });
 
     it('should execute step and emit events', async () => {
-      llm.setResponses([
-        { content: 'Step completed', finishReason: 'stop' },
-      ]);
+      llm.setResponses([{ content: 'Step completed', finishReason: 'stop' }]);
 
       const executor = new WorkflowExecutor(ctx);
       const step: WorkflowStep = {
         id: 'test-step',
         name: 'Test Step',
-        prompt: (input) => `Process: ${input}`,
+        prompt: input => `Process: ${input}`,
       };
 
       const events = await firstValueFrom(
@@ -399,9 +379,7 @@ describe('Workflow Subsystem', () => {
     });
 
     it('should map agent events with workflowId', async () => {
-      llm.setResponses([
-        { content: 'Agent response', finishReason: 'stop' },
-      ]);
+      llm.setResponses([{ content: 'Agent response', finishReason: 'stop' }]);
 
       const executor = new WorkflowExecutor(ctx);
       const step: WorkflowStep = {
@@ -446,8 +424,8 @@ describe('Workflow Subsystem', () => {
   describe('SequentialPipeline', () => {
     it('should create sequential pipeline', () => {
       const steps: WorkflowStep[] = [
-        { id: 'step-1', prompt: (i) => String(i) },
-        { id: 'step-2', prompt: (i) => String(i) },
+        { id: 'step-1', prompt: i => String(i) },
+        { id: 'step-2', prompt: i => String(i) },
       ];
 
       const pipeline = new SequentialPipeline(steps, ctx);
@@ -455,9 +433,7 @@ describe('Workflow Subsystem', () => {
     });
 
     it('should create pipeline via factory function', () => {
-      const steps: WorkflowStep[] = [
-        { id: 's1', prompt: (i) => String(i) },
-      ];
+      const steps: WorkflowStep[] = [{ id: 's1', prompt: i => String(i) }];
 
       const pipeline = createSequentialPipeline(steps, ctx);
       expect(pipeline).toBeInstanceOf(SequentialPipeline);
@@ -470,8 +446,8 @@ describe('Workflow Subsystem', () => {
       ]);
 
       const steps: WorkflowStep[] = [
-        { id: 'seq-1', name: 'First', prompt: (i) => `Step 1: ${i}` },
-        { id: 'seq-2', name: 'Second', prompt: (i) => `Step 2: ${i}` },
+        { id: 'seq-1', name: 'First', prompt: i => `Step 1: ${i}` },
+        { id: 'seq-2', name: 'Second', prompt: i => `Step 2: ${i}` },
       ];
 
       const pipeline = new SequentialPipeline(steps, ctx);
@@ -492,8 +468,8 @@ describe('Workflow Subsystem', () => {
       llm.setFailNTimes(1);
 
       const steps: WorkflowStep[] = [
-        { id: 'fail-1', prompt: (i) => String(i) },
-        { id: 'fail-2', prompt: (i) => String(i) },
+        { id: 'fail-1', prompt: i => String(i) },
+        { id: 'fail-2', prompt: i => String(i) },
       ];
 
       const pipeline = new SequentialPipeline(steps, ctx, { continueOnFailure: false });
@@ -509,13 +485,11 @@ describe('Workflow Subsystem', () => {
     });
 
     it('should continue on step failure (continueOnFailure=true)', async () => {
-      llm.setResponses([
-        { content: 'Good result', finishReason: 'stop' },
-      ]);
+      llm.setResponses([{ content: 'Good result', finishReason: 'stop' }]);
 
       const steps: WorkflowStep[] = [
-        { id: 'cont-1', prompt: (i) => String(i) },
-        { id: 'cont-2', prompt: (i) => String(i) },
+        { id: 'cont-1', prompt: i => String(i) },
+        { id: 'cont-2', prompt: i => String(i) },
       ];
 
       const pipeline = new SequentialPipeline(steps, ctx, { continueOnFailure: true });
@@ -526,7 +500,7 @@ describe('Workflow Subsystem', () => {
     });
 
     it('should support stop() and destroy()', () => {
-      const steps: WorkflowStep[] = [{ id: 'stop-1', prompt: (i) => String(i) }];
+      const steps: WorkflowStep[] = [{ id: 'stop-1', prompt: i => String(i) }];
       const pipeline = new SequentialPipeline(steps, ctx);
 
       pipeline.stop();
@@ -542,8 +516,8 @@ describe('Workflow Subsystem', () => {
   describe('ParallelPipeline', () => {
     it('should create parallel pipeline', () => {
       const steps: WorkflowStep[] = [
-        { id: 'p1', prompt: (i) => String(i) },
-        { id: 'p2', prompt: (i) => String(i) },
+        { id: 'p1', prompt: i => String(i) },
+        { id: 'p2', prompt: i => String(i) },
       ];
 
       const pipeline = new ParallelPipeline(steps, ctx);
@@ -551,7 +525,7 @@ describe('Workflow Subsystem', () => {
     });
 
     it('should create pipeline via factory function', () => {
-      const steps: WorkflowStep[] = [{ id: 'fp1', prompt: (i) => String(i) }];
+      const steps: WorkflowStep[] = [{ id: 'fp1', prompt: i => String(i) }];
       const pipeline = createParallelPipeline(steps, ctx);
       expect(pipeline).toBeInstanceOf(ParallelPipeline);
     });
@@ -603,7 +577,7 @@ describe('Workflow Subsystem', () => {
     });
 
     it('should support stop() and destroy()', () => {
-      const steps: WorkflowStep[] = [{ id: 'stop-p1', prompt: (i) => String(i) }];
+      const steps: WorkflowStep[] = [{ id: 'stop-p1', prompt: i => String(i) }];
       const pipeline = new ParallelPipeline(steps, ctx);
 
       pipeline.stop();
@@ -669,9 +643,7 @@ describe('Workflow Subsystem', () => {
   // ========================================
   describe('Edge Cases', () => {
     it('should handle step with skip condition', async () => {
-      llm.setResponses([
-        { content: 'Not skipped', finishReason: 'stop' },
-      ]);
+      llm.setResponses([{ content: 'Not skipped', finishReason: 'stop' }]);
 
       const config: WorkflowConfig = {
         id: 'skip-test',
@@ -697,8 +669,7 @@ describe('Workflow Subsystem', () => {
 
       // Should have skipped step
       const skippedEvent = events.find(
-        e => e.type === 'workflow.step.end' &&
-        'result' in e && e.result === 'skipped'
+        e => e.type === 'workflow.step.end' && 'result' in e && e.result === 'skipped'
       );
       expect(skippedEvent).toBeDefined();
     });
@@ -709,7 +680,7 @@ describe('Workflow Subsystem', () => {
       const config: WorkflowConfig = {
         id: 'single-step',
         name: 'Single Step',
-        steps: [{ id: 'only-step', prompt: (i) => String(i) }],
+        steps: [{ id: 'only-step', prompt: i => String(i) }],
       };
 
       const workflow = new Workflow(config, ctx);

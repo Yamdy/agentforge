@@ -216,9 +216,6 @@ export function getWorkflowIdFromEvent(event: AgentEvent): string | undefined {
 /**
  * Create a step output map entry
  */
-export function createStepOutputEntry(
-  stepId: string,
-  output: unknown
-): [string, unknown] {
+export function createStepOutputEntry(stepId: string, output: unknown): [string, unknown] {
   return [stepId, output];
 }

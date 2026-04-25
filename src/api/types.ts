@@ -14,6 +14,7 @@ import type {
   AgentEventType,
   Checkpoint,
   ModelConfig,
+  ModelSpec,
   ToolDefinition,
   LLMAdapter,
   Tracer,
@@ -151,7 +152,7 @@ export interface MCPServerConfig {
 // ============================================================
 
 /**
- * Agent configuration for L2 API
+ * Agent configuration.
  *
  * This is the main configuration object passed to createAgent().
  * All fields have sensible defaults except `model`.
@@ -161,8 +162,21 @@ export interface AgentConfig {
   /** Agent name (default: 'agent') */
   name?: string;
 
-  /** Model configuration - REQUIRED */
-  model: AgentModelConfig;
+  /**
+   * Model configuration - REQUIRED
+   *
+   * Supports three formats:
+   * 1. String format: "provider/model" (e.g., "openai/gpt-4o")
+   * 2. Auto-detect: "model-name" (e.g., "gpt-4o" → auto-detected as openai)
+   * 3. Object format: { provider: "openai", model: "gpt-4o" } (backward compatible)
+   */
+  model: AgentModelConfig | ModelSpec;
+
+  /**
+   * LLM adapter options (optional)
+   * Passed to adapter factory when using string model format
+   */
+  llmOptions?: Record<string, unknown>;
 
   // ----- Agent Behavior -----
   /** Maximum steps before termination (default: 10) */

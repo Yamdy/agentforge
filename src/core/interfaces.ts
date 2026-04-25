@@ -17,6 +17,9 @@ import { Observable } from 'rxjs';
 import type { Message, ToolCall, AgentEvent } from './events.js';
 import type { Checkpoint } from './checkpoint.js';
 
+// Re-export types used in interfaces
+export type { Message } from './events.js';
+
 // ============================================================
 // LLM Adapter
 // ============================================================
@@ -418,6 +421,11 @@ export interface PauseController {
 // ============================================================
 
 /**
+ * MCP connection status type
+ */
+export type MCPStatus = 'connected' | 'disconnected' | 'connecting' | 'error';
+
+/**
  * MCP Tool definition
  */
 export interface MCPTool {
@@ -445,10 +453,10 @@ export interface MCPClient {
   callTool(name: string, args: Record<string, unknown>): Promise<string>;
 
   /** Get connection status */
-  status(): 'connected' | 'disconnected' | 'connecting' | 'error';
+  status(): MCPStatus;
 
   /** Observable of status changes */
-  onStatusChange(): Observable<MCPClient['status']>;
+  onStatusChange(): Observable<MCPStatus>;
 }
 
 /**

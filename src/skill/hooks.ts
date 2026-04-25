@@ -235,11 +235,13 @@ export function createLoggingHook(): SkillLoadHook {
     priority: 100,
 
     beforeLoad: (context: SkillLoadContext): boolean => {
+      // eslint-disable-next-line no-console
       console.log(`[Skill] Loading: ${context.filePath}`);
       return true;
     },
 
     afterLoad: (skill: SkillInfo): void => {
+      // eslint-disable-next-line no-console
       console.log(`[Skill] Loaded: ${skill.frontmatter.name} from ${skill.location}`);
     },
 
@@ -250,6 +252,7 @@ export function createLoggingHook(): SkillLoadHook {
     },
 
     onDiscovered: (skill: SkillInfo): void => {
+      // eslint-disable-next-line no-console
       console.log(`[Skill] Discovered: ${skill.frontmatter.name}`);
     },
   };
@@ -583,13 +586,16 @@ export function createReloadLoggingHook(): SkillReloadHook {
     priority: 100,
 
     beforeReload: (event: SkillReloadEvent): void => {
+      // eslint-disable-next-line no-console
       console.log(`[Skill] Reloading: ${event.filePath} (${event.type})`);
     },
 
     afterReload: (event: SkillReloadEvent): void => {
       if (event.error) {
+        // eslint-disable-next-line no-console
         console.error(`[Skill] Reload failed: ${event.filePath} - ${event.error}`);
       } else if (event.skillName) {
+        // eslint-disable-next-line no-console
         console.log(`[Skill] Reloaded: ${event.skillName} (${event.type})`);
       }
     },

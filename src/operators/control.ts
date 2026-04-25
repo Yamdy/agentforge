@@ -102,7 +102,7 @@ export function retryOnEventType(
         let currentSessionId = '';
         let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
-        const subscribe = () => {
+        const subscribe = (): void => {
           hasMatchingError = false;
           subscription = source.subscribe({
             next(event: AgentEvent) {
@@ -203,7 +203,7 @@ export function timeoutOnEventType(
       let hasReceivedTarget = false;
 
       return new Observable<AgentEvent>(subscriber => {
-        const startTimeout = () => {
+        const startTimeout = (): void => {
           if (timeoutId !== null) {
             clearTimeout(timeoutId);
           }

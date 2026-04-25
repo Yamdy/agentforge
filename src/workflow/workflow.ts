@@ -13,23 +13,9 @@
  */
 
 import { Observable, of, from, Subject } from 'rxjs';
-import {
-  concatMap,
-  takeUntil,
-  catchError,
-  tap,
-} from 'rxjs/operators';
-import {
-  type AgentEvent,
-  type AgentContext,
-  generateId,
-  serializeError,
-} from '../core/index.js';
-import {
-  type WorkflowConfig,
-  type WorkflowStep,
-  type WorkflowExecutionContext,
-} from './types.js';
+import { concatMap, takeUntil, catchError, tap } from 'rxjs/operators';
+import { type AgentEvent, type AgentContext, generateId, serializeError } from '../core/index.js';
+import { type WorkflowConfig, type WorkflowStep, type WorkflowExecutionContext } from './types.js';
 import { WorkflowExecutor } from './executor.js';
 
 // ============================================================
@@ -201,7 +187,7 @@ export class Workflow {
       tap(event => {
         // Store output for next step when agent completes
         if (event.type === 'agent.complete') {
-          const output = (event).output;
+          const output = event.output;
           this.executionContext?.stepOutputs.set(step.id, output);
         }
       }),
@@ -231,7 +217,11 @@ export class Workflow {
     }
 
     this.suspend$.next();
-    this.executionContext = { ...this.executionContext, state: 'suspended', suspensionReason: reason };
+    this.executionContext = {
+      ...this.executionContext,
+      state: 'suspended',
+      suspensionReason: reason,
+    };
 
     // Note: The suspend event is emitted via the internal subject
     // The caller should handle it through their subscription
@@ -261,7 +251,10 @@ export class Workflow {
   cancel(_reason: string): void {
     this.destroy$.next();
 
-    if (this.executionContext?.state === 'running' || this.executionContext?.state === 'suspended') {
+    if (
+      this.executionContext?.state === 'running' ||
+      this.executionContext?.state === 'suspended'
+    ) {
       this.executionContext = { ...this.executionContext, state: 'cancelled' };
     }
   }

@@ -17,24 +17,10 @@
  */
 
 import { Observable, of, from, Subject } from 'rxjs';
-import {
-  concatMap,
-  mergeMap,
-  takeUntil,
-  catchError,
-  tap,
-} from 'rxjs/operators';
-import {
-  type AgentEvent,
-  type AgentContext,
-  serializeError,
-  generateId,
-} from '../core/index.js';
+import { concatMap, mergeMap, takeUntil, catchError, tap } from 'rxjs/operators';
+import { type AgentEvent, type AgentContext, serializeError, generateId } from '../core/index.js';
 import { WorkflowExecutor } from './executor.js';
-import {
-  type WorkflowStep,
-  type PipelineConfig,
-} from './types.js';
+import { type WorkflowStep, type PipelineConfig } from './types.js';
 
 // ============================================================
 // Sequential Pipeline
@@ -135,7 +121,7 @@ export class SequentialPipeline {
           tap(event => {
             // Capture output for next step
             if (event.type === 'agent.complete') {
-              const output = (event).output;
+              const output = event.output;
               stepOutputs.set(step.id, output);
             }
           }),
@@ -271,45 +257,42 @@ export class ParallelPipeline {
 
     // Execute all steps in parallel with concurrency limit
     const steps$ = from(this.steps).pipe(
-      mergeMap(
-        step => {
-          // Check skip condition
-          if (step.skip && step.skip(input)) {
-            return of<AgentEvent>({
-              type: 'workflow.step.end',
+      mergeMap(step => {
+        // Check skip condition
+        if (step.skip && step.skip(input)) {
+          return of<AgentEvent>({
+            type: 'workflow.step.end',
+            timestamp: Date.now(),
+            sessionId,
+            workflowId,
+            stepId: step.id,
+            result: 'skipped',
+          });
+        }
+
+        return this.executor.executeStep(step, input, workflowId).pipe(
+          tap(event => {
+            if (event.type === 'agent.complete') {
+              const output = event.output;
+              stepOutputs.set(step.id, output);
+            }
+          }),
+          catchError(error => {
+            const errorEvent: AgentEvent = {
+              type: 'workflow.error',
               timestamp: Date.now(),
               sessionId,
               workflowId,
+              error: serializeError(error),
               stepId: step.id,
-              result: 'skipped',
-            });
-          }
-
-          return this.executor.executeStep(step, input, workflowId).pipe(
-            tap(event => {
-              if (event.type === 'agent.complete') {
-                const output = (event).output;
-                stepOutputs.set(step.id, output);
-              }
-            }),
-            catchError(error => {
-              const errorEvent: AgentEvent = {
-                type: 'workflow.error',
-                timestamp: Date.now(),
-                sessionId,
-                workflowId,
-                error: serializeError(error),
-                stepId: step.id,
-              };
-              if (!this.continueOnFailure) {
-                throw error;
-              }
-              return of(errorEvent);
-            })
-          );
-        },
-        this.maxConcurrency
-      ),
+            };
+            if (!this.continueOnFailure) {
+              throw error;
+            }
+            return of(errorEvent);
+          })
+        );
+      }, this.maxConcurrency),
       takeUntil(this.destroy$)
     );
 

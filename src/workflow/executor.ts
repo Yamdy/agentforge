@@ -13,19 +13,8 @@
  */
 
 import { Observable, of, firstValueFrom } from 'rxjs';
-import {
-  map,
-  filter,
-  catchError,
-  timeout,
-  tap,
-  take,
-} from 'rxjs/operators';
-import {
-  type AgentEvent,
-  type AgentContext,
-  serializeError,
-} from '../core/index.js';
+import { map, filter, catchError, timeout, tap, take } from 'rxjs/operators';
+import { type AgentEvent, type AgentContext, serializeError } from '../core/index.js';
 import { AgentLoop, type AgentLoopOptions } from '../api/agent-loop.js';
 import { type WorkflowStep, type WorkflowStepResult } from './types.js';
 
@@ -75,11 +64,7 @@ export class WorkflowExecutor {
    * @param workflowId - Parent workflow ID for event correlation
    * @returns Observable of workflow and agent events
    */
-  executeStep(
-    step: WorkflowStep,
-    input: unknown,
-    workflowId: string
-  ): Observable<AgentEvent> {
+  executeStep(step: WorkflowStep, input: unknown, workflowId: string): Observable<AgentEvent> {
     const sessionId = this.agentContext.sessionId;
     const startTime = Date.now();
 
@@ -228,7 +213,7 @@ export class WorkflowExecutor {
       );
 
       if (events.type === 'agent.complete') {
-        output = (events).output;
+        output = events.output;
       } else if (events.type === 'agent.error') {
         const errEvent = events;
         error = {
@@ -284,9 +269,7 @@ export class WorkflowExecutor {
 /**
  * Create a simple prompt generator from a template
  */
-export function createPromptGenerator(
-  template: string
-): (input: unknown) => string {
+export function createPromptGenerator(template: string): (input: unknown) => string {
   return (input: unknown) => {
     if (typeof input === 'string') {
       return template.replace(/\{\{input\}\}/g, input);
@@ -298,9 +281,7 @@ export function createPromptGenerator(
 /**
  * Create a JSON-based prompt generator for structured input
  */
-export function createJsonPromptGenerator(
-  template: string
-): (input: unknown) => string {
+export function createJsonPromptGenerator(template: string): (input: unknown) => string {
   return (input: unknown) => {
     const jsonInput = JSON.stringify(input, null, 2);
     return template.replace(/\{\{input\}\}/g, jsonInput);

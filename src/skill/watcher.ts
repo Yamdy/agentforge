@@ -185,6 +185,7 @@ export class SkillWatcher {
     }
 
     if (this.config.debug) {
+      // eslint-disable-next-line no-console
       console.log(`[SkillWatcher] Started watching ${this.watchers.size} directories`);
     }
   }
@@ -206,6 +207,7 @@ export class SkillWatcher {
       try {
         watcher.close();
         if (this.config.debug) {
+          // eslint-disable-next-line no-console
           console.log(`[SkillWatcher] Closed watcher for ${path}`);
         }
       } catch {
@@ -253,6 +255,7 @@ export class SkillWatcher {
       this.watchers.set(absoluteDir, watcher);
 
       if (this.config.debug) {
+        // eslint-disable-next-line no-console
         console.log(`[SkillWatcher] Watching ${absoluteDir}`);
       }
     } catch (error) {
@@ -297,7 +300,7 @@ export class SkillWatcher {
       // Check if it's a directory change that might contain skill files
       if (eventType === 'rename') {
         const fullPath = join(watchDir, filename);
-        this.checkAndWatchDirectory(fullPath);
+        void this.checkAndWatchDirectory(fullPath);
       }
       return;
     }
@@ -335,7 +338,7 @@ export class SkillWatcher {
     // Set new timer
     const timer = setTimeout(() => {
       this.debounceTimers.delete(filePath);
-      this.processReload(filePath);
+      void this.processReload(filePath);
     }, this.config.debounceMs);
 
     this.debounceTimers.set(filePath, timer);
@@ -392,6 +395,7 @@ export class SkillWatcher {
         await this.executeAfterReloadHooks(event);
 
         if (this.config.debug) {
+          // eslint-disable-next-line no-console
           console.log(`[SkillWatcher] ${eventType}: ${result.skill.frontmatter.name} (${filePath})`);
         }
       } else {

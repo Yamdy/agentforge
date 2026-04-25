@@ -448,7 +448,7 @@ export class A2AConnection {
         });
 
       // Cleanup function
-      const cleanup = () => {
+      const cleanup = (): void => {
         pending.timeoutSubscription?.unsubscribe();
         this.pendingRequests.delete(correlationId);
       };

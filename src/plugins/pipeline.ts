@@ -16,7 +16,7 @@
 import { Observable, of, EMPTY } from 'rxjs';
 import type { MonoTypeOperatorFunction } from 'rxjs';
 import { concatMap, tap, catchError } from 'rxjs/operators';
-import type { AgentEvent, AgentEventType } from '../core/events.js';
+import type { AgentEvent } from '../core/events.js';
 import type {
   Plugin,
   InterceptorPlugin,
@@ -106,7 +106,7 @@ function applyInterceptor(
       concatMap(event => {
         // Event type filtering
         if (interceptor.eventTypes.length > 0) {
-          if (!interceptor.eventTypes.includes(event.type as AgentEventType)) {
+          if (!interceptor.eventTypes.includes(event.type)) {
             return of(event); // Pass through unmatched events
           }
         }
@@ -145,7 +145,7 @@ function applyObserver(
       tap(event => {
         // Event type filtering
         if (observer.eventTypes.length > 0) {
-          if (!observer.eventTypes.includes(event.type as AgentEventType)) {
+          if (!observer.eventTypes.includes(event.type)) {
             return; // Skip unmatched events
           }
         }

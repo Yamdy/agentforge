@@ -256,7 +256,7 @@ export function parseMessage(raw: unknown): ParseResult {
  */
 export function parseMessageJson(json: string): ParseResult {
   try {
-    const parsed = JSON.parse(json);
+    const parsed: unknown = JSON.parse(json);
     return parseMessage(parsed);
   } catch (e) {
     return {

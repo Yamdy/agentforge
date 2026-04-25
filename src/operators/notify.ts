@@ -38,10 +38,14 @@ export interface Logger {
  * Default console logger implementation
  */
 const defaultLogger: Logger = {
-  debug: (message: string, data?: unknown) => console.debug(message, data),
-  info: (message: string, data?: unknown) => console.info(message, data),
-  warn: (message: string, data?: unknown) => console.warn(message, data),
-  error: (message: string, data?: unknown) => console.error(message, data),
+  // eslint-disable-next-line no-console
+  debug: (message: string, data?: unknown): void => console.debug(message, data),
+  // eslint-disable-next-line no-console
+  info: (message: string, data?: unknown): void => console.info(message, data),
+  // eslint-disable-next-line no-console
+  warn: (message: string, data?: unknown): void => console.warn(message, data),
+  // eslint-disable-next-line no-console
+  error: (message: string, data?: unknown): void => console.error(message, data),
 };
 
 // ============================================================

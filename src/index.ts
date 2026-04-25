@@ -127,9 +127,9 @@ export {
  * - LLMAdapter: LLM provider communication
  * - ToolRegistry: Tool registration and execution
  * - HITLController: Human-in-the-loop interaction
- * - PauseController: Pause/resume execution
- * - MCPClient: Model Context Protocol client
- */
+  * - PauseController: Pause/resume execution
+  * - MCPClient: Model Context Protocol client
+  */
 export type {
   LLMChunk,
   LLMUsage,
@@ -148,22 +148,22 @@ export type {
   HITLAskOptions,
   HITLController,
   PauseController,
+  MCPStatus,
   MCPTool,
   MCPClient,
   MCPServerConfig,
   AgentMode,
   SubagentInfo,
-  SubagentRegistry,
   ToolContext,
   ErrorSeverity,
   ErrorCategory,
   ClassifiedError,
-  ErrorHandler,
-  SchemaRegistry,
-  PromptBuildOptions,
-  BuiltPrompt,
-  PromptBuilder,
-} from './core/interfaces.js';
+   ErrorHandler,
+   SchemaRegistry,
+   PromptBuildOptions,
+   BuiltPrompt,
+   PromptBuilder,
+ } from './core/interfaces.js';
 
 /**
  * Agent context types for dependency injection.
@@ -554,3 +554,172 @@ export {
   PluginManager,
   createPluginManager,
 } from './plugins/index.js';
+
+// ============================================================
+// Subsystems - MCP (Model Context Protocol)
+// ============================================================
+
+/**
+ * MCP client for Model Context Protocol servers.
+ *
+ * Provides tool discovery and execution for MCP servers.
+ * Supports both stdio (local process) and HTTP/SSE transports.
+ *
+ * @example
+ * ```typescript
+ * import { createMCPClient, adaptMCPTools } from 'agentforge';
+ *
+ * const client = createMCPClient({
+ *   serverName: 'filesystem',
+ *   sessionId: 'session-123',
+ * });
+ *
+ * await client.connect({
+ *   type: 'stdio',
+ *   command: 'npx',
+ *   args: ['-y', '@modelcontextprotocol/server-filesystem', '/tmp'],
+ * });
+ *
+ * const tools = await client.tools();
+ * const result = await client.callTool('read_file', { path: '/tmp/test.txt' });
+ * ```
+ */
+export {
+  // Types
+  type JSONRPCId,
+  type JSONRPCRequest,
+  type JSONRPCNotification,
+  type JSONRPCResponse,
+  type JSONRPCMessage,
+  type MCPToolSchema,
+  type MCPContentBlock,
+  // Transport
+  type TransportStatus as MCPTransportStatus,
+  type MCPTransport,
+  type TransportFactory as MCPTransportFactory,
+  MCPTransportError,
+  MCPConnectionError,
+  MCPSendError,
+  MCPParseError,
+  // Stdio Transport
+  type StdioTransportConfig,
+  StdioTransport,
+  createStdioTransport,
+  // HTTP Transport
+  type HTTPTransportConfig,
+  type AuthProvider as MCPAuthProvider,
+  StreamableHTTPTransport,
+  createHTTPTransport,
+  createSSETransport,
+  // Client
+  type MCPClientOptions,
+  type MCPEvent,
+  AgentForgeMCPClient,
+  createMCPClient,
+  // Tool Adapter
+  adaptMCPTool,
+  adaptMCPTools,
+  isMCPToolName,
+  parseMCPToolName,
+  createMCPToolName,
+  jsonSchemaToZod,
+} from './mcp/index.js';
+
+// ============================================================
+// Subsystems - SubAgent Execution
+// ============================================================
+
+/**
+ * SubAgent execution logic for nested agent delegation.
+ *
+ * Enables parent agents to delegate tasks to specialized subagents.
+ * Each subagent runs as an independent agent loop with its own context.
+ *
+ * @example
+ * ```typescript
+ * import { SubagentRegistry, createSubagentRegistry } from 'agentforge/subagent';
+ * import { createAgentLoop } from 'agentforge';
+ *
+ * const registry = createSubagentRegistry();
+ *
+ * // Create a subagent agent loop
+ * const subagentLoop = createAgentLoop(subagentContext, subagentConfig);
+ *
+ * // Register the subagent
+ * registry.register({
+ *   name: 'research-agent',
+ *   description: 'Search and summarize information',
+ *   agent: subagentLoop,
+ * });
+ * ```
+ */
+export {
+  // Types
+  type AgentLoop as SubagentAgentLoop,
+  type SubagentConfig,
+  type SubagentRunOptions,
+  type SubagentResult,
+  type SubagentEntry,
+  // Registry
+  SubagentRegistry,
+  createSubagentRegistry,
+} from './subagent/index.js';
+
+ // ============================================================
+ // Subsystems - Workflow Orchestration
+ // ============================================================
+
+ /**
+  * Workflow orchestration for multi-step agent execution.
+  *
+  * Workflows define sequences of steps, each calling an agent.
+  * Events from nested agents bubble up with workflow correlation.
+  *
+  * @example
+  * ```typescript
+  * import { Workflow, SequentialPipeline } from 'agentforge';
+  *
+  * const workflow = new Workflow({
+  *   id: 'research',
+  *   name: 'Research Workflow',
+  *   steps: [
+  *     { id: 'search', prompt: (input) => `Search: ${input}` },
+  *     { id: 'analyze', prompt: (input) => `Analyze: ${input}` },
+  *   ],
+  * }, agentContext);
+  *
+  * workflow.run('AI trends').subscribe(console.log);
+  * ```
+  */
+ export {
+   // Types
+   WorkflowStepSchema,
+   WorkflowConfigSchema,
+   WorkflowExecutionStateSchema,
+   PipelineModeSchema,
+   type WorkflowStep,
+   type WorkflowStepWithAgent,
+   type WorkflowConfig,
+   type WorkflowExecutionState,
+   type WorkflowExecutionContext,
+   type WorkflowResult,
+   type WorkflowStepResult,
+   type PipelineMode,
+   type PipelineConfig,
+   isWorkflowEvent,
+   getWorkflowIdFromEvent,
+   createStepOutputEntry,
+   // Workflow Class
+   Workflow,
+   createWorkflow,
+   // Executor
+   WorkflowExecutor,
+   createPromptGenerator,
+   createJsonPromptGenerator,
+   // Pipeline
+   SequentialPipeline,
+   ParallelPipeline,
+   createPipeline,
+   createSequentialPipeline,
+   createParallelPipeline,
+ } from './workflow/index.js';

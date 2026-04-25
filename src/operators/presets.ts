@@ -181,10 +181,14 @@ export function debugPreset(
   if (configOrLogger === undefined) {
     // Default to console logger
     logger = {
-      debug: (msg, data) => console.debug(msg, data),
-      info: (msg, data) => console.info(msg, data),
-      warn: (msg, data) => console.warn(msg, data),
-      error: (msg, data) => console.error(msg, data),
+      // eslint-disable-next-line no-console
+      debug: (msg, data): void => console.debug(msg, data),
+      // eslint-disable-next-line no-console
+      info: (msg, data): void => console.info(msg, data),
+      // eslint-disable-next-line no-console
+      warn: (msg, data): void => console.warn(msg, data),
+      // eslint-disable-next-line no-console
+      error: (msg, data): void => console.error(msg, data),
     };
   } else if ('debug' in configOrLogger && typeof configOrLogger.debug === 'function') {
     // It's a Logger instance
@@ -193,10 +197,14 @@ export function debugPreset(
     // It's a config object
     const config = configOrLogger as DebugPresetConfig;
     logger = config.logger ?? {
-      debug: (msg, data) => console.debug(msg, data),
-      info: (msg, data) => console.info(msg, data),
-      warn: (msg, data) => console.warn(msg, data),
-      error: (msg, data) => console.error(msg, data),
+      // eslint-disable-next-line no-console
+      debug: (msg, data): void => console.debug(msg, data),
+      // eslint-disable-next-line no-console
+      info: (msg, data): void => console.info(msg, data),
+      // eslint-disable-next-line no-console
+      warn: (msg, data): void => console.warn(msg, data),
+      // eslint-disable-next-line no-console
+      error: (msg, data): void => console.error(msg, data),
     };
     logAllEvents = config.logAllEvents ?? true;
     if (config.alwaysLogTypes) {
@@ -294,6 +302,7 @@ export function testPreset(
 
         // Log if verbose and matching type
         if (verbose && verboseTypes.includes(event.type)) {
+          // eslint-disable-next-line no-console
           console.debug(`[test] [${event.type}]`, event);
         }
 

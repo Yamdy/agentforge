@@ -225,6 +225,7 @@ export class AgentLoop implements AgentLoopInstance {
 
     // Log cancellation reason if provided
     if (reason) {
+      // eslint-disable-next-line no-console
       console.log(`[AgentLoop] Cancelled: ${reason}`);
     }
   }

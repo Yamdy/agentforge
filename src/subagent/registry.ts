@@ -91,7 +91,7 @@ export class SubagentRegistry implements ISubagentRegistry {
    * List all registered subagents.
    */
   list(): SubagentInfo[] {
-    return Array.from(this.subagents.values()).map((entry) => {
+    return Array.from(this.subagents.values()).map(entry => {
       const info: SubagentInfo = {
         name: entry.config.name,
         mode: entry.config.mode ?? 'subagent',
@@ -173,7 +173,7 @@ export class SubagentRegistry implements ISubagentRegistry {
 
     const nested$ = agent.run(input).pipe(
       takeUntil(this.destroy$),
-      map((event) => {
+      map(event => {
         // Track completion
         if (event.type === 'agent.complete') {
           const completeEvent = event;
@@ -205,7 +205,7 @@ export class SubagentRegistry implements ISubagentRegistry {
     return concat(
       of(startEvent),
       nested$,
-      new Observable<AgentEvent>((subscriber) => {
+      new Observable<AgentEvent>(subscriber => {
         if (!hadError) {
           const completeEvent: AgentEvent = {
             type: 'subagent.complete',

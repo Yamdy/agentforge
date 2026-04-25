@@ -16,6 +16,8 @@ import {
   type Checkpoint,
   type ToolDefinition,
   type LLMAdapter,
+  type LLMResponse,
+  type LLMChunk,
   type CheckpointStorage,
   ContextBuilder,
   generateSessionId,
@@ -28,6 +30,7 @@ import {
   timeoutOnEventType,
   retryOnEventType,
 } from '../operators/index.js';
+import { createLLMAdapter, parseModelSpec } from '../adapters/index.js';
 import {
   type AgentConfig,
   type Agent,
@@ -37,6 +40,7 @@ import {
   type CheckpointConfig,
   type TracingConfig,
   type MetricsConfig,
+  type AgentModelConfig,
   DEFAULT_AGENT_CONFIG,
 } from './types.js';
 
@@ -49,7 +53,8 @@ import {
  */
 interface ResolvedConfig {
   name: string;
-  model: { provider: string; model: string };
+  model: AgentModelConfig | string;
+  llmOptions: Record<string, unknown> | undefined;
   maxSteps: number;
   parallelToolCalls: boolean;
   streaming: boolean;
@@ -169,12 +174,13 @@ class AgentImpl implements Agent {
             handlers.onComplete?.(event.output);
             resultResolve(event.output);
             break;
-          case 'agent.error':
+          case 'agent.error': {
             const error = new Error(event.error.message);
             error.name = event.error.name;
             handlers.onError?.(error);
             resultReject(error);
             break;
+          }
           case 'done':
             if (event.reason === 'error' && !handlers.onError) {
               resultReject(new Error('Agent terminated with error'));
@@ -198,7 +204,7 @@ class AgentImpl implements Agent {
     this.currentResult = { resolve: resultResolve!, reject: resultReject! };
 
     return {
-      unsubscribe: () => {
+      unsubscribe: (): void => {
         subscription.unsubscribe();
         this.currentSubscription = null;
         this.currentResult = null;
@@ -287,7 +293,7 @@ class AgentImpl implements Agent {
     this.destroy$.next();
   }
 
-  async pause(): Promise<Checkpoint> {
+  pause(): Promise<Checkpoint> {
     // Return a placeholder checkpoint - actual implementation requires state capture
     const checkpoint: Checkpoint = {
       id: `cp-${generateSessionId()}`,
@@ -297,7 +303,7 @@ class AgentImpl implements Agent {
       state: {
         sessionId: this.sessionId,
         agentName: this.agentName,
-        model: this.config.model,
+        model: normalizeModelForLoop(this.config.model),
         messages: [],
         step: 0,
         maxSteps: this.config.maxSteps,
@@ -310,10 +316,10 @@ class AgentImpl implements Agent {
       recoveryMetadata: { recoveryCount: 0 },
       compactionHistory: [],
     };
-    return checkpoint;
+    return Promise.resolve(checkpoint);
   }
 
-  async resume(_checkpoint: Checkpoint): Promise<string> {
+  resume(_checkpoint: Checkpoint): Promise<string> {
     // Resume from checkpoint - basic implementation
     // Full implementation would restore state and continue
     return this.run('Resumed from checkpoint');
@@ -350,6 +356,7 @@ class AgentImpl implements Agent {
     const tools = Array.isArray(tool) ? tool : [tool];
     tools.forEach(t => {
       // Would call this.context.tools.register(t) if we had access
+      // eslint-disable-next-line no-console
       console.debug(`Tool registered: ${t.name}`);
     });
     return this;
@@ -357,7 +364,32 @@ class AgentImpl implements Agent {
 }
 
 // ============================================================
-// Configuration Resolution
+// Model Normalization
+// ============================================================
+
+/**
+ * Normalize model config to the format expected by AgentLoopConfig.
+ *
+ * Converts:
+ * - String "provider/model" → { provider, model }
+ * - String "model" (auto-detect) → { provider, model }
+ * - Object { provider, model } → { provider, model }
+ */
+function normalizeModelForLoop(
+  model: AgentModelConfig | string
+): { provider: string; model: string } {
+  if (typeof model === 'string') {
+    return parseModelSpec(model);
+  }
+
+  return {
+    provider: model.provider,
+    model: model.model,
+  };
+}
+
+// ============================================================
+// LLM Adapter Resolution
 // ============================================================
 
 /**
@@ -379,6 +411,7 @@ function resolveConfig(config: AgentConfig): ResolvedConfig {
     for (const t of config.tools) {
       if (typeof t === 'string') {
         // Tool name reference - would need lookup from global registry
+        // eslint-disable-next-line no-console
         console.debug(`Tool reference: ${t}`);
       } else {
         tools.push(t);
@@ -419,6 +452,7 @@ function resolveConfig(config: AgentConfig): ResolvedConfig {
   return {
     name,
     model: config.model,
+    llmOptions: config.llmOptions,
     maxSteps,
     parallelToolCalls,
     streaming,
@@ -442,33 +476,36 @@ function resolveConfig(config: AgentConfig): ResolvedConfig {
 function createInMemoryCheckpointStorage(): CheckpointStorage {
   const checkpoints = new Map<string, Checkpoint>();
   return {
-    save: async (cp: Checkpoint) => {
+    save: (cp: Checkpoint): Promise<void> => {
       checkpoints.set(cp.id, cp);
+      return Promise.resolve();
     },
-    load: async (sessionId: string) => {
+    load: (sessionId: string): Promise<Checkpoint | null> => {
       for (const cp of checkpoints.values()) {
         if (cp.sessionId === sessionId) {
-          return cp;
+          return Promise.resolve(cp);
         }
       }
-      return null;
+      return Promise.resolve(null);
     },
-    list: async (sessionId?: string) => {
+    list: (sessionId?: string): Promise<Checkpoint[]> => {
       const all = Array.from(checkpoints.values());
       if (sessionId) {
-        return all.filter(cp => cp.sessionId === sessionId);
+        return Promise.resolve(all.filter(cp => cp.sessionId === sessionId));
       }
-      return all;
+      return Promise.resolve(all);
     },
-    delete: async (id: string) => {
+    delete: (id: string): Promise<void> => {
       checkpoints.delete(id);
+      return Promise.resolve();
     },
-    deleteAll: async (sessionId: string) => {
+    deleteAll: (sessionId: string): Promise<void> => {
       for (const [id, cp] of checkpoints) {
         if (cp.sessionId === sessionId) {
           checkpoints.delete(id);
         }
       }
+      return Promise.resolve();
     },
   };
 }
@@ -476,8 +513,48 @@ function createInMemoryCheckpointStorage(): CheckpointStorage {
 // ============================================================
 // createAgent Factory
 // ============================================================
-// createAgent Factory
-// ============================================================
+
+/**
+ * Resolve LLM adapter from config.
+ *
+ * Supports:
+ * 1. Explicit llmAdapter in config
+ * 2. String model format: "provider/model" or "model" (auto-detect)
+ * 3. Object model format: { provider, model, apiKey?, baseUrl?, ... }
+ */
+function resolveLLMAdapterFromConfig(config: ResolvedConfig): LLMAdapter {
+  const { model, llmOptions } = config;
+
+  // String format: "provider/model" or "model" (auto-detect)
+  if (typeof model === 'string') {
+    return createLLMAdapter(model, llmOptions);
+  }
+
+  // Object format: { provider, model, apiKey?, baseUrl?, ... }
+  if (typeof model === 'object') {
+    const spec = `${model.provider}/${model.model}`;
+    const options = {
+      ...llmOptions,
+      apiKey: model.apiKey,
+      baseURL: model.baseUrl,
+      temperature: model.temperature,
+      maxTokens: model.maxTokens,
+    };
+    return createLLMAdapter(spec, options);
+  }
+
+  // Fallback: placeholder adapter
+  return {
+    name: 'placeholder',
+    provider: 'none',
+    chat: (): Promise<LLMResponse> => {
+      throw new Error('LLM adapter not configured. Please provide model config or llmAdapter.');
+    },
+    stream: (): Observable<LLMChunk> => {
+      throw new Error('LLM adapter not configured. Please provide model config or llmAdapter.');
+    },
+  };
+}
 
 /**
  * Create an Agent instance from declarative configuration.
@@ -527,21 +604,12 @@ export function createAgent(config: AgentConfig): CreateAgentResult {
 
   // Add LLM adapter
   if (resolved.llmAdapter) {
+    // Priority 1: Explicitly provided adapter
     builder = builder.withLLM(resolved.llmAdapter);
   } else {
-    // Create a placeholder LLM adapter that throws
-    // In production, this would be replaced with actual implementation
-    const placeholderLLM: LLMAdapter = {
-      name: 'placeholder',
-      provider: 'none',
-      chat: async () => {
-        throw new Error('LLM adapter not configured. Please provide llmAdapter in config.');
-      },
-      stream: () => {
-        throw new Error('LLM adapter not configured. Please provide llmAdapter in config.');
-      },
-    };
-    builder = builder.withLLM(placeholderLLM);
+    // Priority 2: Create adapter from model config
+    const llmAdapter = resolveLLMAdapterFromConfig(resolved);
+    builder = builder.withLLM(llmAdapter);
   }
 
   // Add tools (always create a ToolRegistry, even if empty)
@@ -563,9 +631,10 @@ export function createAgent(config: AgentConfig): CreateAgentResult {
   const ctx = builder.build();
 
   // Create loop configuration - build conditionally for exactOptionalPropertyTypes
+  const normalizedModel = normalizeModelForLoop(resolved.model);
   const loopConfig: AgentLoopConfig = resolved.checkpoint
     ? {
-        model: resolved.model,
+        model: normalizedModel,
         maxSteps: resolved.maxSteps,
         maxLLMRepairAttempts: resolved.maxLLMRepairAttempts,
         parallelToolCalls: resolved.parallelToolCalls,
@@ -576,7 +645,7 @@ export function createAgent(config: AgentConfig): CreateAgentResult {
         },
       }
     : {
-        model: resolved.model,
+        model: normalizedModel,
         maxSteps: resolved.maxSteps,
         maxLLMRepairAttempts: resolved.maxLLMRepairAttempts,
         parallelToolCalls: resolved.parallelToolCalls,

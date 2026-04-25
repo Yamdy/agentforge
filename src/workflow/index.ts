@@ -63,11 +63,7 @@ export { Workflow, createWorkflow } from './workflow.js';
 // Executor
 // ============================================================
 
-export {
-  WorkflowExecutor,
-  createPromptGenerator,
-  createJsonPromptGenerator,
-} from './executor.js';
+export { WorkflowExecutor, createPromptGenerator, createJsonPromptGenerator } from './executor.js';
 
 // ============================================================
 // Pipeline

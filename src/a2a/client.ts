@@ -501,7 +501,7 @@ export class A2AClient {
       )
       .subscribe({
         next: (message) => {
-          this.handleMessageInternal(message);
+          void this.handleMessageInternal(message);
         },
         error: () => {
           // Never propagate to error channel
@@ -589,7 +589,7 @@ export class A2AClient {
       )
       .subscribe({
         next: (message) => {
-          this.handleMessageInternal(message);
+          void this.handleMessageInternal(message);
         },
         error: () => {
           // Never propagate to error channel
@@ -720,6 +720,7 @@ export class MockTransport implements A2ATransport {
 
   async disconnect(): Promise<void> {
     this.statusSubject.next('disconnected');
+    await Promise.resolve();
   }
 
   async send(message: A2AMessage): Promise<void> {
@@ -727,6 +728,7 @@ export class MockTransport implements A2ATransport {
       throw new TransportError('Not connected', 'NOT_CONNECTED', false);
     }
     this.sentMessages.push(message);
+    await Promise.resolve();
   }
 
   /**
