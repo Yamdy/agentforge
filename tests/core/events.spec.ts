@@ -436,6 +436,8 @@ describe('AgentEventSchema', () => {
         sessionId: 'session-123',
         askId: 'ask-1',
         question: 'Do you want to proceed?',
+        toolCallId: 'tc-1',
+        toolName: 'ask_permission',
       };
       expect(AgentEventSchema.safeParse(event).success).toBe(true);
     });
@@ -447,6 +449,8 @@ describe('AgentEventSchema', () => {
         sessionId: 'session-123',
         askId: 'ask-1',
         question: 'Choose an option',
+        toolCallId: 'tc-1',
+        toolName: 'ask_permission',
         options: ['Yes', 'No', 'Cancel'],
       };
       expect(AgentEventSchema.safeParse(event).success).toBe(true);
@@ -459,6 +463,8 @@ describe('AgentEventSchema', () => {
         sessionId: 'session-123',
         askId: 'ask-1',
         answer: 'Yes',
+        toolCallId: 'tc-1',
+        toolName: 'ask_permission',
       };
       expect(AgentEventSchema.safeParse(event).success).toBe(true);
     });
