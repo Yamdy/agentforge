@@ -11,6 +11,9 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\"",
     "clean": "rimraf dist"
   },
   "keywords": [
@@ -34,6 +37,8 @@
     "eslint": "^8.57.0",
     "@typescript-eslint/eslint-plugin": "^7.16.0",
     "@typescript-eslint/parser": "^7.16.0",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.3.3",
     "rimraf": "^5.0.7"
   },
   "engines": {
