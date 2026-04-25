@@ -20,6 +20,7 @@
 
 import { generateText, streamText } from 'ai';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
+import { Observable, from, map } from 'rxjs';
 
 // ============================================================
 // 导入 AgentForge
@@ -27,7 +28,7 @@ import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 
 import { createAgent, type AgentConfig } from '../src/api/create-agent.js';
 import type { AgentEvent } from '../src/core/events.js';
-import type { LLMAdapter, LLMResponse, ToolDefinition } from '../src/core/interfaces.js';
+import type { LLMAdapter, LLMResponse, LLMChunk, LLMOptions } from '../src/core/interfaces.js';
 import type { Message } from '../src/core/state.js';
 
 // ============================================================
@@ -68,6 +69,10 @@ const model = provider(MODEL_NAME);
  * 基于 AI SDK 的 LLMAdapter 实现
  *
  * 实现 AgentForge 的 LLMAdapter 接口，使用 Vercel AI SDK 作为底层。
+ * 
+ * 注意: AgentForge 的 LLMAdapter 接口定义:
+ * - chat(messages, options?) → Promise<LLMResponse>
+ * - stream(messages, options?) → Observable<LLMChunk>
  */
 class AISDKAdapter implements LLMAdapter {
   readonly name = 'ai-sdk-adapter';
@@ -90,43 +95,19 @@ class AISDKAdapter implements LLMAdapter {
   }
 
   /**
-   * 将 AgentForge ToolDefinition 转换为 AI SDK 格式
+   * 非流式调用 - chat 方法
+   * 
+   * AgentForge 接口: chat(messages: Message[], options?: LLMOptions): Promise<LLMResponse>
    */
-  private convertTools(tools: ToolDefinition[]): Array<{
-    type: 'function';
-    function: {
-      name: string;
-      description: string;
-      parameters: Record<string, unknown>;
-    };
-  }> {
-    return tools.map(tool => ({
-      type: 'function' as const,
-      function: {
-        name: tool.name,
-        description: tool.description ?? '',
-        parameters: tool.parameters as Record<string, unknown>,
-      },
-    }));
-  }
-
-  /**
-   * 非流式调用 - 返回完整响应
-   */
-  async complete(
-    messages: Message[],
-    tools: ToolDefinition[],
-    config?: { temperature?: number; maxTokens?: number }
-  ): Promise<LLMResponse> {
+  async chat(messages: Message[], options?: LLMOptions): Promise<LLMResponse> {
     const result = await generateText({
       model,
       messages: this.convertMessages(messages),
-      tools: this.convertTools(tools),
-      temperature: config?.temperature ?? 0.7,
-      maxTokens: config?.maxTokens ?? 4096,
+      temperature: options?.temperature ?? 0.7,
+      maxTokens: options?.maxTokens ?? 4096,
     });
 
-    // 转换结果
+    // 转换结果为 AgentForge LLMResponse 格式
     const toolCalls = result.toolCalls?.map(tc => ({
       id: tc.toolCallId,
       name: tc.toolName,
@@ -136,7 +117,7 @@ class AISDKAdapter implements LLMAdapter {
     return {
       content: result.text,
       toolCalls: toolCalls?.length > 0 ? toolCalls : undefined,
-      finishReason: result.finishReason as 'stop' | 'tool_calls' | 'length' | 'error',
+      finishReason: result.finishReason as 'stop' | 'tool_calls' | 'length' | 'error' | 'cancelled',
       usage: {
         promptTokens: result.usage.promptTokens,
         completionTokens: result.usage.completionTokens,
@@ -145,43 +126,49 @@ class AISDKAdapter implements LLMAdapter {
   }
 
   /**
-   * 流式调用 - 返回 Observable
-   *
-   * 注意: AgentForge 的流式模式使用 Observable<AgentEvent>
-   * 这里我们模拟流式，将完整响应拆分为多个事件
+   * 流式调用 - stream 方法
+   * 
+   * AgentForge 接口: stream(messages: Message[], options?: LLMOptions): Observable<LLMChunk>
+   * 
+   * 注意: 返回类型是 Observable<LLMChunk>，不是 AsyncGenerator
    */
-  async *stream(
-    messages: Message[],
-    tools: ToolDefinition[],
-    config?: { temperature?: number; maxTokens?: number }
-  ): AsyncGenerator<{ type: 'text' | 'tool_call'; content: string; toolCall?: { id: string; name: string; args: Record<string, unknown> } }> {
-    const stream = await streamText({
-      model,
-      messages: this.convertMessages(messages),
-      tools: this.convertTools(tools),
-      temperature: config?.temperature ?? 0.7,
-      maxTokens: config?.maxTokens ?? 4096,
+  stream(messages: Message[], options?: LLMOptions): Observable<LLMChunk> {
+    return new Observable<LLMChunk>((subscriber) => {
+      const run = async () => {
+        try {
+          const stream = await streamText({
+            model,
+            messages: this.convertMessages(messages),
+            temperature: options?.temperature ?? 0.7,
+            maxTokens: options?.maxTokens ?? 4096,
+          });
+
+          // 流式输出文本块
+          for await (const textChunk of stream.textStream) {
+            if (textChunk) {
+              subscriber.next({ text: textChunk });
+            }
+          }
+
+          // 流式输出工具调用块
+          for await (const chunk of stream.fullStream) {
+            if (chunk.type === 'tool-call') {
+              subscriber.next({
+                toolCallId: chunk.toolCallId,
+                toolName: chunk.toolName,
+                argsDelta: JSON.stringify(chunk.args),
+              });
+            }
+          }
+
+          subscriber.complete();
+        } catch (error) {
+          subscriber.error(error);
+        }
+      };
+
+      run();
     });
-
-    // 流式输出文本
-    for await (const chunk of stream.textStream) {
-      yield { type: 'text', content: chunk };
-    }
-
-    // 流式输出工具调用
-    for await (const chunk of stream.fullStream) {
-      if (chunk.type === 'tool-call') {
-        yield {
-          type: 'tool_call',
-          content: '',
-          toolCall: {
-            id: chunk.toolCallId,
-            name: chunk.toolName,
-            args: chunk.args as Record<string, unknown>,
-          },
-        };
-      }
-    }
   }
 }
 
@@ -194,7 +181,7 @@ async function example1_basicChat() {
 
   if (!OPENAI_API_KEY) {
     console.log('⚠️  请设置 OPENAI_API_KEY 环境变量');
-    console.log('   或使用 Mock 示例: npx tsx examples/01-basic-usage.ts');
+    console.log('   或使用 Mock 示例: npx tsx examples/01-basic-llm.ts');
     return;
   }
 
@@ -205,12 +192,11 @@ async function example1_basicChat() {
     model: { provider: 'openai-compatible', model: MODEL_NAME },
     maxSteps: 5,
     preset: 'debug',
+    llmAdapter: adapter,
+    tools: [], // 无工具，纯对话
   };
 
-  const agent = createAgent(config, {
-    llm: adapter,
-    tools: [], // 无工具，纯对话
-  });
+  const agent = createAgent(config);
 
   console.log('发送消息: "你好，请简单介绍一下你自己"');
 
@@ -253,34 +239,16 @@ async function example2_withTools() {
     },
   };
 
-  // 定义工具执行器
-  const toolExecutor = async (name: string, args: Record<string, unknown>) => {
-    if (name === 'calculator') {
-      const expression = args.expression as string;
-      // 简单计算（实际项目中应使用安全的数学解析器）
-      try {
-        // 仅支持基本运算演示
-        const result = eval(expression);
-        return JSON.stringify({ result });
-      } catch {
-        return JSON.stringify({ error: '无法计算表达式' });
-      }
-    }
-    return JSON.stringify({ error: '未知工具' });
-  };
-
   const config: AgentConfig = {
     name: 'calculator-agent',
     model: { provider: 'openai-compatible', model: MODEL_NAME },
     maxSteps: 10,
     preset: 'debug',
+    llmAdapter: adapter,
+    tools: [calculatorTool],
   };
 
-  const agent = createAgent(config, {
-    llm: adapter,
-    tools: [calculatorTool],
-    executeTool: toolExecutor,
-  });
+  const agent = createAgent(config);
 
   console.log('发送消息: "请帮我计算 15 * 7 + 22 的结果"');
 
@@ -312,12 +280,11 @@ async function example3_streaming() {
     model: { provider: 'openai-compatible', model: MODEL_NAME },
     maxSteps: 5,
     streaming: true,
+    llmAdapter: adapter,
+    tools: [],
   };
 
-  const agent = createAgent(config, {
-    llm: adapter,
-    tools: [],
-  });
+  const agent = createAgent(config);
 
   console.log('发送消息（流式）: "写一首关于人工智能的短诗"');
   console.log('\n流式响应:');
