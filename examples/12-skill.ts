@@ -49,10 +49,10 @@ import {
 // ============================================================
 
 /**
- * 真实的 Skills 目录（用户配置）
- * 包含多个真实技能：effect-ts-guide, xlsx, pptx, pdf, webapp-testing 等
+ * 真实的 Skills 目录（项目示例）
+ * 包含多个真实技能：docx, pdf, pptx, skill-creator, webapp-testing, xlsx
  */
-const REAL_SKILLS_DIR = 'C:\\Users\\90514\\.config\\opencode\\skills';
+const SKILLS_DIR = join(process.cwd(), 'examples', 'skills');
 
 // ============================================================
 // 示例 0：加载真实 Skills 目录
@@ -61,21 +61,21 @@ const REAL_SKILLS_DIR = 'C:\\Users\\90514\\.config\\opencode\\skills';
 /**
  * 加载真实 Skills 目录示例
  *
- * 从用户的 skills 目录加载真实的技能文件，展示实际使用场景。
+ * 从项目的 skills 目录加载真实的技能文件，展示实际使用场景。
  */
 async function example0_LoadRealSkills(): Promise<void> {
   console.log('=== 示例 0：加载真实 Skills 目录 ===\n');
 
-  if (!existsSync(REAL_SKILLS_DIR)) {
-    console.log(`Skills 目录不存在: ${REAL_SKILLS_DIR}\n`);
+  if (!existsSync(SKILLS_DIR)) {
+    console.log(`Skills 目录不存在: ${SKILLS_DIR}\n`);
     return;
   }
 
-  console.log(`从真实目录加载技能: ${REAL_SKILLS_DIR}\n`);
+  console.log(`从项目目录加载技能: ${SKILLS_DIR}\n`);
 
   // 使用 loadSkillsFromDirectory 批量加载
   console.log('使用 loadSkillsFromDirectory 批量加载:');
-  const skills = await loadSkillsFromDirectory(REAL_SKILLS_DIR);
+  const skills = await loadSkillsFromDirectory(SKILLS_DIR);
 
   console.log(`加载成功！共发现 ${skills.length} 个技能\n`);
 
@@ -95,7 +95,7 @@ async function example0_LoadRealSkills(): Promise<void> {
     hooks: [createLoggingHook()],
   });
 
-  const registeredSkills = await registry.loadDirectory(REAL_SKILLS_DIR);
+  const registeredSkills = await registry.loadDirectory(SKILLS_DIR);
   console.log(`注册了 ${registeredSkills.length} 个技能`);
 
   // 列出所有已注册技能
@@ -129,6 +129,117 @@ async function example0_LoadRealSkills(): Promise<void> {
   console.log(`  effect-ts-guide 存在: ${registry.has('effect-ts-guide')}`);
   console.log(`  nonexistent-skill 存在: ${registry.has('nonexistent-skill')}`);
   console.log('\n');
+}
+
+// ============================================================
+// 示例 LLM：使用真实 LLM 测试 Skill 集成
+// ============================================================
+
+/**
+ * 使用真实 LLM 测试 Skill 集成
+ *
+ * 演示如何将 Skill 内容注入到 LLM prompt 中，
+ * 实现技能驱动的 AI 响应。
+ *
+ * 需要设置环境变量: OPENAI_API_KEY 或 OPENAI_BASE_URL
+ */
+async function exampleLLM_SkillIntegration(): Promise<void> {
+  console.log('=== 示例 LLM：使用真实 LLM 测试 Skill 集成 ===\n');
+
+  // 检查 API Key
+  const apiKey = process.env.OPENAI_API_KEY ?? '';
+  const baseURL = process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1';
+  const modelName = process.env.MODEL_NAME ?? 'gpt-4o-mini';
+
+  if (!apiKey) {
+    console.log('⚠️  未设置 OPENAI_API_KEY 环境变量');
+    console.log('   请设置后重试:');
+    console.log('   export OPENAI_API_KEY=your-api-key');
+    console.log('   或使用其他 Provider:');
+    console.log('   export OPENAI_BASE_URL=https://api.deepseek.com/v1');
+    console.log('   export OPENAI_API_KEY=your-deepseek-key\n');
+    return;
+  }
+
+  console.log(`配置信息:`);
+  console.log(`  Base URL: ${baseURL}`);
+  console.log(`  Model: ${modelName}\n`);
+
+  // 加载技能
+  if (!existsSync(SKILLS_DIR)) {
+    console.log(`Skills 目录不存在: ${SKILLS_DIR}\n`);
+    return;
+  }
+
+  const registry = new SkillRegistry();
+  await registry.loadDirectory(SKILLS_DIR);
+
+  console.log(`已加载 ${registry.list().length} 个技能:\n`);
+  for (const name of registry.list()) {
+    console.log(`  - ${name}`);
+  }
+  console.log('\n');
+
+  // 获取 docx 技能
+  const docxSkill = registry.get('docx');
+  if (docxSkill === undefined) {
+    console.log('未找到 docx 技能\n');
+    return;
+  }
+
+  console.log('使用 docx 技能进行 LLM 测试:');
+  console.log(`  技能描述: ${docxSkill.frontmatter.description?.slice(0, 100)}...\n`);
+
+  // 构建 prompt，包含技能内容
+  const userQuestion = '如何创建一个带有标题和段落的 Word 文档？';
+  const skillContext = docxSkill.content.slice(0, 2000); // 截取前 2000 字符
+
+  const systemPrompt = `你是一个专业的文档助手。请参考以下技能知识来回答问题。
+
+## 技能知识 (docx)
+
+${skillContext}
+
+---
+
+请基于以上技能知识回答用户的问题。`;
+
+  console.log('用户问题:');
+  console.log(`  "${userQuestion}"\n`);
+
+  console.log('调用 LLM (这可能需要几秒钟)...\n');
+
+  try {
+    // 动态导入 AI SDK
+    const { generateText } = await import('ai');
+    const { createOpenAICompatible } = await import('@ai-sdk/openai-compatible');
+
+    const provider = createOpenAICompatible({
+      name: 'openai-compatible',
+      baseURL,
+      apiKey,
+    });
+
+    const model = provider(modelName);
+
+    const result = await generateText({
+      model,
+      system: systemPrompt,
+      prompt: userQuestion,
+      maxTokens: 1000,
+    });
+
+    console.log('LLM 响应:');
+    console.log('─'.repeat(50));
+    console.log(result.text);
+    console.log('─'.repeat(50));
+    console.log(`\nToken 使用: prompt=${result.usage.promptTokens}, completion=${result.usage.completionTokens}\n`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.log(`LLM 调用失败: ${message}\n`);
+  }
+
+  console.log('Skill + LLM 集成测试完成\n');
 }
 
 // ============================================================
@@ -703,6 +814,9 @@ async function main(): Promise<void> {
     case 'real':
       await example0_LoadRealSkills();
       break;
+    case 'llm':
+      await exampleLLM_SkillIntegration();
+      break;
     case '1':
       await example1_LoadSkill();
       break;
@@ -726,7 +840,8 @@ async function main(): Promise<void> {
 
       console.log('用法: npx tsx examples/12-skill.ts <示例编号>\n');
       console.log('可用示例:');
-      console.log('  real - 加载真实 Skills 目录 (推荐先试这个)');
+      console.log('  real - 加载真实 Skills 目录');
+      console.log('  llm  - 使用真实 LLM 测试 Skill 集成');
       console.log('  1    - 加载单个 SKILL.md 文件');
       console.log('  2    - 解析 YAML Frontmatter');
       console.log('  3    - SkillRegistry 集成');
