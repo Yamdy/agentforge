@@ -532,6 +532,8 @@ export function createAgent(config: AgentConfig): CreateAgentResult {
     // Create a placeholder LLM adapter that throws
     // In production, this would be replaced with actual implementation
     const placeholderLLM: LLMAdapter = {
+      name: 'placeholder',
+      provider: 'none',
       chat: async () => {
         throw new Error('LLM adapter not configured. Please provide llmAdapter in config.');
       },

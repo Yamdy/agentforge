@@ -306,6 +306,8 @@ export function createApplicationServices(config?: {
     create: (): LLMAdapter => {
       throw new Error('LLMFactory not configured');
     },
+    listProviders: () => [],
+    hasProvider: () => false,
   };
 
   const toolRegistry = new SimpleToolRegistry();

@@ -505,6 +505,8 @@ export function createDefaultAppServices(): ApplicationServices {
       create: (): LLMAdapter => {
         throw new Error('LLMFactory not configured');
       },
+      listProviders: () => [],
+      hasProvider: () => false,
     },
     toolRegistry: {
       list: (): string[] => [],

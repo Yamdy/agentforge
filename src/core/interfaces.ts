@@ -16,7 +16,6 @@
 import { Observable } from 'rxjs';
 import type { Message, ToolCall, AgentEvent } from './events.js';
 import type { Checkpoint } from './checkpoint.js';
-import type { ModelConfig } from './state.js';
 
 // ============================================================
 // LLM Adapter
