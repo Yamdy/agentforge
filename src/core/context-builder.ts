@@ -12,6 +12,7 @@
 
 import type {
   LLMAdapter,
+  LLMAdapterFactory,
   ToolRegistry,
   ToolDefinition,
   MemoryStore,
@@ -24,10 +25,7 @@ import type {
   ToolContext,
   FunctionDefinition as FunctionDefinitionInterface,
 } from './interfaces.js';
-import type {
-  ApplicationServices,
-  AgentContext,
-} from './context.js';
+import type { ApplicationServices, AgentContext } from './context.js';
 import {
   InMemoryStore,
   DefaultPauseController,
@@ -112,7 +110,7 @@ export class ContextBuilder {
   withTools(tools: ToolRegistry | ToolDefinition[]): this {
     if (Array.isArray(tools)) {
       const registry = new SimpleToolRegistry();
-      tools.forEach((t) => registry.register(t));
+      tools.forEach(t => registry.register(t));
       this.context.tools = registry;
     } else {
       this.context.tools = tools;
@@ -245,7 +243,7 @@ export class SimpleToolRegistry implements ToolRegistry {
   }
 
   registerAll(tools: ToolDefinition[]): void {
-    tools.forEach((t) => this.register(t));
+    tools.forEach(t => this.register(t));
   }
 
   list(): string[] {
@@ -276,14 +274,10 @@ export class SimpleToolRegistry implements ToolRegistry {
   }
 
   getFunctionDefs(): FunctionDefinitionInterface[] {
-    return this.list().map((name) => this.getFunctionDef(name)!);
+    return this.list().map(name => this.getFunctionDef(name)!);
   }
 
-  async execute(
-    name: string,
-    args: Record<string, unknown>,
-    ctx?: ToolContext,
-  ): Promise<string> {
+  async execute(name: string, args: Record<string, unknown>, ctx?: ToolContext): Promise<string> {
     const tool = this.tools.get(name);
     if (!tool) {
       throw new Error(`Tool "${name}" not found`);
@@ -301,17 +295,15 @@ export class SimpleToolRegistry implements ToolRegistry {
  *
  * Called once at application startup.
  */
-export function createApplicationServices(
-  config?: {
-    tracing?: { exporter: 'console' | 'otel' | 'custom'; endpoint?: string };
-    metrics?: { prefix?: string };
-    llmFactory?: { create: (config: { provider: string; model: string }) => LLMAdapter };
-  },
-): ApplicationServices {
+export function createApplicationServices(config?: {
+  tracing?: { exporter: 'console' | 'otel' | 'custom'; endpoint?: string };
+  metrics?: { prefix?: string };
+  llmFactory?: LLMAdapterFactory;
+}): ApplicationServices {
   const schemaRegistry = new SimpleSchemaRegistry();
 
-  const llmFactory = config?.llmFactory ?? {
-    create: () => {
+  const llmFactory: LLMAdapterFactory = config?.llmFactory ?? {
+    create: (): LLMAdapter => {
       throw new Error('LLMFactory not configured');
     },
   };
@@ -346,7 +338,7 @@ export class DelegatingToolRegistry implements ToolRegistry {
   }
 
   registerAll(tools: ToolDefinition[]): void {
-    tools.forEach((t) => this.register(t));
+    tools.forEach(t => this.register(t));
   }
 
   list(): string[] {
@@ -378,14 +370,10 @@ export class DelegatingToolRegistry implements ToolRegistry {
   }
 
   getFunctionDefs(): FunctionDefinitionInterface[] {
-    return this.list().map((name) => this.getFunctionDef(name)!);
+    return this.list().map(name => this.getFunctionDef(name)!);
   }
 
-  async execute(
-    name: string,
-    args: Record<string, unknown>,
-    ctx?: ToolContext,
-  ): Promise<string> {
+  async execute(name: string, args: Record<string, unknown>, ctx?: ToolContext): Promise<string> {
     const tool = this.get(name);
     if (!tool) {
       throw new Error(`Tool "${name}" not found`);

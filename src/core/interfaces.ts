@@ -250,6 +250,9 @@ export interface Metrics {
  */
 export interface HITLAskOptions {
   question: string;
+  askId: string;
+  toolCallId: string;
+  toolName: string;
   options?: string[];
   metadata?: Record<string, unknown>;
 }
@@ -257,14 +260,24 @@ export interface HITLAskOptions {
 /**
  * HITL Controller Interface
  *
- * Manages human-in-the-loop interactions.
+ * Manages human-in-the-loop interactions using Observable-based async pattern.
+ * This enables the NEVER-blocking pattern where the stream pauses for external input.
+ *
+ * Design: ask() returns Observable<string> that emits when the human answers.
+ * The Observable represents a "pause until answered" semantic - the expand recursion
+ * subscribes and waits for the answer before continuing.
  */
 export interface HITLController {
-  /** Ask a question and wait for answer */
-  ask(options: HITLAskOptions): Promise<string>;
+  /** Ask a question - returns Observable that emits the answer when human responds */
+  ask(options: HITLAskOptions): Observable<string>;
 
   /** Observable of asks (for UI to subscribe) */
-  onAsk(): Observable<{ askId: string; question: string; options?: string[]; metadata?: Record<string, unknown> }>;
+  onAsk(): Observable<{
+    askId: string;
+    question: string;
+    options?: string[];
+    metadata?: Record<string, unknown>;
+  }>;
 
   /** Provide an answer (for UI to call) */
   answer(askId: string, answer: string): void;
@@ -374,7 +387,11 @@ export interface SubagentRegistry {
   has(name: string): boolean;
 
   /** Run a subagent */
-  run(name: string, input: string, options?: { sessionMessages?: Message[] }): Observable<AgentEvent>;
+  run(
+    name: string,
+    input: string,
+    options?: { sessionMessages?: Message[] }
+  ): Observable<AgentEvent>;
 
   /** List all subagents */
   list(): SubagentInfo[];
@@ -449,11 +466,66 @@ export interface ClassifiedError {
 /**
  * Error handler callback
  */
-export type ErrorHandler = (
-  error: Error,
-  event: AgentEvent,
-  category: ErrorCategory,
-) => void;
+export type ErrorHandler = (error: Error, event: AgentEvent, category: ErrorCategory) => void;
+
+// ============================================================
+// Prompt Builder
+// ============================================================
+
+/**
+ * Options for building a prompt
+ */
+export interface PromptBuildOptions {
+  /** Custom system prompt template (uses {{var}} interpolation) */
+  systemTemplate?: string;
+
+  /** Variables for template rendering */
+  templateVars?: Record<string, unknown>;
+
+  /** Additional instructions to append to system prompt */
+  extraInstructions?: string[];
+
+  /** Optional token budget limit for prompt construction */
+  tokenBudget?: number;
+}
+
+/**
+ * Built prompt result
+ */
+export interface BuiltPrompt {
+  /** Built message array for LLM */
+  messages: Message[];
+
+  /** Converted tool definitions for LLM */
+  tools: FunctionDefinition[];
+
+  /** Estimated token count */
+  tokenEstimate: number;
+}
+
+/**
+ * Prompt Builder Interface
+ *
+ * Constructs the full prompt payload for LLM invocation,
+ * including system message, tool instructions, and tool definitions.
+ */
+export interface PromptBuilder {
+  /**
+   * Build a complete prompt for LLM invocation.
+   *
+   * @param history - Prior conversation messages
+   * @param input - Current user input
+   * @param tools - Available tool definitions (with Zod schemas)
+   * @param options - Optional build configuration
+   * @returns Built prompt with messages, tools, and token estimate
+   */
+  build(
+    history: Message[],
+    input: string,
+    tools: ToolDefinition[],
+    options?: PromptBuildOptions
+  ): BuiltPrompt;
+}
 
 // ============================================================
 // Schema Registry
@@ -469,7 +541,7 @@ export interface SchemaRegistry {
   register(name: string, schema: unknown): void;
 
   /** Get a schema by name */
-  get(name: string): unknown | undefined;
+  get(name: string): unknown;
 
   /** Check if schema exists */
   has(name: string): boolean;

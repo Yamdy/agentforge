@@ -104,13 +104,7 @@ export const ToolCallSchema = z.object({
 });
 export type ToolCall = z.infer<typeof ToolCallSchema>;
 
-export const FinishReasonSchema = z.enum([
-  'stop',
-  'tool_calls',
-  'length',
-  'error',
-  'cancelled',
-]);
+export const FinishReasonSchema = z.enum(['stop', 'tool_calls', 'length', 'error', 'cancelled']);
 export type FinishReason = z.infer<typeof FinishReasonSchema>;
 
 /**
@@ -211,10 +205,12 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
     content: z.string(),
     toolCalls: ToolCallSchema.array().optional(),
     finishReason: FinishReasonSchema,
-    usage: z.object({
-      promptTokens: z.number(),
-      completionTokens: z.number(),
-    }).optional(),
+    usage: z
+      .object({
+        promptTokens: z.number(),
+        completionTokens: z.number(),
+      })
+      .optional(),
   }),
 
   z.object({
@@ -284,11 +280,13 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
     timestamp: z.number(),
     sessionId: z.string(),
     batchId: z.string(),
-    calls: z.array(z.object({
-      toolCallId: z.string(),
-      toolName: z.string(),
-      args: z.record(z.string(), z.unknown()),
-    })),
+    calls: z.array(
+      z.object({
+        toolCallId: z.string(),
+        toolName: z.string(),
+        args: z.record(z.string(), z.unknown()),
+      })
+    ),
   }),
 
   z.object({
@@ -317,6 +315,8 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
     sessionId: z.string(),
     askId: z.string(),
     question: z.string(),
+    toolCallId: z.string(),
+    toolName: z.string(),
     options: z.string().array().optional(),
     metadata: z.record(z.string(), z.unknown()).optional(),
   }),
@@ -327,6 +327,8 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
     sessionId: z.string(),
     askId: z.string(),
     answer: z.string(),
+    toolCallId: z.string(),
+    toolName: z.string(),
   }),
 
   // ----- state.* -----
@@ -339,13 +341,15 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
   }),
 
   // ----- checkpoint -----
+  // 注：state 使用 z.unknown() 是为了避免与 state.ts 的循环依赖。
+  // 实际运行时校验由 CheckpointSchema (checkpoint.ts) 使用 AgentStateSchema 完成。
   z.object({
     type: z.literal('checkpoint'),
     timestamp: z.number(),
     sessionId: z.string(),
     checkpointId: z.string(),
     position: z.enum(['before_llm', 'after_llm', 'before_tool', 'after_tool']),
-    state: z.unknown(),
+    state: z.unknown(), // AgentState snapshot - validated by CheckpointSchema
   }),
 
   // ----- control -----
@@ -368,7 +372,13 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
     type: z.literal('context.updated'),
     timestamp: z.number(),
     sessionId: z.string(),
-    source: z.enum(['skill_loaded', 'config_changed', 'tool_registered', 'mcp_connected', 'manual']),
+    source: z.enum([
+      'skill_loaded',
+      'config_changed',
+      'tool_registered',
+      'mcp_connected',
+      'manual',
+    ]),
     changes: z.object({
       toolsAdded: z.string().array().optional(),
       toolsRemoved: z.string().array().optional(),
@@ -543,22 +553,30 @@ export function isAgentEvent(event: unknown): event is AgentEvent {
 }
 
 /** Check if event is an LLM event */
-export function isLLMEvent(event: AgentEvent): event is Extract<AgentEvent, { type: `llm.${string}` }> {
+export function isLLMEvent(
+  event: AgentEvent
+): event is Extract<AgentEvent, { type: `llm.${string}` }> {
   return event.type.startsWith('llm.');
 }
 
 /** Check if event is a tool event */
-export function isToolEvent(event: AgentEvent): event is Extract<AgentEvent, { type: `tool.${string}` }> {
+export function isToolEvent(
+  event: AgentEvent
+): event is Extract<AgentEvent, { type: `tool.${string}` }> {
   return event.type.startsWith('tool.');
 }
 
 /** Check if event is a HITL event */
-export function isHITLEvent(event: AgentEvent): event is Extract<AgentEvent, { type: `hitl.${string}` }> {
+export function isHITLEvent(
+  event: AgentEvent
+): event is Extract<AgentEvent, { type: `hitl.${string}` }> {
   return event.type.startsWith('hitl.');
 }
 
 /** Check if event is an agent lifecycle event */
-export function isAgentLifecycleEvent(event: AgentEvent): event is Extract<AgentEvent, { type: `agent.${string}` }> {
+export function isAgentLifecycleEvent(
+  event: AgentEvent
+): event is Extract<AgentEvent, { type: `agent.${string}` }> {
   return event.type.startsWith('agent.');
 }
 

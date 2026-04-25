@@ -138,6 +138,9 @@ export type {
   ClassifiedError,
   ErrorHandler,
   SchemaRegistry,
+  PromptBuildOptions,
+  BuiltPrompt,
+  PromptBuilder,
 } from './interfaces.js';
 
 // ============================================================
@@ -155,6 +158,7 @@ export type {
 export {
   InMemoryStore,
   DefaultPauseController,
+  DefaultHITLController,
   SimpleSchemaRegistry,
   generateSessionId,
   createDefaultAppServices,
@@ -171,3 +175,31 @@ export {
   DelegatingToolRegistry,
   createApplicationServices,
 } from './context-builder.js';
+
+// ============================================================
+// Zod to Schema
+// ============================================================
+
+export {
+  zodToJsonSchema,
+  zodToFunctionDef,
+  toolToFunctionDef,
+  toolsToFunctionDefs,
+} from './zod-to-schema.js';
+
+// ============================================================
+// Prompt Builder
+// ============================================================
+
+export {
+  DefaultPromptBuilder,
+  DEFAULT_SYSTEM_TEMPLATE,
+  TOOL_INSTRUCTIONS_TEMPLATE,
+} from './prompt-builder.js';
+
+// ============================================================
+// State Machine
+// ============================================================
+
+export type { AgentStateEnum } from './state-machine.js';
+export { AgentStateMachine, isValidTransition, getValidTransitions } from './state-machine.js';

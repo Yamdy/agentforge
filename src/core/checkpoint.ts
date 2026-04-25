@@ -192,25 +192,17 @@ export function generateIdempotencyKey(sessionId: string, toolCallId: string): s
 /**
  * Check if a tool has already been executed
  */
-export function isToolExecuted(
-  checkpoint: Checkpoint,
-  toolCallId: string,
-): boolean {
-  return (checkpoint.executedTools?.some(
-    (t) => t.toolCallId === toolCallId,
-  ) ?? false);
+export function isToolExecuted(checkpoint: Checkpoint, toolCallId: string): boolean {
+  return checkpoint.executedTools?.some(t => t.toolCallId === toolCallId) ?? false;
 }
 
 /**
  * Get tool result from checkpoint (if already executed)
  */
-export function getToolResult(
-  checkpoint: Checkpoint,
-  toolCallId: string,
-): string | undefined {
+export function getToolResult(checkpoint: Checkpoint, toolCallId: string): string | undefined {
   // Find tool message with matching toolCallId
   const toolMessage = checkpoint.state.messages.find(
-    (m) => m.role === 'tool' && m.toolCallId === toolCallId,
+    m => m.role === 'tool' && m.toolCallId === toolCallId
   );
   return toolMessage?.content;
 }
@@ -220,7 +212,7 @@ export function getToolResult(
  */
 export function recordToolExecution(
   checkpoint: Checkpoint,
-  tool: Omit<ExecutedTool, 'executedAt'>,
+  tool: Omit<ExecutedTool, 'executedAt'>
 ): Checkpoint {
   const executedTools = checkpoint.executedTools ?? [];
   return CheckpointSchema.parse({
@@ -243,18 +235,16 @@ export function recordToolExecution(
  * Check if there are pending A2A requests
  */
 export function hasPendingA2A(checkpoint: Checkpoint): boolean {
-  return (checkpoint.pendingA2A?.some(
-    (r) => r.status === 'pending',
-  ) ?? false);
+  return checkpoint.pendingA2A?.some(r => r.status === 'pending') ?? false;
 }
 
 /**
  * Get pending A2A requests that need response
  */
 export function getPendingA2ARequests(checkpoint: Checkpoint): A2APendingRequest[] {
-  return checkpoint.pendingA2A?.filter(
-    (r) => r.status === 'pending' || r.status === 'acknowledged',
-  ) ?? [];
+  return (
+    checkpoint.pendingA2A?.filter(r => r.status === 'pending' || r.status === 'acknowledged') ?? []
+  );
 }
 
 /**
@@ -263,11 +253,10 @@ export function getPendingA2ARequests(checkpoint: Checkpoint): A2APendingRequest
 export function updateA2AStatus(
   checkpoint: Checkpoint,
   requestId: string,
-  status: A2APendingRequest['status'],
+  status: A2APendingRequest['status']
 ): Checkpoint {
-  const pendingA2A = checkpoint.pendingA2A?.map((r) =>
-    r.requestId === requestId ? { ...r, status } : r,
-  ) ?? [];
+  const pendingA2A =
+    checkpoint.pendingA2A?.map(r => (r.requestId === requestId ? { ...r, status } : r)) ?? [];
 
   return CheckpointSchema.parse({
     ...checkpoint,
@@ -282,10 +271,7 @@ export function updateA2AStatus(
 /**
  * Create recovery checkpoint (from original checkpoint)
  */
-export function createRecoveryCheckpoint(
-  original: Checkpoint,
-  newSessionId: string,
-): Checkpoint {
+export function createRecoveryCheckpoint(original: Checkpoint, newSessionId: string): Checkpoint {
   const recoveryCount = (original.recoveryMetadata?.recoveryCount ?? 0) + 1;
 
   return CheckpointSchema.parse({
@@ -326,7 +312,7 @@ export function getRecoveryInfo(checkpoint: Checkpoint): {
  */
 export function recordCompaction(
   checkpoint: Checkpoint,
-  compaction: Omit<CompactionHistory, 'timestamp'>,
+  compaction: Omit<CompactionHistory, 'timestamp'>
 ): Checkpoint {
   const compactionHistory = checkpoint.compactionHistory ?? [];
   return CheckpointSchema.parse({
@@ -345,10 +331,9 @@ export function recordCompaction(
  * Get total tokens saved by compaction
  */
 export function getTotalCompactionSavings(checkpoint: Checkpoint): number {
-  return checkpoint.compactionHistory?.reduce(
-    (sum, c) => sum + (c.tokensBefore - c.tokensAfter),
-    0,
-  ) ?? 0;
+  return (
+    checkpoint.compactionHistory?.reduce((sum, c) => sum + (c.tokensBefore - c.tokensAfter), 0) ?? 0
+  );
 }
 
 // ============================================================
@@ -372,6 +357,6 @@ export function serializeCheckpoint(checkpoint: Checkpoint): string {
  * Validates against schema (Tier 1: external data).
  */
 export function deserializeCheckpoint(raw: string): Checkpoint {
-  const parsed = JSON.parse(raw);
+  const parsed: unknown = JSON.parse(raw);
   return CheckpointSchema.parse(parsed);
 }

@@ -20,6 +20,8 @@ import type {
   LLMAdapter,
   LLMAdapterFactory,
   ToolRegistry,
+  ToolDefinition,
+  FunctionDefinition,
   MemoryStore,
   CheckpointStorage,
   Tracer,
@@ -31,7 +33,8 @@ import type {
   SchemaRegistry,
   ErrorHandler,
 } from './interfaces.js';
-import { Observable } from 'rxjs';
+import { Observable, Subject } from 'rxjs';
+import type { HITLAskOptions } from './interfaces.js';
 // ============================================================
 // Application Services (Global Singleton)
 // ============================================================
@@ -162,7 +165,7 @@ export interface AgentConfig {
   systemPrompt?: string;
 
   /** Tool names or definitions */
-  tools?: (string | unknown)[];
+  tools?: string[];
 
   /** Enable parallel tool calls */
   parallelToolCalls?: boolean;
@@ -179,28 +182,37 @@ export interface AgentConfig {
 
   // ----- Observability -----
   /** Enable tracing */
-  tracing?: boolean | {
-    exporter: 'console' | 'otel' | 'custom';
-    endpoint?: string;
-  };
+  tracing?:
+    | boolean
+    | {
+        exporter: 'console' | 'otel' | 'custom';
+        endpoint?: string;
+      };
 
   /** Enable metrics */
-  metrics?: boolean | {
-    prefix?: string;
-  };
+  metrics?:
+    | boolean
+    | {
+        prefix?: string;
+      };
 
   // ----- Checkpoint -----
   /** Enable checkpointing */
-  checkpoint?: boolean | {
-    storage: 'memory' | 'sqlite' | 'custom';
-    path?: string;
-    interval?: 'step' | 'tool_result' | 'llm_response';
-  };
+  checkpoint?:
+    | boolean
+    | {
+        storage: 'memory' | 'sqlite' | 'custom';
+        path?: string;
+        interval?: 'step' | 'tool_result' | 'llm_response';
+      };
 
   // ----- HITL -----
   /** HITL configuration */
   hitl?: {
-    onPermissionAsk?: (ask: { permission: string; context?: Record<string, unknown> }) => Promise<string>;
+    onPermissionAsk?: (ask: {
+      permission: string;
+      context?: Record<string, unknown>;
+    }) => Promise<string>;
     autoAllow?: string[];
   };
 
@@ -320,7 +332,7 @@ export class DefaultPauseController implements PauseController {
     this.paused = false;
     const callbacks = [...this.resumeCallbacks];
     this.resumeCallbacks = [];
-    callbacks.forEach((cb) => cb());
+    callbacks.forEach(cb => cb());
   }
 
   isPaused(): boolean {
@@ -329,17 +341,110 @@ export class DefaultPauseController implements PauseController {
 
   onResume(): Observable<void> {
     if (!this.paused) {
-      return new Observable((subscriber) => {
+      return new Observable(subscriber => {
         subscriber.next();
         subscriber.complete();
       });
     }
-    return new Observable((subscriber) => {
+    return new Observable(subscriber => {
       this.resumeCallbacks.push(() => {
         subscriber.next();
         subscriber.complete();
       });
     });
+  }
+}
+
+/**
+ * Default HITL Controller
+ *
+ * Implements Observable-based HITL using Subject pattern.
+ * The ask() method returns an Observable that:
+ * - Emits when answer() is called with matching askId
+ * - Never throws errors (errors-as-events handled by caller)
+ *
+ * This enables the NEVER-blocking pattern in expand recursion:
+ * - hitl.ask case subscribes to Observable
+ * - Observable doesn't emit → expand naturally pauses
+ * - External answer() call → Subject emits → expand resumes
+ */
+export class DefaultHITLController implements HITLController {
+  private askSubject = new Subject<{
+    askId: string;
+    question: string;
+    options?: string[];
+    metadata?: Record<string, unknown>;
+  }>();
+  private pendingAsks = new Map<string, Subject<string>>();
+
+  /**
+   * Ask a question - returns Observable that emits when answered.
+   * The Observable represents "pause until human responds" semantics.
+   */
+  ask(options: HITLAskOptions): Observable<string> {
+    return new Observable(subscriber => {
+      // Create a Subject for this specific ask
+      const answerSubject = new Subject<string>();
+      this.pendingAsks.set(options.askId, answerSubject);
+
+      // Notify downstream (UI) that we're asking
+      // Build object conditionally to satisfy exactOptionalPropertyTypes
+      const askNotification: {
+        askId: string;
+        question: string;
+        options?: string[];
+        metadata?: Record<string, unknown>;
+      } = {
+        askId: options.askId,
+        question: options.question,
+      };
+      if (options.options !== undefined) {
+        askNotification.options = options.options;
+      }
+      if (options.metadata !== undefined) {
+        askNotification.metadata = options.metadata;
+      }
+      this.askSubject.next(askNotification);
+
+      // Subscribe to answer and forward to caller
+      const subscription = answerSubject.subscribe({
+        next: answer => {
+          subscriber.next(answer);
+          subscriber.complete();
+        },
+      });
+
+      // Cleanup on unsubscribe
+      return () => {
+        subscription.unsubscribe();
+        this.pendingAsks.delete(options.askId);
+      };
+    });
+  }
+
+  /**
+   * Observable of asks - for UI to subscribe and display prompts.
+   */
+  onAsk(): Observable<{
+    askId: string;
+    question: string;
+    options?: string[];
+    metadata?: Record<string, unknown>;
+  }> {
+    return this.askSubject.asObservable();
+  }
+
+  /**
+   * Provide an answer - called by external system (UI, CLI, etc.)
+   */
+  answer(askId: string, answer: string): void {
+    const answerSubject = this.pendingAsks.get(askId);
+    if (answerSubject) {
+      answerSubject.next(answer);
+      answerSubject.complete();
+      this.pendingAsks.delete(askId);
+    }
+    // If no pending ask, silently ignore (idempotent)
   }
 }
 
@@ -355,7 +460,7 @@ export class SimpleSchemaRegistry implements SchemaRegistry {
     this.schemas.set(name, schema);
   }
 
-  get(name: string): unknown | undefined {
+  get(name: string): unknown {
     return this.schemas.get(name);
   }
 
@@ -397,21 +502,25 @@ export function createDefaultAppServices(): ApplicationServices {
   return {
     schemaRegistry: new SimpleSchemaRegistry(),
     llmFactory: {
-      create: () => {
+      create: (): LLMAdapter => {
         throw new Error('LLMFactory not configured');
       },
     },
     toolRegistry: {
-      list: () => [],
-      has: () => false,
-      get: () => undefined,
-      getFunctionDef: () => undefined,
-      getFunctionDefs: () => [],
-      execute: async () => {
+      list: (): string[] => [],
+      has: (): boolean => false,
+      get: (): ToolDefinition => {
         throw new Error('Tool not found');
       },
-      register: () => {},
-      registerAll: () => {},
+      getFunctionDef: (): FunctionDefinition => {
+        throw new Error('Tool not found');
+      },
+      getFunctionDefs: (): FunctionDefinition[] => [],
+      execute: (): Promise<string> => {
+        throw new Error('Tool not found');
+      },
+      register: (): void => {},
+      registerAll: (): void => {},
     },
   };
 }
@@ -422,7 +531,7 @@ export function createDefaultAppServices(): ApplicationServices {
 export function createToolContext(
   agentCtx: AgentContext,
   toolCallId: string,
-  options?: { timeout?: number; metadata?: Record<string, unknown> },
+  options?: { timeout?: number; metadata?: Record<string, unknown> }
 ): {
   toolCallId: string;
   parentSessionId: string;
@@ -440,7 +549,7 @@ export function createToolContext(
     toolCallId,
     parentSessionId: agentCtx.sessionId,
   };
-  
+
   if (options?.timeout !== undefined) {
     result.timeout = options.timeout;
   }
@@ -450,6 +559,6 @@ export function createToolContext(
   if (agentCtx.abortSignal) {
     result.signal = agentCtx.abortSignal;
   }
-  
+
   return result;
 }

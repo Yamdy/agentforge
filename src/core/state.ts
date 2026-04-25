@@ -157,10 +157,7 @@ export function createInitialState(options: CreateInitialStateOptions): AgentSta
  * Creates a new state object with the provided updates.
  * Validates the result against the schema.
  */
-export function updateState(
-  state: AgentState,
-  update: Partial<AgentState>,
-): AgentState {
+export function updateState(state: AgentState, update: Partial<AgentState>): AgentState {
   const newState = { ...state, ...update };
   return AgentStateSchema.parse(newState);
 }
@@ -170,7 +167,7 @@ export function updateState(
  */
 export function appendMessage(
   state: AgentState,
-  message: z.infer<typeof MessageSchema>,
+  message: z.infer<typeof MessageSchema>
 ): AgentState {
   return updateState(state, {
     messages: [...state.messages, message],
@@ -182,7 +179,7 @@ export function appendMessage(
  */
 export function appendMessages(
   state: AgentState,
-  messages: z.infer<typeof MessageSchema>[],
+  messages: z.infer<typeof MessageSchema>[]
 ): AgentState {
   return updateState(state, {
     messages: [...state.messages, ...messages],
@@ -211,7 +208,7 @@ export function isMaxStepsReached(state: AgentState): boolean {
 export function updateTokens(
   state: AgentState,
   promptTokens: number,
-  completionTokens: number,
+  completionTokens: number
 ): AgentState {
   return updateState(state, {
     tokens: {
@@ -226,7 +223,7 @@ export function updateTokens(
  */
 export function setPendingToolCalls(
   state: AgentState,
-  toolCalls: z.infer<typeof ToolCallSchema>[],
+  toolCalls: z.infer<typeof ToolCallSchema>[]
 ): AgentState {
   return updateState(state, {
     pendingToolCalls: toolCalls,
@@ -245,10 +242,7 @@ export function clearPendingToolCalls(state: AgentState): AgentState {
 /**
  * Set batch context for parallel tool execution
  */
-export function setBatchContext(
-  state: AgentState,
-  batchContext: BatchContext,
-): AgentState {
+export function setBatchContext(state: AgentState, batchContext: BatchContext): AgentState {
   return updateState(state, { batchContext });
 }
 
@@ -264,7 +258,7 @@ export function clearBatchContext(state: AgentState): AgentState {
  */
 export function updateLastCheckpoint(
   state: AgentState,
-  checkpoint: CheckpointReference,
+  checkpoint: CheckpointReference
 ): AgentState {
   return updateState(state, { lastCheckpoint: checkpoint });
 }
@@ -295,10 +289,7 @@ export function initContextManagement(state: AgentState, totalTokens: number): A
 /**
  * Update context management after compaction
  */
-export function recordCompaction(
-  state: AgentState,
-  tokensAfter: number,
-): AgentState {
+export function recordCompaction(state: AgentState, tokensAfter: number): AgentState {
   const ctx = state.contextManagement;
   if (!ctx) {
     return state;
