@@ -508,6 +508,494 @@ class Agent {
 
 ---
 
+## 7. Agent 评估系统 (P2)
+
+> 基于 LangSmith Evaluation、AgentScope Benchmark、DeepAgents Evaluation 的设计模式，实现 Agent 行为评估与质量保证。
+
+### 7.1 设计动机
+
+当前缺少评估能力：
+- ❌ 无输出质量评估：不知道 Agent 输出是否满足要求
+- ❌ 无轨迹分析：无法分析 Agent 行为路径
+- ❌ 无基准对比：无法与历史版本对比性能
+- ❌ 无离线评估：生产环境无法事后评估
+
+### 7.2 IEvaluator 接口
+
+```typescript
+// src/evaluation/interfaces.ts
+
+import { z } from 'zod';
+
+/** 评估结果 */
+export const EvaluationResultSchema = z.object({
+  /** 评估 ID */
+  evaluationId: z.string(),
+  /** 会话 ID */
+  sessionId: z.string(),
+  /** 评估类型 */
+  evaluatorType: z.string(),
+  /** 评分 (0-1) */
+  score: z.number().min(0).max(1),
+  /** 是否通过阈值 */
+  passed: z.boolean(),
+  /** 评估注释 */
+  comment: z.string().optional(),
+  /** 详细指标 */
+  metrics: z.record(z.string(), z.number()).optional(),
+  /** 评估时间戳 */
+  timestamp: z.number(),
+});
+export type EvaluationResult = z.infer<typeof EvaluationResultSchema>;
+
+/** 评估上下文 */
+export interface EvaluationContext {
+  /** 会话 ID */
+  sessionId: string;
+  /** 完整事件轨迹 */
+  events: AgentEvent[];
+  /** 最终输出 */
+  output: string;
+  /** 用户输入 */
+  input: string;
+  /** 预期输出 (如果有) */
+  expectedOutput?: string;
+  /** 评估配置 */
+  config: EvaluationConfig;
+}
+
+/** 评估器接口 */
+export interface IEvaluator {
+  /** 评估器名称 */
+  name: string;
+  
+  /** 评估器类型 */
+  type: EvaluatorType;
+  
+  /** 执行评估 */
+  evaluate(ctx: EvaluationContext): Promise<EvaluationResult>;
+  
+  /** 获取评估阈值 */
+  getThreshold(): number;
+  
+  /** 设置评估阈值 */
+  setThreshold(threshold: number): void;
+}
+
+export type EvaluatorType = 
+  | 'llm-judge'       // LLM 作为评判者
+  | 'exact-match'     // 精确匹配
+  | 'trajectory'      // 轨迹分析
+  | 'custom';         // 自定义评估器
+```
+
+### 7.3 评估器实现
+
+#### LLM-as-Judge 评估器
+
+```typescript
+// src/evaluation/llm-judge-evaluator.ts
+
+export interface LLMJudgeConfig {
+  /** 评判模型 */
+  model: { provider: string; model: string };
+  /** 评判 Prompt 模板 */
+  promptTemplate: string;
+  /** 评分解析规则 */
+  scoreParser: 'numeric' | 'boolean' | 'scale-5';
+  /** 通过阈值 */
+  threshold: number;
+}
+
+const DEFAULT_JUDGE_PROMPT = `
+You are an impartial evaluator. Evaluate the following agent output.
+
+Input: {{input}}
+Expected Output: {{expectedOutput}}
+Actual Output: {{output}}
+
+Evaluate on these criteria:
+1. Accuracy (0-1): Does the output match the expected result?
+2. Completeness (0-1): Is the output complete and comprehensive?
+3. Quality (0-1): Is the output well-formatted and useful?
+
+Provide a single numeric score between 0 and 1, where:
+- 1.0 = Perfect, meets all criteria
+- 0.7 = Good, meets most criteria
+- 0.5 = Acceptable, meets some criteria
+- 0.3 = Poor, meets few criteria
+- 0.0 = Failed, does not meet any criteria
+
+Output format: SCORE: [number]
+COMMENT: [brief explanation]
+`;
+
+export class LLMJudgeEvaluator implements IEvaluator {
+  name = 'LLM-Judge';
+  type = 'llm-judge' as EvaluatorType;
+  
+  constructor(
+    private llmAdapter: LLMAdapter,
+    private config: LLMJudgeConfig
+  ) {}
+  
+  async evaluate(ctx: EvaluationContext): Promise<EvaluationResult> {
+    const prompt = this.buildPrompt(ctx);
+    
+    const response = await this.llmAdapter.chat([
+      { role: 'user', content: prompt },
+    ]);
+    
+    const { score, comment } = this.parseResponse(response.content);
+    
+    return {
+      evaluationId: `eval-${ctx.sessionId}-${Date.now()}`,
+      sessionId: ctx.sessionId,
+      evaluatorType: this.type,
+      score,
+      passed: score >= this.config.threshold,
+      comment,
+      timestamp: Date.now(),
+    };
+  }
+  
+  private buildPrompt(ctx: EvaluationContext): string {
+    return this.config.promptTemplate
+      .replace('{{input}}', ctx.input)
+      .replace('{{expectedOutput}}', ctx.expectedOutput ?? 'N/A')
+      .replace('{{output}}', ctx.output);
+  }
+  
+  private parseResponse(content: string): { score: number; comment: string } {
+    const scoreMatch = content.match(/SCORE:\s*([\d.]+)/);
+    const commentMatch = content.match(/COMMENT:\s*(.+)/);
+    
+    return {
+      score: scoreMatch ? parseFloat(scoreMatch[1]) : 0.5,
+      comment: commentMatch?.[1]?.trim() ?? 'No comment provided',
+    };
+  }
+  
+  getThreshold(): number {
+    return this.config.threshold;
+  }
+  
+  setThreshold(threshold: number): void {
+    this.config.threshold = threshold;
+  }
+}
+```
+
+#### 轨迹长度评估器
+
+```typescript
+// src/evaluation/trajectory-evaluator.ts
+
+export interface TrajectoryConfig {
+  /** 最大允许步数 */
+  maxSteps: number;
+  /** 最大允许工具调用数 */
+  maxToolCalls: number;
+  /** 最大允许 Token 消耗 */
+  maxTokens: number;
+  /** 通过阈值 */
+  threshold: number;
+}
+
+export class TrajectoryLengthEvaluator implements IEvaluator {
+  name = 'Trajectory-Length';
+  type = 'trajectory' as EvaluatorType;
+  
+  constructor(private config: TrajectoryConfig) {}
+  
+  async evaluate(ctx: EvaluationContext): Promise<EvaluationResult> {
+    const metrics = this.extractMetrics(ctx.events);
+    
+    // 计算效率得分
+    const stepScore = Math.min(1, metrics.totalSteps / this.config.maxSteps);
+    const toolScore = Math.min(1, metrics.totalToolCalls / this.config.maxToolCalls);
+    const tokenScore = Math.min(1, metrics.totalTokens / this.config.maxTokens);
+    
+    const score = (stepScore + toolScore + tokenScore) / 3;
+    
+    return {
+      evaluationId: `eval-${ctx.sessionId}-${Date.now()}`,
+      sessionId: ctx.sessionId,
+      evaluatorType: this.type,
+      score,
+      passed: score >= this.config.threshold,
+      comment: `Steps: ${metrics.totalSteps}, Tools: ${metrics.totalToolCalls}, Tokens: ${metrics.totalTokens}`,
+      metrics: {
+        steps: metrics.totalSteps,
+        toolCalls: metrics.totalToolCalls,
+        tokens: metrics.totalTokens,
+        efficiency: score,
+      },
+      timestamp: Date.now(),
+    };
+  }
+  
+  private extractMetrics(events: AgentEvent[]): {
+    totalSteps: number;
+    totalToolCalls: number;
+    totalTokens: number;
+  } {
+    let totalSteps = 0;
+    let totalToolCalls = 0;
+    let totalTokens = 0;
+    
+    for (const event of events) {
+      if (event.type === 'agent.step') {
+        totalSteps = Math.max(totalSteps, event.step);
+      }
+      if (event.type === 'tool.call') {
+        totalToolCalls++;
+      }
+      if (event.type === 'llm.response' && event.usage) {
+        totalTokens += event.usage.promptTokens + event.usage.completionTokens;
+      }
+    }
+    
+    return { totalSteps, totalToolCalls, totalTokens };
+  }
+  
+  getThreshold(): number {
+    return this.config.threshold;
+  }
+  
+  setThreshold(threshold: number): void {
+    this.config.threshold = threshold;
+  }
+}
+```
+
+#### 精确匹配评估器
+
+```typescript
+// src/evaluation/exact-match-evaluator.ts
+
+export class ExactMatchEvaluator implements IEvaluator {
+  name = 'Exact-Match';
+  type = 'exact-match' as EvaluatorType;
+  
+  private threshold: number = 1.0;
+  
+  async evaluate(ctx: EvaluationContext): Promise<EvaluationResult> {
+    if (!ctx.expectedOutput) {
+      return {
+        evaluationId: `eval-${ctx.sessionId}-${Date.now()}`,
+        sessionId: ctx.sessionId,
+        evaluatorType: this.type,
+        score: 0,
+        passed: false,
+        comment: 'No expected output provided for exact match evaluation',
+        timestamp: Date.now(),
+      };
+    }
+    
+    // 简化比较：去除空白、标准化
+    const normalizedOutput = this.normalize(ctx.output);
+    const normalizedExpected = this.normalize(ctx.expectedOutput);
+    
+    const exactMatch = normalizedOutput === normalizedExpected;
+    const score = exactMatch ? 1.0 : 0.0;
+    
+    return {
+      evaluationId: `eval-${ctx.sessionId}-${Date.now()}`,
+      sessionId: ctx.sessionId,
+      evaluatorType: this.type,
+      score,
+      passed: exactMatch,
+      comment: exactMatch 
+        ? 'Output matches expected exactly'
+        : `Output differs from expected. Expected: "${normalizedExpected.substring(0, 100)}..."`,
+      timestamp: Date.now(),
+    };
+  }
+  
+  private normalize(text: string): string {
+    return text
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+  
+  getThreshold(): number {
+    return this.threshold;
+  }
+  
+  setThreshold(threshold: number): void {
+    this.threshold = threshold;
+  }
+}
+```
+
+### 7.4 评估事件类型
+
+```typescript
+// 扩展 AgentEventTypeSchema
+
+// 🔴 P2 新增：评估事件
+'evaluation.start',
+'evaluation.result',
+
+// 评估事件 Schema
+z.object({
+  type: z.literal('evaluation.start'),
+  timestamp: z.number(),
+  sessionId: z.string(),
+  evaluators: z.array(z.string()),  // 使用的评估器列表
+  config: EvaluationConfigSchema,
+})
+
+z.object({
+  type: z.literal('evaluation.result'),
+  timestamp: z.number(),
+  sessionId: z.string(),
+  result: EvaluationResultSchema,
+})
+```
+
+### 7.5 离线与在线评估
+
+```typescript
+// src/evaluation/evaluation-manager.ts
+
+export interface EvaluationConfig {
+  /** 评估模式 */
+  mode: 'online' | 'offline';
+  /** 评估器列表 */
+  evaluators: IEvaluator[];
+  /** 是否记录详细轨迹 */
+  recordTrajectory: boolean;
+  /** 评估触发条件 */
+  trigger: 'always' | 'on-complete' | 'manual';
+}
+
+export class EvaluationManager {
+  private evaluators: Map<string, IEvaluator> = new Map();
+  private resultsStore: EvaluationResultStore;
+  
+  /** 注册评估器 */
+  registerEvaluator(evaluator: IEvaluator): void {
+    this.evaluators.set(evaluator.name, evaluator);
+  }
+  
+  /** 在线评估 (在 Agent 完成后自动触发) */
+  async evaluateOnline(ctx: EvaluationContext): Promise<EvaluationResult[]> {
+    const results: EvaluationResult[] = [];
+    
+    for (const evaluator of this.evaluators.values()) {
+      const result = await evaluator.evaluate(ctx);
+      results.push(result);
+      await this.resultsStore.save(result);
+    }
+    
+    return results;
+  }
+  
+  /** 离线评估 (从历史数据评估) */
+  async evaluateOffline(sessionId: string): Promise<EvaluationResult[]> {
+    // 加载历史事件轨迹
+    const events = await this.loadEvents(sessionId);
+    const agentCompleteEvent = events.find(e => e.type === 'agent.complete');
+    
+    if (!agentCompleteEvent) {
+      throw new Error(`No completed session found: ${sessionId}`);
+    }
+    
+    const ctx: EvaluationContext = {
+      sessionId,
+      events,
+      output: agentCompleteEvent.output,
+      input: this.extractInput(events),
+      config: { mode: 'offline', evaluators: [], recordTrajectory: true, trigger: 'manual' },
+    };
+    
+    return this.evaluateOnline(ctx);
+  }
+  
+  /** 获取评估报告 */
+  async getReport(sessionId: string): Promise<EvaluationReport> {
+    const results = await this.resultsStore.query({ sessionId });
+    
+    return {
+      sessionId,
+      overallScore: this.calculateOverall(results),
+      passed: results.every(r => r.passed),
+      results,
+      timestamp: Date.now(),
+    };
+  }
+}
+```
+
+### 7.6 与 Agent Loop 集成
+
+```typescript
+// src/loop/agent-loop.ts 扩展
+
+// 在 agent.complete 后触发评估
+if (event.type === 'agent.complete' && ctx.evaluation?.trigger === 'on-complete') {
+  const evalCtx: EvaluationContext = {
+    sessionId: ctx.sessionId,
+    events: [...trajectoryEvents],
+    output: event.output,
+    input: originalInput,
+    config: ctx.evaluation,
+  };
+  
+  // 发出评估开始事件
+  emitEvent({ type: 'evaluation.start', evaluators: ctx.evaluation.evaluators.map(e => e.name) });
+  
+  // 执行评估
+  const results = await evaluationManager.evaluateOnline(evalCtx);
+  
+  // 发出评估结果事件
+  for (const result of results) {
+    emitEvent({ type: 'evaluation.result', result });
+  }
+}
+```
+
+### 7.7 评估配置示例
+
+```typescript
+// 创建 Agent 时配置评估
+const agent = createAgent({
+  name: 'assistant',
+  model: { provider: 'openai', model: 'gpt-4o' },
+  evaluation: {
+    mode: 'online',
+    trigger: 'on-complete',
+    evaluators: [
+      new LLMJudgeEvaluator(llmAdapter, {
+        model: { provider: 'openai', model: 'gpt-4o-mini' },
+        promptTemplate: DEFAULT_JUDGE_PROMPT,
+        threshold: 0.7,
+      }),
+      new TrajectoryLengthEvaluator({
+        maxSteps: 10,
+        maxToolCalls: 20,
+        maxTokens: 50000,
+        threshold: 0.8,
+      }),
+    ],
+  },
+});
+```
+
+---
+
+## 版本历史
+
+| 版本 | 日期 | 变更 |
+|------|------|------|
+| v1 | 2026-04-24 | 初始设计 - 全链路埋点、状态机、配置热更新、管道模板、压缩 |
+| v2 | 2026-04-26 | **P2 新增**: Agent 评估系统 - LLM-as-Judge、轨迹分析、精确匹配、离线评估 |
+
+---
+
 ## 相关文档
 
 - [00-OVERVIEW.md](./00-OVERVIEW.md) - 架构总览

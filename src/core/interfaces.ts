@@ -196,13 +196,53 @@ export interface ProviderOptions {
 // ============================================================
 
 /**
+ * Risk level for tool execution
+ */
+export type RiskLevel = 'low' | 'medium' | 'high' | 'critical';
+
+/**
  * Tool definition with Zod schema for parameters
+ *
+ * Security fields (requiresApproval, approvalMessage, sandboxRequired, riskLevel)
+ * enable human-in-the-loop approval for dangerous operations.
  */
 export interface ToolDefinition<TSchema = unknown> {
   name: string;
   description: string;
   parameters: TSchema;
   execute: (args: unknown, ctx?: ToolContext) => Promise<string>;
+
+  // ===== Security Approval Fields =====
+
+  /**
+   * Whether this tool requires human approval before execution.
+   * When true, the agent will emit a 'hitl.ask' event and wait for approval.
+   * @default false
+   */
+  requiresApproval?: boolean;
+
+  /**
+   * Custom message to display when asking for approval.
+   * If not provided, a default message will be generated based on tool name and args.
+   */
+  approvalMessage?: string;
+
+  /**
+   * Whether this tool must be executed in a sandboxed environment.
+   * Useful for tools that execute arbitrary code or access external resources.
+   * @default false
+   */
+  sandboxRequired?: boolean;
+
+  /**
+   * Risk level of this tool, used for policy enforcement and logging.
+   * - 'low': Read-only operations, no side effects
+   * - 'medium': Limited side effects, reversible operations
+   * - 'high': Significant side effects, may modify state
+   * - 'critical': Irreversible operations, destructive actions
+   * @default 'medium'
+   */
+  riskLevel?: RiskLevel;
 }
 
 /**

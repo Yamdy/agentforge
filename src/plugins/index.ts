@@ -38,7 +38,16 @@ export {
 // Plugin Manager
 // ============================================================
 
-export {
-  PluginManager,
-  createPluginManager,
-} from './manager.js';
+export { PluginManager, createPluginManager } from './manager.js';
+
+// ============================================================
+// Built-in Plugins
+// ============================================================
+
+export { metricsPlugin } from './metrics-plugin.js';
+
+// ============================================================
+// Built-in Plugins
+// ============================================================
+
+export { loggingPlugin } from './logging-plugin.js';

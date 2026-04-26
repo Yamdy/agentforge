@@ -812,6 +812,193 @@ setTimeout(() => this.reconnect(), delay);  // 无法取消
 
 ---
 
+## 7. 配额管控约束 (P0)
+
+> 成本管控是生产环境必备能力，在 LLM 调用前检查配额，避免超额消耗。
+
+### 7.1 配额控制器接口
+
+```typescript
+// src/quota/quota-controller.ts
+
+/** 配额使用量 */
+export interface QuotaUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalCost?: number;  // 可选: 美元成本
+}
+
+/** 配额限制 */
+export interface QuotaLimits {
+  maxPromptTokens: number;
+  maxCompletionTokens: number;
+  maxTotalCost?: number;
+}
+
+/** 配额检查结果 */
+export interface QuotaCheckResult {
+  allowed: boolean;
+  remaining: QuotaUsage;
+  projectedUsage: QuotaUsage;
+}
+
+/** 配额控制器接口 */
+export interface QuotaController {
+  /** 检查是否有足够配额 */
+  check(sessionId: string, projected: QuotaUsage): Promise<QuotaCheckResult>;
+  
+  /** 消费配额 */
+  consume(sessionId: string, usage: QuotaUsage): Promise<void>;
+  
+  /** 获取当前使用量 */
+  getUsage(sessionId: string): Promise<QuotaUsage>;
+  
+  /** 获取限额配置 */
+  getLimits(): QuotaLimits;
+  
+  /** 配额耗尽事件流 */
+  onExhausted(): Observable<QuotaExhaustedEvent>;
+  
+  /** 重置会话使用量 */
+  reset(sessionId: string): void;
+}
+
+/** 配额耗尽事件 */
+export interface QuotaExhaustedEvent {
+  type: 'quota.exhausted';
+  sessionId: string;
+  reason: 'tokens' | 'cost';
+  usage: QuotaUsage;
+  limits: QuotaLimits;
+}
+```
+
+### 7.2 AgentContext 集成
+
+```typescript
+// 扩展 AgentContext 接口
+declare module '../core/context.js' {
+  interface AgentContext {
+    /** 配额控制器 (可选) */
+    quota?: QuotaController;
+  }
+}
+```
+
+### 7.3 集成位置
+
+```typescript
+// src/loop/agent-loop.ts 修改
+
+function handleLLMRequest(state: AgentState): Observable<StepContext> {
+  // 配额预检查
+  if (ctx.quota) {
+    const projectedTokens = estimatePromptTokens(state.messages);
+    
+    return from(ctx.quota.check(sessionId, {
+      promptTokens: projectedTokens,
+      completionTokens: 0,
+    })).pipe(
+      mergeMap(result => {
+        if (!result.allowed) {
+          // 配额耗尽 → agent.error + done (符合错误即事件铁律)
+          return from([
+            { event: {
+              type: 'agent.error',
+              timestamp: Date.now(),
+              sessionId,
+              error: {
+                name: 'QuotaExhausted',
+                message: `Token quota exhausted. Remaining: ${result.remaining.promptTokens}`,
+              },
+              step: state.step,
+            }, state },
+            { event: {
+              type: 'done',
+              timestamp: Date.now(),
+              sessionId,
+              reason: 'quota_exhausted',
+            }, state },
+          ] as StepContext[]);
+        }
+        
+        // 配额充足 → 继续调用LLM
+        return config.streaming ? callLLMStreaming(state) : callLLM(state);
+      })
+    );
+  }
+  
+  // 无配额控制 → 直接调用
+  return config.streaming ? callLLMStreaming(state) : callLLM(state);
+}
+
+// 在 llm.response 后消费配额
+function callLLM(state: AgentState): Observable<StepContext> {
+  return from(ctx.llm.chat(state.messages, llmOptions)).pipe(
+    mergeMap(response => {
+      // 消费配额 (fire-and-forget)
+      if (ctx.quota && response.usage) {
+        ctx.quota.consume(sessionId, {
+          promptTokens: response.usage.promptTokens,
+          completionTokens: response.usage.completionTokens,
+        }).catch(err => {
+          console.warn('Quota consume failed:', err);
+        });
+      }
+      
+      // 继续响应处理...
+      const responseEvent: AgentEvent = {
+        type: 'llm.response',
+        timestamp: Date.now(),
+        sessionId,
+        content: response.content,
+        toolCalls: response.toolCalls,
+        finishReason: response.finishReason,
+        usage: response.usage,
+      };
+      return of({ event: responseEvent, state } as StepContext);
+    }),
+  );
+}
+```
+
+### 7.4 Token 预估工具
+
+```typescript
+// src/utils/token-estimate.ts
+
+/** 估算消息的token数量 */
+export function estimatePromptTokens(messages: Message[]): number {
+  // 简化估算: 每4字符 ≈ 1 token (基于GPT tokenizer近似)
+  let totalChars = 0;
+  
+  for (const msg of messages) {
+    totalChars += msg.content.length;
+    totalChars += 4;  // role 头部
+    if (msg.name) totalChars += msg.name.length;
+    if (msg.toolCallId) totalChars += msg.toolCallId.length;
+  }
+  
+  return Math.ceil(totalChars / 4);
+}
+
+/** 估算单个文本的token数量 */
+export function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+```
+
+### 7.5 配额约束清单
+
+| 约束 | 描述 | 违反后果 |
+|------|------|---------|
+| **LLM调用前预检查** | 必须在 `handleLLMRequest` 中检查配额 | 超额消耗，成本失控 |
+| **配额耗尽发事件** | 发 `agent.error` + `done`，不抛异常 | 流中断，无法恢复 |
+| **消费是 fire-and-forget** | `consume()` 不阻塞响应流 | 性能影响 |
+| **预估保守原则** | 预估值应略高于实际 | 配额检查通过但实际超限 |
+
+---
+
 ## 相关文档
 
 - [00-OVERVIEW.md](./00-OVERVIEW.md) - 架构总览
@@ -832,3 +1019,4 @@ setTimeout(() => this.reconnect(), delay);  // 无法取消
 | v1 | 2026-04-24 | 初始设计 - 生命周期/竞态/错误边界 |
 | v2 | 2026-04-25 | 新增背压策略配置 |
 | v3 | 2026-04-26 | **新增性能约束** - 算法复杂度/异步并行化/资源清理 |
+| v4 | 2026-04-26 | **P0 新增**: 配额管控约束 - QuotaController/LLM调用前预检查 |

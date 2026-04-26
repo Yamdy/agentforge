@@ -604,9 +604,417 @@ agent.run(input).pipe(
 
 ---
 
-## 10. 插件约束清单
+## 10. 安全插件 (P0)
 
-| 约束 | 描述 | 违反后果 |
+> 基于 Harness 规范，实现沙箱隔离、PII脱敏、审批流程、审计日志等安全能力。
+
+### 10.1 安全插件架构
+
+```
+Event Stream Pipeline:
+
+  source$
+    │
+    ▼
+  ┌─────────────────────────────┐
+  │ PIIScrubberPlugin           │  priority: 10
+  │ (InterceptorPlugin)         │  脱敏敏感数据
+  └─────────────────────────────┘
+    │
+    ▼
+  ┌─────────────────────────────┐
+  │ ApprovalGatePlugin          │  priority: 15
+  │ (InterceptorPlugin)         │  审批危险工具
+  └─────────────────────────────┘
+    │
+    ▼
+  ┌─────────────────────────────┐
+  │ 其他拦截器...               │  priority: 20-99
+  └─────────────────────────────┘
+    │
+    ▼
+  ┌─────────────────────────────┐
+  │ AuditLogPlugin              │  priority: 100
+  │ (ObserverPlugin)            │  记录已脱敏数据
+  └─────────────────────────────┘
+    │
+    ▼
+  subscriber
+```
+
+### 10.2 PII脱敏插件
+
+```typescript
+// src/security/pii-scrubber.ts
+
+/** PII匹配类型 */
+export type PIIMatchType = 
+  | 'email' 
+  | 'phone' 
+  | 'ssn' 
+  | 'credit_card' 
+  | 'api_key' 
+  | 'ip_address'
+  | 'custom';
+
+/** PII匹配信息 */
+export interface PIIMatch {
+  type: PIIMatchType;
+  value: string;
+  start: number;
+  end: number;
+  confidence: number;  // 置信度 0-1
+}
+
+/** PII脱敏器接口 */
+export interface PIIScrubber {
+  /** 检测PII */
+  detect(text: string): PIIMatch[];
+  /** 脱敏处理 */
+  scrub(text: string): string;
+}
+
+/** PII脱敏配置 */
+export interface PIIScrubberConfig {
+  enabledTypes: PIIMatchType[];
+  replacement: string;  // 默认 '[REDACTED]'
+  customPatterns?: RegExp[];
+  preserveLength?: boolean;  // 是否保留长度 [REDACTED****]
+}
+
+// src/plugins/pii-scrubber-plugin.ts
+import { of, Observable } from 'rxjs';
+import type { InterceptorPlugin, PluginContext } from './plugin.js';
+import type { AgentEvent } from '../core/events.js';
+
+export class PIIScrubberPlugin implements InterceptorPlugin {
+  name = 'pii-scrubber';
+  type = 'interceptor' as const;
+  priority = 10;  // 最先执行
+  eventTypes = ['llm.request', 'tool.call', 'tool.result', 'hitl.ask', 'hitl.answer'];
+  enabled = true;
+  
+  constructor(private scrubber: PIIScrubber) {}
+  
+  intercept(event: AgentEvent, _ctx: PluginContext): Observable<AgentEvent> {
+    const scrubbed = this.scrubEvent(event);
+    return of(scrubbed);
+  }
+  
+  private scrubEvent(event: AgentEvent): AgentEvent {
+    switch (event.type) {
+      case 'llm.request':
+        return {
+          ...event,
+          messages: event.messages.map(m => ({
+            ...m,
+            content: this.scrubber.scrub(m.content),
+          })),
+        };
+      case 'tool.call':
+        return {
+          ...event,
+          args: this.scrubArgs(event.args),
+        };
+      case 'tool.result':
+        return {
+          ...event,
+          result: this.scrubber.scrub(event.result),
+        };
+      case 'hitl.ask':
+        return {
+          ...event,
+          question: this.scrubber.scrub(event.question),
+        };
+      case 'hitl.answer':
+        return {
+          ...event,
+          answer: this.scrubber.scrub(event.answer),
+        };
+      default:
+        return event;
+    }
+  }
+  
+  private scrubArgs(args: Record<string, unknown>): Record<string, unknown> {
+    const result: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(args)) {
+      if (typeof value === 'string') {
+        result[key] = this.scrubber.scrub(value);
+      } else if (typeof value === 'object' && value !== null) {
+        result[key] = this.scrubArgs(value as Record<string, unknown>);
+      } else {
+        result[key] = value;
+      }
+    }
+    return result;
+  }
+}
+```
+
+### 10.3 审批门控插件
+
+```typescript
+// src/core/interfaces.ts 扩展
+
+export interface ToolDefinition<TSchema = unknown> {
+  name: string;
+  description: string;
+  parameters: TSchema;
+  execute: (args: unknown, ctx?: ToolContext) => Promise<string>;
+  
+  // 🔴 P0 新增: 安全标记
+  /** 是否需要审批 */
+  requiresApproval?: boolean;
+  /** 审批提示消息 */
+  approvalMessage?: string;
+  /** 是否需要沙箱执行 */
+  sandboxRequired?: boolean;
+  /** 风险等级 */
+  riskLevel?: 'low' | 'medium' | 'high' | 'critical';
+}
+
+// src/plugins/approval-gate-plugin.ts
+import { Observable, from, of } from 'rxjs';
+import { mergeMap } from 'rxjs/operators';
+import type { InterceptorPlugin, PluginContext } from './plugin.js';
+import type { AgentEvent } from '../core/events.js';
+import type { HITLController, ToolDefinition } from '../core/interfaces.js';
+
+export class ApprovalGatePlugin implements InterceptorPlugin {
+  name = 'approval-gate';
+  type = 'interceptor' as const;
+  priority = 15;  // PII脱敏后, 工具执行前
+  eventTypes = ['tool.call'];
+  enabled = true;
+  
+  constructor(
+    private hitl: HITLController,
+    private getToolDef: (name: string) => ToolDefinition | undefined
+  ) {}
+  
+  intercept(event: AgentEvent, ctx: PluginContext): Observable<AgentEvent> {
+    if (event.type !== 'tool.call') return of(event);
+    
+    const tool = this.getToolDef(event.toolName);
+    if (!tool?.requiresApproval) {
+      return of(event);  // 无需审批, 放行
+    }
+    
+    // 需要审批 → 请求HITL
+    const promptId = `approval-${event.toolCallId}`;
+    
+    return this.hitl.ask({
+      askId: promptId,
+      question: tool.approvalMessage ?? `Approve execution of tool "${event.toolName}"?`,
+      toolCallId: event.toolCallId,
+      toolName: event.toolName,
+    }).pipe(
+      mergeMap(answer => {
+        const approved = this.isApproved(answer);
+        
+        if (approved) {
+          return of(event);  // 放行原事件
+        }
+        
+        // 拒绝 → agent.error + done (符合错误即事件铁律)
+        return from([
+          {
+            type: 'agent.error',
+            timestamp: Date.now(),
+            sessionId: ctx.sessionId,
+            error: {
+              name: 'ApprovalDenied',
+              message: `Tool "${event.toolName}" execution denied by user`,
+            },
+          } as AgentEvent,
+          {
+            type: 'done',
+            timestamp: Date.now(),
+            sessionId: ctx.sessionId,
+            reason: 'error',
+          } as AgentEvent,
+        ]);
+      })
+    );
+  }
+  
+  private isApproved(answer: string): boolean {
+    const normalized = answer.toLowerCase().trim();
+    return ['approve', 'approved', 'yes', 'y', 'ok', 'confirm'].includes(normalized);
+  }
+}
+```
+
+### 10.4 审计日志插件
+
+```typescript
+// src/security/audit-log.ts
+
+/** 审计条目 */
+export interface AuditEntry {
+  timestamp: number;
+  sessionId: string;
+  agentName: string;
+  eventType: string;
+  actor: 'agent' | 'human' | 'system';
+  action: string;
+  data?: unknown;
+  metadata?: Record<string, unknown>;
+  signature?: string;  // 可选防篡改签名
+}
+
+/** 审计查询过滤器 */
+export interface AuditQueryFilter {
+  sessionId?: string;
+  agentName?: string;
+  eventType?: string;
+  startTime?: number;
+  endTime?: number;
+  actor?: 'agent' | 'human' | 'system';
+}
+
+/** 审计日志接口 (Append-Only) */
+export interface AuditLogger {
+  /** 追加审计条目 (不可修改/删除) */
+  append(entry: AuditEntry): Promise<void>;
+  /** 查询审计记录 */
+  query(filter: AuditQueryFilter): Promise<AuditEntry[]>;
+  /** 获取条目数量 */
+  count(filter?: AuditQueryFilter): Promise<number>;
+}
+
+// src/plugins/audit-log-plugin.ts
+import type { ObserverPlugin, PluginContext } from './plugin.js';
+import type { AgentEvent } from '../core/events.js';
+import type { AuditLogger } from '../security/audit-log.js';
+
+export class AuditLogPlugin implements ObserverPlugin {
+  name = 'audit-log';
+  type = 'observer' as const;
+  priority = 100;  // PII脱敏后执行
+  eventTypes = [];  // 空数组 = 所有事件
+  enabled = true;
+  
+  constructor(private auditLog: AuditLogger) {}
+  
+  observe(event: AgentEvent, ctx: PluginContext): void | Promise<void> {
+    // Fire-and-forget, 不阻塞主流程
+    const entry: AuditEntry = {
+      timestamp: event.timestamp,
+      sessionId: ctx.sessionId,
+      agentName: ctx.agentName,
+      eventType: event.type,
+      actor: this.detectActor(event),
+      action: event.type,
+      data: this.extractData(event),
+    };
+    
+    // 异步写入, 不等待
+    this.auditLog.append(entry).catch(err => {
+      ctx.tracer?.recordException('audit-log-error', err);
+    });
+  }
+  
+  private detectActor(event: AgentEvent): 'agent' | 'human' | 'system' {
+    if (event.type.startsWith('hitl.')) return 'human';
+    if (['agent.start', 'agent.complete', 'done'].includes(event.type)) return 'system';
+    return 'agent';
+  }
+  
+  private extractData(event: AgentEvent): unknown {
+    // 提取关键数据, 避免存储大对象
+    const { type, timestamp, sessionId, ...data } = event;
+    return data;
+  }
+}
+```
+
+### 10.5 沙箱隔离 (DI 纵向替换)
+
+沙箱不是插件，而是通过 DI 注入的可选能力：
+
+```typescript
+// src/sandbox/interfaces.ts
+
+/** 沙箱配置 */
+export interface SandboxConfig {
+  /** 内存限制 MB (默认: 64) */
+  memoryLimitMb: number;
+  /** 执行超时 ms (默认: 30000) */
+  timeoutMs: number;
+  /** 允许的API白名单 */
+  allowedApis?: readonly string[];
+}
+
+/** 沙箱执行结果 */
+export interface SandboxResult<T> {
+  success: boolean;
+  value?: T;
+  error?: SerializedError;
+  /** CPU时间 ms */
+  cpuTime: number;
+  /** 墙钟时间 ms */
+  wallTime: number;
+}
+
+/** 沙箱适配器接口 */
+export interface SandboxAdapter {
+  readonly name: string;
+  execute<T>(code: string, context?: Record<string, unknown>): Observable<SandboxResult<T>>;
+  dispose(): void;
+}
+
+// AgentContext 扩展
+declare module '../core/context.js' {
+  interface AgentContext {
+    /** 沙箱执行器 (可选) */
+    sandbox?: SandboxAdapter;
+  }
+}
+
+// 工具执行中使用沙箱
+function executeSingleTool(tc: ToolCall, state: AgentState): Observable<StepContext> {
+  const tool = ctx.tools.get(tc.name);
+  
+  // 检查是否需要沙箱执行
+  if (tool?.sandboxRequired && ctx.sandbox) {
+    return executeInSandbox(tc, state, tool);
+  }
+  
+  // 普通工具直接执行
+  return executeDirect(tc, state);
+}
+```
+
+### 10.6 安全预设
+
+```typescript
+// src/operators/presets.ts
+
+/** 生产环境安全预设 */
+export function securityPreset(options: {
+  piiScrubber: PIIScrubber;
+  auditLog: AuditLogger;
+  hitl: HITLController;
+  getToolDef: (name: string) => ToolDefinition | undefined;
+}): readonly Plugin[] {
+  return [
+    // P1: PII脱敏 (最先执行)
+    new PIIScrubberPlugin(options.piiScrubber),
+    
+    // P2: 审批门控
+    new ApprovalGatePlugin(options.hitl, options.getToolDef),
+    
+    // P3: 审计日志 (最后执行)
+    new AuditLogPlugin(options.auditLog),
+  ] as const;
+}
+```
+
+---
+
+## 11. 插件约束清单
 |------|------|---------|
 | **拦截器 vs 观察器严格区分** | 不可修改事件用观察器，可修改用拦截器 | 职责混乱，管道行为不可预测 |
 | **拦截器异常降级** | `catchError` 透传原事件 | 单插件拖垮主循环 |
@@ -616,6 +1024,15 @@ agent.run(input).pipe(
 | **第三方插件 Zod 校验** | 注册时 `PluginSchema.parse()` | 恶意/错误插件破坏框架 |
 | **静态管道优先** | 避免运行时动态重建 | Agent 执行中管道重建导致流中断 |
 | **优先级 = 管道顺序** | 数字越小越靠前，拦截器在前观察器在后 | 权限校验在日志之后执行 = 安全漏洞 |
+
+---
+
+## 版本历史
+
+| 版本 | 日期 | 变更 |
+|------|------|------|
+| v1 | 2026-04-24 | 初始设计 - 拦截器/观察器模式、插件管道 |
+| v2 | 2026-04-26 | **P0 新增**: 安全插件 - PII脱敏/审批门控/审计日志/沙箱隔离 |
 
 ---
 

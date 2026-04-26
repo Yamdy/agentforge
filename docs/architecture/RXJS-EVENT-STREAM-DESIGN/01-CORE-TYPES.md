@@ -81,11 +81,28 @@ export type AgentEventType = z.infer<typeof AgentEventTypeSchema>;
 export const MessageRoleSchema = z.enum(['system', 'user', 'assistant', 'tool']);
 export type MessageRole = z.infer<typeof MessageRoleSchema>;
 
+// 🔴 P2 新增: Message metadata 扩展
+export const MessageMetadataSchema = z.object({
+  /** 固定消息，压缩时不删除 */
+  pinned: z.boolean().optional(),
+  /** 消息标记类型 */
+  mark: z.enum(['hint', 'summary', 'pinned']).optional(),
+  /** 重要性评分 (0-1)，用于 importance-weighted 压缩 */
+  importance: z.number().min(0).max(1).optional(),
+  /** 来源追踪 */
+  source: z.enum(['user', 'agent', 'tool', 'system', 'memory']).optional(),
+  /** 创建时间戳 */
+  createdAt: z.number().optional(),
+});
+export type MessageMetadata = z.infer<typeof MessageMetadataSchema>;
+
 export const MessageSchema = z.object({
   role: MessageRoleSchema,
   content: z.string(),
   name: z.string().optional(),      // for tool role
   toolCallId: z.string().optional(), // for tool role
+  // 🔴 P2 新增: 消息元数据
+  metadata: MessageMetadataSchema.optional(),
 });
 export type Message = z.infer<typeof MessageSchema>;
 
@@ -446,6 +463,18 @@ export const AgentStateSchema = z.object({
     totalTokens: z.number(),
     compactionCount: z.number().default(0),
     lastCompactionAt: z.number().optional(),
+  }).optional(),
+  
+  // 🔴 P2 新增：Working Memory (短期记忆)
+  workingMemory: z.object({
+    /** 固定内容（压缩时保留） */
+    pinned: z.array(z.string()).default([]),
+    /** 便签板（Agent 临时记录） */
+    scratchpad: z.array(z.string()).default([]),
+    /** 当前任务摘要 */
+    summary: z.string().optional(),
+    /** 最后更新时间 */
+    updatedAt: z.number().optional(),
   }).optional(),
   
   // 检查点
@@ -985,6 +1014,245 @@ export const CheckpointSchema = z.object({
 
 ---
 
+## Working Memory 短期记忆系统 (P2)
+
+> 基于 AgentScope Memory、Mastra Memory、LangChain Memory 的设计模式，实现 Agent 短期记忆管理，解决上下文压缩时的关键信息丢失问题。
+
+### 设计动机
+
+当前 CompactionManager 的问题：
+- ❌ 无记忆优先级：压缩时仅按时间顺序删除
+- ❌ 无固定机制：关键指令可能被压缩掉
+- ❌ 无便签功能：Agent 无法记录临时推理
+
+### 核心概念
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     AgentState                                   │
+├─────────────────────────────────────────────────────────────────┤
+│  messages: Message[]     │  完整对话历史 (可能被压缩)             │
+│  workingMemory:          │  短期记忆 (压缩时保留)                 │
+│    ├── pinned: string[]  │  固定内容 (关键指令、约束)             │
+│    ├── scratchpad: []    │  便签板 (临时推理记录)                 │
+│    └── summary: string   │  当前任务摘要                         │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Message Metadata 扩展
+
+```typescript
+// 消息元数据 - 控制压缩行为
+interface MessageMetadata {
+  /** 固定消息，压缩时不删除 */
+  pinned?: boolean;
+  /** 消息标记类型 */
+  mark?: 'hint' | 'summary' | 'pinned';
+  /** 重要性评分 (0-1) */
+  importance?: number;
+  /** 来源追踪 */
+  source?: 'user' | 'agent' | 'tool' | 'system' | 'memory';
+  /** 创建时间戳 */
+  createdAt?: number;
+}
+
+// 示例：固定系统指令
+const systemMessage: Message = {
+  role: 'system',
+  content: 'You are a helpful assistant...',
+  metadata: { pinned: true, importance: 1.0 },
+};
+
+// 示例：标记摘要消息
+const summaryMessage: Message = {
+  role: 'assistant',
+  content: 'Summary of previous work...',
+  metadata: { mark: 'summary', importance: 0.8 },
+};
+```
+
+### WorkingMemory 结构
+
+```typescript
+// src/core/state.ts 扩展
+interface WorkingMemory {
+  /** 固定内容 (压缩时保留，注入系统消息) */
+  pinned: string[];
+  /** 便签板 (Agent 临时记录，可清除) */
+  scratchpad: string[];
+  /** 当前任务摘要 (由 CompactionManager 生成) */
+  summary?: string;
+  /** 最后更新时间 */
+  updatedAt?: number;
+}
+```
+
+### WorkingMemoryProcessor 接口
+
+```typescript
+// src/memory/working-memory-processor.ts
+
+interface WorkingMemoryProcessor {
+  /** 处理消息，更新 workingMemory */
+  process(messages: Message[], memory: WorkingMemory): WorkingMemory;
+  
+  /** 从 workingMemory 生成注入消息 */
+  generateInjectionMessage(memory: WorkingMemory): Message | null;
+  
+  /** 清除便签板 */
+  clearScratchpad(memory: WorkingMemory): WorkingMemory;
+  
+  /** 添加固定内容 */
+  pin(memory: WorkingMemory, content: string): WorkingMemory;
+  
+  /** 移除固定内容 */
+  unpin(memory: WorkingMemory, content: string): WorkingMemory;
+}
+
+// 默认实现
+class DefaultWorkingMemoryProcessor implements WorkingMemoryProcessor {
+  process(messages: Message[], memory: WorkingMemory): WorkingMemory {
+    // 1. 提取 pinned 消息内容
+    const pinnedContent = messages
+      .filter(m => m.metadata?.pinned)
+      .map(m => m.content);
+    
+    // 2. 提取高 importance 消息作为 summary 候选
+    const highImportance = messages
+      .filter(m => (m.metadata?.importance ?? 0) > 0.7)
+      .map(m => m.content);
+    
+    return {
+      ...memory,
+      pinned: [...new Set([...memory.pinned, ...pinnedContent])],
+      updatedAt: Date.now(),
+    };
+  }
+  
+  generateInjectionMessage(memory: WorkingMemory): Message | null {
+    const parts: string[] = [];
+    
+    if (memory.pinned.length > 0) {
+      parts.push(`[PINNED]\n${memory.pinned.join('\n')}`);
+    }
+    
+    if (memory.summary) {
+      parts.push(`[SUMMARY]\n${memory.summary}`);
+    }
+    
+    if (memory.scratchpad.length > 0) {
+      parts.push(`[NOTES]\n${memory.scratchpad.join('\n')}`);
+    }
+    
+    if (parts.length === 0) return null;
+    
+    return {
+      role: 'system',
+      content: `<working-memory>\n${parts.join('\n\n')}\n</working-memory>`,
+      metadata: { source: 'memory', pinned: true },
+    };
+  }
+}
+```
+
+### 与 CompactionManager 集成
+
+```typescript
+// src/memory/compaction.ts 扩展
+
+class CompactionManager {
+  private workingMemoryProcessor: WorkingMemoryProcessor;
+  
+  compact(state: AgentState, config: CompactionConfig): AgentState {
+    // 1. 处理 workingMemory
+    const updatedMemory = this.workingMemoryProcessor.process(
+      state.messages,
+      state.workingMemory ?? { pinned: [], scratchpad: [] }
+    );
+    
+    // 2. 按 importance 排序消息
+    const sortedMessages = this.sortByImportance(state.messages);
+    
+    // 3. 压缩 (保留 pinned 消息)
+    const { kept, removed } = this.selectMessagesToKeep(sortedMessages, config);
+    
+    // 4. 生成摘要
+    const summary = removed.length > 0 
+      ? this.generateSummary(removed) 
+      : undefined;
+    
+    // 5. 生成注入消息
+    const injectionMessage = this.workingMemoryProcessor.generateInjectionMessage({
+      ...updatedMemory,
+      summary,
+    });
+    
+    // 6. 构建新消息列表
+    const newMessages = injectionMessage
+      ? [injectionMessage, ...kept]
+      : kept;
+    
+    return {
+      ...state,
+      messages: newMessages,
+      workingMemory: { ...updatedMemory, summary },
+    };
+  }
+  
+  private sortByImportance(messages: Message[]): Message[] {
+    return [...messages].sort((a, b) => {
+      const aImp = a.metadata?.importance ?? 0.5;
+      const bImp = b.metadata?.importance ?? 0.5;
+      return bImp - aImp;
+    });
+  }
+}
+```
+
+### 工具集成
+
+```typescript
+// 注册便签板工具
+registry.register({
+  name: 'add_note',
+  description: '添加便签到便签板',
+  parameters: z.object({ note: z.string() }),
+  execute: async (args, ctx) => {
+    const memory = ctx.state.workingMemory ?? { pinned: [], scratchpad: [] };
+    ctx.state.workingMemory = {
+      ...memory,
+      scratchpad: [...memory.scratchpad, args.note],
+    };
+    return `Note added: ${args.note}`;
+  },
+});
+
+registry.register({
+  name: 'pin_content',
+  description: '固定内容到工作记忆',
+  parameters: z.object({ content: z.string() }),
+  execute: async (args, ctx) => {
+    const memory = ctx.state.workingMemory ?? { pinned: [], scratchpad: [] };
+    ctx.state.workingMemory = {
+      ...memory,
+      pinned: [...memory.pinned, args.content],
+    };
+    return `Content pinned: ${args.content}`;
+  },
+});
+```
+
+### 与现有架构的兼容性
+
+| 兼容点 | 当前设计 | Working Memory 整合 |
+|--------|---------|---------------------|
+| **状态不可变** | `updateState()` 返回新对象 | `WorkingMemoryProcessor` 返回新对象 |
+| **错误即事件** | 压缩失败发 `agent.error` | 处理器异常包装为事件 |
+| **Tier 1 校验** | 消息结构 Zod 校验 | `MessageMetadata` 同样 Zod 校验 |
+| **压缩策略** | truncate-oldest 等 | 新增 importance-weighted 策略 |
+
+---
+
 ## 相关文档
 
 - [02-ZOD-CONTRACT.md](./02-ZOD-CONTRACT.md) - Zod 数据契约与校验策略
@@ -999,3 +1267,4 @@ export const CheckpointSchema = z.object({
 | v1 | 2026-04-24 | 初始设计 - 事件类型、Agent 状态、Checkpoint |
 | v2 | 2026-04-25 | 补充 A2A 跨进程状态、幂等性追踪、恢复元数据 |
 | v3 | 2026-04-26 | **P1 新增**: 工具输出校验、决策追溯系统、外部状态机 |
+| v4 | 2026-04-26 | **P2 新增**: Working Memory 短期记忆系统 |

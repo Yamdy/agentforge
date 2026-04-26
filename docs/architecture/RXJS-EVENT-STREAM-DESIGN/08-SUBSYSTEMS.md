@@ -986,6 +986,354 @@ function executeWithReplan(input: string, ctx: AgentContext): Observable<AgentEv
 
 ---
 
+## RAG 检索增强生成 (P2)
+
+> 基于 LangChain Retrieval、LlamaIndex、Mastra RAG 的设计模式，实现知识库检索增强能力。
+
+### 设计动机
+
+Agent 缺少外部知识检索能力：
+- ❌ 无长期记忆：无法访问历史对话或文档
+- ❌ 无知识库：无法检索领域特定知识
+- ❌ 无向量检索：无法进行语义相似度搜索
+
+### 核心接口
+
+```typescript
+// src/rag/interfaces.ts
+
+import { z } from 'zod';
+
+/** 文档结构 */
+export const DocumentSchema = z.object({
+  /** 文档 ID */
+  id: z.string(),
+  /** 文档内容 */
+  content: z.string(),
+  /** 元数据 */
+  metadata: z.record(z.string(), z.unknown()).optional(),
+  /** 向量嵌入 (可选，由 VectorStore 生成) */
+  embedding: z.array(z.number()).optional(),
+});
+export type Document = z.infer<typeof DocumentSchema>;
+
+/** 向量存储接口 */
+export interface VectorStore {
+  /** 添加文档 */
+  addDocuments(docs: Document[]): Promise<void>;
+  
+  /** 相似度搜索 */
+  similaritySearch(query: string, k?: number): Promise<Document[]>;
+  
+  /** 相似度搜索带分数 */
+  similaritySearchWithScore(query: string, k?: number): Promise<[Document, number][]>;
+  
+  /** 删除文档 */
+  delete(ids: string[]): Promise<void>;
+  
+  /** 转换为 Retriever */
+  asRetriever(k?: number): Retriever;
+}
+
+/** 检索器接口 */
+export interface Retriever {
+  /** 检索相关文档 */
+  retrieve(query: string): Promise<Document[]>;
+  
+  /** 检索器名称 */
+  name: string;
+}
+
+/** 嵌入模型接口 */
+export interface EmbeddingModel {
+  /** 生成文本嵌入向量 */
+  embed(text: string): Promise<number[]>;
+  
+  /** 批量生成嵌入向量 */
+  embedBatch(texts: string[]): Promise<number[][]>;
+}
+```
+
+### VectorStore 实现
+
+```typescript
+// src/rag/memory-vector-store.ts
+
+/** 内存向量存储 (开发/测试用) */
+export class MemoryVectorStore implements VectorStore {
+  private documents: Document[] = [];
+  
+  constructor(private embeddingModel: EmbeddingModel) {}
+  
+  async addDocuments(docs: Document[]): Promise<void> {
+    const embeddings = await this.embeddingModel.embedBatch(
+      docs.map(d => d.content)
+    );
+    
+    this.documents.push(
+      ...docs.map((doc, i) => ({
+        ...doc,
+        embedding: embeddings[i],
+      }))
+    );
+  }
+  
+  async similaritySearch(query: string, k: number = 4): Promise<Document[]> {
+    const queryEmbedding = await this.embeddingModel.embed(query);
+    
+    const scored = this.documents.map(doc => ({
+      doc,
+      score: this.cosineSimilarity(queryEmbedding, doc.embedding ?? []),
+    }));
+    
+    scored.sort((a, b) => b.score - a.score);
+    
+    return scored.slice(0, k).map(s => s.doc);
+  }
+  
+  async similaritySearchWithScore(
+    query: string,
+    k: number = 4
+  ): Promise<[Document, number][]> {
+    const queryEmbedding = await this.embeddingModel.embed(query);
+    
+    const scored = this.documents.map(doc => ({
+      doc,
+      score: this.cosineSimilarity(queryEmbedding, doc.embedding ?? []),
+    }));
+    
+    scored.sort((a, b) => b.score - a.score);
+    
+    return scored.slice(0, k).map(s => [s.doc, s.score] as [Document, number]);
+  }
+  
+  async delete(ids: string[]): Promise<void> {
+    this.documents = this.documents.filter(d => !ids.includes(d.id));
+  }
+  
+  asRetriever(k: number = 4): Retriever {
+    return {
+      name: 'memory-retriever',
+      retrieve: async (query: string) => this.similaritySearch(query, k),
+    };
+  }
+  
+  private cosineSimilarity(a: number[], b: number[]): number {
+    if (a.length !== b.length) return 0;
+    
+    let dotProduct = 0;
+    let normA = 0;
+    let normB = 0;
+    
+    for (let i = 0; i < a.length; i++) {
+      dotProduct += a[i] * b[i];
+      normA += a[i] * a[i];
+      normB += b[i] * b[i];
+    }
+    
+    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+  }
+}
+```
+
+### RAG as Tool
+
+```typescript
+// src/rag/rag-tool.ts
+
+/**
+ * 创建 RAG 检索工具
+ * 
+ * 将 RAG 检索能力包装为 Agent 可调用的工具
+ */
+export function createRAGRetrievalTool(
+  retriever: Retriever,
+  options: {
+    /** 知识库名称 */
+    knowledgeBaseName: string;
+    /** 返回文档数量 */
+    topK?: number;
+    /** 是否包含元数据 */
+    includeMetadata?: boolean;
+  }
+): ToolDefinition {
+  const { knowledgeBaseName, topK = 4, includeMetadata = false } = options;
+  
+  return {
+    name: `retrieve_from_${knowledgeBaseName}`,
+    description: `从 ${knowledgeBaseName} 知识库中检索相关文档`,
+    parameters: z.object({
+      query: z.string().describe('检索查询语句'),
+    }),
+    execute: async (args: { query: string }): Promise<string> => {
+      const docs = await retriever.retrieve(args.query);
+      
+      if (docs.length === 0) {
+        return `未在 ${knowledgeBaseName} 中找到相关内容`;
+      }
+      
+      const formatted = docs.map((doc, i) => {
+        let result = `[${i + 1}] ${doc.content}`;
+        if (includeMetadata && doc.metadata) {
+          result += `\n    (来源: ${doc.metadata.source ?? 'unknown'})`;
+        }
+        return result;
+      });
+      
+      return `从 ${knowledgeBaseName} 检索到 ${docs.length} 条相关内容:\n\n${formatted.join('\n\n')}`;
+    },
+  };
+}
+```
+
+### 与 Memory 集成
+
+```typescript
+// src/rag/memory-rag-integration.ts
+
+/**
+ * RAG + Memory 集成
+ * 
+ * 将检索结果注入到 Agent 的工作记忆中
+ */
+export class MemoryRAGIntegration {
+  constructor(
+    private vectorStore: VectorStore,
+    private options: {
+      /** 是否自动存储对话 */
+      autoStoreConversations?: boolean;
+      /** 是否注入检索上下文 */
+      injectContext?: boolean;
+    } = {}
+  ) {}
+  
+  /** 从对话历史构建知识库 */
+  async indexConversationHistory(
+    sessionId: string,
+    messages: Message[]
+  ): Promise<void> {
+    const docs: Document[] = messages
+      .filter(m => m.role === 'user' || m.role === 'assistant')
+      .map((m, i) => ({
+        id: `${sessionId}-${i}`,
+        content: `${m.role}: ${m.content}`,
+        metadata: {
+          sessionId,
+          role: m.role,
+          timestamp: m.metadata?.createdAt,
+        },
+      }));
+    
+    await this.vectorStore.addDocuments(docs);
+  }
+  
+  /** 检索相关上下文并格式化 */
+  async retrieveContext(query: string, topK: number = 3): Promise<string> {
+    const docs = await this.vectorStore.similaritySearch(query, topK);
+    
+    if (docs.length === 0) return '';
+    
+    return `<retrieved-context>\n${docs.map(d => d.content).join('\n\n')}\n</retrieved-context>`;
+  }
+  
+  /** 创建注入消息 */
+  async createInjectionMessage(query: string): Promise<Message | null> {
+    const context = await this.retrieveContext(query);
+    if (!context) return null;
+    
+    return {
+      role: 'system',
+      content: context,
+      metadata: { source: 'memory', pinned: false },
+    };
+  }
+}
+```
+
+### 外部向量数据库集成
+
+```typescript
+// src/rag/pinecone-vector-store.ts (示例)
+
+/** Pinecone 向量存储 */
+export class PineconeVectorStore implements VectorStore {
+  private index: PineconeIndex;
+  
+  constructor(
+    private client: Pinecone,
+    private indexName: string,
+    private embeddingModel: EmbeddingModel
+  ) {
+    this.index = client.index(indexName);
+  }
+  
+  async addDocuments(docs: Document[]): Promise<void> {
+    const embeddings = await this.embeddingModel.embedBatch(
+      docs.map(d => d.content)
+    );
+    
+    const vectors = docs.map((doc, i) => ({
+      id: doc.id,
+      values: embeddings[i],
+      metadata: {
+        content: doc.content,
+        ...doc.metadata,
+      },
+    }));
+    
+    await this.index.upsert(vectors);
+  }
+  
+  async similaritySearch(query: string, k: number = 4): Promise<Document[]> {
+    const queryEmbedding = await this.embeddingModel.embed(query);
+    
+    const results = await this.index.query({
+      vector: queryEmbedding,
+      topK: k,
+      includeMetadata: true,
+    });
+    
+    return results.matches.map(match => ({
+      id: match.id,
+      content: (match.metadata?.content as string) ?? '',
+      metadata: match.metadata,
+      embedding: match.values,
+    }));
+  }
+  
+  // ... other methods
+}
+```
+
+### 使用示例
+
+```typescript
+// 1. 创建向量存储
+const embeddingModel = new OpenAIEmbeddings({ model: 'text-embedding-3-small' });
+const vectorStore = new MemoryVectorStore(embeddingModel);
+
+// 2. 索引文档
+await vectorStore.addDocuments([
+  { id: 'doc-1', content: 'AgentForge 是一个基于 RxJS 的 Agent 框架...' },
+  { id: 'doc-2', content: '事件流架构使用 Observable 模式...' },
+]);
+
+// 3. 创建检索工具
+const ragTool = createRAGRetrievalTool(vectorStore.asRetriever(), {
+  knowledgeBaseName: 'agentforge-docs',
+  topK: 3,
+});
+
+// 4. 注册到 Agent
+const agent = createAgent({
+  name: 'assistant',
+  model: { provider: 'openai', model: 'gpt-4o' },
+  tools: [ragTool],
+});
+```
+
+---
+
 ## 相关文档
 
 - [00-OVERVIEW.md](./00-OVERVIEW.md) - 架构总览
@@ -1004,3 +1352,4 @@ function executeWithReplan(input: string, ctx: AgentContext): Observable<AgentEv
 | v2 | 2026-04-26 | 补充 MCP Client 传输层详细设计 (Stdio/HTTP) |
 | v3 | 2026-04-26 | **重构**: 使用官方 `@modelcontextprotocol/sdk` 替代自定义实现，简化架构 |
 | v4 | 2026-04-26 | **P1 新增**: 规划/执行分离架构 - 预规划/Agent自管理/重规划循环三种模式 |
+| v5 | 2026-04-26 | **P2 新增**: RAG 检索增强生成 - VectorStore/Retriever/RAG-as-Tool |

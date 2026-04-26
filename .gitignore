@@ -5,3 +5,8 @@ RXJS-EVENT-STREAM-DESIGN.md
 dist
 
 examples/skills
+
+# Environment files with secrets
+.env
+tests/e2e/.env
+*.local

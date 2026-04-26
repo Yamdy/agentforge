@@ -266,6 +266,76 @@ hitl.onAsk().subscribe((ask) => {
 
 ---
 
+## 8. 工具审批 (P0 HITL扩展)
+
+> HITL 机制的核心应用之一是**工具执行审批**，在危险工具执行前请求人工确认。
+
+### 8.1 ToolDefinition 安全标记
+
+```typescript
+// src/core/interfaces.ts 扩展
+export interface ToolDefinition<TSchema = unknown> {
+  name: string;
+  description: string;
+  parameters: TSchema;
+  execute: (args: unknown, ctx?: ToolContext) => Promise<string>;
+  
+  // 🔴 P0 新增: 安全标记
+  /** 是否需要审批 */
+  requiresApproval?: boolean;
+  /** 审批提示消息 */
+  approvalMessage?: string;
+  /** 是否需要沙箱执行 */
+  sandboxRequired?: boolean;
+  /** 风险等级 */
+  riskLevel?: 'low' | 'medium' | 'high' | 'critical';
+}
+
+// 示例：定义需要审批的危险工具
+const bashTool: ToolDefinition = {
+  name: 'bash',
+  description: 'Execute shell commands',
+  parameters: z.object({ command: z.string() }),
+  execute: async (args) => { /* ... */ },
+  requiresApproval: true,
+  approvalMessage: 'This tool executes shell commands. Approve?',
+  riskLevel: 'high',
+};
+```
+
+### 8.2 审批流程
+
+```
+tool.call 事件
+    │
+    ▼
+ApprovalGatePlugin (InterceptorPlugin)
+    │
+    ├─ requiresApproval=false → 放行
+    │
+    └─ requiresApproval=true
+        │
+        ▼
+      HITL.ask("Approve tool execution?")
+        │
+        ├─ 用户批准 → 放行原事件
+        │
+        └─ 用户拒绝 → agent.error + done
+```
+
+**完整实现**见 [07-PLUGIN-SYSTEM.md - 审批门控插件](./07-PLUGIN-SYSTEM.md)。
+
+---
+
+## 版本历史
+
+| 版本 | 日期 | 变更 |
+|------|------|------|
+| v1 | 2026-04-24 | 初始设计 - 可观测/可中断/可恢复/重试/超时/打点/HITL |
+| v2 | 2026-04-26 | **P0 新增**: 工具审批 - HITL扩展用于危险工具确认 |
+
+---
+
 ## 相关文档
 
 - [00-OVERVIEW.md](./00-OVERVIEW.md) - 架构总览

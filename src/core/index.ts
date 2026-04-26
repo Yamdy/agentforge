@@ -123,6 +123,7 @@ export type {
   ModelSpec,
   ProviderOptions,
   ToolChoice,
+  RiskLevel,
   ToolDefinition,
   FunctionDefinition as FunctionDefinitionInterface,
   ToolRegistry as ToolRegistryInterface,
@@ -212,3 +213,9 @@ export {
 
 export type { AgentStateEnum } from './state-machine.js';
 export { AgentStateMachine, isValidTransition, getValidTransitions } from './state-machine.js';
+
+// ============================================================
+// Quota Controller (re-exported from quota module)
+// ============================================================
+
+export type { QuotaUsage, QuotaLimits, QuotaController } from '../quota/quota-controller.js';
