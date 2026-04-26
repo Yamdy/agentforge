@@ -818,3 +818,65 @@ export {
  * ```
  */
 export { type MPUConfig, type MPUServiceResult, createMPUServices } from './integration/index.js';
+
+// ============================================================
+// L1 API (Zero-Code Configuration)
+// ============================================================
+
+/**
+ * L1 API - Create agents from configuration files.
+ *
+ * @example
+ * ```typescript
+ * import { loadAgent, runPrompt } from 'agentforge';
+ *
+ * // From config file
+ * const agent = await loadAgent('agent.json');
+ * const result = await agent.run('Hello!');
+ *
+ * // Or shorthand
+ * const response = await runPrompt('agent.json', 'Hello!');
+ * ```
+ */
+export {
+  loadAgent,
+  loadAgentFromConfig,
+  runPrompt,
+  runPromptWithConfig,
+  L1AgentConfigSchema,
+  type L1AgentConfig,
+} from './l1/index.js';
+
+// ============================================================
+// Token Counter
+// ============================================================
+
+/**
+ * Accurate token counting using js-tiktoken.
+ *
+ * @example
+ * ```typescript
+ * import { countTokens, countMessagesTokens, TokenCounter } from 'agentforge';
+ *
+ * // Simple counting
+ * const tokens = countTokens('Hello, world!');
+ *
+ * // Message counting
+ * const messageTokens = countMessagesTokens([
+ *   { role: 'user', content: 'Hello' },
+ *   { role: 'assistant', content: 'Hi!' },
+ * ]);
+ *
+ * // Custom counter
+ * const counter = new TokenCounter({ model: 'gpt-4o' });
+ * const accurate = counter.countTokens('Hello!');
+ * ```
+ */
+export {
+  TokenCounter,
+  getTokenCounter,
+  countTokens,
+  countMessagesTokens,
+  type TokenCounterConfig,
+  type ModelEncoding,
+} from './token-counter.js';
