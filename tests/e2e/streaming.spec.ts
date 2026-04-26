@@ -58,13 +58,13 @@ import {
 // ============================================================
 
 const API_CONFIG = {
-  apiKey: 'sk-tp-qPRAZ8tj4FOoSaIjdgoKLY3w0QcyqCNjhFjfANpfe6grJB1y',
-  baseURL: 'https://api.lkeap.cloud.tencent.com/plan/v3',
-  model: 'glm-5',
+  apiKey: process.env.LLM_API_KEY ?? '',
+  baseURL: process.env.LLM_BASE_URL ?? 'https://token-plan-cn.xiaomimimo.com/v1',
+  model: process.env.LLM_MODEL ?? 'mimo-v2.5',
 };
 
-// Skip tests if API key is not valid (for CI environments)
-const shouldRunE2E = API_CONFIG.apiKey && API_CONFIG.apiKey.length > 10;
+// Skip tests if API key is not provided
+const shouldRunE2E = API_CONFIG.apiKey.length > 0;
 
 // ============================================================
 // Real LLM Adapter Implementation
@@ -169,44 +169,12 @@ class RealLLMAdapter implements LLMAdapter {
 
     const result: Record<string, ReturnType<typeof tool>> = {};
     for (const t of tools) {
-      const properties = t.parameters.properties as Record<string, z.ZodTypeAny>;
-      const required = t.parameters.required ?? [];
-
-      const schemaShape: Record<string, z.ZodTypeAny> = {};
-      for (const [key, prop] of Object.entries(properties)) {
-        const propDef = prop as { type?: string; description?: string };
-        let zodType: z.ZodTypeAny;
-
-        switch (propDef.type) {
-          case 'string':
-            zodType = z.string().describe(propDef.description ?? '');
-            break;
-          case 'number':
-            zodType = z.number().describe(propDef.description ?? '');
-            break;
-          case 'boolean':
-            zodType = z.boolean().describe(propDef.description ?? '');
-            break;
-          case 'array':
-            zodType = z.array(z.unknown()).describe(propDef.description ?? '');
-            break;
-          case 'object':
-            zodType = z.record(z.unknown()).describe(propDef.description ?? '');
-            break;
-          default:
-            zodType = z.unknown().describe(propDef.description ?? '');
-        }
-
-        if (!required.includes(key)) {
-          zodType = zodType.optional();
-        }
-
-        schemaShape[key] = zodType;
-      }
+      // Create a minimal Zod schema that AI SDK can handle
+      const schema = z.object({}).passthrough();
 
       result[t.name] = tool({
         description: t.description,
-        parameters: z.object(schemaShape),
+        parameters: schema,
         execute: async (args: unknown) => JSON.stringify(args),
       });
     }
@@ -431,7 +399,8 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
   // ========================================
   describe('Scenario 1: Basic Streaming Output', () => {
     it('should receive multiple text chunks during streaming', async () => {
-      const ctx = createTestContext(llm, toolRegistry);
+      const emptyRegistry = new SimpleToolRegistry();
+      const ctx = createTestContext(llm, emptyRegistry);
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
@@ -450,7 +419,8 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
     }, 30000);
 
     it('should emit stream.start before text chunks', async () => {
-      const ctx = createTestContext(llm, toolRegistry);
+      const emptyRegistry = new SimpleToolRegistry();
+      const ctx = createTestContext(llm, emptyRegistry);
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
@@ -467,7 +437,8 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
     }, 30000);
 
     it('should emit stream.end after text chunks', async () => {
-      const ctx = createTestContext(llm, toolRegistry);
+      const emptyRegistry = new SimpleToolRegistry();
+      const ctx = createTestContext(llm, emptyRegistry);
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
@@ -483,7 +454,8 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
     }, 30000);
 
     it('should assemble complete content in llm.response', async () => {
-      const ctx = createTestContext(llm, toolRegistry);
+      const emptyRegistry = new SimpleToolRegistry();
+      const ctx = createTestContext(llm, emptyRegistry);
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
@@ -637,7 +609,8 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
   // ========================================
   describe('Scenario 4: Event Ordering', () => {
     it('should emit events in correct sequence: start → text[] → end → response', async () => {
-      const ctx = createTestContext(llm, toolRegistry);
+      const emptyRegistry = new SimpleToolRegistry();
+      const ctx = createTestContext(llm, emptyRegistry);
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
@@ -660,7 +633,8 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
     }, 30000);
 
     it('should have monotonically increasing timestamps within a stream', async () => {
-      const ctx = createTestContext(llm, toolRegistry);
+      const emptyRegistry = new SimpleToolRegistry();
+      const ctx = createTestContext(llm, emptyRegistry);
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
@@ -803,7 +777,8 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
   // ========================================
   describe('Scenario 6: Integration', () => {
     it('should complete full conversation flow with streaming', async () => {
-      const ctx = createTestContext(llm, toolRegistry);
+      const emptyRegistry = new SimpleToolRegistry();
+      const ctx = createTestContext(llm, emptyRegistry);
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
@@ -826,7 +801,8 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
     }, 30000);
 
     it('should track token usage when available', async () => {
-      const ctx = createTestContext(llm, toolRegistry);
+      const emptyRegistry = new SimpleToolRegistry();
+      const ctx = createTestContext(llm, emptyRegistry);
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);

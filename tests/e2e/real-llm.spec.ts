@@ -40,11 +40,11 @@ import { OpenAIAdapter } from '../../src/adapters/openai.js';
 // Configuration
 // ============================================================
 
-const skipIfNoLLM = process.env.LLM_E2E !== 'true';
+const skipIfNoLLM = !process.env.LLM_API_KEY;
 
-const API_KEY = process.env.LLM_API_KEY ?? 'sk-tp-qPRAZ8tj4FOoSaIjdgoKLY3w0QcyqCNjhFjfANpfe6grJB1y';
-const BASE_URL = process.env.LLM_BASE_URL ?? 'https://api.lkeap.cloud.tencent.com/plan/v3';
-const MODEL = process.env.LLM_MODEL ?? 'glm-5';
+const API_KEY = process.env.LLM_API_KEY ?? '';
+const BASE_URL = process.env.LLM_BASE_URL ?? 'https://token-plan-cn.xiaomimimo.com/v1';
+const MODEL = process.env.LLM_MODEL ?? 'mimo-v2.5';
 
 // Test timeout (60s for real API calls)
 const TEST_TIMEOUT = 60000;
