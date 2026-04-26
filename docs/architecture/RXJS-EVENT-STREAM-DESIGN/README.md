@@ -1,7 +1,7 @@
 # AgentForge 事件流架构设计
 
 > 设计日期: 2026-04-24
-> 最后更新: 2026-04-26 (P0 核心实现完成)
+> 最后更新: 2026-04-26 (P0 安全架构设计)
 > 状态: **已实现**
 > 核心理念: RxJS 事件流 + Zod 类型安全 = Agent 框架底座
 
@@ -60,6 +60,12 @@
 |------|------|
 | [16-CONFIG-MODULE.md](./16-CONFIG-MODULE.md) | 配置模块设计、Schema 定义、Profile 系统、热更新支持 |
 
+### 安全架构
+
+| 文档 | 描述 |
+|------|------|
+| [17-SECURITY-HARNESS.md](./17-SECURITY-HARNESS.md) | 安全架构设计、沙箱隔离、PII脱敏、配额管控、审批流程、Harness规范对齐 |
+
 ### 总览
 
 | 文档 | 描述 |
@@ -88,7 +94,8 @@
 | **事件流** | 05, 06, 10 |
 | **插件扩展** | 07, 08 |
 | **分布式通信** | 09 |
-| **生产就绪** | 06, 14, 15 |
+| **生产就绪** | 06, 14, 15, 17 |
+| **安全合规** | 17 |
 
 ---
 
@@ -129,6 +136,7 @@
 | v5 | 2026-04-25 | HITL Observable 模式：`ask()` 返回 `Observable<string>`，事件 schema 添加 `toolCallId/toolName` |
 | v6 | 2026-04-26 | **实现完成**: SubAgent/Workflow/MCP/Memory/Observability 全部实现 |
 | v7 | 2026-04-26 | **性能优化**: 修复 O(n²) 算法、并行化 Skill 加载、添加资源清理约束 |
+| v8 | 2026-04-26 | **安全架构**: 沙箱隔离/PII脱敏/配额管控/审批流程设计，Harness规范对齐分析 |
 
 ---
 
@@ -154,3 +162,4 @@
 | **LLM Adapter** | - | `src/adapters/*.ts` | ✅ 已实现 |
 | **API 层** | 12-API-DESIGN.md | `src/api/*.ts` | ✅ 已实现 |
 | **配置模块** | 16-CONFIG-MODULE.md | `src/core/config/*.ts` | 📝 设计完成 |
+| **安全架构** | 17-SECURITY-HARNESS.md | `src/sandbox/`, `src/security/`, `src/quota/` | 📝 设计完成 |
