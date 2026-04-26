@@ -1,26 +1,65 @@
 {
-  "name": "agentforge",
-  "version": "1.0.0",
-  "description": "Agent framework based on RxJS event stream + Zod type safety",
+  "name": "@primo512109/agentforge",
+  "version": "0.1.1",
+  "description": "Production-ready Agent framework with MPU (Minimum Production Usable) modules - RxJS event stream + Zod type safety",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "agentforge": "dist/cli/index.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./storage": {
+      "types": "./dist/storage/index.d.ts",
+      "import": "./dist/storage/index.js"
+    },
+    "./planning": {
+      "types": "./dist/planning/index.d.ts",
+      "import": "./dist/planning/index.js"
+    },
+    "./sandbox": {
+      "types": "./dist/sandbox/index.d.ts",
+      "import": "./dist/sandbox/index.js"
+    },
+    "./resilience": {
+      "types": "./dist/resilience/index.d.ts",
+      "import": "./dist/resilience/index.js"
+    },
+    "./audit": {
+      "types": "./dist/audit/index.d.ts",
+      "import": "./dist/audit/index.js"
+    },
+    "./security": {
+      "types": "./dist/security/index.d.ts",
+      "import": "./dist/security/index.js"
+    },
     "./quota": {
       "types": "./dist/quota/index.d.ts",
       "import": "./dist/quota/index.js"
     },
-    "./memory": {
-      "types": "./dist/memory/index.d.ts",
-      "import": "./dist/memory/index.js"
-    },
     "./observability": {
       "types": "./dist/observability/index.d.ts",
       "import": "./dist/observability/index.js"
+    },
+    "./lifecycle": {
+      "types": "./dist/lifecycle/index.d.ts",
+      "import": "./dist/lifecycle/index.js"
+    },
+    "./validation": {
+      "types": "./dist/validation/index.d.ts",
+      "import": "./dist/validation/index.js"
+    },
+    "./integration": {
+      "types": "./dist/integration/index.d.ts",
+      "import": "./dist/integration/index.js"
+    },
+    "./app": {
+      "types": "./dist/app/index.d.ts",
+      "import": "./dist/app/index.js"
     },
     "./adapters": {
       "types": "./dist/adapters/index.d.ts",
@@ -70,7 +109,8 @@
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",
-    "prepare": "husky"
+    "prepare": "husky",
+    "prepublishOnly": "npm run build && npm test"
   },
   "keywords": [
     "agent",
@@ -78,25 +118,47 @@
     "rxjs",
     "zod",
     "ai",
-    "framework"
+    "framework",
+    "mpu",
+    "production-ready",
+    "sandbox",
+    "audit",
+    "security",
+    "observability"
   ],
-  "author": "",
+  "author": "primo512109",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Yamdy/agentforge.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Yamdy/agentforge/issues"
+  },
+  "homepage": "https://github.com/Yamdy/agentforge#readme",
   "dependencies": {
     "@ai-sdk/anthropic": "^1.0.0",
     "@ai-sdk/openai": "^1.0.0",
     "@ai-sdk/openai-compatible": "^2.0.41",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "ai": "^6.0.168",
+    "better-sqlite3": "^12.9.0",
+    "chalk": "^5.3.0",
+    "commander": "^12.0.0",
     "gray-matter": "^4.0.3",
-    "rxjs": "^7.8.1",
-    "zod": "^3.23.8"
+    "handlebars": "^4.7.8",
+    "inquirer": "^10.0.0",
+    "js-tiktoken": "^1.0.21",
+    "rxjs": "^7.0.0",
+    "zod": "^3.23.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/json-schema": "^7.0.15",
     "@types/node": "^20.14.10",
     "@typescript-eslint/eslint-plugin": "^7.16.0",
     "@typescript-eslint/parser": "^7.16.0",
+    "@vitest/coverage-v8": "^1.6.1",
     "eslint": "^8.57.0",
     "eslint-config-prettier": "^9.1.0",
     "husky": "^9.1.7",
@@ -110,6 +172,9 @@
   "engines": {
     "node": ">=18.0.0"
   },
+  "workspaces": [
+    "packages/*"
+  ],
   "files": [
     "dist",
     "README.md"

@@ -14,6 +14,7 @@
 import { z } from 'zod';
 import type { Message } from '../core/events.js';
 import type { LLMAdapter } from '../core/interfaces.js';
+import { countMessagesTokens } from '../token-counter.js';
 
 // ============================================================
 // Compaction Strategy Types
@@ -65,21 +66,21 @@ export type CompactionResult = z.infer<typeof CompactionResultSchema>;
 /**
  * Estimate token count for messages
  *
- * Simple approximation: 1 token ≈ 4 characters
- * This is a rough estimate; actual tokenization varies by model.
+ * Uses js-tiktoken for accurate tokenization when available,
+ * falls back to heuristic for non-OpenAI models.
  *
  * @param messages - Message array to estimate
  * @returns Estimated token count
  */
 export function estimateTokens(messages: Message[]): number {
-  return messages.reduce((sum, m) => sum + Math.ceil(m.content.length / 4), 0);
+  return countMessagesTokens(messages);
 }
 
 /**
  * Estimate token count for a single message
  */
 export function estimateMessageTokens(message: Message): number {
-  return Math.ceil(message.content.length / 4);
+  return countMessagesTokens([message]);
 }
 
 // ============================================================

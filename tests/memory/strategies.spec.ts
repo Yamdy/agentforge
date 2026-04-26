@@ -62,26 +62,33 @@ describe('estimateTokens', () => {
 
   it('should estimate tokens for messages', () => {
     const messages: Message[] = [
-      { role: 'user', content: 'Hello world' }, // 11 chars ≈ 3 tokens
+      { role: 'user', content: 'Hello world' },
     ];
     const tokens = estimateTokens(messages);
     expect(tokens).toBeGreaterThan(0);
-    expect(tokens).toBe(Math.ceil(11 / 4)); // 3 tokens
+    // Token count should be reasonable (not exact, as tiktoken uses BPE)
+    expect(tokens).toBeLessThan(20);
   });
 
   it('should sum tokens across all messages', () => {
     const messages: Message[] = [
-      { role: 'user', content: 'aaaaaaaa' }, // 8 chars = 2 tokens
-      { role: 'assistant', content: 'bbbbbbbb' }, // 8 chars = 2 tokens
+      { role: 'user', content: 'aaaaaaaa' },
+      { role: 'assistant', content: 'bbbbbbbb' },
     ];
-    expect(estimateTokens(messages)).toBe(4);
+    const tokens = estimateTokens(messages);
+    expect(tokens).toBeGreaterThan(0);
+    // Should count tokens for both messages
+    expect(tokens).toBeGreaterThan(2);
   });
 });
 
 describe('estimateMessageTokens', () => {
   it('should estimate tokens for single message', () => {
     const message: Message = { role: 'user', content: 'test'.repeat(10) }; // 40 chars
-    expect(estimateMessageTokens(message)).toBe(10);
+    const tokens = estimateMessageTokens(message);
+    expect(tokens).toBeGreaterThan(0);
+    // Should be reasonable for 40 characters
+    expect(tokens).toBeLessThan(30);
   });
 });
 
