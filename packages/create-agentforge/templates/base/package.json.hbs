@@ -1,0 +1,23 @@
+{
+  "name": "{{config.projectName}}",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "AgentForge agent project",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "dependencies": {
+  {{#each dependencies}}
+    "{{@key}}": "{{this}}"{{#unless @last}},{{/unless}}
+  {{/each}}
+  },
+  "devDependencies": {
+  {{#each devDependencies}}
+    "{{@key}}": "{{this}}"{{#unless @last}},{{/unless}}
+  {{/each}}
+  }
+}

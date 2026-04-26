@@ -1,0 +1,62 @@
+/**
+ * {{config.agentName}} - AgentForge Agent Entry Point
+ */
+
+import 'dotenv/config';
+
+{{#if (eq config.apiMode "simple")}}
+// L2 API: Simple configuration-based approach
+import { createAgent } from 'agentforge';
+import config from '../agentforge.config.js';
+
+const agent = createAgent(config);
+
+// Run the agent with a prompt
+const result = await agent.run('Hello! How can I help you today?');
+
+console.log('Agent output:', result);
+
+// Streaming mode (optional)
+agent.stream('Tell me a story', {
+  onText: (delta) => process.stdout.write(delta),
+  onComplete: (result) => console.log('\nCompleted:', result),
+});
+{{else}}
+// L3 API: Advanced programmatic control
+import { runAgent, AgentContextBuilder } from 'agentforge/api';
+import { filter, tap, takeUntilTerminal } from 'rxjs/operators';
+import config from '../agentforge.config.js';
+
+// Build context from config
+const ctx = new AgentContextBuilder()
+  .withLLMAdapter(config.llm)
+{{#if config.tools}}
+  .withTools(config.tools)
+{{/if}}
+{{#if config.checkpoint}}
+  .withCheckpointStorage(config.checkpoint)
+{{/if}}
+{{#if config.observability}}
+  .withTracer(config.tracer)
+  .withMetrics(config.metrics)
+{{/if}}
+{{#if config.hitl}}
+  .withHITLController(config.hitl)
+{{/if}}
+  .build();
+
+// Run with Observable control
+runAgent(ctx, 'Hello! How can I help you today?', {
+  maxSteps: {{config.maxSteps}},
+}).pipe(
+  takeUntilTerminal(),
+  tap({
+    next: (event) => {
+      console.log(`[${event.type}]`, event);
+    },
+    complete: () => {
+      console.log('Agent execution completed');
+    },
+  }),
+).subscribe();
+{{/if}}

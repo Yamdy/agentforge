@@ -1,0 +1,81 @@
+/**
+ * Plugin manager for {{config.agentName}}.
+ * Provides a plugin system for extending agent behavior.
+ */
+
+import type { Plugin, PluginManager, PluginContext } from 'agentforge';
+import { createPluginManager } from 'agentforge';
+
+// Example logging plugin
+const loggingPlugin: Plugin = {
+  name: 'console-logger',
+  version: '1.0.0',
+  description: 'Logs all agent events to console',
+  
+  setup(context: PluginContext): void {
+    // Intercept LLM responses
+    context.intercept('llm.response', (event) => {
+      console.log(`\x1b[36m[PLUGIN] LLM Response received\x1b[0m`);
+      return event;
+    });
+    
+    // Observe tool executions
+    context.observe('tool.result', (event) => {
+      console.log(`\x1b[36m[PLUGIN] Tool executed\x1b[0m`);
+    });
+    
+    // Observe agent steps
+    context.observe('agent.step', (event) => {
+      console.log(`\x1b[36m[PLUGIN] Step completed\x1b[0m`);
+    });
+  },
+};
+
+// Example metrics plugin
+const metricsPlugin: Plugin = {
+  name: 'simple-metrics',
+  version: '1.0.0',
+  description: 'Tracks simple execution metrics',
+  
+  setup(context: PluginContext): void {
+    let stepCount = 0;
+    let llmCallCount = 0;
+    let toolCallCount = 0;
+    
+    context.observe('agent.step', () => {
+      stepCount++;
+    });
+    
+    context.observe('llm.response', () => {
+      llmCallCount++;
+    });
+    
+    context.observe('tool.result', () => {
+      toolCallCount++;
+    });
+    
+    context.observe('done', () => {
+      console.log(`\x1b[36m[PLUGIN] Metrics: steps=${stepCount}, llm=${llmCallCount}, tools=${toolCallCount}\x1b[0m`);
+    });
+  },
+};
+
+/**
+ * Create and configure the plugin manager.
+ */
+function createConfiguredPluginManager(): PluginManager {
+  const manager = createPluginManager();
+  
+  // Register built-in plugins
+  manager.register(loggingPlugin);
+  manager.register(metricsPlugin);
+  
+  return manager;
+}
+
+// Export singleton instance
+export const pluginManager = createConfiguredPluginManager();
+
+// Export for custom plugin registration
+export { createPluginManager };
+export type { Plugin };

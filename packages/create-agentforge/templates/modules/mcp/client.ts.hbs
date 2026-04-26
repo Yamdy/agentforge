@@ -1,0 +1,95 @@
+/**
+ * MCP client configuration for {{config.agentName}}.
+ * Connects to Model Context Protocol servers.
+ */
+
+import type { MCPClient, MCPServerConfig } from 'agentforge';
+import { createMCPClient } from 'agentforge';
+
+/**
+ * MCP server configurations.
+ * Add your MCP servers here.
+ */
+const mcpServerConfigs: MCPServerConfig[] = [
+  // Example: Filesystem MCP server
+  // {
+  //   name: 'filesystem',
+  //   config: {
+  //     type: 'stdio',
+  //     command: 'npx',
+  //     args: ['-y', '@modelcontextprotocol/server-filesystem', '/path/to/allowed/dir'],
+  //   },
+  // },
+  
+  // Example: Custom HTTP MCP server
+  // {
+  //   name: 'custom-http',
+  //   config: {
+  //     type: 'http',
+  //     url: 'http://localhost:3000/mcp',
+  //   },
+  // },
+];
+
+/**
+ * Create and configure the MCP client.
+ */
+async function createConfiguredMCPClient(): Promise<MCPClient> {
+  const client = createMCPClient({
+    sessionId: `mcp-session-${Date.now()}`,
+    serverName: '{{config.agentName}}-mcp',
+  });
+  
+  // Connect to configured servers
+  for (const server of mcpServerConfigs) {
+    try {
+      await client.connect(server.config);
+      console.log(`\x1b[32m[MCP] Connected to ${server.name}\x1b[0m`);
+    } catch (error) {
+      console.error(`\x1b[31m[MCP] Failed to connect to ${server.name}:\x1b[0m`, error);
+    }
+  }
+  
+  return client;
+}
+
+// Note: MCP client is created lazily to avoid connection during module load
+let mcpClientInstance: MCPClient | null = null;
+
+/**
+ * Get MCP client instance (singleton, created on first access).
+ */
+export async function getMCPClient(): Promise<MCPClient> {
+  if (!mcpClientInstance) {
+    mcpClientInstance = await createConfiguredMCPClient();
+  }
+  return mcpClientInstance;
+}
+
+// For synchronous access in config, export a placeholder
+// The actual client will be initialized lazily
+export const mcpClient = {
+  name: '{{config.agentName}}-mcp',
+  // Proxy methods that call the actual client when needed
+  async connect(config: MCPServerConfig['config']) {
+    const client = await getMCPClient();
+    return client.connect(config);
+  },
+  async tools() {
+    const client = await getMCPClient();
+    return client.tools();
+  },
+  async callTool(name: string, args: Record<string, unknown>) {
+    const client = await getMCPClient();
+    return client.callTool(name, args);
+  },
+  async disconnect() {
+    if (mcpClientInstance) {
+      await mcpClientInstance.disconnect();
+      mcpClientInstance = null;
+    }
+  },
+};
+
+// Export types
+export type { MCPServerConfig };

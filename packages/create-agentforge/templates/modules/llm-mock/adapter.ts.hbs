@@ -1,0 +1,64 @@
+/**
+ * Mock LLM Adapter for {{config.agentName}}.
+ * Used for development and testing without external API calls.
+ */
+
+import type { LLMAdapter, LLMResponse, LLMChunk } from 'agentforge';
+import { from, of } from 'rxjs';
+import { delay, map } from 'rxjs/operators';
+
+/**
+ * Mock responses for testing
+ */
+const MOCK_RESPONSES: Record<string, string> = {
+  greeting: "Hello! I'm a mock agent. How can I help you today?",
+  help: "I'm a development/testing agent. I can simulate responses but won't provide real AI capabilities.",
+  default: "This is a mock response. The agent is running in test mode without a real LLM provider.",
+};
+
+/**
+ * Mock adapter implementing LLMAdapter interface
+ */
+export const adapter: LLMAdapter = {
+  /**
+   * Simulate a response (immediate or delayed)
+   */
+  async generate(prompt: string): Promise<LLMResponse> {
+    // Simulate processing delay
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    // Simple response logic based on keywords
+    const lowerPrompt = prompt.toLowerCase();
+    let content = MOCK_RESPONSES.default;
+    
+    if (lowerPrompt.includes('hello') || lowerPrompt.includes('hi') || lowerPrompt.includes('hey')) {
+      content = MOCK_RESPONSES.greeting;
+    } else if (lowerPrompt.includes('help') || lowerPrompt.includes('what can you')) {
+      content = MOCK_RESPONSES.help;
+    }
+    
+    return {
+      content,
+      finishReason: 'stop',
+      usage: {
+        promptTokens: 10,
+        completionTokens: 20,
+        totalTokens: 30,
+      },
+    };
+  },
+
+  /**
+   * Stream mock response chunks
+   */
+  stream(prompt: string) {
+    const response = this.generate(prompt).then(r => r.content);
+    
+    return from(response).pipe(
+      map((content): LLMChunk => ({
+        delta: content,
+        done: true,
+      })),
+    );
+  },
+};

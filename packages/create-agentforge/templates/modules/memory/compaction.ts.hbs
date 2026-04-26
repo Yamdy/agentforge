@@ -1,0 +1,176 @@
+/**
+ * Memory compaction manager for {{config.agentName}}.
+ * Handles message history compression to manage token usage.
+ */
+
+import type { Message } from 'agentforge';
+
+export interface CompactionConfig {
+  /** Maximum tokens before triggering compaction */
+  maxTokens: number;
+  /** Strategy for compaction */
+  strategy: 'summarize' | 'truncate' | 'selective';
+  /** Keep last N messages intact */
+  preserveRecent: number;
+}
+
+export interface CompactionResult {
+  /** Compacted messages */
+  messages: Message[];
+  /** Tokens saved */
+  tokensSaved: number;
+  /** Original token count */
+  originalTokens: number;
+  /** Compaction strategy used */
+  strategy: string;
+}
+
+/**
+ * Compaction manager implementation.
+ */
+export class CompactionManager {
+  private config: CompactionConfig;
+  
+  constructor(config: Partial<CompactionConfig> = {}) {
+    this.config = {
+      maxTokens: config.maxTokens ?? 8000,
+      strategy: config.strategy ?? 'selective',
+      preserveRecent: config.preserveRecent ?? 5,
+    };
+  }
+  
+  /**
+   * Estimate token count for messages (simple approximation)
+   */
+  estimateTokens(messages: Message[]): number {
+    return messages.reduce((total, msg) => {
+      const content = typeof msg.content === 'string' ? msg.content : '';
+      // Rough approximation: ~4 chars per token
+      return total + Math.ceil(content.length / 4);
+    }, 0);
+  }
+  
+  /**
+   * Check if compaction is needed
+   */
+  needsCompaction(messages: Message[]): boolean {
+    return this.estimateTokens(messages) > this.config.maxTokens;
+  }
+  
+  /**
+   * Perform compaction on message history
+   */
+  compact(messages: Message[]): CompactionResult {
+    const originalTokens = this.estimateTokens(messages);
+    
+    if (originalTokens <= this.config.maxTokens) {
+      return {
+        messages,
+        tokensSaved: 0,
+        originalTokens,
+        strategy: 'none',
+      };
+    }
+    
+    let result: Message[];
+    
+    switch (this.config.strategy) {
+      case 'truncate':
+        result = this.truncateStrategy(messages);
+        break;
+      case 'summarize':
+        result = this.summarizeStrategy(messages);
+        break;
+      case 'selective':
+      default:
+        result = this.selectiveStrategy(messages);
+        break;
+    }
+    
+    const newTokens = this.estimateTokens(result);
+    
+    return {
+      messages: result,
+      tokensSaved: originalTokens - newTokens,
+      originalTokens,
+      strategy: this.config.strategy,
+    };
+  }
+  
+  /**
+   * Truncation strategy: keep only recent messages
+   */
+  private truncateStrategy(messages: Message[]): Message[] {
+    // Keep system message if present
+    const systemMessages = messages.filter(m => m.role === 'system');
+    const nonSystem = messages.filter(m => m.role !== 'system');
+    
+    // Keep only the most recent messages
+    const recent = nonSystem.slice(-this.config.preserveRecent);
+    
+    return [...systemMessages, ...recent];
+  }
+  
+  /**
+   * Summarization strategy: replace old messages with summary
+   */
+  private summarizeStrategy(messages: Message[]): Message[] {
+    const systemMessages = messages.filter(m => m.role === 'system');
+    const nonSystem = messages.filter(m => m.role !== 'system');
+    
+    if (nonSystem.length <= this.config.preserveRecent) {
+      return messages;
+    }
+    
+    const toSummarize = nonSystem.slice(0, -this.config.preserveRecent);
+    const recent = nonSystem.slice(-this.config.preserveRecent);
+    
+    // Create a summary message (in production, this would use an LLM)
+    const summaryContent = toSummarize
+      .map(m => `[${m.role}]: ${typeof m.content === 'string' ? m.content : '[content]'}`)
+      .join('\n');
+    
+    const summaryMessage: Message = {
+      role: 'user',
+      content: `[Summary of previous conversation]\n${summaryContent.slice(0, 500)}...`,
+    };
+    
+    return [...systemMessages, summaryMessage, ...recent];
+  }
+  
+  /**
+   * Selective strategy: remove least important messages
+   */
+  private selectiveStrategy(messages: Message[]): Message[] {
+    // Keep system messages and recent messages
+    const systemMessages = messages.filter(m => m.role === 'system');
+    const nonSystem = messages.filter(m => m.role !== 'system');
+    
+    // Simple approach: keep recent and first message pair
+    const recent = nonSystem.slice(-this.config.preserveRecent);
+    const first = nonSystem.slice(0, 2);
+    
+    // Deduplicate
+    const seen = new Set(first.map(m => JSON.stringify(m)));
+    const uniqueRecent = recent.filter(m => !seen.has(JSON.stringify(m)));
+    
+    return [...systemMessages, ...first, ...uniqueRecent];
+  }
+  
+  /**
+   * Update configuration
+   */
+  updateConfig(config: Partial<CompactionConfig>): void {
+    this.config = { ...this.config, ...config };
+  }
+  
+  /**
+   * Get current configuration
+   */
+  getConfig(): CompactionConfig {
+    return { ...this.config };
+  }
+}
+
+// Export singleton instance with default config
+export const compactionManager = new CompactionManager();

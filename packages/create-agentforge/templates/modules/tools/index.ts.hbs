@@ -1,0 +1,20 @@
+/**
+ * Tool registry for {{config.agentName}}.
+ * Exports a SimpleToolRegistry with registered tools.
+ */
+
+import { SimpleToolRegistry } from 'agentforge';
+import { weatherTool } from './weather.js';
+
+/**
+ * Tool registry containing all available tools.
+ * Add new tools here to make them available to the agent.
+ */
+export const tools = new SimpleToolRegistry();
+
+// Register tools
+tools.register(weatherTool);
+
+// Example: Add more tools
+// import { calculatorTool } from './calculator.js';
+// tools.register(calculatorTool);

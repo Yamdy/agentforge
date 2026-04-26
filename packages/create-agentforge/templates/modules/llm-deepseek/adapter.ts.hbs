@@ -1,0 +1,66 @@
+/**
+ * DeepSeek LLM Adapter for {{config.agentName}}.
+ * Uses OpenAI-compatible API.
+ */
+
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
+import type { LLMAdapter, LLMResponse, LLMChunk } from 'agentforge';
+import { from } from 'rxjs';
+import { map } from 'rxjs/operators';
+
+// Initialize DeepSeek client (OpenAI-compatible)
+const deepseek = createOpenAICompatible({
+  name: 'deepseek',
+  baseURL: process.env['DEEPSEEK_BASE_URL'] ?? 'https://api.deepseek.com/v1',
+  apiKey: process.env['DEEPSEEK_API_KEY'],
+});
+
+/**
+ * Model configuration
+ */
+const model = deepseek('{{config.llmModel}}');
+
+/**
+ * DeepSeek adapter implementing LLMAdapter interface
+ */
+export const adapter: LLMAdapter = {
+  /**
+   * Send a prompt and get a complete response
+   */
+  async generate(prompt: string): Promise<LLMResponse> {
+    const result = await model.doGenerate({
+      inputFormat: 'prompt',
+      mode: { type: 'regular' },
+      prompt: prompt,
+    });
+
+    return {
+      content: result.text ?? '',
+      finishReason: result.finishReason ?? 'stop',
+      usage: result.usage ? {
+        promptTokens: result.usage.promptTokens,
+        completionTokens: result.usage.completionTokens,
+        totalTokens: result.usage.totalTokens,
+      } : undefined,
+    };
+  },
+
+  /**
+   * Stream response chunks
+   */
+  stream(prompt: string) {
+    return from(model.doStream({
+      inputFormat: 'prompt',
+      mode: { type: 'regular' },
+      prompt: prompt,
+    })).pipe(
+      map((streamResult): LLMChunk => {
+        const chunk = streamResult.stream;
+        return {
+          delta: chunk.text ?? '',
+          done: false,
+        };
+      }),
+    );
+  },
+};

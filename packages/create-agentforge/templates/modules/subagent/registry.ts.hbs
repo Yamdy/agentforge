@@ -1,0 +1,39 @@
+/**
+ * Subagent registry for {{config.agentName}}.
+ * Manages specialized subagents for task delegation.
+ */
+
+import type { SubagentRegistry, SubagentConfig, SubagentResult } from 'agentforge';
+import { createSubagentRegistry } from 'agentforge';
+
+/**
+ * Create a configured subagent registry.
+ */
+function createConfiguredSubagentRegistry(): SubagentRegistry {
+  const registry = createSubagentRegistry();
+  
+  // Example: Register a research subagent
+  // registry.register({
+  //   name: 'research-agent',
+  //   description: 'Search and summarize information from the web',
+  //   agent: researchAgentLoop,
+  //   capabilities: ['search', 'summarize', 'extract'],
+  // });
+  
+  // Example: Register a code review subagent
+  // registry.register({
+  //   name: 'code-reviewer',
+  //   description: 'Review code for issues and improvements',
+  //   agent: codeReviewLoop,
+  //   capabilities: ['review', 'suggest', 'format'],
+  // });
+  
+  return registry;
+}
+
+// Export singleton instance
+export const subagentRegistry = createConfiguredSubagentRegistry();
+
+// Export types and utilities
+export { createSubagentRegistry };
+export type { SubagentConfig, SubagentResult };
