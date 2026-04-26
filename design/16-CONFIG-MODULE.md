@@ -4,6 +4,49 @@
 
 ---
 
+## 0. 实现状态
+
+> **最后更新**: 2026-04-27
+
+| 功能 | 状态 | 实现位置 | 说明 |
+|------|------|---------|------|
+| **L1 API 基础** | ✅ 已实现 | `src/l1/index.ts` | JSON/JSONC 配置加载 + Zod 验证 |
+| **L1 Schema** | ✅ 已实现 | `src/l1/index.ts` | Agent 基础配置 (name/model/tools/...) |
+| **Token Counter** | ✅ 已实现 | `src/token-counter.ts` | js-tiktoken BPE 精确计数 |
+| 配置文件搜索路径 | 📝 待实现 | - | env/cwd/user/system 多路径 |
+| 环境变量解析 | 📝 待实现 | - | `AGENTFORGE_*` 前缀覆盖 |
+| JSONC 完整解析 | 📝 待实现 | - | 当前为简单正则，需 `jsonc-parser` 库 |
+| 热更新 (file watching) | 📝 待实现 | - | Subject<AppConfig> 通知 |
+| Provider Profiles | 📝 待实现 | - | 多配置切换 |
+| HITL 配置 | 📝 待实现 | - | 权限/超时/默认行为 |
+| 可观测性配置 | 📝 待实现 | - | tracing/metrics/logging |
+| MCP 服务器配置 | 📝 待实现 | - | stdio/http/ws 传输 |
+| 工作流配置 | 📝 待实现 | - | 流程定义 |
+
+### L1 API 使用示例
+
+```typescript
+// agent.json
+{
+  "name": "assistant",
+  "model": { "provider": "openai", "model": "gpt-4o" },
+  "systemPrompt": "You are a helpful assistant.",
+  "maxSteps": 10,
+  "tools": ["read", "write", "bash"]
+}
+
+// 使用
+import { loadAgent, runPrompt } from 'agentforge';
+
+const agent = await loadAgent('agent.json');
+const result = await agent.run('Hello!');
+
+// 或一行搞定
+const response = await runPrompt('agent.json', 'Hello!');
+```
+
+---
+
 ## 1. 设计背景
 
 ### 1.1 需求来源

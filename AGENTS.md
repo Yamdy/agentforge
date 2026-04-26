@@ -93,6 +93,8 @@ if (isTerminalEvent(event)) return EMPTY; // 'done', 'agent.error', 'cancel'
 | `src/contracts/` | Tier 1 validation with graceful degradation |
 | `src/operators/` | Custom RxJS operators (filterEventType, takeUntilTerminal, etc.) |
 | `src/core/state-machine.ts` | 6-state lifecycle (pending→running→paused/completed/error/cancelled) |
+| `src/l1/` | **L1 API** - Zero-code config layer (JSON/JSONC → Agent) |
+| `src/token-counter.ts` | **Token counting** - js-tiktoken BPE + CJK heuristic fallback |
 
 ## Event Routing (Active Events)
 
