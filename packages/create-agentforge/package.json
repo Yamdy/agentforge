@@ -1,0 +1,43 @@
+{
+  "name": "create-agentforge",
+  "version": "0.1.0",
+  "description": "Scaffold CLI for AgentForge agent projects",
+  "type": "module",
+  "bin": {
+    "create-agentforge": "./dist/index.js"
+  },
+  "files": [
+    "dist/",
+    "templates/",
+    "examples/"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src --ext .ts",
+    "format": "prettier --write \"src/**/*.ts\""
+  },
+  "dependencies": {
+    "commander": "^12.0.0",
+    "inquirer": "^10.0.0",
+    "handlebars": "^4.7.8",
+    "chalk": "^5.3.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "@types/node": "^22.0.0",
+    "vitest": "^2.0.0"
+  },
+  "keywords": [
+    "agentforge",
+    "scaffold",
+    "cli",
+    "agent",
+    "ai",
+    "rxjs",
+    "zod"
+  ],
+  "license": "MIT"
+}
