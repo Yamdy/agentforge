@@ -355,3 +355,23 @@ interface LLMChunk {
   argsDelta?: string;
 }
 ```
+
+## 详细 API 文档
+
+### Agent 创建
+
+- [createAgent](/api/create-agent) - 创建 Agent 的主入口 API
+
+### 核心类型
+
+- [AgentEvent](/api/events) - 50+ 种事件类型完整参考
+- [AgentState](/api/state) - Agent 状态管理 API
+- [LLMAdapter](/api/llm-adapter) - LLM 适配器接口
+- [ToolDefinition](/api/tool-definition) - 工具定义接口
+
+### 操作符
+
+- [控制流操作符](/api/operators-control) - retry, timeout, pause 等控制操作符
+- [变换操作符](/api/operators-transform) - 参数变换、消息压缩等
+- [通知操作符](/api/operators-notify) - log, trace, metrics, checkpoint
+- [预设组合](/api/presets) - production, debug, test 预设
