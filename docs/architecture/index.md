@@ -271,6 +271,5 @@ const manager = new CompactionManager({
 
 ## 下一步
 
-- [事件流设计](/architecture/event-stream) - 深入事件流
-- [状态机](/architecture/state-machine) - 状态转换
-- [依赖注入](/architecture/di) - DI 模式
+- [指南](/guide/) - 开始使用 AgentForge
+- [API 参考](/api/) - 完整 API 文档

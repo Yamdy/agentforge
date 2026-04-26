@@ -362,6 +362,5 @@ const analyticsPlugin: ObserverPlugin = {
 
 ## 下一步
 
-- [事件系统](/guide/events) - 深入了解事件类型
-- [工具注册](/guide/tools) - 定义复杂工具
-- [插件系统](/guide/plugins) - 开发自定义插件
+- [快速开始](/guide/getting-started) - 开始实践
+- [API 参考](/api/) - 完整 API 文档

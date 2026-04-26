@@ -246,5 +246,4 @@ agent.run('...').subscribe({
 ## 下一步
 
 - [核心概念](/guide/core-concepts) - 深入理解事件流
-- [工具注册](/guide/tools) - 定义和使用工具
-- [插件系统](/guide/plugins) - 扩展 Agent 能力
+- [API 参考](/api/) - 完整 API 文档
