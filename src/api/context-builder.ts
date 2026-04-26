@@ -39,6 +39,9 @@ import type {
   Metrics,
 } from '../core/interfaces.js';
 import type { AgentContext, ApplicationServices } from '../core/context.js';
+import type { SecurityGuard } from '../security/guard.js';
+import type { ErrorClassifier, CircuitBreaker } from '../contracts/mpu-interfaces.js';
+import type { Planner } from '../planning/types.js';
 import {
   ContextBuilder,
   SimpleToolRegistry,
@@ -85,6 +88,11 @@ interface BuilderState {
   tracer?: Tracer;
   metrics?: Metrics;
   appServices?: ApplicationServices;
+  // MPU session-level dependencies
+  securityGuard?: SecurityGuard;
+  errorClassifier?: ErrorClassifier;
+  circuitBreaker?: CircuitBreaker;
+  planner?: Planner;
 }
 
 // ============================================================
@@ -394,6 +402,62 @@ export class AgentContextBuilder {
   }
 
   // ============================================================
+  // MPU Session-Level Dependencies
+  // ============================================================
+
+  /**
+   * Set security guard
+   *
+   * Enables command/path/network blocklist validation.
+   *
+   * @param guard - SecurityGuard instance
+   * @returns this
+   */
+  withSecurityGuard(guard: SecurityGuard): this {
+    this.state.securityGuard = guard;
+    return this;
+  }
+
+  /**
+   * Set error classifier
+   *
+   * Enables error severity classification for circuit breaker decisions.
+   *
+   * @param classifier - ErrorClassifier instance
+   * @returns this
+   */
+  withErrorClassifier(classifier: ErrorClassifier): this {
+    this.state.errorClassifier = classifier;
+    return this;
+  }
+
+  /**
+   * Set circuit breaker
+   *
+   * Enables failure threshold tracking and circuit tripping.
+   *
+   * @param breaker - CircuitBreaker instance
+   * @returns this
+   */
+  withCircuitBreaker(breaker: CircuitBreaker): this {
+    this.state.circuitBreaker = breaker;
+    return this;
+  }
+
+  /**
+   * Set planner
+   *
+   * Enables task planning and plan validation.
+   *
+   * @param planner - Planner instance
+   * @returns this
+   */
+  withPlanner(planner: Planner): this {
+    this.state.planner = planner;
+    return this;
+  }
+
+  // ============================================================
   // Build
   // ============================================================
 
@@ -473,6 +537,20 @@ export class AgentContextBuilder {
       ctx.onError = this.state.errorHandler;
     }
 
+    // Add MPU session-level fields
+    if (this.state.securityGuard !== undefined) {
+      ctx.securityGuard = this.state.securityGuard;
+    }
+    if (this.state.errorClassifier !== undefined) {
+      ctx.errorClassifier = this.state.errorClassifier;
+    }
+    if (this.state.circuitBreaker !== undefined) {
+      ctx.circuitBreaker = this.state.circuitBreaker;
+    }
+    if (this.state.planner !== undefined) {
+      ctx.planner = this.state.planner;
+    }
+
     return ctx;
   }
 }
@@ -496,14 +574,8 @@ export class AgentContextBuilder {
  * const ctx = createMinimalContext(myLLM, [readTool, writeTool]);
  * ```
  */
-export function createMinimalContext(
-  llm: LLMAdapter,
-  tools: ToolDefinition[]
-): AgentContext {
-  return AgentContextBuilder.create()
-    .withLLM(llm)
-    .withTools(tools)
-    .build();
+export function createMinimalContext(llm: LLMAdapter, tools: ToolDefinition[]): AgentContext {
+  return AgentContextBuilder.create().withLLM(llm).withTools(tools).build();
 }
 
 /**
@@ -528,15 +600,8 @@ export function createMinimalContext(
  * });
  * ```
  */
-export function createContextWithHITL(
-  llm: LLMAdapter,
-  tools: ToolDefinition[]
-): AgentContext {
-  return AgentContextBuilder.create()
-    .withLLM(llm)
-    .withTools(tools)
-    .withDefaultHITL()
-    .build();
+export function createContextWithHITL(llm: LLMAdapter, tools: ToolDefinition[]): AgentContext {
+  return AgentContextBuilder.create().withLLM(llm).withTools(tools).withDefaultHITL().build();
 }
 
 // ============================================================

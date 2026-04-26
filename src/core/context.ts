@@ -41,6 +41,17 @@ import type {
 } from './interfaces.js';
 import type { QuotaController } from '../quota/quota-controller.js';
 import type { CompactionManager } from '../memory/index.js';
+import type {
+  HealthChecker,
+  MetricsCollector,
+  AuditStore,
+  CostTracker,
+  ResultValidator,
+  ErrorClassifier,
+  CircuitBreaker,
+} from '../contracts/mpu-interfaces.js';
+import type { SecurityGuard } from '../security/guard.js';
+import type { Planner } from '../planning/types.js';
 import { Observable, Subject } from 'rxjs';
 import type { HITLAskOptions } from './interfaces.js';
 // ============================================================
@@ -68,6 +79,22 @@ export interface ApplicationServices {
 
   /** Global tool registry (shared tools) */
   toolRegistry: ToolRegistry;
+
+  // ----- MPU Global Services (optional — zero overhead if not configured) -----
+  /** Health checker for component status monitoring */
+  healthChecker?: HealthChecker;
+
+  /** MPU metrics collector for counters, histograms, and gauges */
+  metricsCollector?: MetricsCollector;
+
+  /** Audit store for security event recording with hash-chain integrity */
+  auditStore?: AuditStore;
+
+  /** Cost tracker for LLM token/cost monitoring and limiting */
+  costTracker?: CostTracker;
+
+  /** Result validator for tool output validation */
+  resultValidator?: ResultValidator;
 }
 
 // ============================================================
@@ -152,6 +179,19 @@ export interface AgentContext {
   // ----- Quota (optional) ----
   /** Quota controller (optional). When set, enables quota checking before LLM calls. */
   quota?: QuotaController;
+
+  // ----- MPU Session-Level Services (optional — zero overhead if not configured) -----
+  /** Security guard for command/path/network blocklist validation */
+  securityGuard?: SecurityGuard;
+
+  /** Error classifier for error severity classification */
+  errorClassifier?: ErrorClassifier;
+
+  /** Circuit breaker for failure threshold tracking and circuit tripping */
+  circuitBreaker?: CircuitBreaker;
+
+  /** Planner for task planning and plan validation */
+  planner?: Planner;
 
   // ----- Control Signals -----
   /** Abort signal for cancellation */
