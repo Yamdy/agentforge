@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agent 框架选型评估 · 技术例会</title>
+<link rel="stylesheet" href="assets/fonts.css">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/animations/animations.css">
+<link rel="stylesheet" href="assets/themes/tokyo-night.css">
+<style>
+/* tech-sharing overrides for framework debate */
+.tpl-debate{
+  --bg:#1a1b26;--bg-soft:#1f2335;--surface:#24283b;--surface-2:#292e42;
+  --border:rgba(86,91,114,.35);--border-strong:rgba(86,91,114,.55);
+  --text-1:#c0caf5;--text-2:#a9b1d6;--text-3:#565f89;
+  --accent:#7aa2f7;--accent-2:#bb9af7;--accent-3:#f7768e;
+  --good:#9ece6a;--warn:#e0af68;--bad:#f7768e;
+  --grad:linear-gradient(120deg,#7aa2f7 0%,#bb9af7 60%,#f7768e 100%);
+  --radius:14px;--radius-lg:20px;
+  --shadow:0 20px 60px rgba(0,0,0,.5);
+  font-family:'Inter','Noto Sans SC',sans-serif;
+}
+.tpl-debate{background:#1a1b26;color:var(--text-1)}
+.tpl-debate .slide{padding:72px 96px;background:#1a1b26;color:var(--text-1)}
+.tpl-debate .slide::before{content:"";position:absolute;inset:0;background:
+  radial-gradient(60% 50% at 90% 10%,rgba(122,162,247,.08),transparent 60%),
+  radial-gradient(50% 50% at 10% 90%,rgba(187,154,247,.06),transparent 60%);
+  pointer-events:none;z-index:0}
+.tpl-debate .slide>*{position:relative;z-index:1}
+.tpl-debate .h1{font-size:72px;line-height:1.05;font-weight:800;letter-spacing:-.03em;color:#fff}
+.tpl-debate .h2{font-size:48px;font-weight:700;letter-spacing:-.025em;color:#fff}
+.tpl-debate h3,.tpl-debate h4{color:#fff}
+.tpl-debate .kicker{color:var(--accent);font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;text-transform:none;letter-spacing:.02em}
+.tpl-debate .kicker::before{content:"> "}
+.tpl-debate .mono{font-family:'JetBrains Mono','IBM Plex Mono',monospace}
+.tpl-debate .lede{color:var(--text-2)}
+.tpl-debate .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:24px;box-shadow:none}
+.tpl-debate .card-accent{border-top:3px solid var(--accent)}
+.tpl-debate .card-green{border-top:3px solid var(--good)}
+.tpl-debate .card-purple{border-top:3px solid var(--accent-2)}
+.tpl-debate .card-red{border-top:3px solid var(--bad)}
+.tpl-debate .tag{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:6px;font-family:'JetBrains Mono',monospace;font-size:12px;background:var(--surface-2);border:1px solid var(--border);color:var(--text-2)}
+.tpl-debate .tag-accent{background:rgba(122,162,247,.12);color:var(--accent);border-color:rgba(122,162,247,.35)}
+.tpl-debate .tag-green{background:rgba(158,206,106,.12);color:var(--good);border-color:rgba(158,206,106,.35)}
+.tpl-debate .tag-purple{background:rgba(187,154,247,.12);color:var(--accent-2);border-color:rgba(187,154,247,.35)}
+.tpl-debate .tag-red{background:rgba(247,118,142,.12);color:var(--bad);border-color:rgba(247,118,142,.35)}
+.tpl-debate .speaker{display:flex;align-items:center;gap:14px;margin-top:28px}
+.tpl-debate .speaker .av{width:56px;height:56px;border-radius:50%;background:var(--grad)}
+.tpl-debate .speaker b{display:block;color:#fff;font-size:18px}
+.tpl-debate .speaker span{color:var(--text-3);font-size:13px;font-family:'JetBrains Mono',monospace}
+.tpl-debate .agenda-row{display:flex;align-items:baseline;gap:24px;padding:18px 0;border-bottom:1px dashed var(--border);font-family:'JetBrains Mono',monospace}
+.tpl-debate .agenda-row .num{color:var(--accent);flex:none;width:48px}
+.tpl-debate .agenda-row .t{color:#fff;font-size:22px;flex:1;font-family:'Inter',sans-serif;font-weight:600}
+.tpl-debate .agenda-row .d{color:var(--text-3);font-size:13px}
+/* Comparison table */
+.tpl-debate table{width:100%;border-collapse:collapse;font-size:16px}
+.tpl-debate th{padding:12px 16px;text-align:left;font-weight:600;color:var(--accent);border-bottom:2px solid var(--border);font-family:'JetBrains Mono',monospace;font-size:13px}
+.tpl-debate td{padding:10px 16px;border-bottom:1px solid var(--border);color:var(--text-2)}
+.tpl-debate tr:hover td{background:var(--surface)}
+/* Score stars */
+.tpl-debate .stars{color:var(--warn);font-size:14px;letter-spacing:2px}
+/* Grid layouts */
+.tpl-debate .g2{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+.tpl-debate .g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:24px}
+.tpl-debate .g4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:20px}
+/* Stack */
+.tpl-debate .stack{display:flex;flex-direction:column;gap:16px}
+/* Row */
+.tpl-debate .row{display:flex;gap:12px;flex-wrap:wrap}
+/* Margin utils */
+.tpl-debate .mt-s{margin-top:8px}
+.tpl-debate .mt-m{margin-top:16px}
+.tpl-debate .mt-l{margin-top:32px}
+/* Dim text */
+.tpl-debate .dim{color:var(--text-3);font-size:14px}
+/* Center alignment */
+.tpl-debate .center{justify-content:center;align-items:center;text-align:center}
+/* Debate quote */
+.tpl-debate .quote{border-left:3px solid var(--accent);padding:16px 24px;background:var(--surface);border-radius:0 var(--radius) var(--radius) 0;font-style:italic;color:var(--text-2);font-size:15px;line-height:1.7}
+/* VS badge */
+.tpl-debate .vs{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:50%;background:var(--grad);color:#fff;font-weight:800;font-size:14px;font-family:'JetBrains Mono',monospace}
+</style>
+</head>
+<body class="tpl-debate">
+<div class="deck">
+
+  <!-- 1. Cover -->
+  <section class="slide center" data-title="Cover">
+    <div>
+      <p class="kicker">tech-meeting / 2026-04-26</p>
+      <h1 class="h1 anim-fade-up" data-anim="fade-up">Agent 框架<br><span style="background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent">选型评估</span></h1>
+      <p class="lede mt-m">四个框架 · 四轮辩论 · 一场技术决策</p>
+      <div class="row mt-l" style="justify-content:center">
+        <span class="tag tag-accent">AgentForge</span>
+        <span class="tag tag-green">AgentScope</span>
+        <span class="tag tag-purple">DeepAgents</span>
+        <span class="tag tag-red">Mastra</span>
+      </div>
+    </div>
+    <div class="deck-footer"><span class="mono">#agentforge #evaluation</span><span class="slide-number" data-current="1" data-total="12"></span></div>
+  </section>
+
+  <!-- 2. Agenda -->
+  <section class="slide" data-title="Agenda">
+    <p class="kicker">// agenda</p>
+    <h2 class="h2">评估框架一览</h2>
+    <div class="stack mt-l">
+      <div class="agenda-row"><span class="num">01</span><span class="t">AgentForge — 自研框架 (RxJS + TypeScript)</span><span class="d">内部项目</span></div>
+      <div class="agenda-row"><span class="num">02</span><span class="t">AgentScope — 阿里通义实验室 (Python)</span><span class="d">v1.0.19dev</span></div>
+      <div class="agenda-row"><span class="num">03</span><span class="t">DeepAgents — LangChain AI (Python)</span><span class="d">v0.5.1 Beta</span></div>
+      <div class="agenda-row"><span class="num">04</span><span class="t">Mastra — YC W25 (TypeScript)</span><span class="d">v1.22.0-alpha</span></div>
+    </div>
+  </section>
+
+  <!-- 3. Four Frameworks Overview -->
+  <section class="slide" data-title="Overview">
+    <p class="kicker">// comparison</p>
+    <h2 class="h2">四框架技术画像</h2>
+    <table class="mt-l">
+      <thead>
+        <tr><th>维度</th><th>AgentForge</th><th>AgentScope</th><th>DeepAgents</th><th>Mastra</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>语言</td><td>TypeScript</td><td>Python</td><td>Python</td><td>TypeScript</td></tr>
+        <tr><td>架构</td><td>RxJS Event Stream</td><td>Async Callable + MsgHub</td><td>LangGraph + Middleware</td><td>Class DI + Workflow</td></tr>
+        <tr><td>模型支持</td><td>OpenAI / Anthropic</td><td>5 providers</td><td>19+ providers</td><td>94 providers</td></tr>
+        <tr><td>存储后端</td><td>SQLite</td><td>Redis / SQLAlchemy</td><td>5 backends</td><td>23 backends</td></tr>
+        <tr><td>语音</td><td>—</td><td>TTS + Realtime</td><td>—</td><td>14 providers</td></tr>
+        <tr><td>测试</td><td>345 tests</td><td>62 files</td><td>85 evals</td><td>310 files</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- 4. AgentForge -->
+  <section class="slide" data-title="AgentForge">
+    <p class="kicker">// framework · 01</p>
+    <h2 class="h2" style="color:var(--accent)">AgentForge</h2>
+    <p class="lede">自研框架 · RxJS Event Stream + Zod 类型安全</p>
+    <div class="g3 mt-l">
+      <div class="card card-accent">
+        <h4>架构纯度</h4>
+        <p class="dim">一个原语驱动一切：Observable + expand() 递归。1523 行 agent loop，50+ Zod 事件 schema。</p>
+        <div class="mt-s"><span class="tag tag-accent">RxJS</span></div>
+      </div>
+      <div class="card card-accent">
+        <h4>生产就绪</h4>
+        <p class="dim">安全守卫、熔断器、配额管理、沙箱、审计日志。零开销禁用设计。</p>
+        <div class="mt-s"><span class="tag tag-accent">MPU</span></div>
+      </div>
+      <div class="card card-accent">
+        <h4>类型安全</h4>
+        <p class="dim">exactOptionalPropertyTypes + noUncheckedIndexedAccess。Zod 三层验证：外部 / 边界 / 内部。</p>
+        <div class="mt-s"><span class="tag tag-accent">strict</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5. AgentScope -->
+  <section class="slide" data-title="AgentScope">
+    <p class="kicker">// framework · 02</p>
+    <h2 class="h2" style="color:var(--good)">AgentScope</h2>
+    <p class="lede">阿里通义实验室 · Async Agent-as-Callable + MsgHub</p>
+    <div class="g3 mt-l">
+      <div class="card card-green">
+        <h4>MsgHub 发布订阅</h4>
+        <p class="dim">多智能体编排解耦彻底。消息自动广播，动态参与者管理。thinking 块自动剥离保护隐私。</p>
+        <div class="mt-s"><span class="tag tag-green">pub-sub</span></div>
+      </div>
+      <div class="card card-green">
+        <h4>Agentic RL</h4>
+        <p class="dim">DSPy + Trinity-RFT 打通强化学习链路。在 agent trace 上做 RFT 微调，从"调 prompt"到"训模型"。</p>
+        <div class="mt-s"><span class="tag tag-green">unique</span></div>
+      </div>
+      <div class="card card-green">
+        <h4>生产级语音</h4>
+        <p class="dim">CosyVoice / OpenAI / Gemini TTS + Realtime Voice Agent。不是 demo，是能上线的实时语音智能体。</p>
+        <div class="mt-s"><span class="tag tag-green">voice</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6. DeepAgents -->
+  <section class="slide" data-title="DeepAgents">
+    <p class="kicker">// framework · 03</p>
+    <h2 class="h2" style="color:var(--accent-2)">DeepAgents</h2>
+    <p class="lede">LangChain AI · LangGraph CompiledGraph + Middleware</p>
+    <div class="g3 mt-l">
+      <div class="card card-purple">
+        <h4>开箱即用</h4>
+        <p class="dim">create_deep_agent() 返回完整 agent。9 层中间件内置：TodoList / Skills / Filesystem / SubAgent / Memory...</p>
+        <div class="mt-s"><span class="tag tag-purple">batteries</span></div>
+      </div>
+      <div class="card card-purple">
+        <h4>上下文管理</h4>
+        <p class="dim">三层防护：自动摘要 + AGENTS.md 持久记忆 + SKILL.md 技能系统。长任务不会因上下文溢出崩溃。</p>
+        <div class="mt-s"><span class="tag tag-purple">context</span></div>
+      </div>
+      <div class="card card-purple">
+        <h4>评测驱动</h4>
+        <p class="dim">85 项行为评测 × 7 类别。FRAMES / BFCL v3 / tau2-bench 等外部基准。形式化威胁模型。</p>
+        <div class="mt-s"><span class="tag tag-purple">85 evals</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7. Mastra -->
+  <section class="slide" data-title="Mastra">
+    <p class="kicker">// framework · 04</p>
+    <h2 class="h2" style="color:var(--bad)">Mastra</h2>
+    <p class="lede">YC W25 · TypeScript 原生 + Vercel 生态对齐</p>
+    <div class="g3 mt-l">
+      <div class="card card-red">
+        <h4>集成广度无敌</h4>
+        <p class="dim">94 模型提供商 / 3581 模型 / 23 存储后端 / 14 语音 / 14 可观测性。全维度覆盖。</p>
+        <div class="mt-s"><span class="tag tag-red">94 providers</span></div>
+      </div>
+      <div class="card card-red">
+        <h4>分布式 Workflow</h4>
+        <p class="dim">.then() / .branch() / .parallel() / .dountil() / .foreach() + suspend/resume + Inngest 分布式执行。</p>
+        <div class="mt-s"><span class="tag tag-red">Inngest</span></div>
+      </div>
+      <div class="card card-red">
+        <h4>Vercel 生态</h4>
+        <p class="dim">AI SDK v5 + v6 / React Client SDK / 4 Deployer / 5 Server Adapter。Next.js 零摩擦集成。</p>
+        <div class="mt-s"><span class="tag tag-red">Vercel</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8. Debate Highlights -->
+  <section class="slide" data-title="Debate">
+    <p class="kicker">// debate highlights</p>
+    <h2 class="h2">辩论焦点</h2>
+    <div class="g2 mt-l">
+      <div>
+        <h4 style="color:var(--accent)">核心攻击点</h4>
+        <div class="stack mt-m">
+          <div class="quote">AgentForge 零社区、零 npm 发布，是概念验证不是生产框架。</div>
+          <div class="quote">DeepAgents 是 LangChain 的薄封装，427 行条件组装逻辑。</div>
+          <div class="quote">Mastra 5700 行上帝类，alpha 版本，Node 22 硬绑定。</div>
+        </div>
+      </div>
+      <div>
+        <h4 style="color:var(--good)">核心防守点</h4>
+        <div class="stack mt-m">
+          <div class="quote">自研框架 = 零供应链风险，完全主权，这是护城河不是劣势。</div>
+          <div class="quote">继承 LangGraph 生产级能力，省下精力做 85 项评测。</div>
+          <div class="quote">8700+ commits / 392 人，alpha 是迭代速度的体现。</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 9. Scoring Matrix -->
+  <section class="slide" data-title="Scoring">
+    <p class="kicker">// scoring matrix</p>
+    <h2 class="h2">综合评分</h2>
+    <table class="mt-l">
+      <thead>
+        <tr><th>评估维度</th><th>AgentForge</th><th>AgentScope</th><th>DeepAgents</th><th>Mastra</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>架构设计</td><td class="stars">★★★★★</td><td class="stars">★★★★</td><td class="stars">★★★</td><td class="stars">★★★★</td></tr>
+        <tr><td>功能完备度</td><td class="stars">★★★</td><td class="stars">★★★★★</td><td class="stars">★★★★</td><td class="stars">★★★★★</td></tr>
+        <tr><td>生态 / 社区</td><td class="stars">★</td><td class="stars">★★★</td><td class="stars">★★★★</td><td class="stars">★★★★★</td></tr>
+        <tr><td>生产就绪度</td><td class="stars">★★★</td><td class="stars">★★★★</td><td class="stars">★★★★</td><td class="stars">★★★★</td></tr>
+        <tr><td>DX 开发体验</td><td class="stars">★★★★</td><td class="stars">★★★★</td><td class="stars">★★★★★</td><td class="stars">★★★★</td></tr>
+        <tr><td>类型安全</td><td class="stars">★★★★★</td><td class="stars">★★★</td><td class="stars">★★★</td><td class="stars">★★★★★</td></tr>
+        <tr><td>集成广度</td><td class="stars">★★</td><td class="stars">★★★★</td><td class="stars">★★★</td><td class="stars">★★★★★</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- 10. Selection Guide -->
+  <section class="slide" data-title="Selection">
+    <p class="kicker">// selection guide</p>
+    <h2 class="h2">选型建议</h2>
+    <div class="g2 mt-l">
+      <div class="stack">
+        <div class="card" style="border-left:3px solid var(--accent)">
+          <h4>极致架构控制 + 深度定制</h4>
+          <p class="dim">→ AgentForge</p>
+          <p class="dim">RxJS 事件流 + 严格 TypeScript，完全自主可控</p>
+        </div>
+        <div class="card" style="border-left:3px solid var(--good)">
+          <h4>Python AI/ML 团队 + 多智能体协作</h4>
+          <p class="dim">→ AgentScope</p>
+          <p class="dim">MsgHub + Agentic RL + 语音能力，Python 生态无缝</p>
+        </div>
+      </div>
+      <div class="stack">
+        <div class="card" style="border-left:3px solid var(--accent-2)">
+          <h4>快速上手 + 电池全含 + 安全优先</h4>
+          <p class="dim">→ DeepAgents</p>
+          <p class="dim">5 行代码出 agent，85 项评测，形式化威胁模型</p>
+        </div>
+        <div class="card" style="border-left:3px solid var(--bad)">
+          <h4>TypeScript 全栈 + Vercel 生态 + 大量集成</h4>
+          <p class="dim">→ Mastra</p>
+          <p class="dim">23 存储 + 94 模型 + 14 语音，集成广度无敌</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 11. Key Decision -->
+  <section class="slide" data-title="Decision">
+    <p class="kicker">// key questions</p>
+    <h2 class="h2">决策五问</h2>
+    <div class="stack mt-l" style="max-width:800px">
+      <div class="agenda-row"><span class="num">Q1</span><span class="t">团队技术栈是什么？</span><span class="d">Python → AgentScope / DeepAgents<br>TypeScript → Mastra / AgentForge</span></div>
+      <div class="agenda-row"><span class="num">Q2</span><span class="t">需要多少集成？</span><span class="d">少而精 → AgentForge / DeepAgents<br>广而全 → Mastra</span></div>
+      <div class="agenda-row"><span class="num">Q3</span><span class="t">架构控制要求？</span><span class="d">完全自主 → AgentForge<br>开箱即用 → DeepAgents</span></div>
+      <div class="agenda-row"><span class="num">Q4</span><span class="t">在哪个生态里？</span><span class="d">Vercel → Mastra / 阿里云 → AgentScope<br>LangChain → DeepAgents</span></div>
+      <div class="agenda-row"><span class="num">Q5</span><span class="t">风险偏好？</span><span class="d">保守（企业背书）→ AgentScope / Mastra<br>激进（架构创新）→ AgentForge</span></div>
+    </div>
+  </section>
+
+  <!-- 12. Q&A -->
+  <section class="slide center" data-title="Q&A">
+    <div>
+      <div class="mono" style="font-size:120px;color:var(--accent);font-weight:800;letter-spacing:-.04em">?</div>
+      <h2 class="h2">Questions?</h2>
+      <p class="lede" style="margin:14px auto">没有最好的框架，只有最适合的框架</p>
+      <div class="row mt-l" style="justify-content:center">
+        <span class="tag tag-accent">AgentForge</span>
+        <span class="tag tag-green">AgentScope</span>
+        <span class="tag tag-purple">DeepAgents</span>
+        <span class="tag tag-red">Mastra</span>
+      </div>
+    </div>
+  </section>
+
+</div>
+<script src="assets/runtime.js"></script>
+</body></html>
