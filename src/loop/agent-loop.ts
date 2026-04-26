@@ -15,7 +15,16 @@
  */
 
 import { Observable, of, from, EMPTY, Subject, asyncScheduler } from 'rxjs';
-import { expand, map, takeUntil, mergeMap, catchError, finalize, take, observeOn } from 'rxjs/operators';
+import {
+  expand,
+  map,
+  takeUntil,
+  mergeMap,
+  catchError,
+  finalize,
+  take,
+  observeOn,
+} from 'rxjs/operators';
 import {
   type AgentEvent,
   type AgentState,
@@ -32,6 +41,8 @@ import {
   createCheckpoint,
 } from '../core/index.js';
 import { concat } from 'rxjs';
+import type { QuotaUsage } from '../quota/quota-controller.js';
+import type { CompactionContext } from '../memory/index.js';
 
 // ============================================================
 // Types
@@ -239,8 +250,39 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         // The hitl.ask handler already processes the answer and emits tool.result
         return EMPTY;
 
+      // ===== Layer 2: Subsystem Lifecycle (transparent pass-through) =====
+      case 'mcp.connecting':
+      case 'mcp.connected':
+      case 'mcp.disconnected':
+      case 'mcp.tools_changed':
+      case 'mcp.error':
+      case 'workflow.start':
+      case 'workflow.step.start':
+      case 'workflow.step.end':
+      case 'workflow.suspend':
+      case 'workflow.resume':
+      case 'workflow.complete':
+      case 'workflow.error':
+      case 'compaction.start':
+      case 'compaction.complete':
+      case 'permission.prompt':
+      case 'permission.decision':
+      case 'subagent.start':
+      case 'subagent.step':
+      case 'subagent.complete':
+      case 'subagent.error':
+        // Subagent events - handled in handleSubagentDelegation(), transparent pass-through here
+        return of(sctx);
+
       default:
-        // Passive events don't trigger further actions
+        // All other events are passive/observational:
+        // - llm.stream.* (emitted directly by callLLMStreaming)
+        // - tool.execute, tool.error, tool.batch, tool.batch.start, tool.result.delta
+        // - checkpoint (emitted by emitCheckpoint)
+        // - state.change, context.updated
+        // - llm.error, mcp.*, workflow.*, compaction.*, permission.*
+        // Returning EMPTY prevents infinite expand recursion — these events are
+        // already emitted to the subscriber by their respective handler functions.
         return EMPTY;
     }
   }
@@ -285,11 +327,32 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
   // ============================================================
 
   function handleLLMRequest(state: AgentState): Observable<StepContext> {
-    // Call the LLM based on streaming configuration
-    if (config.streaming) {
-      return callLLMStreaming(state);
+    // Compaction auto-trigger: compress messages before LLM call
+    if (ctx.compactionManager && shouldCompact(state)) {
+      const compactionCtx: CompactionContext = {
+        sessionId,
+        messages: state.messages,
+        maxTokens: state.contextManagement?.totalTokens ?? 8000,
+        currentTokenEstimate: estimateTokenCount(state.messages),
+      };
+      return from(ctx.compactionManager.compact(compactionCtx)).pipe(
+        mergeMap(result => {
+          const compactedState: AgentState = {
+            ...state,
+            messages: result.messages as Message[],
+            contextManagement: {
+              ...state.contextManagement,
+              totalTokens: result.tokensAfter,
+              compactionCount: (state.contextManagement?.compactionCount ?? 0) + 1,
+              lastCompactionAt: Date.now(),
+            },
+          };
+          return config.streaming ? callLLMStreaming(compactedState) : callLLM(compactedState);
+        })
+      );
     }
-    return callLLM(state);
+
+    return config.streaming ? callLLMStreaming(state) : callLLM(state);
   }
 
   // ============================================================
@@ -302,6 +365,14 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
     _repairAttempt?: number
   ): Observable<StepContext> {
     const { content, toolCalls, finishReason } = event;
+
+    // Record token consumption (fire-and-forget)
+    if (ctx.quota && event.usage) {
+      ctx.quota.consume(sessionId, {
+        promptTokens: event.usage.promptTokens,
+        completionTokens: event.usage.completionTokens,
+      });
+    }
 
     // Emit checkpoint after LLM response (before tool execution or completion)
     // Only when interval is 'llm_response' or 'step' (both fire at this position)
@@ -447,7 +518,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
     // Run the subagent via registry
     // The registry emits: subagent.start, nested events (with parentSessionId), subagent.complete
     return ctx.subagents!.run(tc.name, input, options).pipe(
-      map((nestedEvent) => {
+      map(nestedEvent => {
         // Check if this is subagent.complete - we need to create tool.result
         if (nestedEvent.type === 'subagent.complete') {
           const completeEvent = nestedEvent;
@@ -494,7 +565,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         // These are for observability - they bubble up to the parent stream
         return { event: nestedEvent, state } as StepContext;
       }),
-      catchError((error) => {
+      catchError(error => {
         // Errors-as-events: convert to tool.result with error
         const resultEvent: AgentEvent = {
           type: 'tool.result',
@@ -824,11 +895,52 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
   // ============================================================
 
   function callLLM(state: AgentState, repairAttempt: number = 0): Observable<StepContext> {
-    // Build LLM options with tools
+    // Quota pre-check
+    if (ctx.quota) {
+      const projected: QuotaUsage = {
+        promptTokens: estimateTokenCount(state.messages),
+        completionTokens: 0,
+      };
+      return from(ctx.quota.check(sessionId, projected)).pipe(
+        mergeMap(allowed => {
+          if (!allowed) {
+            const errorEvent: AgentEvent = {
+              type: 'agent.error',
+              timestamp: Date.now(),
+              sessionId,
+              error: {
+                name: 'QuotaExceededError',
+                message: 'Token quota exceeded. Increase limits or check usage.',
+              },
+              step: state.step,
+            };
+            const doneEv: AgentEvent = {
+              type: 'done',
+              timestamp: Date.now(),
+              sessionId,
+              reason: 'error',
+            };
+            return from([
+              { event: errorEvent, state },
+              { event: doneEv, state },
+            ] as StepContext[]);
+          }
+          return callLLMInner(state, repairAttempt);
+        }),
+        catchError(() => {
+          console.warn('Quota check failed, allowing request');
+          return callLLMInner(state, repairAttempt);
+        })
+      );
+    }
+    return callLLMInner(state, repairAttempt);
+  }
+
+  function callLLMInner(state: AgentState, repairAttempt: number = 0): Observable<StepContext> {
     const llmOptions: LLMOptions = {
       tools: ctx.tools.getFunctionDefs(),
     };
-    
+
     return from(ctx.llm.chat(state.messages, llmOptions)).pipe(
       mergeMap(response => {
         const responseEvent: AgentEvent = {
@@ -843,7 +955,6 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         return of({ event: responseEvent, state, repairAttempt } as StepContext);
       }),
       catchError(error => {
-        // Errors-as-events: convert to agent.error + done
         const errorEvent: AgentEvent = {
           type: 'agent.error',
           timestamp: Date.now(),
@@ -851,7 +962,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           error: serializeError(error),
           step: state.step,
         };
-        const doneEvent: AgentEvent = {
+        const doneEv: AgentEvent = {
           type: 'done',
           timestamp: Date.now(),
           sessionId,
@@ -859,7 +970,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         };
         return from([
           { event: errorEvent, state },
-          { event: doneEvent, state },
+          { event: doneEv, state },
         ] as StepContext[]);
       })
     );
@@ -884,6 +995,51 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
    * - finalize() doesn't emit values, so we parse tool calls in complete handler
    */
   function callLLMStreaming(state: AgentState, repairAttempt: number = 0): Observable<StepContext> {
+    // Quota pre-check
+    if (ctx.quota) {
+      const projected: QuotaUsage = {
+        promptTokens: estimateTokenCount(state.messages),
+        completionTokens: 0,
+      };
+      return from(ctx.quota.check(sessionId, projected)).pipe(
+        mergeMap(allowed => {
+          if (!allowed) {
+            const errorEvent: AgentEvent = {
+              type: 'agent.error',
+              timestamp: Date.now(),
+              sessionId,
+              error: {
+                name: 'QuotaExceededError',
+                message: 'Token quota exceeded. Increase limits or check usage.',
+              },
+              step: state.step,
+            };
+            const doneEv: AgentEvent = {
+              type: 'done',
+              timestamp: Date.now(),
+              sessionId,
+              reason: 'error',
+            };
+            return from([
+              { event: errorEvent, state },
+              { event: doneEv, state },
+            ] as StepContext[]);
+          }
+          return callLLMStreamingInner(state, repairAttempt);
+        }),
+        catchError(() => {
+          console.warn('Quota check failed, allowing request');
+          return callLLMStreamingInner(state, repairAttempt);
+        })
+      );
+    }
+    return callLLMStreamingInner(state, repairAttempt);
+  }
+
+  function callLLMStreamingInner(
+    state: AgentState,
+    repairAttempt: number = 0
+  ): Observable<StepContext> {
     return new Observable<StepContext>(subscriber => {
       // Emit stream start first
       const streamStartEvent: AgentEvent = {
@@ -903,7 +1059,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       const llmOptions: LLMOptions = {
         tools: ctx.tools.getFunctionDefs(),
       };
-      
+
       const subscription = ctx.llm.stream(state.messages, llmOptions).subscribe({
         next(chunk) {
           // Handle text chunks
@@ -970,11 +1126,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           for (const [id, buffer] of toolCallBuffers) {
             try {
               const args: unknown = JSON.parse(buffer.argsDelta);
-              if (
-                typeof args === 'object' &&
-                args !== null &&
-                !Array.isArray(args)
-              ) {
+              if (typeof args === 'object' && args !== null && !Array.isArray(args)) {
                 accumulatedToolCalls.push({
                   id,
                   name: buffer.name,
@@ -1331,4 +1483,41 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
     run,
     destroy$: destroy$.asObservable(),
   };
+
+  // ============================================================
+  // Helper: Estimate token count from messages
+  // ============================================================
+
+  /**
+   * 粗略估算消息 token 数。
+   * 规则：英文约 4 字符 = 1 token，中文约 1.5 字符 = 1 token。
+   * 取 3 字符 = 1 token 作为通用估算。
+   * 生产环境可用 tiktoken 精确计算，此处仅做前置估算。
+   */
+  function estimateTokenCount(messages: Message[]): number {
+    let totalChars = 0;
+    for (const msg of messages) {
+      if (typeof msg.content === 'string') {
+        totalChars += msg.content.length;
+      }
+      // ToolMessage 的 content 可能是 string | ToolResultContent[]
+      // 简化：只计算 string 部分
+    }
+    return Math.ceil(totalChars / 3);
+  }
+
+  // ============================================================
+  // Helper: Check if compaction should trigger
+  // ============================================================
+
+  /**
+   * 判断是否需要压缩上下文。
+   * 触发条件：消息数量 > 50 或估算 token > maxSteps * 4000。
+   */
+  function shouldCompact(state: AgentState): boolean {
+    const messageCount = state.messages.length;
+    const estimatedTokens = estimateTokenCount(state.messages);
+    const threshold = (state.maxSteps ?? 10) * 4000;
+    return messageCount > 50 || estimatedTokens > threshold;
+  }
 }
