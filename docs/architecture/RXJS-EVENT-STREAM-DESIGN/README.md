@@ -137,6 +137,7 @@
 | v6 | 2026-04-26 | **实现完成**: SubAgent/Workflow/MCP/Memory/Observability 全部实现 |
 | v7 | 2026-04-26 | **性能优化**: 修复 O(n²) 算法、并行化 Skill 加载、添加资源清理约束 |
 | v8 | 2026-04-26 | **安全架构**: 沙箱隔离/PII脱敏/配额管控/审批流程设计，Harness规范对齐分析 |
+| v9 | 2026-04-26 | **P1 设计**: 规划/执行分离、outputSchema、决策追溯、外部状态机 (整合到现有文档) |
 
 ---
 
@@ -163,3 +164,7 @@
 | **API 层** | 12-API-DESIGN.md | `src/api/*.ts` | ✅ 已实现 |
 | **配置模块** | 16-CONFIG-MODULE.md | `src/core/config/*.ts` | 📝 设计完成 |
 | **安全架构** | 17-SECURITY-HARNESS.md | `src/sandbox/`, `src/security/`, `src/quota/` | 📝 设计完成 |
+| **P1: 规划/执行分离** | 08-SUBSYSTEMS.md | `src/planning/` | 📝 设计完成 |
+| **P1: outputSchema** | 01-CORE-TYPES.md | `src/contracts/tool-output-contract.ts` | 📝 设计完成 |
+| **P1: 决策追溯** | 01-CORE-TYPES.md | `src/observability/decision-trace.ts` | 📝 设计完成 |
+| **P1: 外部状态机** | 01-CORE-TYPES.md | `src/storage/*.ts` | 📝 设计完成 |

@@ -740,6 +740,252 @@ private handleMcpTool(
 
 ---
 
+## 规划/执行分离架构 (P1)
+
+> 基于 LangGraph Plan-Execute、AgentScope PlanNotebook、Mastra Workflow 的设计模式，实现规划与执行分离，从根源避免上下文耗尽与盲目试错。
+
+### 设计动机
+
+当前 AgentForge 的 `expand` 递归模式：
+- ❌ 无全局规划：每一步都是局部决策
+- ❌ 上下文爆炸：长任务导致 token 耗尽
+- ❌ 盲目重试：失败后无指导性重试
+- ❌ 无进度追踪：用户无法了解任务进展
+
+### 核心模型
+
+```typescript
+/** 规划步骤 */
+interface PlanStep {
+  id: string;
+  description: string;
+  expectedOutcome?: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'failed' | 'skipped';
+  dependencies?: string[];  // DAG 依赖
+}
+
+/** 规划状态 */
+interface PlanState {
+  planId: string;
+  steps: PlanStep[];
+  currentStepIndex: number;
+  stepResults: Map<string, unknown>;
+  replanCount: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** 决策链追踪 */
+interface DecisionChain {
+  planId: string;
+  stepId: string;
+  decisionType: 'tool_selection' | 'completion' | 'replan' | 'skip';
+  rationale: string;
+  alternatives?: string[];
+  confidence?: number;
+}
+```
+
+### 三种集成模式
+
+#### 模式 A: 预规划模式 (Pre-Planning)
+
+```typescript
+// 在 expand 循环开始前生成完整计划
+function runWithPlan(input: string, ctx: AgentContext): Observable<AgentEvent> {
+  // Phase 1: 规划 (单次 LLM 调用)
+  const planning$ = createPlan(input, ctx).pipe(
+    map(plan => ({ type: 'plan.created', plan, sessionId: ctx.sessionId }))
+  );
+  
+  // Phase 2: 按计划执行步骤
+  const execution$ = planning$.pipe(
+    take(1),
+    mergeMap(planEvent => executePlanSteps(planEvent.plan, ctx))
+  );
+  
+  return concat(planning$, execution$);
+}
+
+// 执行计划步骤 (顺序)
+function executePlanSteps(plan: PlanState, ctx: AgentContext): Observable<AgentEvent> {
+  return from(plan.steps).pipe(
+    concatMap((step, index) => {
+      if (step.status === 'skipped') return EMPTY;
+      
+      return concat(
+        of({ type: 'plan.step.start', stepId: step.id, stepIndex: index }),
+        // 每个 step 是独立的 AgentLoop (有 maxSteps 限制)
+        createAgentLoop(ctx, { maxSteps: 5 }).run(step.description).pipe(
+          tap(event => {
+            if (event.type === 'agent.complete') {
+              plan.stepResults.set(step.id, event.output);
+            }
+          })
+        ),
+        of({ type: 'plan.step.complete', stepId: step.id })
+      );
+    })
+  );
+}
+```
+
+#### 模式 B: Agent 自管理模式 (Agent-Managed Planning)
+
+```typescript
+// 参考 AgentScope PlanNotebook: 计划工具注册到 ToolRegistry
+class PlanNotebook {
+  private plan: PlanState | null = null;
+  
+  /** 注册计划管理工具 */
+  registerTools(registry: ToolRegistry): void {
+    registry.register({
+      name: 'create_plan',
+      description: '为复杂任务创建结构化计划',
+      parameters: PlanCreateSchema,
+      execute: async (params) => {
+        this.plan = this.createPlanFromParams(params);
+        return `计划已创建，共 ${this.plan.steps.length} 个步骤`;
+      },
+    });
+    
+    registry.register({
+      name: 'finish_subtask',
+      description: '标记当前步骤完成，自动激活下一步',
+      parameters: z.object({ subtaskIndex: z.number(), outcome: z.string() }),
+      execute: async (params) => {
+        this.plan.steps[params.subtaskIndex].status = 'completed';
+        // 自动激活下一步
+        if (params.subtaskIndex < this.plan.steps.length - 1) {
+          this.plan.steps[params.subtaskIndex + 1].status = 'in_progress';
+        }
+        return `步骤 ${params.subtaskIndex} 已完成`;
+      },
+    });
+    
+    registry.register({
+      name: 'revise_plan',
+      description: '基于新信息修订计划',
+      parameters: z.object({ reason: z.string(), newSteps: z.array(z.string()) }),
+      execute: async (params) => {
+        this.plan = this.replan(params.reason, params.newSteps);
+        return `计划已修订，新计划共 ${this.plan.steps.length} 步`;
+      },
+    });
+  }
+  
+  /** 获取当前步骤提示 (注入系统消息) */
+  getCurrentStepHint(): string | null {
+    if (!this.plan) return null;
+    const current = this.plan.steps.find(s => s.status === 'in_progress');
+    if (!current) return null;
+    return `<plan-hint>当前执行: ${current.description}\n预期产出: ${current.expectedOutcome ?? 'N/A'}</plan-hint>`;
+  }
+}
+```
+
+#### 模式 C: 重规划循环模式 (Replan Loop)
+
+```typescript
+// 参考 LangGraph Plan-Execute: 执行 → 验证 → 重规划
+interface ReplanState {
+  plan: PlanState;
+  failures: string[];
+  replanTriggered: boolean;
+}
+
+function executeWithReplan(input: string, ctx: AgentContext): Observable<AgentEvent> {
+  return of({ type: 'plan.create', state: { plan: null, failures: [], replanTriggered: false } }).pipe(
+    expand((sctx) => {
+      const { event, state } = sctx as { event: AgentEvent; state: ReplanState };
+      
+      // 终止条件: 所有步骤完成
+      if (state.plan && state.plan.currentStepIndex >= state.plan.steps.length) {
+        return EMPTY;
+      }
+      
+      // 规划阶段
+      if (!state.plan) {
+        return createPlan(input, ctx).pipe(
+          map(plan => ({
+            event: { type: 'plan.created' },
+            state: { ...state, plan }
+          }))
+        );
+      }
+      
+      // 执行步骤
+      if (event.type === 'plan.created' || event.type === 'plan.step.complete') {
+        const step = state.plan.steps[state.plan.currentStepIndex];
+        return executeStep(step, ctx).pipe(
+          map(result => ({
+            event: { type: 'plan.step.executed', result },
+            state
+          }))
+        );
+      }
+      
+      // 验证步骤结果
+      if (event.type === 'plan.step.executed') {
+        const step = state.plan.steps[state.plan.currentStepIndex];
+        const score = validateStepResult(event.result, step);
+        
+        if (score < 0.7) {
+          // 失败 → 触发重规划
+          return of({
+            event: { type: 'plan.replan.trigger', reason: 'step_failed', score },
+            state: { ...state, replanTriggered: true, failures: [...state.failures, step.id] }
+          });
+        }
+        
+        // 成功 → 进入下一步
+        return of({
+          event: { type: 'plan.step.complete' },
+          state: { ...state, plan: { ...state.plan, currentStepIndex: state.plan.currentStepIndex + 1 } }
+        });
+      }
+      
+      // 重规划
+      if (event.type === 'plan.replan.trigger') {
+        return replan(state.plan, state.failures, ctx).pipe(
+          map(newPlan => ({
+            event: { type: 'plan.updated', replanCount: state.plan.replanCount + 1 },
+            state: { ...state, plan: newPlan, replanTriggered: false }
+          }))
+        );
+      }
+      
+      return EMPTY;
+    })
+  );
+}
+```
+
+### 事件类型扩展
+
+```typescript
+// 新增事件类型 (AgentEventTypeSchema)
+'plan.created',
+'plan.updated',
+'plan.step.start',
+'plan.step.executed',
+'plan.step.complete',
+'plan.step.failed',
+'plan.replan.trigger',
+'plan.completed',
+```
+
+### 与现有架构的兼容性
+
+| 兼容点 | 当前设计 | 规划模式整合 |
+|--------|---------|-------------|
+| **状态不可变** | `StepContext.state` 通过 expand 传递 | `PlanState` 同样不可变，每次更新返回新对象 |
+| **错误即事件** | 失败发 `agent.error` + `done` | 规划失败发 `plan.step.failed`，但不终止流，触发重规划 |
+| **Observable 嵌套** | SubAgent 通过 `concat` 展平 | 每个 `PlanStep` 是嵌套 `AgentLoop`，事件冒泡 |
+| **Checkpoint** | 断点保存完整状态 | `PlanState` 添加到 Checkpoint，支持恢复 |
+
+---
+
 ## 相关文档
 
 - [00-OVERVIEW.md](./00-OVERVIEW.md) - 架构总览
@@ -757,3 +1003,4 @@ private handleMcpTool(
 | v1 | 2026-04-24 | 初始设计 - SubAgent/MCP/Workflow/Skill 子系统 |
 | v2 | 2026-04-26 | 补充 MCP Client 传输层详细设计 (Stdio/HTTP) |
 | v3 | 2026-04-26 | **重构**: 使用官方 `@modelcontextprotocol/sdk` 替代自定义实现，简化架构 |
+| v4 | 2026-04-26 | **P1 新增**: 规划/执行分离架构 - 预规划/Agent自管理/重规划循环三种模式 |

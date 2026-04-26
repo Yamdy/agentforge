@@ -631,7 +631,371 @@ export function getToolResult(
 
 ---
 
+## 工具输出校验 (P1)
+
+> 扩展 ToolDefinition 支持 outputSchema，实现结构化输出的 Tier 1 校验。
+
+### ToolDefinition 扩展
+
+```typescript
+// src/core/interfaces.ts 扩展
+export interface ToolDefinition<
+  TInputSchema = unknown,
+  TOutputSchema = unknown
+> {
+  name: string;
+  description: string;
+  parameters: TInputSchema;              // 现有: 输入参数 Zod schema
+  outputSchema?: TOutputSchema;          // 🔴 P1 新增: 输出 Zod schema (可选)
+  execute: (args: unknown, ctx?: ToolContext) => Promise<string>;
+  
+  // 🔴 P1 新增: 安全标记
+  requiresApproval?: boolean;
+  approvalMessage?: string;
+  sandboxRequired?: boolean;
+  riskLevel?: 'low' | 'medium' | 'high' | 'critical';
+}
+```
+
+### 工具输出校验契约 (Tier 1)
+
+```typescript
+// src/contracts/tool-output-contract.ts (新建)
+
+import { z } from 'zod';
+import type { ToolDefinition } from '../core/interfaces.js';
+
+/** 校验后的工具输出 */
+export interface ValidatedToolOutput<T = unknown> {
+  /** 原始字符串输出 */
+  raw: string;
+  /** 结构化输出 (如果 outputSchema 定义且解析成功) */
+  structured?: T;
+  /** 校验是否通过 */
+  isValid: boolean;
+  /** 校验错误信息 */
+  validationError?: string;
+}
+
+/**
+ * 工具输出校验 - Tier 1
+ *
+ * 工具执行输出是外部不可信数据。
+ * 使用 safeParse + 优雅降级，永不崩溃。
+ */
+export function validateToolOutput<T>(
+  rawResult: string,
+  tool: ToolDefinition<unknown, z.ZodType<T>>
+): ValidatedToolOutput<T> {
+  // 无 outputSchema → 仅保留原始字符串
+  if (!tool.outputSchema) {
+    return { raw: rawResult, isValid: true };
+  }
+  
+  // 尝试 JSON 解析
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawResult);
+  } catch {
+    return {
+      raw: rawResult,
+      isValid: false,
+      validationError: 'Output is not valid JSON',
+    };
+  }
+  
+  // Zod schema 校验
+  const result = (tool.outputSchema as z.ZodType).safeParse(parsed);
+  if (result.success) {
+    return { raw: rawResult, structured: result.data, isValid: true };
+  }
+  
+  // 优雅降级: 保留原始字符串，标记校验失败
+  return {
+    raw: rawResult,
+    isValid: false,
+    validationError: result.error.message,
+  };
+}
+```
+
+### tool.result 事件扩展
+
+```typescript
+// src/core/events.ts 扩展 tool.result schema
+z.object({
+  type: z.literal('tool.result'),
+  timestamp: z.number(),
+  sessionId: z.string(),
+  toolCallId: z.string(),
+  toolName: z.string(),
+  result: z.string(),                    // 原始字符串输出 (向后兼容)
+  
+  // 🔴 P1 新增: 结构化输出字段
+  structuredOutput: z.unknown().optional(),  // 解析后的结构化数据
+  isValid: z.boolean().optional(),           // 校验状态
+  validationError: z.string().optional(),    // 校验错误
+  
+  isError: z.boolean().default(false),
+})
+```
+
+### MCP 工具 outputSchema 适配
+
+```typescript
+// src/mcp/tool-adapter.ts 扩展
+export function adaptMCPTool(
+  tool: MCPTool,
+  mcpClient: MCPClient,
+  serverName?: string
+): ToolDefinition {
+  const parameters = jsonSchemaToZod(tool.inputSchema);
+  
+  // 🔴 P1 新增: 如果 MCP 工具定义了 outputSchema
+  const outputSchema = tool.outputSchema 
+    ? jsonSchemaToZod(tool.outputSchema) 
+    : undefined;
+  
+  return {
+    name: toolName,
+    description: tool.description ?? `MCP tool: ${tool.name}`,
+    parameters,
+    outputSchema,  // 🔴 P1 新增
+    execute: async (args: unknown): Promise<string> => {
+      return mcpClient.callTool(tool.name, args as Record<string, unknown>);
+    },
+  };
+}
+```
+
+### 校验集成位置
+
+**方案 A: 在 ToolRegistry.execute() 中**
+```typescript
+// src/core/context.ts ToolRegistry 实现
+async execute(name: string, args: Record<string, unknown>, ctx?: ToolContext): Promise<string> {
+  const tool = this.get(name);
+  // ... 输入校验 ...
+  const rawResult = await tool.execute(validatedArgs.data, ctx);
+  // 输出校验 (但不修改返回值，保持向后兼容)
+  const validated = validateToolOutput(rawResult, tool);
+  // 校验元数据通过事件传递
+  return rawResult;
+}
+```
+
+**方案 B: 在 agent-loop.ts executeSingleTool 中**
+```typescript
+// src/loop/agent-loop.ts
+const validated = tool?.outputSchema 
+  ? validateToolOutput(result, tool) 
+  : { raw: result, isValid: true };
+
+const resultEvent: AgentEvent = {
+  type: 'tool.result',
+  result: validated.raw,              // 向后兼容
+  structuredOutput: validated.structured,  // 🔴 P1 新增
+  isValid: validated.isValid,             // 🔴 P1 新增
+  validationError: validated.validationError, // 🔴 P1 新增
+  // ...
+};
+```
+
+---
+
+## 决策追溯系统 (P1)
+
+> 基于 Harness V-Validation 要求，建立决策追溯能力，解决「Agent 为什么这么做」的核心疑问。
+
+### llm.response 事件扩展
+
+```typescript
+// src/core/events.ts 扩展 llm.response schema
+z.object({
+  type: z.literal('llm.response'),
+  timestamp: z.number(),
+  sessionId: z.string(),
+  content: z.string(),
+  toolCalls: ToolCallSchema.array().optional(),
+  finishReason: FinishReasonSchema,
+  usage: z.object({
+    promptTokens: z.number(),
+    completionTokens: z.number(),
+  }).optional(),
+  
+  // 🔴 P1 新增: 推理捕获
+  reasoning: z.object({
+    rawOutput: z.string().optional(),        // 原始 LLM 输出 (解析前)
+    thoughtProcess: z.string().optional(),   // 提取的推理过程
+    model: z.string().optional(),            // 模型标识
+    confidence: z.number().min(0).max(1).optional(), // 置信度
+  }).optional(),
+})
+```
+
+### decision.trace 事件类型
+
+```typescript
+// 新增事件类型
+z.object({
+  type: z.literal('decision.trace'),
+  timestamp: z.number(),
+  sessionId: z.string(),
+  step: z.number(),
+  
+  decisionType: z.enum([
+    'tool_selection',
+    'tool_argument',
+    'completion',
+    'retry',
+    'replan',
+    'subagent_delegation',
+  ]),
+  
+  context: z.object({
+    inputs: z.record(z.string(), z.unknown()),       // 影响决策的输入
+    availableOptions: z.array(z.unknown()).optional(), // 可选项列表
+    selected: z.unknown(),                             // 选中的选项
+    rationale: z.string().optional(),                  // 选择原因
+  }),
+  
+  llmReasoning: z.object({
+    rawOutput: z.string().optional(),
+    thoughtProcess: z.string().optional(),
+    model: z.string().optional(),
+  }).optional(),
+  
+  confidence: z.number().min(0).max(1).optional(),
+  parentDecisionId: z.string().optional(),  // 层级追溯
+}),
+```
+
+### DecisionTraceStorage 接口
+
+```typescript
+// src/core/interfaces.ts 新增
+export interface DecisionTraceStorage {
+  /** 追加决策记录 (Append-Only) */
+  append(trace: DecisionTrace): Promise<void>;
+  
+  /** 查询决策记录 */
+  query(filter: {
+    sessionId: string;
+    step?: number;
+    decisionType?: string;
+  }): Promise<DecisionTrace[]>;
+  
+  /** 获取决策链 (parent → children) */
+  getChain(sessionId: string): Promise<DecisionTrace[]>;
+}
+```
+
+### 推理捕获注入点
+
+```typescript
+// src/loop/agent-loop.ts callLLM() 修改
+function callLLM(state: AgentState): Observable<StepContext> {
+  return from(ctx.llm.chat(state.messages, llmOptions)).pipe(
+    mergeMap(response => {
+      // 🔴 P1 新增: 捕获原始输出
+      const rawOutput = response.rawOutput ?? JSON.stringify(response);
+      
+      const responseEvent: AgentEvent = {
+        type: 'llm.response',
+        content: response.content,
+        toolCalls: response.toolCalls,
+        finishReason: response.finishReason,
+        usage: response.usage,
+        reasoning: {  // 🔴 P1 新增
+          rawOutput,
+          thoughtProcess: response.thoughtProcess,
+          model: config.model.model,
+        },
+      };
+      return of({ event: responseEvent, state });
+    }),
+  );
+}
+```
+
+---
+
+## 外部状态机 (P1)
+
+> 基于 Harness S-State Storage 要求，状态落地外部持久化存储，支持版本回滚和人工接管。
+
+### CheckpointStorage 扩展接口
+
+```typescript
+// src/core/interfaces.ts 扩展
+export interface ExternalStateMachine extends CheckpointStorage {
+  /** 加载或初始化状态 */
+  loadOrInitialize(sessionId: string, snapshot?: AgentState): Promise<Checkpoint>;
+  
+  /** 获取版本历史 */
+  getHistory(sessionId: string): Promise<CheckpointVersion[]>;
+  
+  /** 回滚到指定版本 */
+  rollback(sessionId: string, versionId: string): Promise<Checkpoint>;
+  
+  /** 导出状态供人工检查/修改 */
+  exportForTakeover(sessionId: string): Promise<string>;
+  
+  /** 导入人工修改后的状态 */
+  importFromTakeover(sessionId: string, modifiedState: string): Promise<Checkpoint>;
+}
+
+export interface CheckpointVersion {
+  versionId: string;
+  timestamp: number;
+  position: CheckpointPosition;
+  step: number;
+  summary: string;
+}
+```
+
+### 存储后端实现
+
+| 后端 | 文件 | 用途 |
+|------|------|------|
+| **FileCheckpointStorage** | `src/storage/file-storage.ts` | 本地开发、Git 版本化 |
+| **SqliteCheckpointStorage** | `src/storage/sqlite-storage.ts` | 生产持久化 |
+| **RedisCheckpointStorage** | `src/storage/redis-storage.ts` | 分布式系统 |
+
+### Checkpoint Schema 扩展
+
+```typescript
+// src/core/checkpoint.ts 扩展
+export const CheckpointSchema = z.object({
+  // ...existing fields...
+  
+  // 🔴 P1 新增: 版本元数据
+  version: z.object({
+    versionId: z.string(),
+    parentVersionId: z.string().optional(),
+    createdAt: z.number(),
+    createdBy: z.enum(['agent', 'human', 'system']),
+    summary: z.string().optional(),
+  }).optional(),
+  
+  // 🔴 P1 新增: 决策追踪引用
+  decisionTraceRefs: z.array(z.string()).optional(),
+});
+```
+
+---
+
 ## 相关文档
 
 - [02-ZOD-CONTRACT.md](./02-ZOD-CONTRACT.md) - Zod 数据契约与校验策略
 - [05-EVENT-STREAM.md](./05-EVENT-STREAM.md) - 事件流底座与 Agent Loop
+
+---
+
+## 版本历史
+
+| 版本 | 日期 | 变更 |
+|------|------|------|
+| v1 | 2026-04-24 | 初始设计 - 事件类型、Agent 状态、Checkpoint |
+| v2 | 2026-04-25 | 补充 A2A 跨进程状态、幂等性追踪、恢复元数据 |
+| v3 | 2026-04-26 | **P1 新增**: 工具输出校验、决策追溯系统、外部状态机 |
