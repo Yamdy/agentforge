@@ -32,7 +32,15 @@ import type {
   SubagentRegistry,
   SchemaRegistry,
   ErrorHandler,
+  PermissionPolicy,
+  PermissionController,
+  SandboxExecutor,
+  AuditLogger,
+  RateLimiter,
+  InputSanitizer,
 } from './interfaces.js';
+import type { QuotaController } from '../quota/quota-controller.js';
+import type { CompactionManager } from '../memory/index.js';
 import { Observable, Subject } from 'rxjs';
 import type { HITLAskOptions } from './interfaces.js';
 // ============================================================
@@ -117,6 +125,33 @@ export interface AgentContext {
 
   /** Subagent registry for nested agents */
   subagents?: SubagentRegistry;
+
+  // ----- Security (optional — zero overhead if not configured) -----
+  /** Permission policy for tool execution control */
+  permissionPolicy?: PermissionPolicy;
+
+  /** Permission controller for human approval flow */
+  permissionController?: PermissionController;
+
+  /** Sandbox executor for isolated tool execution */
+  sandboxExecutor?: SandboxExecutor;
+
+  /** Audit logger for security event recording */
+  auditLogger?: AuditLogger;
+
+  /** Rate limiter for request frequency control */
+  rateLimiter?: RateLimiter;
+
+  /** Input sanitizer for prompt injection detection */
+  inputSanitizer?: InputSanitizer;
+
+  // ----- Memory Management (optional) -----
+  /** Compaction manager for context window management */
+  compactionManager?: CompactionManager;
+
+  // ----- Quota (optional) ----
+  /** Quota controller (optional). When set, enables quota checking before LLM calls. */
+  quota?: QuotaController;
 
   // ----- Control Signals -----
   /** Abort signal for cancellation */

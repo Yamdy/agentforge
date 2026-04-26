@@ -25,6 +25,8 @@ import type {
   ToolContext,
   FunctionDefinition as FunctionDefinitionInterface,
 } from './interfaces.js';
+import type { QuotaController } from '../quota/quota-controller.js';
+import type { CompactionManager } from '../memory/index.js';
 import type { ApplicationServices, AgentContext } from './context.js';
 import {
   InMemoryStore,
@@ -179,6 +181,22 @@ export class ContextBuilder {
    */
   withErrorHandler(handler: ErrorHandler): this {
     this.context.onError = handler;
+    return this;
+  }
+
+  /**
+   * Set quota controller
+   */
+  withQuota(quota: QuotaController): this {
+    this.context.quota = quota;
+    return this;
+  }
+
+  /**
+   * Set compaction manager
+   */
+  withCompactionManager(manager: CompactionManager): this {
+    this.context.compactionManager = manager;
     return this;
   }
 
