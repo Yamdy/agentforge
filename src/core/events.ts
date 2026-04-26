@@ -91,11 +91,31 @@ export type AgentEventType = z.infer<typeof AgentEventTypeSchema>;
 export const MessageRoleSchema = z.enum(['system', 'user', 'assistant', 'tool']);
 export type MessageRole = z.infer<typeof MessageRoleSchema>;
 
+/**
+ * Message metadata for importance-weighted compaction and source tracking.
+ * @see design/01-CORE-TYPES.md
+ */
+export const MessageMetadataSchema = z.object({
+  /** Pinned messages are preserved during compaction */
+  pinned: z.boolean().optional(),
+  /** Message mark type */
+  mark: z.enum(['hint', 'summary', 'pinned']).optional(),
+  /** Importance score (0-1) for importance-weighted compaction */
+  importance: z.number().min(0).max(1).optional(),
+  /** Source tracking */
+  source: z.enum(['user', 'agent', 'tool', 'system', 'memory']).optional(),
+  /** Creation timestamp */
+  createdAt: z.number().optional(),
+});
+export type MessageMetadata = z.infer<typeof MessageMetadataSchema>;
+
 export const MessageSchema = z.object({
   role: MessageRoleSchema,
   content: z.string(),
   name: z.string().optional(),
   toolCallId: z.string().optional(),
+  /** Optional message metadata for compaction and tracking */
+  metadata: MessageMetadataSchema.optional(),
 });
 export type Message = z.infer<typeof MessageSchema>;
 

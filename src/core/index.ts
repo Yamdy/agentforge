@@ -215,7 +215,34 @@ export type { AgentStateEnum } from './state-machine.js';
 export { AgentStateMachine, isValidTransition, getValidTransitions } from './state-machine.js';
 
 // ============================================================
+// Security Types (from interfaces.ts)
+// ============================================================
+
+export type { PermissionDecision, PolicyDecision, PermissionAskOptions } from './interfaces.js';
+
+export type {
+  PermissionPolicy,
+  PermissionController,
+  SandboxExecutor,
+  AuditLogger,
+  RateLimiter,
+  InputSanitizer,
+} from './interfaces.js';
+
+// ============================================================
 // Quota Controller (re-exported from quota module)
 // ============================================================
 
 export type { QuotaUsage, QuotaLimits, QuotaController } from '../quota/quota-controller.js';
+
+// ============================================================
+// Approval Channel
+// ============================================================
+
+export type {
+  ApprovalSource,
+  ApprovalAskOptions,
+  ApprovalPrompt,
+  ApprovalChannel,
+} from './approval-channel.js';
+export { DefaultApprovalChannel } from './approval-channel.js';

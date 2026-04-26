@@ -206,10 +206,12 @@ export type RiskLevel = 'low' | 'medium' | 'high' | 'critical';
  * Security fields (requiresApproval, approvalMessage, sandboxRequired, riskLevel)
  * enable human-in-the-loop approval for dangerous operations.
  */
-export interface ToolDefinition<TSchema = unknown> {
+export interface ToolDefinition<TInputSchema = unknown, TOutputSchema = unknown> {
   name: string;
   description: string;
-  parameters: TSchema;
+  parameters: TInputSchema;
+  /** Optional output Zod schema for structured output validation (Tier 1) */
+  outputSchema?: TOutputSchema;
   execute: (args: unknown, ctx?: ToolContext) => Promise<string>;
 
   // ===== Security Approval Fields =====
@@ -700,4 +702,179 @@ export interface SchemaRegistry {
 
   /** Validate data against schema */
   validate(name: string, data: unknown): boolean;
+}
+
+// ============================================================
+// Security Interfaces (defined here for DI, implemented in src/security/)
+// ============================================================
+
+/**
+ * Permission decision returned by the permission controller.
+ * - 'allow': Tool execution is allowed
+ * - 'deny': Tool execution is denied
+ * - 'allow_always': Tool execution is allowed and cached for this session
+ */
+export type PermissionDecision = 'allow' | 'deny' | 'allow_always';
+
+/**
+ * Policy decision for tool execution.
+ * - 'allow': Execute without asking
+ * - 'ask': Ask human for permission
+ * - 'deny': Deny execution
+ */
+export type PolicyDecision = 'allow' | 'ask' | 'deny';
+
+/**
+ * Permission policy configuration.
+ *
+ * Evaluates whether a tool call should be allowed, denied, or require
+ * human approval based on tool name, requiresApproval flag, and riskLevel.
+ */
+export interface PermissionPolicy {
+  /** Policy for each risk level */
+  riskPolicies: Record<RiskLevel, PolicyDecision>;
+  /** Default policy for unknown tools */
+  defaultPolicy: PolicyDecision;
+  /** Tool-level override policies (tool name → decision) */
+  toolPolicies: Record<string, PolicyDecision>;
+  /** Whether to enforce ToolDefinition.requiresApproval as 'ask' */
+  enforceApprovalFlag: boolean;
+}
+
+/**
+ * Options for asking a permission question.
+ */
+export interface PermissionAskOptions {
+  /** Unique ID for this permission request */
+  promptId: string;
+  /** Permission string (typically tool name) */
+  permission: string;
+  /** Additional context about the request */
+  context?: Record<string, unknown>;
+  /** Tool name (if permission is about a tool) */
+  toolName?: string;
+  /** Tool arguments (for context-aware decisions) */
+  toolArgs?: Record<string, unknown>;
+}
+
+/**
+ * Permission controller — manages tool execution permissions.
+ *
+ * Structurally identical to HITLController:
+ * - ask() returns Observable<PermissionDecision>
+ * - onAsk() exposes a stream for UI subscription
+ * - answer() allows UI to respond
+ * - isAutoAllowed() checks the allow_always cache
+ */
+export interface PermissionController {
+  /** Request permission — returns Observable that emits when human decides */
+  ask(options: PermissionAskOptions): Observable<PermissionDecision>;
+
+  /** Observable of permission prompts (for UI subscription) */
+  onAsk(): Observable<{
+    promptId: string;
+    permission: string;
+    context?: Record<string, unknown>;
+    options: PermissionDecision[];
+  }>;
+
+  /** Provide a permission decision — called by UI */
+  answer(promptId: string, decision: PermissionDecision): void;
+
+  /** Check if a permission is auto-allowed (cached from previous 'allow_always') */
+  isAutoAllowed(permission: string): boolean;
+
+  /** Cancel a pending permission request */
+  cancel(promptId: string): void;
+}
+
+/**
+ * Sandbox executor — runs tools in an isolated environment.
+ *
+ * Receives command descriptions rather than handler functions,
+ * allowing both in-process and out-of-process execution.
+ */
+export interface SandboxExecutor {
+  /** Execute a tool command in the sandbox */
+  execute(
+    command: { toolName: string; args: Record<string, unknown> },
+    context: {
+      sessionId: string;
+      timeoutMs?: number;
+      signal?: AbortSignal;
+      toolRegistry?: ToolRegistry;
+    }
+  ): Promise<{
+    success: boolean;
+    result?: string;
+    error?: { name: string; message: string; stack?: string };
+    durationMs: number;
+    violations?: Array<
+      | { type: 'path_violation'; path: string; mode: 'read' | 'write' }
+      | { type: 'network_violation'; domain: string }
+      | { type: 'timeout'; timeoutMs: number }
+      | { type: 'memory_violation'; memoryMb: number }
+    >;
+  }>;
+}
+
+/**
+ * Audit logger — records security events for accountability.
+ *
+ * Level 1 (default): fire-and-forget, eventual consistency.
+ * Level 2 (optional): blocking, strong consistency via InterceptorPlugin.
+ */
+export interface AuditLogger {
+  /** Append an audit record (fire-and-forget, non-blocking) */
+  append(entry: {
+    sessionId: string;
+    agentName: string;
+    eventType: string;
+    action: string;
+    resource: string;
+    result: 'success' | 'denied' | 'error';
+    details: Record<string, unknown>;
+  }): void;
+}
+
+/**
+ * Rate limiter — controls request frequency.
+ *
+ * Complements QuotaController (token/cost limits) with request frequency control.
+ */
+export interface RateLimiter {
+  /** Check if a request is allowed (does not consume quota) */
+  check(key: string, config: { maxRequests: number; windowMs: number }): boolean;
+  /** Record a request (consumes quota) */
+  consume(key: string, config: { maxRequests: number; windowMs: number }): void;
+  /** Reset rate limit for a key */
+  reset(key: string): void;
+}
+
+/**
+ * Input sanitizer — detects and mitigates prompt injection attacks.
+ *
+ * L1: Regex + heuristic patterns
+ * L2: Semantic pattern matching
+ * L3: (Optional) LLM-based detection for high-risk tools
+ */
+export interface InputSanitizer {
+  /** Detect injection patterns in input text */
+  detectInjection(input: string): {
+    isMalicious: boolean;
+    confidence: number;
+    patterns: string[];
+    sanitizedInput: string;
+  };
+  /** Sanitize input text */
+  sanitize(input: string): string;
+  /** Validate tool arguments for injection patterns */
+  validateToolArgs(
+    toolName: string,
+    args: Record<string, unknown>
+  ): {
+    valid: boolean;
+    errors?: string[];
+    sanitized?: Record<string, unknown>;
+  };
 }
