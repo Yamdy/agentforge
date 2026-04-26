@@ -55,6 +55,7 @@ export const AgentEventTypeSchema = z.enum([
   'mcp.connected',
   'mcp.disconnected',
   'mcp.tools_changed',
+  'mcp.error',
 
   'workflow.start',
   'workflow.step.start',
@@ -62,6 +63,7 @@ export const AgentEventTypeSchema = z.enum([
   'workflow.suspend',
   'workflow.resume',
   'workflow.complete',
+  'workflow.error',
 
   'compaction.start',
   'compaction.complete',
@@ -626,7 +628,7 @@ export function getToolResult(
 | `hitl.ask` | HITL 询问 |
 | `hitl.answer` | HITL 回答 |
 
-### Layer 2: 子系统生命周期（15 种）
+### Layer 2: 子系统生命周期（17 种）
 
 | 事件类型 | 描述 |
 |---------|------|
@@ -638,12 +640,14 @@ export function getToolResult(
 | `mcp.connected` | MCP 已连接 |
 | `mcp.disconnected` | MCP 断开 |
 | `mcp.tools_changed` | MCP 工具变更 |
+| `mcp.error` | MCP 错误 |
 | `workflow.start` | Workflow 启动 |
 | `workflow.step.start` | Workflow 步骤开始 |
 | `workflow.step.end` | Workflow 步骤结束 |
 | `workflow.suspend` | Workflow 挂起 |
 | `workflow.resume` | Workflow 恢复 |
 | `workflow.complete` | Workflow 完成 |
+| `workflow.error` | Workflow 错误 |
 | `compaction.start/complete` | 上下文压缩 |
 
 ### Layer 3: 横切关注点（7 种）
@@ -1268,3 +1272,9 @@ registry.register({
 | v2 | 2026-04-25 | 补充 A2A 跨进程状态、幂等性追踪、恢复元数据 |
 | v3 | 2026-04-26 | **P1 新增**: 工具输出校验、决策追溯系统、外部状态机 |
 | v4 | 2026-04-26 | **P2 新增**: Working Memory 短期记忆系统 |
+
+## 用户文档对照
+
+- [AgentEvent API](/docs/api/events.md) - 事件载荷结构的实现级参考
+- [AgentState API](/docs/api/state.md) - 状态管理函数的实现级参考
+- [ToolDefinition API](/docs/api/tool-definition.md) - 工具定义的实现级参考

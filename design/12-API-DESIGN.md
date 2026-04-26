@@ -228,3 +228,9 @@ export interface AgentSubscription {
 - [10-FEATURES.md](./10-FEATURES.md) - 特性实现
 - [11-OPERATORS.md](./11-OPERATORS.md) - 操作符库
 - [13-EXAMPLES.md](./13-EXAMPLES.md) - 使用示例
+
+## 用户文档对照
+
+- [createAgent API](/docs/api/create-agent.md) - L2 配置式 API 实现参考
+- [runAgent API](/docs/api/run-agent.md) - L3 编程式 API 实现参考
+- [操作符控制流](/docs/api/operators-control.md) - 控制流操作符使用指南

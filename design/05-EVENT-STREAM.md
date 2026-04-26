@@ -502,3 +502,8 @@ Observable<AgentEvent>
 - [01-CORE-TYPES.md](./01-CORE-TYPES.md) - 事件类型定义
 - [06-FLOW-CONSTRAINTS.md](./06-FLOW-CONSTRAINTS.md) - 流层陷阱与约束
 - [10-FEATURES.md](./10-FEATURES.md) - 可观测、可中断、可恢复实现
+
+## 用户文档对照
+
+- [核心概念指南](/docs/guide/core-concepts.md) - 面向用户的事件流/状态/上下文使用说明
+- [事件系统指南](/docs/guide/events.md) - 事件订阅与过滤实用指南

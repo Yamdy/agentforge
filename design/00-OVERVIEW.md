@@ -110,3 +110,8 @@
 - [01-CORE-TYPES.md](./01-CORE-TYPES.md) - 核心类型定义
 - [06-FLOW-CONSTRAINTS.md](./06-FLOW-CONSTRAINTS.md) - 流层约束详细说明
 - [15-ARCHITECTURE.md](./15-ARCHITECTURE.md) - 架构总览
+
+## 用户文档对照
+
+- [架构总览](/docs/architecture/index.md) - 实现层面的架构叙述与代码模块映射
+- [核心概念指南](/docs/guide/core-concepts.md) - 面向用户的事件流/状态/上下文使用说明

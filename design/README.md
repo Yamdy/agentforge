@@ -54,17 +54,15 @@
 | [13-EXAMPLES.md](./13-EXAMPLES.md) | 使用示例：最简使用、带操作符、可中断、可恢复、HITL、生产环境 |
 | [14-OBSERVABILITY.md](./14-OBSERVABILITY.md) | 可观测与管控：全链路埋点、状态机、配置热更新、管道模板、上下文压缩 |
 
-### 基础设施
+### 安全与基础设施
 
 | 文档 | 描述 |
 |------|------|
-| [16-CONFIG-MODULE.md](./16-CONFIG-MODULE.md) | 配置模块设计、Schema 定义、Profile 系统、热更新支持 |
-
-### 基础设施
-
-| 文档 | 描述 |
-|------|------|
-| [16-CONFIG-MODULE.md](./16-CONFIG-MODULE.md) | 配置模块设计、Schema 定义、Profile 系统、热更新支持 |
+| [16-CONFIG-MODULE.md](./16-CONFIG-MMODULE.md) | 配置模块设计、Schema 定义、Profile 系统、热更新支持 |
+| [17-SECURITY.md](./17-SECURITY.md) | 安全模块：权限系统、输入清洗、审计日志、沙箱执行、限流 |
+| [18-QUOTA-INTEGRATION.md](./18-QUOTA-INTEGRATION.md) | Quota 集成到 Agent Loop — 成本控制 |
+| [19-EVENT-ROUTING.md](./19-EVENT-ROUTING.md) | 事件路由补全 — MCP/Workflow/Compaction 等生命周期事件 |
+| [20-PUBLISH-READINESS.md](./20-PUBLISH-READINESS.md) | 发布就绪性 — API 导出补全 + package.json 配置 |
 
 ### 总览
 
@@ -95,7 +93,7 @@
 | **插件扩展** | 07, 08 |
 | **分布式通信** | 09 |
 | **生产就绪** | 06, 14, 15, 07 (安全整合) |
-| **安全合规** | 07, 06, 10 (整合) |
+| **安全合规** | 17, 07, 06, 10 |
 
 ---
 
@@ -139,6 +137,10 @@
 | v8 | 2026-04-26 | **安全架构**: 沙箱隔离/PII脱敏/配额管控/审批流程设计，Harness规范对齐分析 (整合到 06/07/10) |
 | v9 | 2026-04-26 | **P1 设计**: 规划/执行分离、outputSchema、决策追溯、外部状态机 (整合到现有文档) |
 | v10 | 2026-04-26 | **P2 设计**: Working Memory、Evaluation、RAG、Deployment (整合到现有文档) |
+| v11 | 2026-04-26 | **安全模块草稿**: 新增 17-SECURITY.md，记录威胁模型、缺口分析、5子系统设计、关键决策点 |
+| v12 | 2026-04-26 | **安全模块评审**: 5个决策点确认、3个关键缺口补强(Args清洗/审计一致性/统一审批通道)、SandboxExecutor接口重构 |
+| v13 | 2026-04-26 | **1.0阻塞项设计**: 新增 18-QUOTA-INTEGRATION.md、19-EVENT-ROUTING.md、20-PUBLISH-READINESS.md |
+| v14 | 2026-04-26 | **评审修复**: Quota consume/fire-and-forget说明、Event Routing Compaction同步性约束、Publish peerDependencies+prepublishOnly+sideEffects验证 |
 
 ---
 
@@ -164,12 +166,15 @@
 | **LLM Adapter** | - | `src/adapters/*.ts` | ✅ 已实现 |
 | **API 层** | 12-API-DESIGN.md | `src/api/*.ts` | ✅ 已实现 |
 | **配置模块** | 16-CONFIG-MODULE.md | `src/core/config/*.ts` | 📝 设计完成 |
-| **安全架构** | 07/06/10 (整合) | `src/sandbox/`, `src/security/`, `src/quota/` | 📝 设计完成 (整合到现有文档) |
-| **P1: 规划/执行分离** | 08-SUBSYSTEMS.md | `src/planning/` | 📝 设计完成 |
-| **P1: outputSchema** | 01-CORE-TYPES.md | `src/contracts/tool-output-contract.ts` | 📝 设计完成 |
-| **P1: 决策追溯** | 01-CORE-TYPES.md | `src/observability/decision-trace.ts` | 📝 设计完成 |
-| **P1: 外部状态机** | 01-CORE-TYPES.md | `src/storage/*.ts` | 📝 设计完成 |
-| **P2: Working Memory** | 01-CORE-TYPES.md | `src/memory/working-memory-processor.ts` | 📝 设计完成 |
-| **P2: Evaluation** | 14-OBSERVABILITY.md | `src/evaluation/*.ts` | 📝 设计完成 |
-| **P2: RAG** | 08-SUBSYSTEMS.md | `src/rag/*.ts` | 📝 设计完成 |
-| **P2: Deployment** | 15-ARCHITECTURE.md | `src/deploy/*.ts` | 📝 设计完成 |
+| **安全架构** | 17-SECURITY.md | `src/security/` | 🔧 评审中 (5决策已确认，3缺口已补强) |
+| **Quota 集成** | 18-QUOTA-INTEGRATION.md | `src/quota/*.ts` | 📝 模块存在，待集成到主循环 |
+| **事件路由补全** | 19-EVENT-ROUTING.md | `src/loop/agent-loop.ts` | 📝 待评审 |
+| **发布就绪性** | 20-PUBLISH-READINESS.md | `src/index.ts`, `package.json` | 📝 待评审 |
+| **P1: 规划/执行分离** | 08-SUBSYSTEMS.md | - | 🔮 未实现 |
+| **P1: outputSchema** | 01-CORE-TYPES.md | - | 🔮 未实现 |
+| **P1: 决策追溯** | 01-CORE-TYPES.md | - | 🔮 未实现 |
+| **P1: 外部状态机** | 01-CORE-TYPES.md | - | 🔮 未实现 |
+| **P2: Working Memory** | 01-CORE-TYPES.md | - | 🔮 未实现 |
+| **P2: Evaluation** | 14-OBSERVABILITY.md | - | 🔮 未实现 |
+| **P2: RAG** | 08-SUBSYSTEMS.md | - | 🔮 未实现 |
+| **P2: Deployment** | 15-ARCHITECTURE.md | - | 🔮 未实现 |
