@@ -11,16 +11,46 @@ import { EMPTY } from 'rxjs';
 import type { LLMAdapter, LLMResponse } from '../core/interfaces.js';
 
 // ============================================================
+// Re-export Adapter System (NEW)
+// ============================================================
+
+export {
+  // Core adapter system
+  ProviderRegistry,
+  createHttpAdapter,
+  createLLMAdapterFromSpec,
+  
+  // Error classification
+  classifyError,
+  type ClassifiedError,
+  type ErrorCategory,
+  
+  // Retry policy
+  calculateRetryDelay,
+  type RetryConfig,
+  
+  // Types
+  type ProviderFactory,
+  type HttpAdapterOptions,
+} from './adapter-system.js';
+
+// ============================================================
 // Re-export Adapter Implementations
 // ============================================================
 
-// OpenAI Adapter
+// OpenAI Adapter (AI SDK v6)
 export {
   OpenAIAdapter,
   createOpenAIAdapter,
   openaiAdapterFactory,
   type OpenAIAdapterOptions,
 } from './openai.js';
+
+// OpenAI HTTP Adapter (direct HTTP, supports v1 models)
+export {
+  createOpenAIHttpAdapter,
+  type OpenAIHttpAdapterOptions,
+} from './openai-http.js';
 
 // Anthropic Adapter
 export {

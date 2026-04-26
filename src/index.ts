@@ -49,6 +49,13 @@ export {
   type FinishReason,
   type SerializedError,
   type AgentEvent,
+  // Zod Schemas
+  AgentEventTypeSchema,
+  AgentEventSchema,
+  MessageSchema,
+  ToolCallSchema,
+  SerializedErrorSchema,
+  FinishReasonSchema,
   // Type guards
   isAgentEvent,
   isLLMEvent,
@@ -243,6 +250,12 @@ export { AgentStateMachine, isValidTransition, getValidTransitions } from './cor
  * Suitable for most use cases where dependencies are provided externally.
  * AgentConfig is exported from Core Types section above.
  */
+export {
+  createAgent,
+  type Agent,
+  type StreamHandlers,
+  type AgentSubscription,
+} from './api/index.js';
 
 // ============================================================
 // API - Programming Mode (AgentLoop)

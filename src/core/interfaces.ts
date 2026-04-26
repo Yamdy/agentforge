@@ -705,6 +705,74 @@ export interface SchemaRegistry {
 }
 
 // ============================================================
+// Planner (Execution Planning)
+// ============================================================
+
+/**
+ * A single step in an execution plan.
+ */
+export interface PlanStep {
+  /** Unique step identifier */
+  id: string;
+  /** Human-readable step description */
+  description: string;
+  /** Tool name to invoke (if any) */
+  toolName?: string;
+  /** Arguments for the tool (if toolName is set) */
+  toolArgs?: Record<string, unknown>;
+  /** Dependencies — step IDs that must complete before this step */
+  dependsOn?: string[];
+}
+
+/**
+ * An execution plan produced by a Planner.
+ */
+export interface ExecutionPlan {
+  /** Unique plan identifier */
+  id: string;
+  /** Original user input that triggered planning */
+  input: string;
+  /** Ordered list of steps to execute */
+  steps: PlanStep[];
+  /** Plan-level metadata */
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Validation result for an execution plan.
+ */
+export interface PlanValidation {
+  /** Whether the plan is valid */
+  valid: boolean;
+  /** Validation errors (present when valid is false) */
+  errors: Array<{ message: string; stepId?: string }>;
+}
+
+/**
+ * Options passed to Planner.plan()
+ */
+export interface PlannerOptions {
+  /** Available tool names */
+  availableTools: string[];
+  /** Maximum number of steps allowed */
+  maxSteps: number;
+}
+
+/**
+ * Planner Interface
+ *
+ * Generates an execution plan before the agent loop begins.
+ * Implementations may use LLM, rules, or static templates.
+ */
+export interface Planner {
+  /** Generate an execution plan for the given input */
+  plan(input: string, options: PlannerOptions): Promise<ExecutionPlan>;
+
+  /** Validate a plan before execution */
+  validate(plan: ExecutionPlan): Promise<PlanValidation>;
+}
+
+// ============================================================
 // Security Interfaces (defined here for DI, implemented in src/security/)
 // ============================================================
 

@@ -198,6 +198,19 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
   function step(sctx: StepContext): Observable<StepContext> {
     const { event, state } = sctx;
 
+    // MPU M5: Audit terminal events before stream ends (fire-and-forget)
+    if (event.type === 'agent.error') {
+      ctx.auditLogger?.append({
+        sessionId,
+        agentName: state.agentName,
+        eventType: 'agent.error',
+        action: 'agent.error',
+        resource: state.agentName,
+        result: 'error',
+        details: { error: event.error },
+      });
+    }
+
     // Terminal events end the stream
     if (isTerminalEvent(event)) {
       return EMPTY;
@@ -223,9 +236,33 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         return handleAgentStart(state, event);
 
       case 'llm.request':
+        // MPU M5: Audit LLM request (fire-and-forget)
+        ctx.auditLogger?.append({
+          sessionId,
+          agentName: state.agentName,
+          eventType: 'llm.request',
+          action: 'llm.request',
+          resource: state.model.model,
+          result: 'success',
+          details: { messages: state.messages.length, model: state.model },
+        });
         return handleLLMRequest(state);
 
       case 'llm.response':
+        // MPU M5: Audit LLM response (fire-and-forget)
+        ctx.auditLogger?.append({
+          sessionId,
+          agentName: state.agentName,
+          eventType: 'llm.response',
+          action: 'llm.response',
+          resource: state.model.model,
+          result: 'success',
+          details: { finishReason: event.finishReason, usage: event.usage },
+        });
+        // MPU M7: Record cost (fire-and-forget)
+        if (ctx.services.costTracker && event.usage) {
+          ctx.services.costTracker.record(sessionId, state.model.model, event.usage).catch(() => {});
+        }
         return handleLLMResponse(state, event, sctx.repairAttempt);
 
       case 'llm.output.invalid':
@@ -235,10 +272,45 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         return handleToolCall(state, event);
 
       case 'tool.result':
+        // MPU M5: Audit tool result (fire-and-forget)
+        ctx.auditLogger?.append({
+          sessionId,
+          agentName: state.agentName,
+          eventType: 'tool.result',
+          action: 'tool.result',
+          resource: event.toolName,
+          result: event.isError ? 'error' : 'success',
+          details: { toolCallId: event.toolCallId },
+        });
+        // MPU M10: Result validation (warn only, never blocks)
+        if (ctx.services.resultValidator && !event.isError) {
+          try {
+            const validation = ctx.services.resultValidator.validate(event.toolName, event.result);
+            if (!validation.valid) {
+              console.warn(`Tool result validation failed for ${event.toolName}:`, validation.errors);
+            }
+          } catch {
+            // Validation failure must never crash the loop
+          }
+        }
         return handleToolResult(state, event);
 
       case 'tool.batch.complete':
         return handleBatchComplete(state, event);
+
+      case 'tool.execute':
+        // MPU M5: Audit tool execution (fire-and-forget)
+        ctx.auditLogger?.append({
+          sessionId,
+          agentName: state.agentName,
+          eventType: 'tool.execute',
+          action: 'tool.execute',
+          resource: event.toolName,
+          result: 'success',
+          details: { toolCallId: event.toolCallId },
+        });
+        // Passive event — no further processing needed
+        return EMPTY;
 
       case 'hitl.ask':
         // HITL ask event - subscribe to ctx.hitl.ask() Observable
@@ -277,7 +349,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       default:
         // All other events are passive/observational:
         // - llm.stream.* (emitted directly by callLLMStreaming)
-        // - tool.execute, tool.error, tool.batch, tool.batch.start, tool.result.delta
+        // - tool.error, tool.batch, tool.batch.start, tool.result.delta
         // - checkpoint (emitted by emitCheckpoint)
         // - state.change, context.updated
         // - llm.error, mcp.*, workflow.*, compaction.*, permission.*
@@ -327,6 +399,45 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
   // ============================================================
 
   function handleLLMRequest(state: AgentState): Observable<StepContext> {
+    // MPU M7: Cost pre-check before LLM call
+    if (ctx.services.costTracker) {
+      return from(ctx.services.costTracker.checkLimit(sessionId)).pipe(
+        mergeMap(limitCheck => {
+          if (!limitCheck.withinLimit) {
+            const errorEvent: AgentEvent = {
+              type: 'agent.error',
+              timestamp: Date.now(),
+              sessionId,
+              error: {
+                name: 'CostLimitExceededError',
+                message: `Cost limit exceeded: ${limitCheck.exceeded?.join(', ')}`,
+              },
+              step: state.step,
+            };
+            const doneEv: AgentEvent = {
+              type: 'done',
+              timestamp: Date.now(),
+              sessionId,
+              reason: 'error',
+            };
+            return from([
+              { event: errorEvent, state },
+              { event: doneEv, state },
+            ] as StepContext[]);
+          }
+          return doLLMRequest(state);
+        }),
+        catchError(() => {
+          // Cost check failure must never crash the loop
+          console.warn('Cost check failed, allowing request');
+          return doLLMRequest(state);
+        })
+      );
+    }
+    return doLLMRequest(state);
+  }
+
+  function doLLMRequest(state: AgentState): Observable<StepContext> {
     // Compaction auto-trigger: compress messages before LLM call
     if (ctx.compactionManager && shouldCompact(state)) {
       const compactionCtx: CompactionContext = {
@@ -1173,6 +1284,29 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
   // ============================================================
 
   function executeSingleTool(tc: ToolCall, state: AgentState): Observable<StepContext> {
+    // MPU M6: Security check before tool execution
+    if (ctx.securityGuard) {
+      try {
+        const argsStr = JSON.stringify(tc.args ?? {});
+        const cmdCheck = ctx.securityGuard.checkCommand(argsStr);
+        if (!cmdCheck.allowed) {
+          // Security violation — return error result, do not execute tool
+          const resultEvent: AgentEvent = {
+            type: 'tool.result',
+            timestamp: Date.now(),
+            sessionId,
+            toolCallId: tc.id,
+            toolName: tc.name,
+            result: `Security violation: ${cmdCheck.reason}`,
+            isError: true,
+          };
+          return of({ event: resultEvent, state } as StepContext);
+        }
+      } catch {
+        // Security check failure must never crash the loop — allow execution
+      }
+    }
+
     const executeEvent: AgentEvent = {
       type: 'tool.execute',
       timestamp: Date.now(),

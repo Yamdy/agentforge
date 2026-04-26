@@ -1,6 +1,6 @@
 {
   "name": "@primo512109/agentforge",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Production-ready Agent framework with MPU (Minimum Production Usable) modules - RxJS event stream + Zod type safety",
   "type": "module",
   "main": "dist/index.js",
@@ -12,6 +12,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./api": {
+      "types": "./dist/api/index.d.ts",
+      "import": "./dist/api/index.js"
     },
     "./storage": {
       "types": "./dist/storage/index.d.ts",
@@ -64,6 +68,10 @@
     "./adapters": {
       "types": "./dist/adapters/index.d.ts",
       "import": "./dist/adapters/index.js"
+    },
+    "./contracts": {
+      "types": "./dist/contracts/index.d.ts",
+      "import": "./dist/contracts/index.js"
     },
     "./plugins": {
       "types": "./dist/plugins/index.d.ts",

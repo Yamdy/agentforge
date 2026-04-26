@@ -1,0 +1,42 @@
+# Source files
+src/
+tests/
+docs/
+design/
+examples/
+
+# Config files
+.eslintrc.json
+.prettierrc
+tsconfig.json
+vitest.config.mts
+.husky/
+.lintstagedrc
+
+# Development files
+.git/
+.github/
+.vscode/
+.idea/
+
+# Build artifacts
+*.tsbuildinfo
+
+# Environment files
+.env
+.env.*
+tests/e2e/.env
+
+# Coverage
+coverage/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Sisyphus files
+.sisyphus/

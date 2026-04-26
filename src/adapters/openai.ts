@@ -223,8 +223,9 @@ export class OpenAIAdapter implements LLMAdapter {
       }
 
       return response;
-    } catch {
+    } catch (error) {
       // Errors-as-events: Return error response instead of throwing
+      console.error('[OpenAI Adapter] Chat error:', error);
       return {
         content: '',
         finishReason: 'error',

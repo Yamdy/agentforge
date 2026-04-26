@@ -6,6 +6,10 @@ dist
 
 examples/skills
 
+coverage
+
+docs/.vitepress
+
 # Environment files with secrets
 .env
 tests/e2e/.env

@@ -141,6 +141,7 @@
 | v12 | 2026-04-26 | **安全模块评审**: 5个决策点确认、3个关键缺口补强(Args清洗/审计一致性/统一审批通道)、SandboxExecutor接口重构 |
 | v13 | 2026-04-26 | **1.0阻塞项设计**: 新增 18-QUOTA-INTEGRATION.md、19-EVENT-ROUTING.md、20-PUBLISH-READINESS.md |
 | v14 | 2026-04-26 | **评审修复**: Quota consume/fire-and-forget说明、Event Routing Compaction同步性约束、Publish peerDependencies+prepublishOnly+sideEffects验证 |
+| v15 | 2026-04-27 | **Adapter 重构**: 新增 adapter-system.ts (错误分类/重试/Provider注册)，参考 AgentScope/Mastra/OpenCode/DeepAgents |
 
 ---
 
@@ -164,6 +165,7 @@
 | **CompactionManager** | 14-OBSERVABILITY.md | `src/memory/*.ts` | ✅ 已实现 |
 | **ResourceMonitor** | 14-OBSERVABILITY.md | `src/observability/*.ts` | ✅ 已实现 |
 | **LLM Adapter** | - | `src/adapters/*.ts` | ✅ 已实现 |
+| **Adapter System** | - | `src/adapters/adapter-system.ts` | ✅ 已实现 (错误分类/重试/Provider注册) |
 | **API 层** | 12-API-DESIGN.md | `src/api/*.ts` | ✅ 已实现 |
 | **配置模块** | 16-CONFIG-MODULE.md | `src/core/config/*.ts` | 📝 设计完成 |
 | **安全架构** | 17-SECURITY.md | `src/security/` | 🔧 评审中 (5决策已确认，3缺口已补强) |

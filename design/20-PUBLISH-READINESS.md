@@ -78,14 +78,32 @@ export {
 } from './observability/index.js';
 
 // ============================================================
-// LLM Adapters
+// LLM Adapters (Updated - New Adapter System)
 // ============================================================
 
 export {
+  // Core adapter system
+  ProviderRegistry,
+  createHttpAdapter,
+  createLLMAdapterFromSpec,
+  
+  // Error classification
+  classifyError,
+  type ClassifiedError,
+  type ErrorCategory,
+  
+  // Retry policy
+  calculateRetryDelay,
+  type RetryConfig,
+  
+  // Legacy adapters (AI SDK based)
   OpenAIAdapter,
   createOpenAIAdapter,
   AnthropicAdapter,
   createAnthropicAdapter,
+  
+  // HTTP adapter (v1 compatible)
+  createOpenAIHttpAdapter,
 } from './adapters/index.js';
 ```
 
