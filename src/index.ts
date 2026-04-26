@@ -787,3 +787,34 @@ export {
   type ParsedModelSpec,
   type AdapterFactoryFn,
 } from './adapters/index.js';
+
+// ============================================================
+// MPU Integration
+// ============================================================
+
+/**
+ * MPU (Minimum Production Usable) integration module.
+ *
+ * Factory for creating MPU service instances based on configuration flags.
+ * All MPU modules are optional — disabled by default for zero overhead.
+ *
+ * @example
+ * ```typescript
+ * import { createMPUServices, AgentContextBuilder } from 'agentforge';
+ *
+ * const mpu = createMPUServices({
+ *   enableSecurity: true,
+ *   enableCircuitBreaker: true,
+ *   enableHealthCheck: true,
+ *   enableCostTracking: true,
+ * });
+ *
+ * const ctx = AgentContextBuilder.create()
+ *   .withLLM(myLLM)
+ *   .withTools(myTools)
+ *   .withSecurityGuard(mpu.context.securityGuard!)
+ *   .withCircuitBreaker(mpu.context.circuitBreaker!)
+ *   .build();
+ * ```
+ */
+export { type MPUConfig, type MPUServiceResult, createMPUServices } from './integration/index.js';
