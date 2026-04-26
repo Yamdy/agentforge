@@ -89,6 +89,7 @@ export {
   updateLastCheckpoint,
   setOutput,
   initContextManagement,
+  recordCompaction,
 } from './core/state.js';
 
 /**
@@ -127,9 +128,9 @@ export {
  * - LLMAdapter: LLM provider communication
  * - ToolRegistry: Tool registration and execution
  * - HITLController: Human-in-the-loop interaction
-  * - PauseController: Pause/resume execution
-  * - MCPClient: Model Context Protocol client
-  */
+ * - PauseController: Pause/resume execution
+ * - MCPClient: Model Context Protocol client
+ */
 export type {
   LLMChunk,
   LLMUsage,
@@ -158,12 +159,12 @@ export type {
   ErrorSeverity,
   ErrorCategory,
   ClassifiedError,
-   ErrorHandler,
-   SchemaRegistry,
-   PromptBuildOptions,
-   BuiltPrompt,
-   PromptBuilder,
- } from './core/interfaces.js';
+  ErrorHandler,
+  SchemaRegistry,
+  PromptBuildOptions,
+  BuiltPrompt,
+  PromptBuilder,
+} from './core/interfaces.js';
 
 /**
  * Agent context types for dependency injection.
@@ -665,61 +666,124 @@ export {
   createSubagentRegistry,
 } from './subagent/index.js';
 
- // ============================================================
- // Subsystems - Workflow Orchestration
- // ============================================================
+// ============================================================
+// Subsystems - Workflow Orchestration
+// ============================================================
 
- /**
-  * Workflow orchestration for multi-step agent execution.
-  *
-  * Workflows define sequences of steps, each calling an agent.
-  * Events from nested agents bubble up with workflow correlation.
-  *
-  * @example
-  * ```typescript
-  * import { Workflow, SequentialPipeline } from 'agentforge';
-  *
-  * const workflow = new Workflow({
-  *   id: 'research',
-  *   name: 'Research Workflow',
-  *   steps: [
-  *     { id: 'search', prompt: (input) => `Search: ${input}` },
-  *     { id: 'analyze', prompt: (input) => `Analyze: ${input}` },
-  *   ],
-  * }, agentContext);
-  *
-  * workflow.run('AI trends').subscribe(console.log);
-  * ```
-  */
- export {
-   // Types
-   WorkflowStepSchema,
-   WorkflowConfigSchema,
-   WorkflowExecutionStateSchema,
-   PipelineModeSchema,
-   type WorkflowStep,
-   type WorkflowStepWithAgent,
-   type WorkflowConfig,
-   type WorkflowExecutionState,
-   type WorkflowExecutionContext,
-   type WorkflowResult,
-   type WorkflowStepResult,
-   type PipelineMode,
-   type PipelineConfig,
-   isWorkflowEvent,
-   getWorkflowIdFromEvent,
-   createStepOutputEntry,
-   // Workflow Class
-   Workflow,
-   createWorkflow,
-   // Executor
-   WorkflowExecutor,
-   createPromptGenerator,
-   createJsonPromptGenerator,
-   // Pipeline
-   SequentialPipeline,
-   ParallelPipeline,
-   createPipeline,
-   createSequentialPipeline,
-   createParallelPipeline,
- } from './workflow/index.js';
+/**
+ * Workflow orchestration for multi-step agent execution.
+ *
+ * Workflows define sequences of steps, each calling an agent.
+ * Events from nested agents bubble up with workflow correlation.
+ *
+ * @example
+ * ```typescript
+ * import { Workflow, SequentialPipeline } from 'agentforge';
+ *
+ * const workflow = new Workflow({
+ *   id: 'research',
+ *   name: 'Research Workflow',
+ *   steps: [
+ *     { id: 'search', prompt: (input) => `Search: ${input}` },
+ *     { id: 'analyze', prompt: (input) => `Analyze: ${input}` },
+ *   ],
+ * }, agentContext);
+ *
+ * workflow.run('AI trends').subscribe(console.log);
+ * ```
+ */
+export {
+  // Types
+  WorkflowStepSchema,
+  WorkflowConfigSchema,
+  WorkflowExecutionStateSchema,
+  PipelineModeSchema,
+  type WorkflowStep,
+  type WorkflowStepWithAgent,
+  type WorkflowConfig,
+  type WorkflowExecutionState,
+  type WorkflowExecutionContext,
+  type WorkflowResult,
+  type WorkflowStepResult,
+  type PipelineMode,
+  type PipelineConfig,
+  isWorkflowEvent,
+  getWorkflowIdFromEvent,
+  createStepOutputEntry,
+  // Workflow Class
+  Workflow,
+  createWorkflow,
+  // Executor
+  WorkflowExecutor,
+  createPromptGenerator,
+  createJsonPromptGenerator,
+  // Pipeline
+  SequentialPipeline,
+  ParallelPipeline,
+  createPipeline,
+  createSequentialPipeline,
+  createParallelPipeline,
+} from './workflow/index.js';
+
+// ============================================================
+// Quota Management
+// ============================================================
+
+export {
+  type QuotaUsage,
+  type QuotaLimits,
+  type QuotaController,
+  MemoryQuotaController,
+} from './quota/index.js';
+
+// ============================================================
+// Memory / Compaction
+// ============================================================
+
+export {
+  type CompactionStrategy,
+  type CompactionResult,
+  type CompactionConfig,
+  type CompactionContext,
+  CompactionManager,
+  createCompactionManager,
+  createTruncateCompactionManager,
+  createSummarizeCompactionManager,
+  createDisabledCompactionManager,
+  DEFAULT_COMPACTION_CONFIG,
+} from './memory/index.js';
+
+// ============================================================
+// Observability / Resource Monitoring
+// ============================================================
+
+export { ResourceMonitor, type ResourceMetrics } from './observability/index.js';
+
+// ============================================================
+// LLM Adapters
+// ============================================================
+
+export {
+  OpenAIAdapter,
+  createOpenAIAdapter,
+  createOpenAIAdapterFromFactory,
+  openaiAdapterFactory,
+  type OpenAIAdapterOptions,
+  AnthropicAdapter,
+  createAnthropicAdapter,
+  createAnthropicAdapterFromFactory,
+  anthropicAdapterFactory,
+  type AnthropicAdapterOptions,
+  parseModelSpec,
+  detectProviderFromModel,
+  getLLMAdapterFactory,
+  resetLLMAdapterFactory,
+  createLLMAdapter,
+  createOpenAICompatibleAdapter,
+  createGoogleAdapter,
+  createOllamaAdapter,
+  PROVIDER_API_KEY_ENV,
+  PROVIDER_BASE_URLS,
+  type ParsedModelSpec,
+  type AdapterFactoryFn,
+} from './adapters/index.js';
