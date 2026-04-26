@@ -10,20 +10,21 @@ import type { PromptsConfig } from '../config.js';
 import { DEFAULT_CONFIG } from '../config.js';
 
 // Use vi.hoisted for mocks used in vi.mock factories
-const { mockCollectPrompts, mockGenerateProject, mockRunPostInstall, mockMergeCliArgs } = vi.hoisted(() => ({
-  mockCollectPrompts: vi.fn(),
-  mockGenerateProject: vi.fn(),
-  mockRunPostInstall: vi.fn(),
-  mockMergeCliArgs: vi.fn((args: Record<string, unknown>) => {
-    const result: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(args)) {
-      if (value !== undefined) {
-        result[key] = value;
+const { mockCollectPrompts, mockGenerateProject, mockRunPostInstall, mockMergeCliArgs } =
+  vi.hoisted(() => ({
+    mockCollectPrompts: vi.fn(),
+    mockGenerateProject: vi.fn(),
+    mockRunPostInstall: vi.fn(),
+    mockMergeCliArgs: vi.fn((args: Record<string, unknown>) => {
+      const result: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(args)) {
+        if (value !== undefined) {
+          result[key] = value;
+        }
       }
-    }
-    return result;
-  }),
-}));
+      return result;
+    }),
+  }));
 
 vi.mock('../prompts.js', () => ({
   collectPrompts: mockCollectPrompts,
@@ -40,12 +41,12 @@ vi.mock('../post-install.js', () => ({
 
 vi.mock('chalk', () => ({
   default: {
-    blue: (s: string) => s,
-    green: (s: string) => s,
-    yellow: (s: string) => s,
-    cyan: (s: string) => s,
-    red: (s: string) => s,
-    white: (s: string) => s,
+    blue: (s: string): string => s,
+    green: (s: string): string => s,
+    yellow: (s: string): string => s,
+    cyan: (s: string): string => s,
+    red: (s: string): string => s,
+    white: (s: string): string => s,
   },
 }));
 
@@ -76,7 +77,7 @@ describe('index', () => {
 
       // Should call generateProject without calling collectPrompts
       expect(mockGenerateProject).toHaveBeenCalled();
-      const config = mockGenerateProject.mock.calls[0][0] as PromptsConfig;
+      const config = (mockGenerateProject.mock.calls as [PromptsConfig][])[0]![0];
       expect(config.projectName).toBe('my-agent');
       expect(mockCollectPrompts).not.toHaveBeenCalled();
     });
@@ -103,7 +104,7 @@ describe('index', () => {
 
       await runAction('test-agent', opts);
 
-      const config = mockGenerateProject.mock.calls[0][0] as PromptsConfig;
+      const config = (mockGenerateProject.mock.calls as [PromptsConfig][])[0]![0];
       expect(config.llm).toBe('anthropic');
     });
 
@@ -117,7 +118,7 @@ describe('index', () => {
 
       await runAction('test-agent', opts);
 
-      const config = mockGenerateProject.mock.calls[0][0] as PromptsConfig;
+      const config = (mockGenerateProject.mock.calls as [PromptsConfig][])[0]![0];
       expect(config.tools).toBe(true);
       expect(config.checkpoint).toBe(true);
       expect(config.observability).toBe(true);
@@ -128,7 +129,9 @@ describe('index', () => {
 
       await runAction('test-agent', opts);
 
-      const generateOpts = mockGenerateProject.mock.calls[0][2] as { dryRun?: boolean };
+      const generateOpts = (
+        mockGenerateProject.mock.calls as [PromptsConfig, string, { dryRun?: boolean }][]
+      )[0]![2];
       expect(generateOpts.dryRun).toBe(true);
     });
 
@@ -145,7 +148,7 @@ describe('index', () => {
 
       await runAction('test-agent', opts);
 
-      const config = mockGenerateProject.mock.calls[0][0] as PromptsConfig;
+      const config = (mockGenerateProject.mock.calls as [PromptsConfig][])[0]![0];
       expect(config.gitInit).toBe(false);
     });
 
@@ -164,4 +167,4 @@ describe('index', () => {
       expect(mockRunPostInstall).toHaveBeenCalled();
     });
   });
-})
+});

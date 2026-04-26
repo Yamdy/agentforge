@@ -7,7 +7,15 @@
 
 import inquirer from 'inquirer';
 import type { PromptsConfig, LLMProvider, APIMode, CheckpointStorage, Preset } from './config.js';
-import { DEFAULT_VALUES, DEFAULT_CONFIG, VALID_LLM_PROVIDERS, VALID_LLM_MODELS, VALID_PRESETS, VALID_CHECKPOINT_STORAGE, validateConfig } from './config.js';
+import {
+  DEFAULT_VALUES,
+  DEFAULT_CONFIG,
+  VALID_LLM_PROVIDERS,
+  VALID_LLM_MODELS,
+  VALID_PRESETS,
+  VALID_CHECKPOINT_STORAGE,
+  validateConfig,
+} from './config.js';
 
 /**
  * Module names for the checkbox prompt.
@@ -57,7 +65,9 @@ function isProvided(overrides: Partial<PromptsConfig>, key: keyof PromptsConfig)
  * @returns Complete PromptsConfig ready for project generation
  * @throws Error if the final config fails validation
  */
-export async function collectPrompts(cliOverrides: Partial<PromptsConfig> = {}): Promise<PromptsConfig> {
+export async function collectPrompts(
+  cliOverrides: Partial<PromptsConfig> = {}
+): Promise<PromptsConfig> {
   const answers: Partial<PromptsConfig> = { ...mergeCliArgs(cliOverrides) };
 
   // Step 1: Project name (required)
@@ -67,7 +77,7 @@ export async function collectPrompts(cliOverrides: Partial<PromptsConfig> = {}):
         type: 'input',
         name: 'projectName',
         message: 'Project name:',
-        validate: (input: string) => {
+        validate: (input: string): string | true => {
           if (!input.trim()) return 'Project name is required';
           if (/\s/.test(input)) return 'Project name cannot contain spaces';
           if (!/^[a-zA-Z0-9_-]+$/.test(input)) {
@@ -113,7 +123,7 @@ export async function collectPrompts(cliOverrides: Partial<PromptsConfig> = {}):
         type: 'list',
         name: 'llm',
         message: 'LLM provider:',
-        choices: VALID_LLM_PROVIDERS.map((p) => ({ name: p, value: p })),
+        choices: VALID_LLM_PROVIDERS.map(p => ({ name: p, value: p })),
         default: DEFAULT_VALUES.llm,
       },
     ]);
@@ -168,7 +178,16 @@ export async function collectPrompts(cliOverrides: Partial<PromptsConfig> = {}):
 
   // Only prompt if module selections were NOT explicitly provided via CLI
   // Check if ALL module keys are present in cliOverrides (even if false)
-  const moduleKeys: (keyof PromptsConfig)[] = ['tools', 'checkpoint', 'observability', 'hitl', 'plugins', 'compaction', 'subagent', 'mcp'];
+  const moduleKeys: (keyof PromptsConfig)[] = [
+    'tools',
+    'checkpoint',
+    'observability',
+    'hitl',
+    'plugins',
+    'compaction',
+    'subagent',
+    'mcp',
+  ];
   const allModulesProvided = moduleKeys.every(key => key in cliOverrides);
 
   if (!allModulesProvided) {
@@ -202,7 +221,7 @@ export async function collectPrompts(cliOverrides: Partial<PromptsConfig> = {}):
         type: 'list',
         name: 'checkpointStorage',
         message: 'Checkpoint storage:',
-        choices: VALID_CHECKPOINT_STORAGE.map((s) => ({ name: s, value: s })),
+        choices: VALID_CHECKPOINT_STORAGE.map(s => ({ name: s, value: s })),
         default: DEFAULT_VALUES.checkpointStorage,
       },
     ]);
@@ -233,14 +252,11 @@ export async function collectPrompts(cliOverrides: Partial<PromptsConfig> = {}):
         type: 'list',
         name: 'preset',
         message: 'Configuration preset (optional):',
-        choices: [
-          { name: 'None', value: '' },
-          ...VALID_PRESETS.map((p) => ({ name: p, value: p })),
-        ],
+        choices: [{ name: 'None', value: '' }, ...VALID_PRESETS.map(p => ({ name: p, value: p }))],
         default: '',
       },
     ]);
-    answers.preset = preset || undefined as unknown as Preset;
+    answers.preset = preset || (undefined as unknown as Preset);
   }
 
   // Step 10: Git init
@@ -267,7 +283,7 @@ export async function collectPrompts(cliOverrides: Partial<PromptsConfig> = {}):
   // Validate the final config
   const validation = validateConfig(config);
   if (!validation.valid) {
-    throw new Error(`Invalid configuration:\n${validation.errors.map((e) => `  - ${e}`).join('\n')}`);
+    throw new Error(`Invalid configuration:\n${validation.errors.map(e => `  - ${e}`).join('\n')}`);
   }
 
   return config;

@@ -1,6 +1,6 @@
 /**
  * OpenAI HTTP Adapter - Direct HTTP calls without AI SDK
- * 
+ *
  * Supports v1 model format (compatible with MiMo, DeepSeek, etc.)
  */
 
@@ -48,18 +48,19 @@ export function createOpenAIHttpAdapter(
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`,
+            Authorization: `Bearer ${apiKey}`,
           },
           body: JSON.stringify(body),
         });
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
-          const errorMessage = (errorData as { error?: { message?: string } }).error?.message ?? response.statusText;
+          const errorMessage =
+            (errorData as { error?: { message?: string } }).error?.message ?? response.statusText;
           throw new Error(`API error ${response.status}: ${errorMessage}`);
         }
 
-        const data = await response.json() as {
+        const data = (await response.json()) as {
           choices: Array<{
             message: {
               content: string;
@@ -83,15 +84,19 @@ export function createOpenAIHttpAdapter(
 
         const result: LLMResponse = {
           content: choice.message.content ?? '',
-          finishReason: choice.finish_reason === 'stop' ? 'stop' : 
-                       choice.finish_reason === 'tool_calls' ? 'tool_calls' : 'stop',
+          finishReason:
+            choice.finish_reason === 'stop'
+              ? 'stop'
+              : choice.finish_reason === 'tool_calls'
+                ? 'tool_calls'
+                : 'stop',
         };
 
         if (choice.message.tool_calls) {
           result.toolCalls = choice.message.tool_calls.map(tc => ({
             id: tc.id,
             name: tc.function.name,
-            args: JSON.parse(tc.function.arguments),
+            args: JSON.parse(tc.function.arguments) as Record<string, unknown>,
           }));
         }
 

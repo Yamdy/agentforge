@@ -1,9 +1,9 @@
 /**
  * AgentForge LLM Adapter System
- * 
- * Inspired by: AgentScope (Content Blocks), Mastra (Gateway), 
+ *
+ * Inspired by: AgentScope (Content Blocks), Mastra (Gateway),
  *              OpenCode (Error Classification), DeepAgents (Credential Routing)
- * 
+ *
  * Key design decisions:
  * 1. Direct HTTP fallback for v1 models (MiMo, DeepSeek, etc.)
  * 2. Error classification with 28+ context overflow patterns
@@ -19,13 +19,13 @@ import { EMPTY } from 'rxjs';
 // Error Classification (inspired by OpenCode)
 // ============================================================
 
-export type ErrorCategory = 
-  | 'auth'           // API key invalid/expired
-  | 'rate_limit'     // Rate limited (retryable)
+export type ErrorCategory =
+  | 'auth' // API key invalid/expired
+  | 'rate_limit' // Rate limited (retryable)
   | 'context_overflow' // Context too long (never retry)
-  | 'server_error'   // 5xx errors (retryable)
-  | 'network'        // Network errors (retryable)
-  | 'unknown';       // Unknown errors
+  | 'server_error' // 5xx errors (retryable)
+  | 'network' // Network errors (retryable)
+  | 'unknown'; // Unknown errors
 
 export interface ClassifiedError {
   category: ErrorCategory;
@@ -58,13 +58,7 @@ const RATE_LIMIT_PATTERNS = [
   /quota exceeded/i,
 ];
 
-const AUTH_PATTERNS = [
-  /unauthorized/i,
-  /invalid.*key/i,
-  /authentication/i,
-  /401/,
-  /403/,
-];
+const AUTH_PATTERNS = [/unauthorized/i, /invalid.*key/i, /authentication/i, /401/, /403/];
 
 export function classifyError(error: unknown): ClassifiedError {
   const message = error instanceof Error ? error.message : String(error);
@@ -199,7 +193,13 @@ export function createHttpAdapter(
 
       for (let attempt = 1; attempt <= retryConfig.maxRetries; attempt++) {
         try {
-          const response = await callHTTPAPI(options.baseURL, options.apiKey, model, messages, llmOptions);
+          const response = await callHTTPAPI(
+            options.baseURL,
+            options.apiKey,
+            model,
+            messages,
+            llmOptions
+          );
           return response;
         } catch (error: unknown) {
           const errorObj = error instanceof Error ? error : new Error(String(error));
@@ -214,7 +214,9 @@ export function createHttpAdapter(
           // Wait before retry
           if (attempt < retryConfig.maxRetries) {
             const delay = calculateRetryDelay(attempt, lastError, retryConfig);
-            console.warn(`[${provider}] Retry ${attempt}/${retryConfig.maxRetries} after ${delay}ms`);
+            console.warn(
+              `[${provider}] Retry ${attempt}/${retryConfig.maxRetries} after ${delay}ms`
+            );
             await new Promise(r => setTimeout(r, delay));
           }
         }
@@ -249,22 +251,26 @@ async function callHTTPAPI(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
+      Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify(body),
   });
 
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({})) as Record<string, unknown>;
-    const errorMsg = (errorData as { error?: { message?: string } }).error?.message ?? response.statusText;
-  const error = new Error(`API error ${response.status}: ${errorMsg}`);
-  (error as unknown as Record<string, unknown>).statusCode = response.status;
-  throw error;
+    const errorData = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+    const errorMsg =
+      (errorData as { error?: { message?: string } }).error?.message ?? response.statusText;
+    const error = new Error(`API error ${response.status}: ${errorMsg}`);
+    (error as unknown as Record<string, unknown>).statusCode = response.status;
+    throw error;
   }
 
-  const data = await response.json() as {
+  const data = (await response.json()) as {
     choices: Array<{
-      message: { content: string; tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }> };
+      message: {
+        content: string;
+        tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
+      };
       finish_reason: string;
     }>;
     usage?: { prompt_tokens: number; completion_tokens: number };
@@ -275,15 +281,19 @@ async function callHTTPAPI(
 
   const result: LLMResponse = {
     content: choice.message.content ?? '',
-    finishReason: choice.finish_reason === 'stop' ? 'stop' : 
-                 choice.finish_reason === 'tool_calls' ? 'tool_calls' : 'stop',
+    finishReason:
+      choice.finish_reason === 'stop'
+        ? 'stop'
+        : choice.finish_reason === 'tool_calls'
+          ? 'tool_calls'
+          : 'stop',
   };
 
   if (choice.message.tool_calls) {
     result.toolCalls = choice.message.tool_calls.map(tc => ({
       id: tc.id,
       name: tc.function.name,
-      args: JSON.parse(tc.function.arguments),
+      args: JSON.parse(tc.function.arguments) as Record<string, unknown>,
     }));
   }
 
@@ -320,11 +330,15 @@ export function createLLMAdapterFromSpec(
   }
 
   // Fallback to HTTP adapter
-  const apiKey = (options?.apiKey as string) ?? process.env[`${provider.toUpperCase()}_API_KEY`] ?? '';
-  const baseURL = (options?.baseURL as string) ?? process.env[`${provider.toUpperCase()}_BASE_URL`] ?? '';
+  const apiKey =
+    (options?.apiKey as string) ?? process.env[`${provider.toUpperCase()}_API_KEY`] ?? '';
+  const baseURL =
+    (options?.baseURL as string) ?? process.env[`${provider.toUpperCase()}_BASE_URL`] ?? '';
 
   if (!apiKey || !baseURL) {
-    throw new Error(`No adapter for ${provider}. Set ${provider.toUpperCase()}_API_KEY and ${provider.toUpperCase()}_BASE_URL`);
+    throw new Error(
+      `No adapter for ${provider}. Set ${provider.toUpperCase()}_API_KEY and ${provider.toUpperCase()}_BASE_URL`
+    );
   }
 
   return createHttpAdapter(provider, model, { apiKey, baseURL });

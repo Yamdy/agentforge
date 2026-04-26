@@ -20,6 +20,7 @@ import { runPostInstall } from './post-install.js';
 /**
  * Main CLI action: parse args → collect config → generate → post-install.
  */
+// eslint-disable-next-line @typescript-eslint/require-await -- async for API contract consistency
 export async function main(): Promise<void> {
   const program = new Command();
 
@@ -142,7 +143,7 @@ export async function runAction(
   // 4. Final validation
   const validation = validateConfig(config);
   if (!validation.valid) {
-    throw new Error(`Invalid configuration:\n${validation.errors.map((e) => `  - ${e}`).join('\n')}`);
+    throw new Error(`Invalid configuration:\n${validation.errors.map(e => `  - ${e}`).join('\n')}`);
   }
 
   // 5. Determine target directory

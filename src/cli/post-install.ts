@@ -33,10 +33,14 @@ export function initGit(targetDir: string): void {
   }
 
   try {
-    execFileSync('git', ['commit', '-m', 'Initial commit from create-agentforge', '--no-gpg-sign'], {
-      cwd: targetDir,
-      stdio: 'pipe',
-    });
+    execFileSync(
+      'git',
+      ['commit', '-m', 'Initial commit from create-agentforge', '--no-gpg-sign'],
+      {
+        cwd: targetDir,
+        stdio: 'pipe',
+      }
+    );
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);
     throw new Error(`Failed to create initial commit: ${msg}`);
@@ -68,6 +72,7 @@ export function installDeps(targetDir: string): void {
  *
  * Best-effort: logs a warning on failure but does not throw.
  */
+// eslint-disable-next-line @typescript-eslint/require-await -- async for API contract consistency
 export async function formatWithPrettier(targetDir: string): Promise<void> {
   console.log(chalk.blue('  → Formatting code with Prettier...'));
 
@@ -79,7 +84,9 @@ export async function formatWithPrettier(targetDir: string): Promise<void> {
     console.log(chalk.green('  ✓ Code formatted'));
   } catch {
     // Best-effort: warn but don't abort
-    console.log(chalk.yellow('  ⚠ Prettier formatting failed (non-critical). You can run it manually later.'));
+    console.log(
+      chalk.yellow('  ⚠ Prettier formatting failed (non-critical). You can run it manually later.')
+    );
   }
 }
 

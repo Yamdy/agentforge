@@ -82,6 +82,7 @@ export interface GenerateResult {
  * @param options - Generation options
  * @returns GenerateResult with files created and target directory
  */
+// eslint-disable-next-line @typescript-eslint/require-await -- async for API contract consistency
 export async function generateProject(
   config: PromptsConfig,
   targetDir: string,
@@ -194,10 +195,10 @@ function getModelString(config: PromptsConfig): string {
  */
 function getLLMImport(config: PromptsConfig): string {
   const imports: Record<string, string> = {
-    openai: "@ai-sdk/openai",
-    anthropic: "@ai-sdk/anthropic",
-    deepseek: "@ai-sdk/openai-compatible",
-    mock: "./llm/adapter.js",
+    openai: '@ai-sdk/openai',
+    anthropic: '@ai-sdk/anthropic',
+    deepseek: '@ai-sdk/openai-compatible',
+    mock: './llm/adapter.js',
   };
   return imports[config.llm] ?? imports.mock!;
 }
@@ -207,10 +208,10 @@ function getLLMImport(config: PromptsConfig): string {
  */
 function getLLMClassName(config: PromptsConfig): string {
   const classNames: Record<string, string> = {
-    openai: "createOpenAI",
-    anthropic: "createAnthropic",
-    deepseek: "createOpenAICompatible",
-    mock: "MockLLMAdapter",
+    openai: 'createOpenAI',
+    anthropic: 'createAnthropic',
+    deepseek: 'createOpenAICompatible',
+    mock: 'MockLLMAdapter',
   };
   return classNames[config.llm] ?? classNames.mock!;
 }
@@ -227,9 +228,21 @@ function renderBaseTemplates(
   // Define base files to generate
   const baseFiles: Array<{ template: string; output: string; description: string }> = [
     // Handlebars templates
-    { template: 'package.json.hbs', output: 'package.json', description: 'Package configuration with scripts and dependencies' },
-    { template: 'tsconfig.json.hbs', output: 'tsconfig.json', description: 'TypeScript configuration' },
-    { template: '.env.example.hbs', output: '.env.example', description: 'Environment variables template' },
+    {
+      template: 'package.json.hbs',
+      output: 'package.json',
+      description: 'Package configuration with scripts and dependencies',
+    },
+    {
+      template: 'tsconfig.json.hbs',
+      output: 'tsconfig.json',
+      description: 'TypeScript configuration',
+    },
+    {
+      template: '.env.example.hbs',
+      output: '.env.example',
+      description: 'Environment variables template',
+    },
     { template: 'README.md.hbs', output: 'README.md', description: 'Project documentation' },
     { template: 'src/index.ts.hbs', output: 'src/index.ts', description: 'Main entry point' },
     // Static files (no template)
@@ -239,21 +252,21 @@ function renderBaseTemplates(
 
   for (const file of baseFiles) {
     const templatePath = join(BASE_TEMPLATES_DIR, file.template);
-    
+
     if (dryRun) {
       files.push({ path: file.output, description: file.description });
       continue;
     }
 
     let content: string;
-    
+
     if (file.template.endsWith('.hbs')) {
       content = renderTemplateFile(templatePath, templateData);
     } else {
       // For non-Handlebars files, read and copy directly
       content = renderTemplateFile(templatePath, {});
     }
-    
+
     writeFile(join(tempDir!, file.output), content);
     files.push({ path: file.output, description: file.description });
   }
@@ -271,7 +284,7 @@ function renderLLMAdapter(
 ): void {
   const llmDir = `llm-${config.llm}`;
   const templatePath = join(MODULES_TEMPLATES_DIR, llmDir, 'adapter.ts.hbs');
-  
+
   if (dryRun) {
     files.push({ path: 'src/llm/adapter.ts', description: `${config.llm} LLM adapter` });
     return;
@@ -293,8 +306,16 @@ function renderToolsModule(
 ): void {
   const templatesDir = join(MODULES_TEMPLATES_DIR, 'tools');
   const toolFiles = [
-    { template: 'index.ts.hbs', output: 'src/tools/index.ts', description: 'Tool registry with examples' },
-    { template: 'weather.ts.hbs', output: 'src/tools/weather.ts', description: 'Weather tool with Zod schema' },
+    {
+      template: 'index.ts.hbs',
+      output: 'src/tools/index.ts',
+      description: 'Tool registry with examples',
+    },
+    {
+      template: 'weather.ts.hbs',
+      output: 'src/tools/weather.ts',
+      description: 'Weather tool with Zod schema',
+    },
   ];
 
   for (const file of toolFiles) {
@@ -319,15 +340,21 @@ function renderCheckpointModule(
   dryRun: boolean
 ): void {
   const templatePath = join(MODULES_TEMPLATES_DIR, 'checkpoint', 'storage.ts.hbs');
-  
+
   if (dryRun) {
-    files.push({ path: 'src/checkpoint/storage.ts', description: 'Checkpoint storage implementation' });
+    files.push({
+      path: 'src/checkpoint/storage.ts',
+      description: 'Checkpoint storage implementation',
+    });
     return;
   }
 
   const content = renderTemplateFile(templatePath, templateData);
   writeFile(join(tempDir!, 'src/checkpoint/storage.ts'), content);
-  files.push({ path: 'src/checkpoint/storage.ts', description: 'Checkpoint storage implementation' });
+  files.push({
+    path: 'src/checkpoint/storage.ts',
+    description: 'Checkpoint storage implementation',
+  });
 }
 
 /**
@@ -341,9 +368,21 @@ function renderObservabilityModule(
 ): void {
   const templatesDir = join(MODULES_TEMPLATES_DIR, 'observability');
   const obsFiles = [
-    { template: 'logger.ts.hbs', output: 'src/observability/logger.ts', description: 'Console logger' },
-    { template: 'tracer.ts.hbs', output: 'src/observability/tracer.ts', description: 'Console tracer' },
-    { template: 'metrics.ts.hbs', output: 'src/observability/metrics.ts', description: 'Console metrics collector' },
+    {
+      template: 'logger.ts.hbs',
+      output: 'src/observability/logger.ts',
+      description: 'Console logger',
+    },
+    {
+      template: 'tracer.ts.hbs',
+      output: 'src/observability/tracer.ts',
+      description: 'Console tracer',
+    },
+    {
+      template: 'metrics.ts.hbs',
+      output: 'src/observability/metrics.ts',
+      description: 'Console metrics collector',
+    },
   ];
 
   for (const file of obsFiles) {
@@ -368,7 +407,7 @@ function renderHITLModule(
   dryRun: boolean
 ): void {
   const templatePath = join(MODULES_TEMPLATES_DIR, 'hitl', 'controller.ts.hbs');
-  
+
   if (dryRun) {
     files.push({ path: 'src/hitl/controller.ts', description: 'HITL controller implementation' });
     return;
@@ -389,7 +428,7 @@ function renderPluginsModule(
   dryRun: boolean
 ): void {
   const templatePath = join(MODULES_TEMPLATES_DIR, 'plugins', 'index.ts.hbs');
-  
+
   if (dryRun) {
     files.push({ path: 'src/plugins/index.ts', description: 'Plugin manager setup' });
     return;
@@ -410,7 +449,7 @@ function renderCompactionModule(
   dryRun: boolean
 ): void {
   const templatePath = join(MODULES_TEMPLATES_DIR, 'memory', 'compaction.ts.hbs');
-  
+
   if (dryRun) {
     files.push({ path: 'src/memory/compaction.ts', description: 'Memory compaction manager' });
     return;
@@ -431,7 +470,7 @@ function renderSubagentModule(
   dryRun: boolean
 ): void {
   const templatePath = join(MODULES_TEMPLATES_DIR, 'subagent', 'registry.ts.hbs');
-  
+
   if (dryRun) {
     files.push({ path: 'src/subagent/registry.ts', description: 'Subagent registry' });
     return;
@@ -452,7 +491,7 @@ function renderMCPModule(
   dryRun: boolean
 ): void {
   const templatePath = join(MODULES_TEMPLATES_DIR, 'mcp', 'client.ts.hbs');
-  
+
   if (dryRun) {
     files.push({ path: 'src/mcp/client.ts', description: 'MCP client configuration' });
     return;
@@ -473,7 +512,7 @@ function renderOperatorsModule(
   dryRun: boolean
 ): void {
   const templatePath = join(MODULES_TEMPLATES_DIR, 'operators', 'pipeline.ts.hbs');
-  
+
   if (dryRun) {
     files.push({ path: 'src/operators/pipeline.ts', description: 'Operator pipeline composition' });
     return;
@@ -494,48 +533,46 @@ function generateConfigFile(
   dryRun: boolean
 ): void {
   const config = templateData.config;
-  
-  const imports: string[] = [
-    `import { defineConfig } from 'agentforge';`,
-  ];
-  
+
+  const imports: string[] = [`import { defineConfig } from 'agentforge';`];
+
   // Add imports based on enabled modules
   imports.push(`import { adapter } from './src/llm/adapter.js';`);
-  
+
   if (config.tools) {
     imports.push(`import { tools } from './src/tools/index.js';`);
   }
-  
+
   if (config.checkpoint) {
     imports.push(`import { checkpointStorage } from './src/checkpoint/storage.js';`);
   }
-  
+
   if (config.observability) {
     imports.push(`import { logger } from './src/observability/logger.js';`);
     imports.push(`import { tracer } from './src/observability/tracer.js';`);
     imports.push(`import { metrics } from './src/observability/metrics.js';`);
   }
-  
+
   if (config.hitl) {
     imports.push(`import { hitlController } from './src/hitl/controller.js';`);
   }
-  
+
   if (config.plugins) {
     imports.push(`import { pluginManager } from './src/plugins/index.js';`);
   }
-  
+
   if (config.compaction) {
     imports.push(`import { compactionManager } from './src/memory/compaction.js';`);
   }
-  
+
   if (config.subagent) {
     imports.push(`import { subagentRegistry } from './src/subagent/registry.js';`);
   }
-  
+
   if (config.mcp) {
     imports.push(`import { mcpClient } from './src/mcp/client.js';`);
   }
-  
+
   // Build config object
   const configLines: string[] = [
     `export default defineConfig({`,
@@ -546,72 +583,74 @@ function generateConfigFile(
     `  // LLM Configuration`,
     `  llm: adapter,`,
   ];
-  
+
   if (config.tools) {
     configLines.push(``);
     configLines.push(`  // Tools`);
     configLines.push(`  tools,`);
   }
-  
+
   if (config.checkpoint) {
     configLines.push(``);
     configLines.push(`  // Checkpoint persistence`);
-    configLines.push(`  checkpoint: ${config.checkpointStorage === 'memory' ? "'memory'" : 'true'},`);
+    configLines.push(
+      `  checkpoint: ${config.checkpointStorage === 'memory' ? "'memory'" : 'true'},`
+    );
   }
-  
+
   if (config.observability) {
     configLines.push(``);
     configLines.push(`  // Observability`);
     configLines.push(`  tracing: true,`);
     configLines.push(`  metrics: true,`);
   }
-  
+
   if (config.hitl) {
     configLines.push(``);
     configLines.push(`  // Human-in-the-loop`);
     configLines.push(`  hitl: true,`);
   }
-  
+
   if (config.plugins) {
     configLines.push(``);
     configLines.push(`  // Plugin system`);
     configLines.push(`  plugins: pluginManager,`);
   }
-  
+
   if (config.preset) {
     configLines.push(``);
     configLines.push(`  // Preset configuration`);
     configLines.push(`  preset: '${config.preset}',`);
   }
-  
+
   // Add comments for optional modules
   if (config.compaction) {
     configLines.push(``);
     configLines.push(`  // Memory compaction`);
     configLines.push(`  compaction: compactionManager,`);
   }
-  
+
   if (config.subagent) {
     configLines.push(``);
     configLines.push(`  // Subagent delegation`);
     configLines.push(`  subagents: subagentRegistry,`);
   }
-  
+
   if (config.mcp) {
     configLines.push(``);
     configLines.push(`  // MCP integration`);
     configLines.push(`  mcp: mcpClient,`);
   }
-  
+
   configLines.push(`});`);
-  
+
   const content = `${imports.join('\n')}\n\n${configLines.join('\n')}\n`;
-  
+
   if (dryRun) {
     files.push({ path: 'agentforge.config.ts', description: 'AgentForge configuration' });
     return;
   }
-  
+
   writeFile(join(tempDir!, 'agentforge.config.ts'), content);
   files.push({ path: 'agentforge.config.ts', description: 'AgentForge configuration' });
 }
@@ -635,7 +674,7 @@ function generateProjectSync(
   // For sync operation in dry-run, we simulate the file list
   const files: FileEntry[] = [];
   const effectiveAgentName = config.agentName || config.projectName;
-  
+
   const templateData: TemplateData = {
     config: {
       ...config,
@@ -649,11 +688,11 @@ function generateProjectSync(
     hasCheckpointStorage: config.checkpoint,
     hasSQLiteStorage: config.checkpoint && config.checkpointStorage === 'sqlite',
   };
-  
+
   // Call render functions with dryRun=true
   renderBaseTemplates(templateData, null, files, true);
   renderLLMAdapter(config, templateData, null, files, true);
-  
+
   if (config.tools) renderToolsModule(templateData, null, files, true);
   if (config.checkpoint) renderCheckpointModule(templateData, null, files, true);
   if (config.observability) renderObservabilityModule(templateData, null, files, true);
@@ -663,8 +702,8 @@ function generateProjectSync(
   if (config.subagent) renderSubagentModule(templateData, null, files, true);
   if (config.mcp) renderMCPModule(templateData, null, files, true);
   if (config.apiMode === 'advanced') renderOperatorsModule(templateData, null, files, true);
-  
+
   generateConfigFile(templateData, null, files, true);
-  
+
   return { files };
 }

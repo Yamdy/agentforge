@@ -93,7 +93,7 @@ export class Application {
     this._version = config.version ?? '0.0.0';
     this._port = config.port;
     this._shutdownTimeoutMs = config.shutdownTimeoutMs ?? 10000;
-    this._onExit = config.onExit ?? ((code: number) => process.exit(code));
+    this._onExit = config.onExit ?? ((code: number): never => process.exit(code));
     this.auditStore = config.auditStore;
 
     // M8: Observability

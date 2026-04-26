@@ -17,11 +17,11 @@ vi.mock('node:child_process', () => ({
 // Mock chalk to return plain strings in tests
 vi.mock('chalk', () => ({
   default: {
-    blue: (s: string) => s,
-    green: (s: string) => s,
-    yellow: (s: string) => s,
-    cyan: (s: string) => s,
-    red: (s: string) => s,
+    blue: (s: string): string => s,
+    green: (s: string): string => s,
+    yellow: (s: string): string => s,
+    cyan: (s: string): string => s,
+    red: (s: string): string => s,
   },
 }));
 
@@ -116,11 +116,10 @@ describe('post-install', () => {
 
       await formatWithPrettier('/tmp/test-project');
 
-      expect(mockExecFileSync).toHaveBeenCalledWith(
-        'npx',
-        ['prettier', '--write', 'src/**/*.ts'],
-        { cwd: '/tmp/test-project', stdio: 'pipe' }
-      );
+      expect(mockExecFileSync).toHaveBeenCalledWith('npx', ['prettier', '--write', 'src/**/*.ts'], {
+        cwd: '/tmp/test-project',
+        stdio: 'pipe',
+      });
     });
 
     it('does not throw on prettier failure (best-effort)', async () => {
@@ -190,4 +189,4 @@ describe('post-install', () => {
       await expect(runPostInstall(config, '/tmp/test-project')).rejects.toThrow(/npm install/);
     });
   });
-})
+});

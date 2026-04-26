@@ -29,6 +29,7 @@ export const AVAILABLE_TEMPLATES: string[] = ['weather-agent', 'full-pipeline'];
  * @param overrides - Partial config to override defaults in the template
  * @throws Error if template name is invalid
  */
+// eslint-disable-next-line @typescript-eslint/require-await -- async for API contract consistency
 export async function loadTemplate(
   templateName: string,
   targetDir: string,
@@ -65,7 +66,7 @@ export async function loadTemplate(
 function applyProjectNameOverride(targetDir: string, projectName: string): void {
   const pkgJsonPath = join(targetDir, 'package.json');
   if (existsSync(pkgJsonPath)) {
-    const pkgJson = JSON.parse(readFileSync(pkgJsonPath, 'utf-8'));
+    const pkgJson = JSON.parse(readFileSync(pkgJsonPath, 'utf-8')) as Record<string, unknown>;
     pkgJson.name = projectName;
     writeFileSync(pkgJsonPath, JSON.stringify(pkgJson, null, 2) + '\n', 'utf-8');
   }
