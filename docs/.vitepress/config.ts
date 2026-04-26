@@ -28,6 +28,7 @@ export default defineConfig({
           items: [
             { text: '简介', link: '/guide/' },
             { text: '快速开始', link: '/guide/getting-started' },
+            { text: '脚手架工具', link: '/guide/create-agentforge' },
             { text: '核心概念', link: '/guide/core-concepts' },
           ],
         },

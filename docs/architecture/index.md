@@ -203,11 +203,20 @@ src/
 │   ├── events.ts           # 事件 Schema (Zod)
 │   ├── state.ts            # 状态管理
 │   ├── interfaces.ts       # DI 接口
+│   ├── context.ts          # 3 层 Context 定义
+│   ├── context-builder.ts  # ContextBuilder
 │   ├── checkpoint.ts       # Checkpoint 系统
-│   └── state-machine.ts    # 状态机
+│   ├── state-machine.ts    # 状态机
+│   └── prompt-builder.ts   # Prompt 构建器
 │
 ├── loop/                    # Agent 主循环
 │   └── agent-loop.ts       # expand 递归核心
+│
+├── api/                     # L2/L3 API 层
+│   ├── create-agent.ts     # L2: createAgent()
+│   ├── run-agent.ts        # L3: runAgent()
+│   ├── context-builder.ts  # API 层 ContextBuilder
+│   └── types.ts            # AgentConfig / Agent 接口
 │
 ├── plugins/                 # 插件系统
 │   ├── plugin.ts           # 插件接口
@@ -222,7 +231,8 @@ src/
 │
 ├── adapters/                # LLM 适配器
 │   ├── openai.ts           # OpenAI
-│   └── anthropic.ts        # Anthropic
+│   ├── anthropic.ts        # Anthropic
+│   └── index.ts            # 适配器工厂
 │
 ├── subagent/                # 子 Agent
 ├── mcp/                     # MCP 协议
@@ -235,8 +245,9 @@ src/
 │   └── strategies.ts       # 压缩策略
 │
 ├── quota/                   # 配额控制
-├── security/                # 安全模块
-└── contracts/               # Tier 1 校验
+├── security/                # 安全模块（权限/沙箱/审计/限流/消毒）
+├── observability/           # 资源监控
+├── contracts/               # Tier 1 校验（LLM/MCP/用户输入）
 ```
 
 ## 性能考量
@@ -273,3 +284,20 @@ const manager = new CompactionManager({
 
 - [指南](/guide/) - 开始使用 AgentForge
 - [API 参考](/api/) - 完整 API 文档
+
+## 设计文档对照
+
+> 以下是本文档与 `design/` 目录中设计文档的对应关系，方便深入阅读。
+
+| 主题 | 设计文档 |
+|------|---------|
+| 架构总览与核心铁律 | [design/00-OVERVIEW.md](/design/00-OVERVIEW.md) |
+| 事件类型与状态定义 | [design/01-CORE-TYPES.md](/design/01-CORE-TYPES.md) |
+| 事件流与 RxJS 扩展机制 | [design/05-EVENT-STREAM.md](/design/05-EVENT-STREAM.md) |
+| 3 层 Context 依赖注入 | [design/03-DI.md](/design/03-DI.md) |
+| 插件系统 | [design/07-PLUGIN-SYSTEM.md](/design/07-PLUGIN-SYSTEM.md) |
+| 操作符库 | [design/11-OPERATORS.md](/design/11-OPERATORS.md) |
+| API 设计（L1/L2/L3） | [design/12-API-DESIGN.md](/design/12-API-DESIGN.md) |
+| 安全架构 | [design/17-SECURITY.md](/design/17-SECURITY.md) |
+| 配额集成 | [design/18-QUOTA-INTEGRATION.md](/design/18-QUOTA-INTEGRATION.md) |
+| 架构演化路线图 | [design/15-ARCHITECTURE.md](/design/15-ARCHITECTURE.md) |

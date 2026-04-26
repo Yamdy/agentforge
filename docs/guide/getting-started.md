@@ -2,7 +2,22 @@
 
 本指南将帮助你在 5 分钟内创建第一个 Agent。
 
-## 安装
+## 推荐：使用脚手架工具（create-agentforge）
+
+```bash
+# 交互模式（推荐）
+npx create-agentforge my-agent
+
+# 一键默认配置
+npx create-agentforge my-agent --default
+
+# 从示例模板创建
+npx create-agentforge my-agent --template weather-agent
+```
+
+脚手架将自动生成可运行的 Agent 项目，包含完整的 TypeScript 配置和模块化源码。
+
+## 手动安装
 
 ```bash
 npm install agentforge

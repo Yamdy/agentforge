@@ -276,3 +276,11 @@ generateId('session'); // "session-lkj3m2n-random123"
 
 - [状态管理](/api/state) - AgentState
 - [事件系统指南](/guide/events) - 事件使用说明
+
+## 设计文档对照
+
+| 主题 | 设计文档 |
+|------|---------|
+| 事件类型定义（完整枚举） | [design/01-CORE-TYPES.md](/design/01-CORE-TYPES.md) |
+| 事件路由与流控制 | [design/05-EVENT-STREAM.md](/design/05-EVENT-STREAM.md) |
+| 事件类型枚举与业务语义 | [design/19-EVENT-ROUTING.md](/design/19-EVENT-ROUTING.md) |

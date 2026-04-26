@@ -16,14 +16,14 @@ interface AgentConfig {
   name?: string;
 
   // 模型配置（必填）
-  model: AgentModelConfig | string;
+  model: AgentModelConfig | ModelSpec;
 
   // LLM 选项
   llmOptions?: Record<string, unknown>;
 
   // 执行配置
   maxSteps?: number;           // 默认 10
-  parallelToolCalls?: boolean; // 默认 false
+  parallelToolCalls?: boolean; // 默认 true
   streaming?: boolean;         // 默认 false
   timeout?: number;
 
@@ -52,7 +52,7 @@ interface AgentConfig {
   operators?: OperatorFunction<AgentEvent>[];
 
   // HITL 配置
-  hitl?: boolean | HITLConfig;
+  hitl?: HITLConfig;
 
   // 子 Agent 配置
   subagents?: SubagentConfig[];
@@ -205,7 +205,7 @@ const agent = createAgent({
 const DEFAULT_AGENT_CONFIG = {
   name: 'agent',
   maxSteps: 10,
-  parallelToolCalls: false,
+  parallelToolCalls: true,
   streaming: false,
   retry: 0,
   retryDelay: 1000,
@@ -232,3 +232,11 @@ interface StreamHandlers {
 - [AgentEvent](/api/events) - 事件类型
 - [LLMAdapter](/api/llm-adapter) - LLM 适配器
 - [ToolDefinition](/api/tool-definition) - 工具定义
+
+## 设计文档对照
+
+| 主题 | 设计文档 |
+|------|---------|
+| L1/L2/L3 API 分层设计 | [design/12-API-DESIGN.md](/design/12-API-DESIGN.md) |
+| AgentContext 3 层 DI | [design/03-DI.md](/design/03-DI.md) |
+| 特性集成（HITL/Checkpoint/Retry/Timeout） | [design/10-FEATURES.md](/design/10-FEATURES.md) |
