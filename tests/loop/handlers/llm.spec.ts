@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { Observable, of, from, firstValueFrom, toArray } from 'rxjs';
+import { Observable, of, from, firstValueFrom, toArray, Subject } from 'rxjs';
 import {
   handleLLMRequest,
   callLLM,
@@ -142,6 +142,7 @@ function createTestState(overrides: Partial<AgentState> = {}): AgentState {
 }
 
 function createTestDeps(ctx: AgentContext): HandlerDeps {
+  const destroy$ = new Subject<void>();
   return {
     ctx,
     config: {
@@ -151,6 +152,7 @@ function createTestDeps(ctx: AgentContext): HandlerDeps {
       parallelToolCalls: true,
     },
     sessionId: 'test-session',
+    destroy$: destroy$.asObservable(),
   };
 }
 

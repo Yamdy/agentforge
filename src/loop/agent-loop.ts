@@ -108,6 +108,7 @@ export interface HandlerDeps {
   ctx: AgentContext;
   config: AgentLoopConfig;
   sessionId: string;
+  destroy$: Observable<void>;
 }
 
 // ============================================================
@@ -131,7 +132,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
   let latestState: AgentState | null = null;
 
   // Build handler dependencies (replaces closure-captured variables)
-  const deps: HandlerDeps = { ctx, config, sessionId };
+  const deps: HandlerDeps = { ctx, config, sessionId, destroy$: destroy$.asObservable() };
 
   // ============================================================
   // Core Step Function - Routes all events
@@ -247,6 +248,19 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             }
           } catch {
             // Validation failure must never crash the loop
+          }
+        }
+        // MPU M4: Error classification on tool error (fire-and-forget)
+        if (ctx.errorClassifier && ctx.circuitBreaker && event.isError) {
+          try {
+            const severity = ctx.errorClassifier.classify({
+              name: 'ToolExecutionError',
+              message: String(event.result),
+              stack: undefined,
+            });
+            ctx.circuitBreaker.recordFailure(severity);
+          } catch {
+            // Error classifier must never crash the loop
           }
         }
         return handleToolResult(deps, state, event);

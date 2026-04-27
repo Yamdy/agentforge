@@ -29,6 +29,7 @@ export {
   handleBatchComplete,
   executeSingleTool,
   executeBatchTools,
+  executeToolDirectly,
 } from './tool-execution.js';
 
 // HITL

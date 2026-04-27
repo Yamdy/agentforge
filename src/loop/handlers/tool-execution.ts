@@ -4,13 +4,15 @@
  */
 
 import { Observable, of, from, EMPTY } from 'rxjs';
-import { mergeMap } from 'rxjs/operators';
+import { mergeMap, timeout, takeUntil, catchError } from 'rxjs/operators';
 import {
   type AgentEvent,
   type AgentState,
   type ToolCall,
   type Message,
   type BatchContext,
+  type PermissionDecision,
+  type PermissionAskOptions,
   generateId,
 } from '../../core/index.js';
 import type { HandlerDeps, StepContext } from '../agent-loop.js';
@@ -176,38 +178,19 @@ export function handleBatchComplete(
 }
 
 // ============================================================
-// Single Tool Execution
+// Direct Tool Execution (extracted for reuse by permission flow)
 // ============================================================
 
-export function executeSingleTool(
+/**
+ * Execute tool directly — called after all guard checks pass.
+ * Shared by the normal execution path and the permission "allow" path.
+ */
+export function executeToolDirectly(
   deps: HandlerDeps,
   tc: ToolCall,
   state: AgentState
 ): Observable<StepContext> {
   const { ctx, sessionId } = deps;
-
-  // MPU M6: Security check before tool execution
-  if (ctx.securityGuard) {
-    try {
-      const argsStr = JSON.stringify(tc.args ?? {});
-      const cmdCheck = ctx.securityGuard.checkCommand(argsStr);
-      if (!cmdCheck.allowed) {
-        // Security violation — return error result, do not execute tool
-        const resultEvent: AgentEvent = {
-          type: 'tool.result',
-          timestamp: Date.now(),
-          sessionId,
-          toolCallId: tc.id,
-          toolName: tc.name,
-          result: `Security violation: ${cmdCheck.reason}`,
-          isError: true,
-        };
-        return of({ event: resultEvent, state } as StepContext);
-      }
-    } catch {
-      // Security check failure must never crash the loop — allow execution
-    }
-  }
 
   const executeEvent: AgentEvent = {
     type: 'tool.execute',
@@ -294,6 +277,158 @@ export function executeSingleTool(
         ] as StepContext[];
       })
   ).pipe(mergeMap(arr => from(arr)));
+}
+
+// ============================================================
+// Single Tool Execution (with guard checks)
+// ============================================================
+
+export function executeSingleTool(
+  deps: HandlerDeps,
+  tc: ToolCall,
+  state: AgentState
+): Observable<StepContext> {
+  const { ctx, sessionId } = deps;
+
+  // MPU M6: Permission policy check (BEFORE securityGuard)
+  if (ctx.permissionPolicy) {
+    const toolDef = ctx.tools.get(tc.name);
+    const riskLevel = toolDef?.riskLevel ?? 'medium';
+    const requiresApproval = toolDef?.requiresApproval ?? false;
+
+    // Check tool-level policy first, then risk-level policy, then default
+    const policy =
+      ctx.permissionPolicy.toolPolicies[tc.name] ??
+      ctx.permissionPolicy.riskPolicies[riskLevel] ??
+      ctx.permissionPolicy.defaultPolicy;
+
+    // Override: if tool has requiresApproval=true and enforceApprovalFlag, force 'ask'
+    const effectivePolicy =
+      requiresApproval && ctx.permissionPolicy.enforceApprovalFlag ? 'ask' : policy;
+
+    if (effectivePolicy === 'deny') {
+      const resultEvent: AgentEvent = {
+        type: 'tool.result',
+        timestamp: Date.now(),
+        sessionId,
+        toolCallId: tc.id,
+        toolName: tc.name,
+        result: `Permission denied: tool "${tc.name}" is not allowed by policy`,
+        isError: true,
+      };
+      return of({ event: resultEvent, state } as StepContext);
+    }
+
+    if (effectivePolicy === 'ask' && ctx.permissionController) {
+      // KEY DESIGN: This Observable BLOCKS expand recursion until human answers.
+      // This mirrors the HITL pattern — the stream pauses, no events are lost.
+      // When permissionController.ask() emits, the tool execution continues.
+      const permController = ctx.permissionController;
+      const promptId = `perm-${generateId()}`;
+      return permController
+        .ask({
+          promptId,
+          permission: tc.name,
+          context: { args: tc.args },
+          toolName: tc.name,
+          toolArgs: tc.args,
+        } satisfies PermissionAskOptions)
+        .pipe(
+          mergeMap((decision: PermissionDecision) => {
+            if (decision === 'deny') {
+              const resultEvent: AgentEvent = {
+                type: 'tool.result',
+                timestamp: Date.now(),
+                sessionId,
+                toolCallId: tc.id,
+                toolName: tc.name,
+                result: `Permission denied by user for tool "${tc.name}"`,
+                isError: true,
+              };
+              return of({ event: resultEvent, state } as StepContext);
+            }
+            // 'allow' or 'allow_always' — proceed to execute
+            if (decision === 'allow_always') {
+              try {
+                permController.isAutoAllowed(tc.name);
+              } catch {
+                /* fire-and-forget */
+              }
+            }
+            return executeToolDirectly(deps, tc, state);
+          }),
+          catchError(() => executeToolDirectly(deps, tc, state))
+        );
+    }
+  }
+
+  // MPU M6: Security check before tool execution
+  if (ctx.securityGuard) {
+    try {
+      const argsStr = JSON.stringify(tc.args ?? {});
+      const cmdCheck = ctx.securityGuard.checkCommand(argsStr);
+      if (!cmdCheck.allowed) {
+        // Security violation — return error result, do not execute tool
+        const resultEvent: AgentEvent = {
+          type: 'tool.result',
+          timestamp: Date.now(),
+          sessionId,
+          toolCallId: tc.id,
+          toolName: tc.name,
+          result: `Security violation: ${cmdCheck.reason}`,
+          isError: true,
+        };
+        return of({ event: resultEvent, state } as StepContext);
+      }
+    } catch {
+      // Security check failure must never crash the loop — allow execution
+    }
+  }
+
+  // MPU M3: Sandbox execution for sandboxRequired tools
+  if (ctx.sandboxExecutor) {
+    const toolDef = ctx.tools.get(tc.name);
+    if (toolDef?.sandboxRequired) {
+      return from(
+        ctx.sandboxExecutor.execute(
+          { toolName: tc.name, args: tc.args },
+          { sessionId, timeoutMs: 30000, toolRegistry: ctx.tools }
+        )
+      ).pipe(
+        timeout(30000), // Prevent infinite hang on Docker/container issues
+        takeUntil(deps.destroy$), // Allow cancellation during sandbox execution
+        mergeMap(sandboxResult => {
+          const resultEvent: AgentEvent = {
+            type: 'tool.result',
+            timestamp: Date.now(),
+            sessionId,
+            toolCallId: tc.id,
+            toolName: tc.name,
+            result: sandboxResult.success
+              ? (sandboxResult.result ?? 'Sandbox execution completed')
+              : `Sandbox error: ${sandboxResult.error?.message ?? 'unknown'}`,
+            isError: !sandboxResult.success,
+          };
+          return of({ event: resultEvent, state } as StepContext);
+        }),
+        catchError((error: unknown) => {
+          const resultEvent: AgentEvent = {
+            type: 'tool.result',
+            timestamp: Date.now(),
+            sessionId,
+            toolCallId: tc.id,
+            toolName: tc.name,
+            result: `Sandbox execution failed: ${error instanceof Error ? error.message : String(error)}`,
+            isError: true,
+          };
+          return of({ event: resultEvent, state } as StepContext);
+        })
+      );
+    }
+  }
+
+  // Default: execute tool directly
+  return executeToolDirectly(deps, tc, state);
 }
 
 // ============================================================
