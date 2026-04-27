@@ -14,6 +14,7 @@ import {
   type AgentEvent,
   type AgentEventType,
   type AgentState,
+  type AgentContext,
   type Checkpoint,
   type Message,
   type ToolDefinition,
@@ -30,6 +31,7 @@ import { createAgentLoop, type AgentLoopConfig, type AgentLoop } from '../loop/i
 import {
   debugPreset,
   testPreset,
+  productionPreset,
   timeoutOnEventType,
   retryOnEventType,
 } from '../operators/index.js';
@@ -89,6 +91,7 @@ class AgentImpl implements Agent {
   private readonly loop: AgentLoop;
   private readonly tools: ToolRegistryInterface;
   private readonly config: ResolvedConfig;
+  private readonly ctx: AgentContext;
   private readonly destroy$ = new Subject<void>();
   private readonly eventHandlers = new Map<AgentEventType, Set<(event: AgentEvent) => void>>();
   private readonly eventSubject = new Subject<AgentEvent>();
@@ -105,13 +108,15 @@ class AgentImpl implements Agent {
     agentName: string,
     loop: AgentLoop,
     tools: ToolRegistryInterface,
-    config: ResolvedConfig
+    config: ResolvedConfig,
+    ctx: AgentContext
   ) {
     this.sessionId = sessionId;
     this.agentName = agentName;
     this.loop = loop;
     this.tools = tools;
     this.config = config;
+    this.ctx = ctx;
 
     // Subscribe to event subject for event distribution
     this.loopDestroySubscription = this.loop.destroy$.subscribe(() => {
@@ -248,8 +253,29 @@ class AgentImpl implements Agent {
       observable = observable.pipe(debugPreset());
     } else if (this.config.preset === 'test') {
       observable = observable.pipe(testPreset());
+    } else if (this.config.preset === 'production') {
+      // Use configured services or noop fallbacks
+      const tracer = this.ctx.services.tracer ?? {
+        startSpan: (): string => '',
+        endSpan: (): void => {},
+        addEvent: (): void => {},
+        recordException: (): void => {},
+      };
+      const metrics = this.ctx.services.metrics ?? {
+        increment: (): void => {},
+        histogram: (): void => {},
+        gauge: (): void => {},
+      };
+      const checkpointStorage = this.ctx.checkpoint ?? createInMemoryCheckpointStorage();
+      observable = observable.pipe(
+        productionPreset({
+          tracer,
+          metrics,
+          checkpointStorage,
+          sessionId: this.sessionId,
+        })
+      );
     }
-    // Note: production preset requires tracer/metrics/checkpoint - applied separately if those are configured
 
     // Apply custom operators from config
     for (const op of this.config.operators) {
@@ -705,7 +731,7 @@ export function createAgent(config: AgentConfig): CreateAgentResult {
   const loop = createAgentLoop(ctx, loopConfig);
 
   // Create the agent instance
-  const agent = new AgentImpl(sessionId, resolved.name, loop, ctx.tools, resolved);
+  const agent = new AgentImpl(sessionId, resolved.name, loop, ctx.tools, resolved, ctx);
 
   // Return with context info
   return Object.assign(agent, {
