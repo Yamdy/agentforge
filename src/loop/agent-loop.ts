@@ -90,6 +90,8 @@ export interface AgentLoopConfig {
   streaming?: boolean;
   /** Checkpoint configuration */
   checkpoint?: CheckpointConfig;
+  /** Conversation history for multi-turn context */
+  history?: Message[];
 }
 
 /**
@@ -261,7 +263,9 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         });
         // MPU M7: Record cost (fire-and-forget)
         if (ctx.services.costTracker && event.usage) {
-          ctx.services.costTracker.record(sessionId, state.model.model, event.usage).catch(() => {});
+          ctx.services.costTracker
+            .record(sessionId, state.model.model, event.usage)
+            .catch(() => {});
         }
         return handleLLMResponse(state, event, sctx.repairAttempt);
 
@@ -287,7 +291,10 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           try {
             const validation = ctx.services.resultValidator.validate(event.toolName, event.result);
             if (!validation.valid) {
-              console.warn(`Tool result validation failed for ${event.toolName}:`, validation.errors);
+              console.warn(
+                `Tool result validation failed for ${event.toolName}:`,
+                validation.errors
+              );
             }
           } catch {
             // Validation failure must never crash the loop
@@ -1558,11 +1565,18 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       model: config.model,
     };
 
+    // Build messages array with history
+    const messages: Message[] = [];
+    if (config.history && config.history.length > 0) {
+      messages.push(...config.history);
+    }
+    messages.push({ role: 'user', content: input });
+
     const initialState: AgentState = {
       sessionId,
       agentName: ctx.agentName,
       model: config.model,
-      messages: [{ role: 'user', content: input }],
+      messages,
       step: 0,
       maxSteps: config.maxSteps,
       pendingToolCalls: [],

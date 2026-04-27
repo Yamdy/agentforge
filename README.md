@@ -64,6 +64,24 @@ agent.stream('Hello', {
 });
 ```
 
+### 多轮对话
+
+通过 `history` 字段传入对话记录，实现多轮上下文：
+
+```typescript
+const agent = createAgent({
+  name: 'assistant',
+  model: { provider: 'openai', model: 'gpt-4o' },
+  history: [
+    { role: 'user', content: 'What is TypeScript?' },
+    { role: 'assistant', content: 'TypeScript is a typed superset of JavaScript.' },
+  ],
+});
+
+// LLM 会看到完整的历史上下文
+const result = await agent.run('What are its benefits?');
+```
+
 ### L3 API（高级）
 
 编程式 API，提供完整的 Observable 控制能力：
@@ -146,6 +164,7 @@ loop.run$('Hello!')
 | [03-tools.ts](./examples/03-tools.ts) | 工具定义与注册 |
 | [04-checkpoint.ts](./examples/04-checkpoint.ts) | 检查点保存与恢复 |
 | [05-real-llm.ts](./examples/05-real-llm.ts) | **真实 LLM 示例** (AI SDK) |
+| [12-multi-turn.ts](./examples/12-multi-turn.ts) | **多轮对话** (history 字段) |
 
 ### 真实 LLM 集成
 

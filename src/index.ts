@@ -861,6 +861,38 @@ export {
 } from './l1/index.js';
 
 // ============================================================
+// Quickstart (Zero-config API)
+// ============================================================
+
+/**
+ * Zero-config tool helper for quick agent creation.
+ *
+ * @example
+ * ```typescript
+ * import { createAgent, tool } from 'agentforge';
+ * import { z } from 'zod';
+ *
+ * const greetTool = tool({
+ *   description: 'Greet someone',
+ *   parameters: z.object({ name: z.string() }),
+ *   execute: async (args) => `Hello, ${args.name}!`,
+ * });
+ *
+ * const agent = createAgent({
+ *   name: 'my-agent',
+ *   model: { provider: 'openai', model: 'gpt-4o-mini' },
+ *   tools: [greetTool],
+ * });
+ * ```
+ *
+ * For the zero-config Agent class, import from './quickstart':
+ * ```typescript
+ * import { Agent } from 'agentforge/quickstart';
+ * ```
+ */
+export { tool, type GenerateResult } from './quickstart.js';
+
+// ============================================================
 // Token Counter
 // ============================================================
 

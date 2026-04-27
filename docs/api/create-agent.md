@@ -32,6 +32,12 @@ interface AgentConfig {
   retryDelay?: number;         // 默认 1000ms
   maxLLMRepairAttempts?: number; // 默认 3
 
+  // 系统提示词
+  systemPrompt?: string;
+
+  // 对话历史（多轮对话）
+  history?: Message[];
+
   // 工具配置
   tools?: Array<ToolDefinition | string>;
 
@@ -197,6 +203,52 @@ const agent = createAgent({
   llmAdapter: customAdapter,
   tools: [],
 });
+```
+
+### 多轮对话（History）
+
+通过 `history` 字段传入之前的对话记录，实现多轮对话上下文：
+
+```typescript
+const agent = createAgent({
+  name: 'assistant',
+  model: 'openai/gpt-4o',
+  history: [
+    { role: 'user', content: 'What is TypeScript?' },
+    { role: 'assistant', content: 'TypeScript is a typed superset of JavaScript.' },
+    { role: 'user', content: 'What are its benefits?' },
+    { role: 'assistant', content: 'Key benefits include type safety, better IDE support, and easier refactoring.' },
+  ],
+});
+
+// LLM 会看到完整的历史上下文
+const result = await agent.run('Can you summarize what we discussed?');
+```
+
+配合持久化存储实现完整的对话管理：
+
+```typescript
+import { createAgent } from 'agentforge';
+import { SqliteCheckpointStorage } from 'agentforge/storage';
+
+// 从存储加载历史消息
+const history = await loadConversationHistory(sessionId);
+
+const agent = createAgent({
+  name: 'assistant',
+  model: 'openai/gpt-4o',
+  history,  // 传入历史消息
+  tools: [myTool],
+});
+
+const result = await agent.run(userMessage);
+
+// 保存新的对话消息
+await saveConversationHistory(sessionId, [
+  ...history,
+  { role: 'user', content: userMessage },
+  { role: 'assistant', content: result },
+]);
 ```
 
 ## 默认配置

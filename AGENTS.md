@@ -96,6 +96,32 @@ if (isTerminalEvent(event)) return EMPTY; // 'done', 'agent.error', 'cancel'
 | `src/l1/` | **L1 API** - Zero-code config layer (JSON/JSONC → Agent) |
 | `src/token-counter.ts` | **Token counting** - js-tiktoken BPE + CJK heuristic fallback |
 
+## Multi-turn Conversation (History)
+
+AgentConfig supports `history?: Message[]` for multi-turn conversation context:
+
+```typescript
+const agent = createAgent({
+  name: 'assistant',
+  model: { provider: 'openai', model: 'gpt-4o' },
+  history: [
+    { role: 'user', content: 'What is TypeScript?' },
+    { role: 'assistant', content: 'TypeScript is a typed superset of JavaScript.' },
+  ],
+});
+```
+
+**How it works**:
+- `AgentConfig.history` is passed to `AgentLoopConfig.history`
+- `createAgentLoop` stores history in the loop config
+- `run()` prepends history messages to initial `AgentState.messages`
+- LLM receives `[...history, currentUserMessage]` as context
+
+**Files involved**:
+- `src/api/types.ts` - `AgentConfig.history?: Message[]`
+- `src/loop/agent-loop.ts` - `AgentLoopConfig.history?: Message[]` + `run()` implementation
+- `src/api/create-agent.ts` - Passes history from config to loop
+
 ## Event Routing (Active Events)
 
 ```

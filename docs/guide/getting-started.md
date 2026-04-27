@@ -139,6 +139,52 @@ agent.run('Write a short story about a robot').pipe(
 });
 ```
 
+### 5. 多轮对话
+
+通过 `history` 字段传入之前的对话记录，实现多轮对话上下文：
+
+```typescript
+import { createAgent } from 'agentforge';
+
+const agent = createAgent({
+  name: 'assistant',
+  model: { provider: 'openai', model: 'gpt-4o' },
+  history: [
+    { role: 'user', content: 'What is TypeScript?' },
+    { role: 'assistant', content: 'TypeScript is a typed superset of JavaScript that compiles to plain JavaScript.' },
+  ],
+});
+
+// LLM 会看到完整的历史上下文
+const result = await agent.run('What are its main benefits?');
+// LLM 知道 "its" 指的是 TypeScript
+```
+
+配合持久化存储实现完整的对话管理：
+
+```typescript
+import { createAgent } from 'agentforge';
+
+// 从存储加载历史消息
+const history = await loadConversationHistory(sessionId);
+
+const agent = createAgent({
+  name: 'assistant',
+  model: { provider: 'openai', model: 'gpt-4o' },
+  history,
+  tools: [myTool],
+});
+
+const result = await agent.run(userMessage);
+
+// 保存新的对话消息
+await saveConversationHistory(sessionId, [
+  ...history,
+  { role: 'user', content: userMessage },
+  { role: 'assistant', content: result },
+]);
+```
+
 ## 配置 LLM
 
 ### OpenAI

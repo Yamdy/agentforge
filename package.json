@@ -6,7 +6,8 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "agentforge": "dist/cli/index.js"
+    "agentforge": "dist/cli/index.js",
+    "create-agentforge": "scripts/create-agent.mjs"
   },
   "exports": {
     ".": {
@@ -96,6 +97,10 @@
     "./workflow": {
       "types": "./dist/workflow/index.d.ts",
       "import": "./dist/workflow/index.js"
+    },
+    "./quickstart": {
+      "types": "./dist/quickstart.d.ts",
+      "import": "./dist/quickstart.js"
     }
   },
   "sideEffects": false,

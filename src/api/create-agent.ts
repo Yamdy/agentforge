@@ -14,6 +14,7 @@ import {
   type AgentEvent,
   type AgentEventType,
   type Checkpoint,
+  type Message,
   type ToolDefinition,
   type LLMAdapter,
   type LLMResponse,
@@ -69,6 +70,7 @@ interface ResolvedConfig {
   metrics: MetricsConfig | undefined;
   operators: MonoTypeOperatorFunction<AgentEvent>[];
   preset: 'production' | 'debug' | 'test' | undefined;
+  history: Message[];
 }
 
 // ============================================================
@@ -93,12 +95,7 @@ class AgentImpl implements Agent {
     reject: (error: Error) => void;
   } | null = null;
 
-  constructor(
-    sessionId: string,
-    agentName: string,
-    loop: AgentLoop,
-    config: ResolvedConfig
-  ) {
+  constructor(sessionId: string, agentName: string, loop: AgentLoop, config: ResolvedConfig) {
     this.sessionId = sessionId;
     this.agentName = agentName;
     this.loop = loop;
@@ -224,9 +221,7 @@ class AgentImpl implements Agent {
 
     // Apply timeout if configured
     if (this.config.timeout !== undefined) {
-      observable = observable.pipe(
-        timeoutOnEventType('done', this.config.timeout)
-      );
+      observable = observable.pipe(timeoutOnEventType('done', this.config.timeout));
     }
 
     // Apply retry if configured
@@ -375,9 +370,10 @@ class AgentImpl implements Agent {
  * - String "model" (auto-detect) → { provider, model }
  * - Object { provider, model } → { provider, model }
  */
-function normalizeModelForLoop(
-  model: AgentModelConfig | string
-): { provider: string; model: string } {
+function normalizeModelForLoop(model: AgentModelConfig | string): {
+  provider: string;
+  model: string;
+} {
   if (typeof model === 'string') {
     return parseModelSpec(model);
   }
@@ -467,6 +463,7 @@ function resolveConfig(config: AgentConfig): ResolvedConfig {
     metrics,
     operators: config.operators ?? [],
     preset: config.preset,
+    history: config.history ?? [],
   };
 }
 
@@ -598,9 +595,7 @@ export function createAgent(config: AgentConfig): CreateAgentResult {
   const sessionId = generateSessionId();
 
   // Build context using ContextBuilder
-  let builder = ContextBuilder.create()
-    .withSessionId(sessionId)
-    .withAgentName(resolved.name);
+  let builder = ContextBuilder.create().withSessionId(sessionId).withAgentName(resolved.name);
 
   // Add LLM adapter
   if (resolved.llmAdapter) {
@@ -617,8 +612,7 @@ export function createAgent(config: AgentConfig): CreateAgentResult {
 
   // Add checkpoint storage
   if (resolved.checkpoint) {
-    const storage =
-      resolved.checkpoint.customStorage ?? createInMemoryCheckpointStorage();
+    const storage = resolved.checkpoint.customStorage ?? createInMemoryCheckpointStorage();
     builder = builder.withCheckpoint(storage);
   }
 
@@ -632,25 +626,29 @@ export function createAgent(config: AgentConfig): CreateAgentResult {
 
   // Create loop configuration - build conditionally for exactOptionalPropertyTypes
   const normalizedModel = normalizeModelForLoop(resolved.model);
-  const loopConfig: AgentLoopConfig = resolved.checkpoint
-    ? {
-        model: normalizedModel,
-        maxSteps: resolved.maxSteps,
-        maxLLMRepairAttempts: resolved.maxLLMRepairAttempts,
-        parallelToolCalls: resolved.parallelToolCalls,
-        streaming: resolved.streaming,
-        checkpoint: {
-          enabled: true,
-          interval: resolved.checkpoint.interval ?? 'llm_response',
-        },
-      }
-    : {
-        model: normalizedModel,
-        maxSteps: resolved.maxSteps,
-        maxLLMRepairAttempts: resolved.maxLLMRepairAttempts,
-        parallelToolCalls: resolved.parallelToolCalls,
-        streaming: resolved.streaming,
-      };
+
+  // Build base config
+  const baseConfig = {
+    model: normalizedModel,
+    maxSteps: resolved.maxSteps,
+    maxLLMRepairAttempts: resolved.maxLLMRepairAttempts,
+    parallelToolCalls: resolved.parallelToolCalls,
+    streaming: resolved.streaming,
+  };
+
+  // Add optional fields conditionally
+  const loopConfig: AgentLoopConfig = {
+    ...baseConfig,
+    ...(resolved.checkpoint && {
+      checkpoint: {
+        enabled: true,
+        interval: resolved.checkpoint.interval ?? 'llm_response',
+      },
+    }),
+    ...(resolved.history.length > 0 && {
+      history: resolved.history,
+    }),
+  };
 
   // Create the agent loop
   const loop = createAgentLoop(ctx, loopConfig);

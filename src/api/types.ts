@@ -13,6 +13,7 @@ import type {
   AgentEvent,
   AgentEventType,
   Checkpoint,
+  Message,
   ModelConfig,
   ModelSpec,
   ToolDefinition,
@@ -184,6 +185,25 @@ export interface AgentConfig {
 
   /** System prompt template */
   systemPrompt?: string;
+
+  /**
+   * Conversation history for multi-turn context
+   *
+   * Pass previous messages to maintain conversation context.
+   * Messages should be in chronological order.
+   *
+   * @example
+   * ```typescript
+   * const agent = createAgent({
+   *   model: 'openai/gpt-4o',
+   *   history: [
+   *     { role: 'user', content: 'Hello' },
+   *     { role: 'assistant', content: 'Hi there!' },
+   *   ],
+   * });
+   * ```
+   */
+  history?: Message[];
 
   /** Tool names or definitions */
   tools?: (string | ToolDefinition)[];

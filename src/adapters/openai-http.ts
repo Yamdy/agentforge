@@ -4,13 +4,67 @@
  * Supports v1 model format (compatible with MiMo, DeepSeek, etc.)
  */
 
-import type { LLMAdapter, LLMResponse, LLMOptions, Message } from '../core/interfaces.js';
+import type {
+  LLMAdapter,
+  LLMResponse,
+  LLMOptions,
+  Message,
+  ToolDefinition,
+} from '../core/interfaces.js';
 import type { Observable } from 'rxjs';
 import { EMPTY } from 'rxjs';
 
 export interface OpenAIHttpAdapterOptions {
   apiKey?: string;
   baseURL?: string;
+}
+
+/**
+ * Convert ToolDefinition to OpenAI function format
+ */
+function toolToOpenAIFormat(tool: ToolDefinition) {
+  // If parameters is a Zod schema, convert to JSON Schema
+  let parameters: Record<string, unknown>;
+
+  if (tool.parameters && typeof tool.parameters === 'object' && 'shape' in tool.parameters) {
+    // Zod schema - convert to JSON Schema
+    const shape = (tool.parameters as { shape: Record<string, unknown> }).shape;
+    const properties: Record<string, unknown> = {};
+    const required: string[] = [];
+
+    for (const [key, value] of Object.entries(shape)) {
+      const field = value as {
+        description?: string;
+        _def?: { typeName?: string };
+        isOptional?: () => boolean;
+      };
+      properties[key] = {
+        type: 'string', // Simplified - would need proper Zod-to-JSON-Schema conversion
+        description: field.description || '',
+      };
+      if (field.isOptional && !field.isOptional()) {
+        required.push(key);
+      }
+    }
+
+    parameters = {
+      type: 'object',
+      properties,
+      required: required.length > 0 ? required : undefined,
+    };
+  } else {
+    // Already JSON Schema or other format
+    parameters = (tool.parameters as Record<string, unknown>) ?? { type: 'object', properties: {} };
+  }
+
+  return {
+    type: 'function' as const,
+    function: {
+      name: tool.name,
+      description: tool.description,
+      parameters,
+    },
+  };
 }
 
 /**
@@ -23,7 +77,10 @@ export function createOpenAIHttpAdapter(
   const apiKey = options.apiKey ?? process.env.OPENAI_API_KEY ?? '';
   const baseURL = options.baseURL ?? 'https://api.openai.com/v1';
 
-  return {
+  // Store tools for use in chat calls
+  const registeredTools: ToolDefinition[] = [];
+
+  const adapter: LLMAdapter = {
     name: `openai-http-${modelName}`,
     provider: 'openai',
 
@@ -35,7 +92,17 @@ export function createOpenAIHttpAdapter(
             role: m.role,
             content: m.content,
           })),
+          max_tokens: (llmOptions?.maxTokens as number) ?? 1024, // Default max_tokens
         };
+
+        // Add tools if provided (from llmOptions or registered tools)
+        const tools = (llmOptions?.tools as ToolDefinition[]) ?? registeredTools;
+        const hasTools = tools.length > 0;
+
+        if (hasTools) {
+          body.tools = tools.map(toolToOpenAIFormat);
+          body.tool_choice = 'auto';
+        }
 
         if (llmOptions?.temperature !== undefined) {
           body.temperature = llmOptions.temperature;
@@ -44,7 +111,7 @@ export function createOpenAIHttpAdapter(
           body.max_tokens = llmOptions.maxTokens;
         }
 
-        const response = await fetch(`${baseURL}/chat/completions`, {
+        let response = await fetch(`${baseURL}/chat/completions`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -52,6 +119,36 @@ export function createOpenAIHttpAdapter(
           },
           body: JSON.stringify(body),
         });
+
+        // If API returns error and we sent tools, retry without tools
+        if (!response.ok && hasTools) {
+          const errorData = await response.json().catch(() => ({}));
+          const errorMsg = (errorData as { error?: { message?: string } }).error?.message ?? '';
+
+          // Only retry without tools if the error is about tools/params
+          if (
+            errorMsg.includes('Param') ||
+            errorMsg.includes('tool') ||
+            errorMsg.includes('function')
+          ) {
+            console.warn(`[OpenAI HTTP Adapter] API doesn't support tools, retrying without tools`);
+
+            const bodyWithoutTools: Record<string, unknown> = {
+              model: modelName,
+              messages: body.messages,
+              max_tokens: 1024, // MiMo requires max_tokens
+            };
+
+            response = await fetch(`${baseURL}/chat/completions`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${apiKey}`,
+              },
+              body: JSON.stringify(bodyWithoutTools),
+            });
+          }
+        }
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
@@ -122,4 +219,6 @@ export function createOpenAIHttpAdapter(
       return EMPTY;
     },
   };
+
+  return adapter;
 }
