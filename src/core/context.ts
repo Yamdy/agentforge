@@ -423,13 +423,23 @@ export class DefaultPauseController implements PauseController {
       return new Observable(subscriber => {
         subscriber.next();
         subscriber.complete();
+        return () => {
+          /* no cleanup needed for synchronous completion */
+        };
       });
     }
     return new Observable(subscriber => {
-      this.resumeCallbacks.push(() => {
+      const callback = (): void => {
         subscriber.next();
         subscriber.complete();
-      });
+      };
+      this.resumeCallbacks.push(callback);
+      return () => {
+        const idx = this.resumeCallbacks.indexOf(callback);
+        if (idx >= 0) {
+          this.resumeCallbacks.splice(idx, 1);
+        }
+      };
     });
   }
 }

@@ -11,6 +11,20 @@ import type { OperatorFunction } from 'rxjs';
 import { map } from 'rxjs/operators';
 import type { AgentEvent, Message } from '../core/index.js';
 
+/**
+ * Create a validated AgentEvent from a partial event object.
+ * Validates against the schema at runtime to catch construction errors early.
+ */
+function createEvent<T extends AgentEvent>(event: T): AgentEvent {
+  // At minimum, verify the event has the required 'type' and 'timestamp' fields
+  if (!event.type || !event.timestamp) {
+    throw new Error(
+      `Invalid event: missing required fields. type=${event.type}, timestamp=${event.timestamp}`
+    );
+  }
+  return event;
+}
+
 // ============================================================
 // LLM Parameter Transformation
 // ============================================================
@@ -71,8 +85,8 @@ export function transformLLMParams(
 
     const transformed = transform(currentParams);
 
-    // Build new event with transformed model - explicitly typed as AgentEvent
-    return {
+    // Build new event with transformed model - validated as AgentEvent
+    return createEvent({
       type: 'llm.request',
       timestamp: event.timestamp,
       sessionId: event.sessionId,
@@ -82,7 +96,7 @@ export function transformLLMParams(
         model: transformed.model ?? event.model.model,
       },
       tools: event.tools,
-    } as AgentEvent;
+    });
   });
 }
 
@@ -127,14 +141,14 @@ export function transformToolArgs(
 
     const transformedArgs = transform(event.toolName, event.args);
 
-    return {
+    return createEvent({
       type: 'tool.call',
       timestamp: event.timestamp,
       sessionId: event.sessionId,
       toolCallId: event.toolCallId,
       toolName: event.toolName,
       args: transformedArgs,
-    } as AgentEvent;
+    });
   });
 }
 
@@ -184,14 +198,14 @@ export function compressMessages(
 
     const compressedMessages = compress(event.messages);
 
-    return {
+    return createEvent({
       type: 'llm.request',
       timestamp: event.timestamp,
       sessionId: event.sessionId,
       messages: compressedMessages,
       model: event.model,
       tools: event.tools,
-    } as AgentEvent;
+    });
   });
 }
 
@@ -249,13 +263,13 @@ export function injectSystemPrompt(
       content: systemContent,
     };
 
-    return {
+    return createEvent({
       type: 'llm.request',
       timestamp: event.timestamp,
       sessionId: event.sessionId,
       messages: [systemMessage, ...nonSystemMessages],
       model: event.model,
       tools: event.tools,
-    } as AgentEvent;
+    });
   });
 }

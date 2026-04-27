@@ -289,14 +289,13 @@ export class OpenAIAdapter implements LLMAdapter {
           }
 
           subscriber.complete();
-        } catch {
-          // Errors-as-events: Complete without emitting
-          subscriber.complete();
+        } catch (error) {
+          subscriber.error(error instanceof Error ? error : new Error(String(error)));
         }
       };
 
-      run().catch(() => {
-        subscriber.complete();
+      run().catch(error => {
+        subscriber.error(error instanceof Error ? error : new Error(String(error)));
       });
     });
   }

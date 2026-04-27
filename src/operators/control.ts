@@ -13,6 +13,20 @@ import type { MonoTypeOperatorFunction } from 'rxjs';
 import { tap, mergeMap, catchError } from 'rxjs/operators';
 import { type AgentEvent, type AgentEventType, serializeError } from '../core/index.js';
 
+/**
+ * Create a validated AgentEvent from a partial event object.
+ * Validates against the schema at runtime to catch construction errors early.
+ */
+function createEvent<T extends AgentEvent>(event: T): AgentEvent {
+  // At minimum, verify the event has the required 'type' and 'timestamp' fields
+  if (!event.type || !event.timestamp) {
+    throw new Error(
+      `Invalid event: missing required fields. type=${event.type}, timestamp=${event.timestamp}`
+    );
+  }
+  return event;
+}
+
 // ============================================================
 // Error Event Factory
 // ============================================================
@@ -23,13 +37,13 @@ import { type AgentEvent, type AgentEventType, serializeError } from '../core/in
  * @internal
  */
 function createErrorEvent(error: unknown, sessionId: string, step?: number): AgentEvent {
-  return {
+  return createEvent({
     type: 'agent.error',
     timestamp: Date.now(),
     sessionId,
     error: serializeError(error),
     step,
-  };
+  });
 }
 
 /**
@@ -41,12 +55,12 @@ function createDoneEvent(
   sessionId: string,
   reason: 'stop' | 'error' | 'cancelled' | 'length' = 'error'
 ): AgentEvent {
-  return {
+  return createEvent({
     type: 'done',
     timestamp: Date.now(),
     sessionId,
     reason,
-  };
+  });
 }
 
 // ============================================================
@@ -333,7 +347,7 @@ export function requirePermission(
               return [
                 createErrorEvent(permissionError, currentSessionId),
                 createDoneEvent(currentSessionId, 'error'),
-              ] as AgentEvent[];
+              ];
             }
 
             return [event];
@@ -341,7 +355,7 @@ export function requirePermission(
             return [
               createErrorEvent(err, currentSessionId),
               createDoneEvent(currentSessionId, 'error'),
-            ] as AgentEvent[];
+            ];
           }
         }),
         mergeMap(events => from(events)),

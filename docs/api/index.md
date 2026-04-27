@@ -361,6 +361,7 @@ interface LLMChunk {
 ### Agent 创建
 
 - [createAgent](/api/create-agent) - 创建 Agent 的主入口 API
+- [Quickstart](/api/quickstart) - 零配置 API（Agent 类 + tool 函数）
 
 ### 核心类型
 
@@ -368,6 +369,7 @@ interface LLMChunk {
 - [AgentState](/api/state) - Agent 状态管理 API
 - [LLMAdapter](/api/llm-adapter) - LLM 适配器接口
 - [ToolDefinition](/api/tool-definition) - 工具定义接口
+- [Logger](/api/logger) - 结构化日志接口
 
 ### 操作符
 

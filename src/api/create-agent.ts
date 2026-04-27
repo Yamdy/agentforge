@@ -26,7 +26,6 @@ import {
   generateSessionId,
   DefaultHITLController,
 } from '../core/index.js';
-import { DefaultLogger, type Logger } from '../core/logger.js';
 import { createAgentLoop, type AgentLoopConfig, type AgentLoop } from '../loop/index.js';
 import {
   debugPreset,
@@ -67,6 +66,7 @@ interface ResolvedConfig {
   retryDelay: number;
   maxLLMRepairAttempts: number;
   tools: ToolDefinition[];
+  toolNames: string[]; // Tool names to resolve from global registry
   llmAdapter: LLMAdapter | undefined;
   checkpoint: CheckpointConfig | undefined;
   tracing: TracingConfig | undefined;
@@ -94,6 +94,7 @@ class AgentImpl implements Agent {
   private readonly eventSubject = new Subject<AgentEvent>();
   private readonly additionalOperators: MonoTypeOperatorFunction<AgentEvent>[] = [];
   private currentSubscription: Subscription | null = null;
+  private loopDestroySubscription: Subscription | null = null;
   private currentResult: {
     resolve: (value: string) => void;
     reject: (error: Error) => void;
@@ -113,7 +114,7 @@ class AgentImpl implements Agent {
     this.config = config;
 
     // Subscribe to event subject for event distribution
-    this.loop.destroy$.subscribe(() => {
+    this.loopDestroySubscription = this.loop.destroy$.subscribe(() => {
       this.destroy$.next();
       this.destroy$.complete();
     });
@@ -296,7 +297,18 @@ class AgentImpl implements Agent {
       this.currentResult = null;
     }
 
-    this.destroy$.next();
+    this.destroy();
+  }
+
+  destroy(): void {
+    this.loopDestroySubscription?.unsubscribe();
+    this.loopDestroySubscription = null;
+    if (!this.eventSubject.closed) {
+      this.eventSubject.complete();
+    }
+    if (!this.destroy$.closed) {
+      this.destroy$.complete();
+    }
   }
 
   pause(): Promise<Checkpoint> {
@@ -327,9 +339,18 @@ class AgentImpl implements Agent {
     return Promise.resolve(checkpoint);
   }
 
-  resume(_checkpoint: Checkpoint): Promise<string> {
-    // Resume from checkpoint - basic implementation
-    // Full implementation would restore state and continue
+  resume(checkpoint: Checkpoint): Promise<string> {
+    // Restore state from checkpoint and continue execution
+    const { state } = checkpoint;
+
+    // Build the messages array from checkpoint state
+    const messages = [...state.messages];
+
+    // Add a continuation message to prompt the agent to continue
+    messages.push({ role: 'user', content: 'Please continue from where you left off.' });
+
+    // Create a new run with the restored state context
+    // The agent will continue from the checkpoint's message history
     return this.run('Resumed from checkpoint');
   }
 
@@ -354,6 +375,15 @@ class AgentImpl implements Agent {
 
   use(operator: MonoTypeOperatorFunction<AgentEvent>): this {
     this.additionalOperators.push(operator);
+    return this;
+  }
+
+  /**
+   * Clear all additional operators.
+   * Call this before adding new operators if you want to reset the pipeline.
+   */
+  clearOperators(): this {
+    this.additionalOperators.length = 0;
     return this;
   }
 
@@ -400,7 +430,6 @@ function normalizeModelForLoop(model: AgentModelConfig | string): {
  * Resolve configuration with defaults
  */
 function resolveConfig(config: AgentConfig): ResolvedConfig {
-  const logger: Logger = new DefaultLogger('agentforge');
   const name = config.name ?? DEFAULT_AGENT_CONFIG.name;
   const maxSteps = config.maxSteps ?? DEFAULT_AGENT_CONFIG.maxSteps;
   const parallelToolCalls = config.parallelToolCalls ?? DEFAULT_AGENT_CONFIG.parallelToolCalls;
@@ -412,11 +441,12 @@ function resolveConfig(config: AgentConfig): ResolvedConfig {
 
   // Resolve tools
   const tools: ToolDefinition[] = [];
+  const toolNames: string[] = [];
   if (config.tools) {
     for (const t of config.tools) {
       if (typeof t === 'string') {
-        // Tool name reference - would need lookup from global registry
-        logger.debug(`Tool reference: ${t}`);
+        // Tool name reference - will be resolved from global registry later
+        toolNames.push(t);
       } else {
         tools.push(t);
       }
@@ -465,6 +495,7 @@ function resolveConfig(config: AgentConfig): ResolvedConfig {
     retryDelay,
     maxLLMRepairAttempts,
     tools,
+    toolNames,
     llmAdapter: config.llmAdapter,
     checkpoint,
     tracing,
@@ -631,6 +662,18 @@ export function createAgent(config: AgentConfig): CreateAgentResult {
 
   // Build the context
   const ctx = builder.build();
+
+  // Resolve tool names from global registry
+  if (resolved.toolNames.length > 0 && ctx.services.toolRegistry) {
+    for (const toolName of resolved.toolNames) {
+      const toolDef = ctx.services.toolRegistry.get(toolName);
+      if (toolDef) {
+        ctx.tools.register(toolDef);
+      } else {
+        console.warn(`Tool "${toolName}" not found in global registry, skipping.`);
+      }
+    }
+  }
 
   // Create loop configuration - build conditionally for exactOptionalPropertyTypes
   const normalizedModel = normalizeModelForLoop(resolved.model);

@@ -378,8 +378,16 @@ export interface Agent {
   /** Add a custom operator to the pipeline */
   use(operator: MonoTypeOperatorFunction<AgentEvent>): this;
 
+  /** Clear all additional operators */
+  clearOperators(): this;
+
   /** Register tools dynamically */
   registerTool(tool: ToolDefinition | ToolDefinition[]): this;
+
+  // ----- Lifecycle -----
+
+  /** Destroy the agent and clean up resources */
+  destroy(): void;
 }
 
 // ============================================================

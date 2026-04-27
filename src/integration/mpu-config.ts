@@ -94,6 +94,7 @@ interface StoredAuditEntry {
  * Simple in-memory AuditStore satisfying the contracts/mpu-interfaces interface.
  */
 class SimpleAuditStore implements AuditStore {
+  private readonly MAX_ENTRIES = 1000;
   private entries: StoredAuditEntry[] = [];
   private counter = 0;
 
@@ -117,6 +118,10 @@ class SimpleAuditStore implements AuditStore {
     };
     if (lastHash !== undefined) {
       stored.previousHash = lastHash;
+    }
+    if (this.entries.length >= this.MAX_ENTRIES) {
+      const evictCount = Math.floor(this.MAX_ENTRIES * 0.1);
+      this.entries.splice(0, evictCount);
     }
     this.entries.push(stored);
   }

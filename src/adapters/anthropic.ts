@@ -173,7 +173,8 @@ export class AnthropicAdapter implements LLMAdapter {
       }
 
       return response;
-    } catch {
+    } catch (error) {
+      console.error('[Anthropic Adapter] Chat error:', error);
       return { content: '', finishReason: 'error' };
     }
   }
@@ -210,12 +211,14 @@ export class AnthropicAdapter implements LLMAdapter {
           }
 
           subscriber.complete();
-        } catch {
-          subscriber.complete();
+        } catch (error) {
+          subscriber.error(error instanceof Error ? error : new Error(String(error)));
         }
       };
 
-      run().catch(() => subscriber.complete());
+      run().catch(error =>
+        subscriber.error(error instanceof Error ? error : new Error(String(error)))
+      );
     });
   }
 

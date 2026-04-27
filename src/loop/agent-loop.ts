@@ -381,11 +381,16 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
               if (ctx.abortSignal?.aborted) {
                 subscriber.next();
                 subscriber.complete();
+                return;
               }
-              ctx.abortSignal?.addEventListener('abort', () => {
+              const handler = (): void => {
                 subscriber.next();
                 subscriber.complete();
-              });
+              };
+              ctx.abortSignal?.addEventListener('abort', handler);
+              return () => {
+                ctx.abortSignal?.removeEventListener('abort', handler);
+              };
             })
           : new Observable<void>(() => {})
       ),

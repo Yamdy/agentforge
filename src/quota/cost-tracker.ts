@@ -61,6 +61,7 @@ interface ModelCostEntry {
  * ```
  */
 export class MemoryCostTracker implements CostTracker {
+  private readonly MAX_SESSIONS = 1000;
   private readonly sessions: Map<string, SessionUsage> = new Map();
   private readonly limits: Map<string, CostLimit> = new Map();
 
@@ -70,6 +71,12 @@ export class MemoryCostTracker implements CostTracker {
     const now = new Date().toISOString();
 
     if (!session) {
+      if (this.sessions.size >= this.MAX_SESSIONS) {
+        const firstKey = this.sessions.keys().next().value;
+        if (firstKey !== undefined) {
+          this.sessions.delete(firstKey);
+        }
+      }
       session = {
         totalCost: 0,
         byModel: new Map(),

@@ -38,6 +38,34 @@ npm install @primo512109/agentforge
 
 ## 快速开始
 
+### Quickstart API（最简单）
+
+零配置 API，类似 Mastra 的开发体验：
+
+```typescript
+import { Agent, tool } from 'agentforge/quickstart';
+import { z } from 'zod';
+
+// 定义工具
+const weatherTool = tool({
+  description: 'Get weather for a city',
+  parameters: z.object({ city: z.string() }),
+  execute: async (args) => ({ temp: 22, city: args.city }),
+});
+
+// 创建 Agent（自动注册 adapter）
+const agent = new Agent({
+  name: 'weather-agent',
+  model: 'openai/gpt-4o-mini',
+  systemPrompt: 'You are a helpful weather assistant.',
+  tools: { weather: weatherTool },
+});
+
+// 运行
+const result = await agent.generate('What is the weather in Tokyo?');
+console.log(result.text);
+```
+
 ### L2 API（推荐）
 
 配置驱动的声明式 API，适合大多数开发者：

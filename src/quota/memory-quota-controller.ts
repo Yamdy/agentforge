@@ -51,6 +51,7 @@ import type { QuotaController, QuotaLimits, QuotaUsage } from './quota-controlle
  * ```
  */
 export class MemoryQuotaController implements QuotaController {
+  private readonly MAX_SESSIONS = 1000;
   private readonly limits: QuotaLimits;
   private readonly usageBySession: Map<string, QuotaUsage> = new Map();
 
@@ -108,6 +109,13 @@ export class MemoryQuotaController implements QuotaController {
    */
   consume(sessionId: string, usage: QuotaUsage): void {
     const current = this.getUsage(sessionId);
+
+    if (!this.usageBySession.has(sessionId) && this.usageBySession.size >= this.MAX_SESSIONS) {
+      const firstKey = this.usageBySession.keys().next().value;
+      if (firstKey !== undefined) {
+        this.usageBySession.delete(firstKey);
+      }
+    }
 
     this.usageBySession.set(sessionId, {
       promptTokens: current.promptTokens + usage.promptTokens,

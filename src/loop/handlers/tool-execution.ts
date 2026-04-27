@@ -137,7 +137,8 @@ export function handleBatchComplete(
       reason: 'length',
     };
 
-    const newState = { ...state, step: newStep, batchContext: undefined, pendingToolCalls: [] };
+    const newState = { ...state, step: newStep, pendingToolCalls: [] };
+    delete newState.batchContext;
     return from([
       { event: completeEvent, state: newState },
       { event: doneEvent, state: newState },
@@ -147,9 +148,9 @@ export function handleBatchComplete(
   const newState = {
     ...state,
     step: newStep,
-    batchContext: undefined,
     pendingToolCalls: [],
   };
+  delete newState.batchContext;
 
   const stepEvent: AgentEvent = {
     type: 'agent.step',
@@ -417,8 +418,8 @@ export function executeBatchTools(
         ...state,
         messages: newMessages,
         pendingToolCalls: [],
-        batchContext: undefined,
       };
+      delete completeState.batchContext;
 
       events.push({
         event: {

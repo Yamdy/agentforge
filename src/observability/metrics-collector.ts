@@ -66,6 +66,8 @@ type MetricState = CounterState | HistogramState | GaugeState;
  * ```
  */
 export class MetricsCollectorImpl implements MetricsCollector {
+  private readonly MAX_METRICS = 1000;
+  private readonly MAX_LABEL_SETS = 100;
   private readonly _prefix: string;
   private readonly _metrics: Map<string, MetricState> = new Map();
 
@@ -84,6 +86,12 @@ export class MetricsCollectorImpl implements MetricsCollector {
     let state = this._metrics.get(key);
 
     if (!state) {
+      if (this._metrics.size >= this.MAX_METRICS) {
+        const firstKey = this._metrics.keys().next().value;
+        if (firstKey !== undefined) {
+          this._metrics.delete(firstKey);
+        }
+      }
       state = { type: 'counter', labelSets: new Map() };
       this._metrics.set(key, state);
     }
@@ -94,6 +102,12 @@ export class MetricsCollectorImpl implements MetricsCollector {
     }
 
     const labelKey = this._labelKey(labels);
+    if (state.labelSets.size >= this.MAX_LABEL_SETS) {
+      const firstLabelKey = state.labelSets.keys().next().value;
+      if (firstLabelKey !== undefined) {
+        state.labelSets.delete(firstLabelKey);
+      }
+    }
     const current = state.labelSets.get(labelKey) ?? 0;
     state.labelSets.set(labelKey, current + 1);
   }
@@ -112,6 +126,12 @@ export class MetricsCollectorImpl implements MetricsCollector {
     let state = this._metrics.get(key);
 
     if (!state) {
+      if (this._metrics.size >= this.MAX_METRICS) {
+        const firstKey = this._metrics.keys().next().value;
+        if (firstKey !== undefined) {
+          this._metrics.delete(firstKey);
+        }
+      }
       state = { type: 'histogram', labelSets: new Map() };
       this._metrics.set(key, state);
     }
@@ -124,6 +144,12 @@ export class MetricsCollectorImpl implements MetricsCollector {
     const existing = state.labelSets.get(labelKey);
 
     if (!existing) {
+      if (state.labelSets.size >= this.MAX_LABEL_SETS) {
+        const firstLabelKey = state.labelSets.keys().next().value;
+        if (firstLabelKey !== undefined) {
+          state.labelSets.delete(firstLabelKey);
+        }
+      }
       state.labelSets.set(labelKey, {
         count: 1,
         sum: value,
@@ -150,6 +176,12 @@ export class MetricsCollectorImpl implements MetricsCollector {
     let state = this._metrics.get(key);
 
     if (!state) {
+      if (this._metrics.size >= this.MAX_METRICS) {
+        const firstKey = this._metrics.keys().next().value;
+        if (firstKey !== undefined) {
+          this._metrics.delete(firstKey);
+        }
+      }
       state = { type: 'gauge', labelSets: new Map() };
       this._metrics.set(key, state);
     }
@@ -159,6 +191,12 @@ export class MetricsCollectorImpl implements MetricsCollector {
     }
 
     const labelKey = this._labelKey(labels);
+    if (state.labelSets.size >= this.MAX_LABEL_SETS) {
+      const firstLabelKey = state.labelSets.keys().next().value;
+      if (firstLabelKey !== undefined) {
+        state.labelSets.delete(firstLabelKey);
+      }
+    }
     state.labelSets.set(labelKey, value);
   }
 

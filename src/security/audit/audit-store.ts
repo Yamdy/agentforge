@@ -13,9 +13,14 @@ export interface AuditStore {
 }
 
 export class InMemoryAuditStore implements AuditStore {
+  private readonly MAX_ENTRIES = 10000;
   private readonly entries: AuditEntry[] = [];
 
   append(entry: AuditEntry): void {
+    if (this.entries.length >= this.MAX_ENTRIES) {
+      const evictCount = Math.floor(this.MAX_ENTRIES * 0.1);
+      this.entries.splice(0, evictCount);
+    }
     this.entries.push(entry);
   }
 
