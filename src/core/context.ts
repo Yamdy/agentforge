@@ -39,6 +39,7 @@ import type {
   RateLimiter,
   InputSanitizer,
 } from './interfaces.js';
+import type { Logger } from './logger.js';
 import type { QuotaController } from '../quota/quota-controller.js';
 import type { CompactionManager } from '../memory/index.js';
 import type {
@@ -141,6 +142,9 @@ export interface AgentContext {
   tools: ToolRegistry;
 
   // ----- Optional Dependencies -----
+  /** Structured logger for replacing console.* calls */
+  logger?: Logger;
+
   /** Checkpoint storage for resumption */
   checkpoint?: CheckpointStorage;
 

@@ -26,6 +26,7 @@ import {
   generateSessionId,
   DefaultHITLController,
 } from '../core/index.js';
+import { DefaultLogger, type Logger } from '../core/logger.js';
 import { createAgentLoop, type AgentLoopConfig, type AgentLoop } from '../loop/index.js';
 import {
   debugPreset,
@@ -399,6 +400,7 @@ function normalizeModelForLoop(model: AgentModelConfig | string): {
  * Resolve configuration with defaults
  */
 function resolveConfig(config: AgentConfig): ResolvedConfig {
+  const logger: Logger = new DefaultLogger('agentforge');
   const name = config.name ?? DEFAULT_AGENT_CONFIG.name;
   const maxSteps = config.maxSteps ?? DEFAULT_AGENT_CONFIG.maxSteps;
   const parallelToolCalls = config.parallelToolCalls ?? DEFAULT_AGENT_CONFIG.parallelToolCalls;
@@ -414,8 +416,7 @@ function resolveConfig(config: AgentConfig): ResolvedConfig {
     for (const t of config.tools) {
       if (typeof t === 'string') {
         // Tool name reference - would need lookup from global registry
-        // eslint-disable-next-line no-console
-        console.debug(`Tool reference: ${t}`);
+        logger.debug(`Tool reference: ${t}`);
       } else {
         tools.push(t);
       }
