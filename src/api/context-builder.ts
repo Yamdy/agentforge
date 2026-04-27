@@ -81,7 +81,7 @@ interface BuilderState {
   pauseController?: PauseController;
   checkpoint?: CheckpointStorage;
   hitl?: HITLController;
-  mcp?: MCPClient;
+  mcpClients?: Map<string, MCPClient>;
   subagents?: SubagentRegistry;
   abortSignal?: AbortSignal;
   errorHandler?: ErrorHandler;
@@ -307,8 +307,8 @@ export class AgentContextBuilder {
    * @param mcp - MCP client instance
    * @returns this
    */
-  withMCP(mcp: MCPClient): this {
-    this.state.mcp = mcp;
+  withMCPClients(clients: Map<string, MCPClient>): this {
+    this.state.mcpClients = clients;
     return this;
   }
 
@@ -524,8 +524,8 @@ export class AgentContextBuilder {
     if (this.state.hitl !== undefined) {
       ctx.hitl = this.state.hitl;
     }
-    if (this.state.mcp !== undefined) {
-      ctx.mcp = this.state.mcp;
+    if (this.state.mcpClients !== undefined) {
+      ctx.mcpClients = this.state.mcpClients;
     }
     if (this.state.subagents !== undefined) {
       ctx.subagents = this.state.subagents;

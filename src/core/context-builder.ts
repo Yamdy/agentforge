@@ -158,8 +158,8 @@ export class ContextBuilder {
   /**
    * Set MCP client
    */
-  withMCP(mcp: MCPClient): this {
-    this.context.mcp = mcp;
+  withMCPClients(clients: Map<string, MCPClient>): this {
+    this.context.mcpClients = clients;
     return this;
   }
 
@@ -249,7 +249,7 @@ export class ContextBuilder {
 
     if (this.context.checkpoint) ctx.checkpoint = this.context.checkpoint;
     if (this.context.hitl) ctx.hitl = this.context.hitl;
-    if (this.context.mcp) ctx.mcp = this.context.mcp;
+    if (this.context.mcpClients !== undefined) ctx.mcpClients = this.context.mcpClients;
     if (this.context.subagents) ctx.subagents = this.context.subagents;
     if (this.context.abortSignal) ctx.abortSignal = this.context.abortSignal;
     if (this.context.onError) ctx.onError = this.context.onError;

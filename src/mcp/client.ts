@@ -114,6 +114,11 @@ export class AgentForgeMCPClient implements MCPClient {
     this._config = config;
   }
 
+  /** Server name for identification (from options) */
+  get serverName(): string {
+    return this.options.serverName;
+  }
+
   /**
    * Current connection status.
    */

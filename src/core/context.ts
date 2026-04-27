@@ -151,8 +151,9 @@ export interface AgentContext {
   /** HITL controller for human-in-the-loop */
   hitl?: HITLController;
 
-  /** MCP client for external tools */
-  mcp?: MCPClient;
+  // ----- MCP (optional — zero overhead if not configured) -----
+  /** MCP client instances keyed by server name */
+  mcpClients?: Map<string, MCPClient>;
 
   /** Subagent registry for nested agents */
   subagents?: SubagentRegistry;
