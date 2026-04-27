@@ -161,6 +161,18 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         result: 'error',
         details: { error: event.error },
       });
+
+      // MPU M4: Error classification + circuit breaker recording (fire-and-forget)
+      if (ctx.errorClassifier && event.error) {
+        try {
+          const severity = ctx.errorClassifier.classify(event.error);
+          if (severity === 'moderate' || severity === 'severe') {
+            ctx.circuitBreaker?.recordFailure(severity);
+          }
+        } catch {
+          // Error classifier failure must never crash the loop
+        }
+      }
     }
 
     // Terminal events end the stream

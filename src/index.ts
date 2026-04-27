@@ -770,7 +770,12 @@ export {
 // Observability / Resource Monitoring
 // ============================================================
 
-export { ResourceMonitor, type ResourceMetrics } from './observability/index.js';
+export {
+  ResourceMonitor,
+  type ResourceMetrics,
+  HealthCheckerImpl,
+  MetricsCollectorImpl,
+} from './observability/index.js';
 
 // ============================================================
 // LLM Adapters
@@ -831,6 +836,83 @@ export {
  * ```
  */
 export { type MPUConfig, type MPUServiceResult, createMPUServices } from './integration/index.js';
+
+// ============================================================
+// MPU Module Exports (previously internal-only)
+// ============================================================
+
+/**
+ * M1: SQLite Storage (Checkpoint + Session)
+ */
+export {
+  SqliteCheckpointStorage,
+  SqliteSessionStorage,
+} from './storage/index.js';
+
+/**
+ * M2: Task Planning
+ *
+ * Planning engine for generating execution plans before agent loop starts.
+ */
+export {
+  type PlanStep,
+  type ExecutionPlan,
+  PlannerImpl,
+  PlanExecutorImpl,
+} from './planning/index.js';
+
+/**
+ * M3: Sandbox Isolation
+ *
+ * Docker-based sandbox for isolated tool execution.
+ */
+export {
+  type DockerSandboxConfig,
+  DockerSandbox,
+} from './sandbox/index.js';
+
+/**
+ * M4: Resilience (Circuit Breaker + Error Classifier + Auto-Repairer)
+ */
+export {
+  DefaultCircuitBreaker,
+  type CircuitBreakerConfig,
+  DefaultErrorClassifier,
+  DefaultAutoRepairer,
+  type RepairResult,
+  type RepairHandler,
+} from './resilience/index.js';
+
+/**
+ * M5: Audit Logging (SQLite + Hash Chain)
+ */
+export {
+  SqliteAuditStore,
+} from './audit/index.js';
+
+/**
+ * M6: Security (Sandbox Executor)
+ */
+export {
+  InProcessSandboxExecutor,
+} from './security/index.js';
+
+/**
+ * M9: Graceful Shutdown
+ */
+export {
+  GracefulShutdown,
+  type ShutdownResult,
+} from './lifecycle/index.js';
+
+/**
+ * M10: Result Validation
+ */
+export {
+  ResultValidatorImpl,
+  GoalAlignmentCheckerImpl,
+  CompletionScorerImpl,
+} from './validation/index.js';
 
 // ============================================================
 // L1 API (Zero-Code Configuration)
