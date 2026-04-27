@@ -19,6 +19,33 @@ export function handleAgentStart(
 ): Observable<StepContext> {
   const { ctx, config, sessionId } = deps;
 
+  // MPU M2: Planning — fire-and-forget plan generation
+  // Phase 1: Plan result is logged but NOT injected into AgentState.
+  // Phase 2 (future): Add currentPlan to AgentState, modify prompt builder to include plan.
+  if (ctx.planner) {
+    const input =
+      typeof state.messages[state.messages.length - 1]?.content === 'string'
+        ? state.messages[state.messages.length - 1]!.content
+        : '';
+    ctx.planner
+      .plan(input, { availableTools: ctx.tools.list(), maxSteps: state.maxSteps })
+      .then(plan => {
+        // Log plan via audit (fire-and-forget)
+        ctx.auditLogger?.append({
+          sessionId,
+          agentName: state.agentName,
+          eventType: 'agent.start' as const,
+          action: 'plan.generated',
+          resource: input,
+          result: 'success' as const,
+          details: { planId: plan.id, stepCount: plan.steps.length },
+        });
+      })
+      .catch(() => {
+        // Planner failure must never crash the loop
+      });
+  }
+
   // Emit agent.step + llm.request — let llm.request handler call the LLM
   const newStep = 1;
   const newState = { ...state, step: newStep };
