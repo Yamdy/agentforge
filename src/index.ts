@@ -844,10 +844,7 @@ export { type MPUConfig, type MPUServiceResult, createMPUServices } from './inte
 /**
  * M1: SQLite Storage (Checkpoint + Session)
  */
-export {
-  SqliteCheckpointStorage,
-  SqliteSessionStorage,
-} from './storage/index.js';
+export { SqliteCheckpointStorage, SqliteSessionStorage } from './storage/index.js';
 
 /**
  * M2: Task Planning
@@ -866,10 +863,7 @@ export {
  *
  * Docker-based sandbox for isolated tool execution.
  */
-export {
-  type DockerSandboxConfig,
-  DockerSandbox,
-} from './sandbox/index.js';
+export { type DockerSandboxConfig, DockerSandbox } from './sandbox/index.js';
 
 /**
  * M4: Resilience (Circuit Breaker + Error Classifier + Auto-Repairer)
@@ -886,24 +880,17 @@ export {
 /**
  * M5: Audit Logging (SQLite + Hash Chain)
  */
-export {
-  SqliteAuditStore,
-} from './audit/index.js';
+export { SqliteAuditStore } from './audit/index.js';
 
 /**
  * M6: Security (Sandbox Executor)
  */
-export {
-  InProcessSandboxExecutor,
-} from './security/index.js';
+export { InProcessSandboxExecutor } from './security/index.js';
 
 /**
  * M9: Graceful Shutdown
  */
-export {
-  GracefulShutdown,
-  type ShutdownResult,
-} from './lifecycle/index.js';
+export { GracefulShutdown, type ShutdownResult } from './lifecycle/index.js';
 
 /**
  * M10: Result Validation
