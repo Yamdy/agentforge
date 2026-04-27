@@ -102,6 +102,8 @@ export interface AgentLoop {
   run(input: string): Observable<AgentEvent>;
   /** Destroy signal for cleanup */
   destroy$: Observable<void>;
+  /** Get the current agent state (null if not yet started) */
+  getCurrentState(): AgentState | null;
 }
 
 // ============================================================
@@ -122,6 +124,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
   const sessionId = ctx.sessionId;
   const destroy$ = new Subject<void>();
   let isRunning = false;
+  let latestState: AgentState | null = null;
 
   // ============================================================
   // Core Step Function - Routes all events
@@ -199,6 +202,9 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
    */
   function step(sctx: StepContext): Observable<StepContext> {
     const { event, state } = sctx;
+
+    // Track latest state for external access (e.g., pause/resume)
+    latestState = state;
 
     // MPU M5: Audit terminal events before stream ends (fire-and-forget)
     if (event.type === 'agent.error') {
@@ -684,6 +690,15 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         return { event: nestedEvent, state } as StepContext;
       }),
       catchError(error => {
+        // Notify error handler
+        const err = error instanceof Error ? error : new Error(String(error));
+        const errorAgentEvent: AgentEvent = {
+          type: 'agent.error',
+          timestamp: Date.now(),
+          sessionId,
+          error: serializeError(err),
+        };
+        ctx.onError?.(err, errorAgentEvent, 'tool_execution');
         // Errors-as-events: convert to tool.result with error
         const resultEvent: AgentEvent = {
           type: 'tool.result',
@@ -860,6 +875,9 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         ] as StepContext[]);
       }),
       catchError(error => {
+        // Notify error handler
+        const err = error instanceof Error ? error : new Error(String(error));
+        ctx.onError?.(err, event, 'unknown');
         // HITL error → errors-as-events
         const errorEvent: AgentEvent = {
           type: 'agent.error',
@@ -1073,6 +1091,17 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         return of({ event: responseEvent, state, repairAttempt } as StepContext);
       }),
       catchError(error => {
+        // Notify error handler
+        const err = error instanceof Error ? error : new Error(String(error));
+        const llmErrorEvent: AgentEvent = {
+          type: 'llm.request',
+          timestamp: Date.now(),
+          sessionId,
+          messages: state.messages,
+          model: config.model,
+          tools: ctx.tools.list(),
+        };
+        ctx.onError?.(err, llmErrorEvent, 'llm_server_error');
         const errorEvent: AgentEvent = {
           type: 'agent.error',
           timestamp: Date.now(),
@@ -1221,6 +1250,17 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           }
         },
         error(error) {
+          // Notify error handler
+          const err = error instanceof Error ? error : new Error(String(error));
+          const streamErrorEvent: AgentEvent = {
+            type: 'llm.request',
+            timestamp: Date.now(),
+            sessionId,
+            messages: state.messages,
+            model: config.model,
+            tools: ctx.tools.list(),
+          };
+          ctx.onError?.(err, streamErrorEvent, 'llm_server_error');
           // Errors-as-events: convert to agent.error + done
           const errorEvent: AgentEvent = {
             type: 'agent.error',
@@ -1373,6 +1413,17 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           ] as StepContext[];
         })
         .catch(error => {
+          // Notify error handler
+          const err = error instanceof Error ? error : new Error(String(error));
+          const toolErrorEvent: AgentEvent = {
+            type: 'tool.call',
+            timestamp: Date.now(),
+            sessionId,
+            toolCallId: tc.id,
+            toolName: tc.name,
+            args: tc.args,
+          };
+          ctx.onError?.(err, toolErrorEvent, 'tool_execution');
           const resultEvent: AgentEvent = {
             type: 'tool.result',
             timestamp: Date.now(),
@@ -1604,6 +1655,15 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       ),
       // 🔴 P0 修复：全局 catchError 作为安全网 - 任何未捕获的错误转换为 agent.error + done
       catchError(error => {
+        // Notify error handler
+        const err = error instanceof Error ? error : new Error(String(error));
+        const globalErrorEvent: AgentEvent = {
+          type: 'agent.error',
+          timestamp: Date.now(),
+          sessionId,
+          error: serializeError(err),
+        };
+        ctx.onError?.(err, globalErrorEvent, 'unknown');
         console.error('Agent loop unexpected error:', error);
         const errorEvent: AgentEvent = {
           type: 'agent.error',
@@ -1621,8 +1681,6 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       }),
       finalize(() => {
         isRunning = false;
-        destroy$.next();
-        destroy$.complete();
       })
     );
   }
@@ -1630,6 +1688,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
   return {
     run,
     destroy$: destroy$.asObservable(),
+    getCurrentState: () => latestState,
   };
 
   // ============================================================

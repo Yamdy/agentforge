@@ -13,6 +13,7 @@ import type { MonoTypeOperatorFunction } from 'rxjs';
 import {
   type AgentEvent,
   type AgentEventType,
+  type AgentState,
   type Checkpoint,
   type Message,
   type ToolDefinition,
@@ -20,6 +21,7 @@ import {
   type LLMResponse,
   type LLMChunk,
   type CheckpointStorage,
+  type ToolRegistryInterface,
   ContextBuilder,
   generateSessionId,
   DefaultHITLController,
@@ -84,6 +86,7 @@ class AgentImpl implements Agent {
   private readonly sessionId: string;
   private readonly agentName: string;
   private readonly loop: AgentLoop;
+  private readonly tools: ToolRegistryInterface;
   private readonly config: ResolvedConfig;
   private readonly destroy$ = new Subject<void>();
   private readonly eventHandlers = new Map<AgentEventType, Set<(event: AgentEvent) => void>>();
@@ -95,10 +98,17 @@ class AgentImpl implements Agent {
     reject: (error: Error) => void;
   } | null = null;
 
-  constructor(sessionId: string, agentName: string, loop: AgentLoop, config: ResolvedConfig) {
+  constructor(
+    sessionId: string,
+    agentName: string,
+    loop: AgentLoop,
+    tools: ToolRegistryInterface,
+    config: ResolvedConfig
+  ) {
     this.sessionId = sessionId;
     this.agentName = agentName;
     this.loop = loop;
+    this.tools = tools;
     this.config = config;
 
     // Subscribe to event subject for event distribution
@@ -289,23 +299,25 @@ class AgentImpl implements Agent {
   }
 
   pause(): Promise<Checkpoint> {
-    // Return a placeholder checkpoint - actual implementation requires state capture
+    // Use real state from the agent loop if available
+    const currentState: AgentState = this.loop.getCurrentState() ?? {
+      sessionId: this.sessionId,
+      agentName: this.agentName,
+      model: normalizeModelForLoop(this.config.model),
+      messages: [],
+      step: 0,
+      maxSteps: this.config.maxSteps,
+      pendingToolCalls: [],
+      output: '',
+      tokens: { prompt: 0, completion: 0 },
+    };
+
     const checkpoint: Checkpoint = {
       id: `cp-${generateSessionId()}`,
       sessionId: this.sessionId,
       timestamp: Date.now(),
       position: 'after_llm',
-      state: {
-        sessionId: this.sessionId,
-        agentName: this.agentName,
-        model: normalizeModelForLoop(this.config.model),
-        messages: [],
-        step: 0,
-        maxSteps: this.config.maxSteps,
-        pendingToolCalls: [],
-        output: '',
-        tokens: { prompt: 0, completion: 0 },
-      },
+      state: currentState,
       pendingA2A: [],
       executedTools: [],
       recoveryMetadata: { recoveryCount: 0 },
@@ -345,14 +357,9 @@ class AgentImpl implements Agent {
   }
 
   registerTool(tool: ToolDefinition | ToolDefinition[]): this {
-    // Tools are registered via the tool registry in the context
-    // This method would need access to the context's tool registry
-    // For now, we just store them for reference
     const tools = Array.isArray(tool) ? tool : [tool];
     tools.forEach(t => {
-      // Would call this.context.tools.register(t) if we had access
-      // eslint-disable-next-line no-console
-      console.debug(`Tool registered: ${t.name}`);
+      this.tools.register(t);
     });
     return this;
   }
@@ -654,7 +661,7 @@ export function createAgent(config: AgentConfig): CreateAgentResult {
   const loop = createAgentLoop(ctx, loopConfig);
 
   // Create the agent instance
-  const agent = new AgentImpl(sessionId, resolved.name, loop, resolved);
+  const agent = new AgentImpl(sessionId, resolved.name, loop, ctx.tools, resolved);
 
   // Return with context info
   return Object.assign(agent, {

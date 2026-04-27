@@ -35,6 +35,7 @@ import {
   createDefaultAppServices,
   generateSessionId,
 } from './context.js';
+import { toolToFunctionDef } from './zod-to-schema.js';
 
 // ============================================================
 // Context Builder
@@ -280,15 +281,7 @@ export class SimpleToolRegistry implements ToolRegistry {
     const tool = this.tools.get(name);
     if (!tool) return undefined;
 
-    // Basic conversion (full implementation in zod-to-function.ts)
-    return {
-      name: tool.name,
-      description: tool.description,
-      parameters: {
-        type: 'object',
-        properties: {},
-      },
-    };
+    return toolToFunctionDef(tool);
   }
 
   getFunctionDefs(): FunctionDefinitionInterface[] {
@@ -379,14 +372,7 @@ export class DelegatingToolRegistry implements ToolRegistry {
     const tool = this.get(name);
     if (!tool) return undefined;
 
-    return {
-      name: tool.name,
-      description: tool.description,
-      parameters: {
-        type: 'object',
-        properties: {},
-      },
-    };
+    return toolToFunctionDef(tool);
   }
 
   getFunctionDefs(): FunctionDefinitionInterface[] {
