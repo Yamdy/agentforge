@@ -123,6 +123,56 @@ export function emitCheckpoint(
 export function handleLLMRequest(deps: HandlerDeps, state: AgentState): Observable<StepContext> {
   const { ctx, sessionId } = deps;
 
+  // MPU M4: Circuit breaker — block LLM call if circuit is open
+  if (ctx.circuitBreaker?.shouldTrip()) {
+    const errorEvent: AgentEvent = {
+      type: 'agent.error',
+      timestamp: Date.now(),
+      sessionId,
+      error: {
+        name: 'CircuitBreakerOpenError',
+        message: 'Circuit breaker is open — LLM calls blocked due to repeated failures',
+      },
+    };
+    const doneEv: AgentEvent = {
+      type: 'done',
+      timestamp: Date.now(),
+      sessionId,
+      reason: 'error',
+    };
+    return from([
+      { event: errorEvent, state },
+      { event: doneEv, state },
+    ] as StepContext[]);
+  }
+
+  // MPU M6: Rate limiter — block LLM call if rate limit exceeded
+  if (ctx.rateLimiter) {
+    const key = `llm:${sessionId}`;
+    if (!ctx.rateLimiter.check(key, { maxRequests: 100, windowMs: 60000 })) {
+      const errorEvent: AgentEvent = {
+        type: 'agent.error',
+        timestamp: Date.now(),
+        sessionId,
+        error: {
+          name: 'RateLimitExceededError',
+          message: 'LLM rate limit exceeded',
+        },
+      };
+      const doneEv: AgentEvent = {
+        type: 'done',
+        timestamp: Date.now(),
+        sessionId,
+        reason: 'error',
+      };
+      return from([
+        { event: errorEvent, state },
+        { event: doneEv, state },
+      ] as StepContext[]);
+    }
+    ctx.rateLimiter.consume(key, { maxRequests: 100, windowMs: 60000 });
+  }
+
   // MPU M7: Cost pre-check before LLM call
   if (ctx.services.costTracker) {
     return from(ctx.services.costTracker.checkLimit(sessionId)).pipe(
@@ -163,6 +213,47 @@ export function handleLLMRequest(deps: HandlerDeps, state: AgentState): Observab
 
 function doLLMRequest(deps: HandlerDeps, state: AgentState): Observable<StepContext> {
   const { ctx, config, sessionId } = deps;
+
+  // MPU M6: Input sanitizer — detect injection patterns
+  if (ctx.inputSanitizer) {
+    const lastMessage = state.messages[state.messages.length - 1];
+    const inputText = typeof lastMessage?.content === 'string' ? lastMessage.content : '';
+    const detection = ctx.inputSanitizer.detectInjection(inputText);
+    if (detection.isMalicious && detection.confidence >= 0.8) {
+      // High confidence: block the LLM call
+      const errorEvent: AgentEvent = {
+        type: 'agent.error',
+        timestamp: Date.now(),
+        sessionId,
+        error: {
+          name: 'InjectionDetectedError',
+          message: `Potential prompt injection detected: ${detection.patterns.join(', ')}`,
+        },
+      };
+      const doneEv: AgentEvent = {
+        type: 'done',
+        timestamp: Date.now(),
+        sessionId,
+        reason: 'error',
+      };
+      return from([
+        { event: errorEvent, state },
+        { event: doneEv, state },
+      ] as StepContext[]);
+    }
+    if (detection.isMalicious) {
+      // Low confidence: log but don't block (observability event)
+      ctx.auditLogger?.append({
+        sessionId,
+        agentName: state.agentName,
+        eventType: 'injection.detected',
+        action: 'llm.request',
+        resource: 'user_input',
+        result: 'success',
+        details: { confidence: detection.confidence, patterns: detection.patterns },
+      });
+    }
+  }
 
   // Compaction auto-trigger: compress messages before LLM call
   if (ctx.compactionManager && shouldCompact(state)) {
@@ -438,6 +529,15 @@ function callLLMInner(
         tools: ctx.tools.list(),
       };
       ctx.onError?.(err, llmErrorEvent, 'llm_server_error');
+      // MPU M4: Error classification (fire-and-forget)
+      if (ctx.errorClassifier && ctx.circuitBreaker) {
+        try {
+          const severity = ctx.errorClassifier.classify(serializeError(error));
+          ctx.circuitBreaker.recordFailure(severity);
+        } catch {
+          // Error classifier must never crash the loop
+        }
+      }
       const errorEvent: AgentEvent = {
         type: 'agent.error',
         timestamp: Date.now(),
@@ -606,6 +706,15 @@ function callLLMStreamingInner(
           tools: ctx.tools.list(),
         };
         ctx.onError?.(err, streamErrorEvent, 'llm_server_error');
+        // MPU M4: Error classification (fire-and-forget)
+        if (ctx.errorClassifier && ctx.circuitBreaker) {
+          try {
+            const severity = ctx.errorClassifier.classify(serializeError(error));
+            ctx.circuitBreaker.recordFailure(severity);
+          } catch {
+            // Error classifier must never crash the loop
+          }
+        }
         // Errors-as-events: convert to agent.error + done
         const errorEvent: AgentEvent = {
           type: 'agent.error',
