@@ -37,6 +37,8 @@ import {
 } from '../operators/index.js';
 import { createLLMAdapter, parseModelSpec } from '../adapters/index.js';
 import { createPluginManager, createPluginContext } from '../plugins/index.js';
+import { createMCPClient, adaptMCPTools } from '../mcp/index.js';
+import type { MCPClient, MCPStatus } from '../core/interfaces.js';
 import {
   type AgentConfig,
   type Agent,
@@ -97,6 +99,12 @@ class AgentImpl implements Agent {
   private readonly eventHandlers = new Map<AgentEventType, Set<(event: AgentEvent) => void>>();
   private readonly eventSubject = new Subject<AgentEvent>();
   private readonly additionalOperators: MonoTypeOperatorFunction<AgentEvent>[] = [];
+  private readonly mcpSubscriptions: Subscription[] = []; // MCP status change subscriptions
+
+  // Allow createAgent to add MCP subscriptions for cleanup
+  addMCPSubscription(sub: Subscription): void {
+    this.mcpSubscriptions.push(sub);
+  }
   private currentSubscription: Subscription | null = null;
   private loopDestroySubscription: Subscription | null = null;
   private currentResult: {
@@ -328,6 +336,23 @@ class AgentImpl implements Agent {
   }
 
   destroy(): void {
+    // Clean up MCP status subscriptions
+    for (const sub of this.mcpSubscriptions) {
+      sub.unsubscribe();
+    }
+    this.mcpSubscriptions.length = 0;
+
+    // Disconnect MCP clients
+    if (this.ctx.mcpClients) {
+      for (const [, client] of this.ctx.mcpClients) {
+        try {
+          client.disconnect().catch(() => {});
+        } catch {
+          // Ignore disconnect errors during cleanup
+        }
+      }
+    }
+
     this.loopDestroySubscription?.unsubscribe();
     this.loopDestroySubscription = null;
     if (!this.eventSubject.closed) {
@@ -720,6 +745,78 @@ export function createAgent(config: AgentConfig): CreateAgentResult {
     }
   }
 
+  // Set up MCP clients if configured (background connection, non-blocking)
+  const mcpSubscriptions: Subscription[] = [];
+
+  if (config.mcp && config.mcp.length > 0) {
+    const mcpClients = new Map<string, MCPClient>();
+
+    for (const serverConfig of config.mcp) {
+      try {
+        const client = createMCPClient(serverConfig, {
+          serverName: serverConfig.name,
+          sessionId,
+          timeout: 30000,
+        });
+
+        mcpClients.set(serverConfig.name, client);
+
+        // Subscribe to status changes for automatic tool re-registration on reconnect
+        const statusSub = client.onStatusChange().subscribe({
+          next: (status: MCPStatus) => {
+            if (status === 'connected') {
+              client
+                .tools()
+                .then(mcpTools => {
+                  const adaptedTools = adaptMCPTools(mcpTools, client, serverConfig.name);
+                  for (const tool of adaptedTools) {
+                    ctx.tools.register(tool);
+                  }
+                })
+                .catch(() => {
+                  // Tool discovery failure must never crash the agent
+                });
+            }
+          },
+          error: () => {
+            // Status change subscription error — ignore
+          },
+        });
+        mcpSubscriptions.push(statusSub);
+
+        // Background connection and tool discovery (fire-and-forget)
+        // Tools will be registered in the tool registry when ready
+        client
+          .connect()
+          .then(async () => {
+            const mcpTools = await client.tools();
+            const adaptedTools = adaptMCPTools(mcpTools, client, serverConfig.name);
+            for (const tool of adaptedTools) {
+              ctx.tools.register(tool);
+            }
+          })
+          .catch((error: unknown) => {
+            // MCP connection failure must never crash the agent
+            console.warn(
+              `Failed to connect to MCP server "${serverConfig.name}": ${error instanceof Error ? error.message : String(error)}`
+            );
+          });
+      } catch (error) {
+        // createMCPClient can throw synchronously for invalid configs
+        console.warn(
+          `Failed to create MCP client for "${serverConfig.name}": ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    }
+
+    if (mcpClients.size > 0) {
+      ctx.mcpClients = mcpClients;
+    }
+  }
+
+  // Transfer MCP subscriptions to agent for cleanup
+  // (will be done after agent is created below)
+
   // Create loop configuration - build conditionally for exactOptionalPropertyTypes
   const normalizedModel = normalizeModelForLoop(resolved.model);
 
@@ -751,6 +848,11 @@ export function createAgent(config: AgentConfig): CreateAgentResult {
 
   // Create the agent instance
   const agent = new AgentImpl(sessionId, resolved.name, loop, ctx.tools, resolved, ctx);
+
+  // Transfer MCP subscriptions to agent for cleanup
+  for (const sub of mcpSubscriptions) {
+    agent.addMCPSubscription(sub);
+  }
 
   // Return with context info
   return Object.assign(agent, {
