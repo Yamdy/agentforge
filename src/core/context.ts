@@ -197,6 +197,10 @@ export interface AgentContext {
   /** Planner for task planning and plan validation */
   planner?: Planner;
 
+  // ----- Plugin Pipeline (optional) -----
+  /** Plugin pipeline for event interception and observation */
+  pluginPipeline?: (source: Observable<AgentEvent>) => Observable<AgentEvent>;
+
   // ----- Control Signals -----
   /** Abort signal for cancellation */
   abortSignal?: AbortSignal;

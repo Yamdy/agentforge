@@ -22,6 +22,7 @@ import type {
   Metrics,
   CheckpointStorage,
 } from '../core/index.js';
+import type { Plugin } from '../plugins/index.js';
 
 // ============================================================
 // Model Configuration
@@ -255,6 +256,9 @@ export interface AgentConfig {
 
   /** Custom operators to apply */
   operators?: MonoTypeOperatorFunction<AgentEvent>[];
+
+  /** Plugin configurations for event interception and observation */
+  plugins?: Plugin[];
 
   /** Preset configuration ('production' | 'debug' | 'test') */
   preset?: 'production' | 'debug' | 'test';

@@ -28,6 +28,8 @@ import type {
 import type { QuotaController } from '../quota/quota-controller.js';
 import type { CompactionManager } from '../memory/index.js';
 import type { ApplicationServices, AgentContext } from './context.js';
+import type { Observable } from 'rxjs';
+import type { AgentEvent } from './events.js';
 import {
   InMemoryStore,
   DefaultPauseController,
@@ -202,6 +204,17 @@ export class ContextBuilder {
   }
 
   /**
+   * Set plugin pipeline for event interception
+   *
+   * @param pipeline - Pipeline function that transforms Observable<AgentEvent>
+   * @returns this
+   */
+  withPluginPipeline(pipeline: (source: Observable<AgentEvent>) => Observable<AgentEvent>): this {
+    this.context.pluginPipeline = pipeline;
+    return this;
+  }
+
+  /**
    * Build the AgentContext
    *
    * Validates that required dependencies are set.
@@ -240,6 +253,7 @@ export class ContextBuilder {
     if (this.context.subagents) ctx.subagents = this.context.subagents;
     if (this.context.abortSignal) ctx.abortSignal = this.context.abortSignal;
     if (this.context.onError) ctx.onError = this.context.onError;
+    if (this.context.pluginPipeline !== undefined) ctx.pluginPipeline = this.context.pluginPipeline;
 
     return ctx;
   }

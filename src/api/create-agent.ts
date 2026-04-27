@@ -36,6 +36,7 @@ import {
   retryOnEventType,
 } from '../operators/index.js';
 import { createLLMAdapter, parseModelSpec } from '../adapters/index.js';
+import { createPluginManager, createPluginContext } from '../plugins/index.js';
 import {
   type AgentConfig,
   type Agent,
@@ -688,6 +689,24 @@ export function createAgent(config: AgentConfig): CreateAgentResult {
 
   // Build the context
   const ctx = builder.build();
+
+  // Set up plugin pipeline if configured
+  if (config.plugins && config.plugins.length > 0) {
+    const manager = createPluginManager();
+    const pluginContext = createPluginContext({
+      sessionId,
+      agentName: resolved.name,
+      ...(ctx.services.tracer !== undefined ? { tracer: ctx.services.tracer } : {}),
+      ...(ctx.services.metrics !== undefined ? { metrics: ctx.services.metrics } : {}),
+    });
+    manager.setContext(pluginContext);
+    for (const plugin of config.plugins) {
+      manager.register(plugin);
+    }
+    ctx.pluginPipeline = (source: Observable<AgentEvent>): Observable<AgentEvent> => {
+      return manager.buildPipeline(source);
+    };
+  }
 
   // Resolve tool names from global registry
   if (resolved.toolNames.length > 0 && ctx.services.toolRegistry) {

@@ -397,7 +397,11 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       tokens: { prompt: 0, completion: 0 },
     };
 
-    return of({ event: startEvent, state: initialState } as StepContext).pipe(
+    // Build the event stream
+    let eventStream: Observable<AgentEvent> = of({
+      event: startEvent,
+      state: initialState,
+    } as StepContext).pipe(
       expand(step),
       map(sctx => sctx.event),
       takeUntil(destroy$),
@@ -419,7 +423,15 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
               };
             })
           : new Observable<void>(() => {})
-      ),
+      )
+    );
+
+    // Apply plugin pipeline if configured
+    if (ctx.pluginPipeline) {
+      eventStream = ctx.pluginPipeline(eventStream);
+    }
+
+    return eventStream.pipe(
       // 🔴 P0 修复：全局 catchError 作为安全网 - 任何未捕获的错误转换为 agent.error + done
       catchError(error => {
         // Notify error handler
