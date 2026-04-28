@@ -7,6 +7,7 @@
  * @packageDocumentation
  */
 
+import { createRequire } from 'node:module';
 import { EMPTY } from 'rxjs';
 import type { LLMAdapter, LLMResponse } from '../core/interfaces.js';
 
@@ -19,16 +20,16 @@ export {
   ProviderRegistry,
   createHttpAdapter,
   createLLMAdapterFromSpec,
-  
+
   // Error classification
   classifyError,
   type ClassifiedError,
   type ErrorCategory,
-  
+
   // Retry policy
   calculateRetryDelay,
   type RetryConfig,
-  
+
   // Types
   type ProviderFactory,
   type HttpAdapterOptions,
@@ -47,10 +48,7 @@ export {
 } from './openai.js';
 
 // OpenAI HTTP Adapter (direct HTTP, supports v1 models)
-export {
-  createOpenAIHttpAdapter,
-  type OpenAIHttpAdapterOptions,
-} from './openai-http.js';
+export { createOpenAIHttpAdapter, type OpenAIHttpAdapterOptions } from './openai-http.js';
 
 // Anthropic Adapter
 export {
@@ -59,6 +57,22 @@ export {
   anthropicAdapterFactory,
   type AnthropicAdapterOptions,
 } from './anthropic.js';
+
+// Google Adapter (AI SDK v6)
+export {
+  GoogleAdapter,
+  createGoogleAdapter,
+  googleAdapterFactory,
+  type GoogleAdapterOptions,
+} from './google.js';
+
+// Ollama Adapter (AI SDK v6)
+export {
+  OllamaAdapter,
+  createOllamaAdapter,
+  ollamaAdapterFactory,
+  type OllamaAdapterOptions,
+} from './ollama.js';
 
 // ============================================================
 // Factory Types
@@ -174,6 +188,9 @@ class LLMAdapterFactoryImpl {
   private initializeBuiltins(): void {
     if (this.initialized) return;
 
+    // Create a require function that can resolve relative paths in ESM
+    const require = createRequire(import.meta.url);
+
     // Try to register OpenAI adapter
     try {
       // Dynamic import to avoid requiring the package at load time
@@ -195,6 +212,28 @@ class LLMAdapterFactoryImpl {
       this.factories.set('anthropic', anthropicAdapterFactory);
     } catch {
       // @ai-sdk/anthropic not installed - stub will be used
+    }
+
+    // Try to register Google adapter
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { googleAdapterFactory } = require('./google.js') as {
+        googleAdapterFactory: AdapterFactoryFn;
+      };
+      this.factories.set('google', googleAdapterFactory);
+    } catch {
+      // @ai-sdk/google not installed - stub will be used
+    }
+
+    // Try to register Ollama adapter
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { ollamaAdapterFactory } = require('./ollama.js') as {
+        ollamaAdapterFactory: AdapterFactoryFn;
+      };
+      this.factories.set('ollama', ollamaAdapterFactory);
+    } catch {
+      // ai-sdk-ollama not installed - stub will be used
     }
 
     this.initialized = true;
@@ -327,18 +366,4 @@ export function createOpenAICompatibleAdapter(
   options?: Record<string, unknown>
 ): LLMAdapter {
   return getLLMAdapterFactory().create(`${provider}/${model}`, options);
-}
-
-/**
- * Create Google adapter (stub)
- */
-export function createGoogleAdapter(model: string, options?: Record<string, unknown>): LLMAdapter {
-  return getLLMAdapterFactory().create(`google/${model}`, options);
-}
-
-/**
- * Create Ollama adapter (stub)
- */
-export function createOllamaAdapter(model: string, options?: Record<string, unknown>): LLMAdapter {
-  return getLLMAdapterFactory().create(`ollama/${model}`, options);
 }

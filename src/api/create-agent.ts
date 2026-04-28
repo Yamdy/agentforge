@@ -37,7 +37,11 @@ import {
 } from '../operators/index.js';
 import { createLLMAdapter, parseModelSpec } from '../adapters/index.js';
 import { createPluginManager, createPluginContext, type Plugin } from '../plugins/index.js';
-import { createMemoryPlugin, createSkillsPlugin, createSummarizationPlugin } from '../plugins/index.js';
+import {
+  createMemoryPlugin,
+  createSkillsPlugin,
+  createSummarizationPlugin,
+} from '../plugins/index.js';
 import { FileBasedMemory } from '../memory/index.js';
 import { createMCPClient, adaptMCPTools } from '../mcp/index.js';
 import type { MCPClient, MCPStatus } from '../core/interfaces.js';
@@ -81,6 +85,7 @@ interface ResolvedConfig {
   operators: MonoTypeOperatorFunction<AgentEvent>[];
   preset: 'production' | 'debug' | 'test' | undefined;
   history: Message[];
+  systemPrompt: string | undefined;
 }
 
 // ============================================================
@@ -557,6 +562,7 @@ function resolveConfig(config: AgentConfig): ResolvedConfig {
     operators: config.operators ?? [],
     preset: config.preset,
     history: config.history ?? [],
+    systemPrompt: config.systemPrompt,
   };
 }
 

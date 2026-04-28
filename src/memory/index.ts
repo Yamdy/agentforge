@@ -78,3 +78,42 @@ export {
   createSummarizeCompactionManager,
   createDisabledCompactionManager,
 } from './compaction.js';
+
+// ============================================================
+// Embedding Models (NEW - P0)
+// ============================================================
+
+export {
+  type EmbeddingModel,
+  type EmbeddingModelOptions,
+  OpenAIEmbeddingModel,
+  GoogleEmbeddingModel,
+  createEmbeddingModel,
+} from './embedding.js';
+
+// ============================================================
+// Vector Store (NEW - P0)
+// ============================================================
+
+export {
+  type VectorDocument,
+  type VectorSearchResult,
+  type VectorStore,
+  cosineSimilarity,
+} from './vector-store.js';
+
+// ============================================================
+// Semantic Memory (NEW - P0)
+// ============================================================
+
+export {
+  type SemanticMemoryConfig,
+  SemanticMemory,
+  createSemanticMemory,
+} from './semantic-memory.js';
+
+// ============================================================
+// SQLite Vector Store (NEW - P0)
+// ============================================================
+
+export { type SQLiteVectorStoreOptions, SQLiteVectorStore } from './stores/sqlite.js';
