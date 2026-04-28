@@ -1,0 +1,52 @@
+{
+  "templates": [
+    {
+      "id": "chat-agent",
+      "name": "Chat Agent",
+      "description": "Simple conversational agent with memory",
+      "category": "getting-started",
+      "complexity": "low",
+      "features": ["memory", "streaming"]
+    },
+    {
+      "id": "tool-agent",
+      "name": "Tool Agent",
+      "description": "Agent with custom tools and filesystem access",
+      "category": "getting-started",
+      "complexity": "low",
+      "features": ["tools", "filesystem"]
+    },
+    {
+      "id": "rag-agent",
+      "name": "RAG Agent",
+      "description": "Retrieval-augmented generation with vector store",
+      "category": "advanced",
+      "complexity": "medium",
+      "features": ["rag", "vector-store", "embeddings"]
+    },
+    {
+      "id": "multi-agent",
+      "name": "Multi-Agent",
+      "description": "Orchestrator + worker pattern with subagents",
+      "category": "advanced",
+      "complexity": "medium",
+      "features": ["subagent", "workflow"]
+    },
+    {
+      "id": "mcp-agent",
+      "name": "MCP Agent",
+      "description": "Agent connected to MCP servers",
+      "category": "integration",
+      "complexity": "medium",
+      "features": ["mcp", "tools"]
+    },
+    {
+      "id": "production-agent",
+      "name": "Production Agent",
+      "description": "Full MPU stack with observability and resilience",
+      "category": "production",
+      "complexity": "high",
+      "features": ["observability", "resilience", "audit", "security"]
+    }
+  ]
+}
