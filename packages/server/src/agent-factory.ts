@@ -1,4 +1,5 @@
 import { createAgent } from '@primo512109/agentforge';
+import { createOpenAIHttpAdapter } from '@primo512109/agentforge/adapters';
 import type { Agent, Message, L1AgentConfig, DefaultHITLController } from '@primo512109/agentforge';
 
 /**
@@ -44,6 +45,7 @@ export class AgentFactory {
 
     if (config.systemPrompt !== undefined) {
       agentConfig.systemPrompt = config.systemPrompt;
+      console.log('[AgentFactory] Added systemPrompt:', typeof config.systemPrompt);
     }
     if (config.timeout !== undefined) {
       agentConfig.timeout = config.timeout;
@@ -67,6 +69,31 @@ export class AgentFactory {
     // HITL support — pass controller if provided
     if (options?.hitlController) {
       agentConfig.hitl = { controller: options.hitlController };
+    }
+
+    // If the L1 config specifies a custom baseUrl (e.g. Volces, DeepSeek,
+    // or other OpenAI-compatible APIs), use the HTTP adapter directly
+    // instead of the AI SDK adapter which may not support the model.
+    if (config.model.baseUrl) {
+      const adapterOptions = {
+        baseURL: config.model.baseUrl,
+      } as Record<string, string>;
+      if (config.model.apiKey) {
+        adapterOptions.apiKey = config.model.apiKey;
+      }
+      const llmAdapter = createOpenAIHttpAdapter(
+        config.model.model,
+        adapterOptions as Parameters<typeof createOpenAIHttpAdapter>[1],
+      );
+      // Pass llmAdapter explicitly — createAgent() prioritizes it over
+      // auto-creating an adapter from the model config.
+      agentConfig.llmAdapter = llmAdapter;
+      // Keep minimal model config — normalizeModelForLoop requires provider
+      agentConfig.model = {
+        provider: config.model.provider ?? 'openai',
+        model: config.model.model,
+      };
+      console.log('[AgentFactory] Created with baseUrl:', config.model.baseUrl, 'model:', config.model.model, 'systemPrompt:', config.systemPrompt);
     }
 
     return createAgent(agentConfig as unknown as Parameters<typeof createAgent>[0]);

@@ -154,8 +154,9 @@ export async function chatStream(ctx: RequestContext): Promise<Response> {
   const abortController = new AbortController();
   session.activeRun = abortController;
 
-  // Build message history for agent
-  const history = session.messages.map((m) => ({
+  // Build message history for agent (exclude the last message which is the
+  // current user input — agent.run$() will append it automatically)
+  const history = session.messages.slice(0, -1).map((m) => ({
     role: m.role,
     content: m.content,
   }));

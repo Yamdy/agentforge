@@ -1,0 +1,14 @@
+{
+  "name": "default",
+  "model": {
+    "provider": "openai",
+    "model": "mimo-v2.5",
+    "baseUrl": "https://token-plan-cn.xiaomimimo.com/v1",
+    "apiKey": "tp-cu4d3tre3pqnffpv8zxgh58qfyainz40imu9ray5hdmu5bv1"
+  },
+  "maxSteps": 10,
+  "systemPrompt": "You are a helpful assistant. Answer user questions clearly and concisely.",
+  "tools": [],
+  "streaming": true,
+  "parallelToolCalls": true
+}
