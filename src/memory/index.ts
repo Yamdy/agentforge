@@ -113,6 +113,16 @@ export {
 } from './semantic-memory.js';
 
 // ============================================================
+// AGENTS.md Auto-Discovery
+// ============================================================
+
+export {
+  type AgentsMdConfig,
+  type AgentsMdResult,
+  loadAgentsMd,
+} from './agents-md.js';
+
+// ============================================================
 // SQLite Vector Store (NEW - P0)
 // ============================================================
 
