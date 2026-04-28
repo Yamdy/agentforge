@@ -291,9 +291,20 @@ npm run format
 
 ## 文档
 
-详细设计文档见 [docs/architecture/](./docs/architecture/)：
+完整文档见 [docs/DOCUMENTATION.md](./docs/DOCUMENTATION.md)：
 
-- [RXJS-EVENT-STREAM-DESIGN.md](./docs/architecture/RXJS-EVENT-STREAM-STREAM-DESIGN.md) - 完整架构设计
+### 快速导航
+
+| 分类 | 说明 | 链接 |
+|------|------|------|
+| **设计文档** | 核心架构设计 | [docs/design/](./docs/design/) |
+| **分析文档** | 框架对比分析 | [docs/analysis/](./docs/analysis/) |
+| **架构文档** | 架构改进设计 | [docs/architecture/](./docs/architecture/) |
+| **用户指南** | 快速上手指南 | [docs/guide/](./docs/guide/) |
+| **API 参考** | 详细 API 说明 | [docs/api/](./docs/api/) |
+| **开发计划** | 功能实现计划 | [docs/plans/](./docs/plans/) |
+| **规格文档** | 设计规格规范 | [docs/specs/](./docs/specs/) |
+| **项目管理** | 项目状态交接 | [docs/project/](./docs/project/) |
 
 ## License
 
