@@ -24,6 +24,7 @@ import {
   isTerminalEvent,
   serializeError,
 } from '../core/index.js';
+import type { DecisionTrace } from '../contracts/decision-trace-storage.js';
 
 import {
   handleAgentStart,
@@ -328,6 +329,25 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       case 'subagent.complete':
       case 'subagent.error':
         // Subagent events - handled in handleSubagentDelegation(), transparent pass-through here
+        return of(sctx);
+
+      case 'decision.trace':
+        // P1: Decision trace - store if storage is configured (fire-and-forget)
+        if (ctx.decisionTraceStorage) {
+          // Extract trace data from event (exclude 'type' field)
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { type: _, ...traceData } = event;
+          ctx.decisionTraceStorage
+            .append({
+              ...traceData,
+              id: `dt-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+              step: state.step,
+            } as DecisionTrace)
+            .catch(() => {
+              // Fire-and-forget: storage failure must never crash the loop
+            });
+        }
+        // Pass-through: event is already emitted to subscriber
         return of(sctx);
 
       default:

@@ -173,8 +173,8 @@
 | **事件路由补全** | 19-EVENT-ROUTING.md | `src/loop/agent-loop.ts` | 📝 待评审 |
 | **发布就绪性** | 20-PUBLISH-READINESS.md | `src/index.ts`, `package.json` | 📝 待评审 |
 | **P1: 规划/执行分离** | 08-SUBSYSTEMS.md | - | 🔮 未实现 |
-| **P1: outputSchema** | 01-CORE-TYPES.md | - | 🔮 未实现 |
-| **P1: 决策追溯** | 01-CORE-TYPES.md | - | 🔮 未实现 |
+| **P1: outputSchema** | 01-CORE-TYPES.md | `src/contracts/tool-output-contract.ts` | ✅ 已实现 |
+| **P1: 决策追溯** | 01-CORE-TYPES.md | `src/contracts/decision-trace-storage.ts` | ✅ 已实现 |
 | **P1: 外部状态机** | 01-CORE-TYPES.md | - | 🔮 未实现 |
 | **P2: Working Memory** | 01-CORE-TYPES.md | - | 🔮 未实现 |
 | **P2: Evaluation** | 14-OBSERVABILITY.md | - | 🔮 未实现 |

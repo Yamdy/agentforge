@@ -20,3 +20,20 @@ export {
   type MCPToolResponse,
 } from './mcp-contract.js';
 export { UserInputSchema, validateUserInput } from './user-input-contract.js';
+
+// P1: Tool output validation
+export {
+  validateToolOutput,
+  validateToolOutputForEvent,
+  type ValidatedToolOutput,
+} from './tool-output-contract.js';
+
+// P1: Decision trace storage
+export {
+  InMemoryDecisionTraceStorage,
+  createDecisionTraceStorage,
+  createDecisionTrace,
+  type DecisionTrace,
+  type DecisionTraceFilter,
+  type DecisionTraceStorage,
+} from './decision-trace-storage.js';

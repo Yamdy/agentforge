@@ -15,6 +15,7 @@ import {
   type PermissionAskOptions,
   generateId,
 } from '../../core/index.js';
+import { validateToolOutputForEvent } from '../../contracts/tool-output-contract.js';
 import type { HandlerDeps, StepContext } from '../agent-loop.js';
 import { handleSubagentDelegation } from './subagent.js';
 
@@ -231,6 +232,12 @@ export function executeToolDirectly(
         }
 
         // Normal tool result (no HITL required)
+        // P1: Validate tool output if outputSchema is defined
+        const toolDef = ctx.tools.get(tc.name);
+        const validationMetadata = toolDef
+          ? validateToolOutputForEvent(result, toolDef)
+          : { structuredOutput: undefined, isValid: undefined, validationError: undefined };
+
         const resultEvent: AgentEvent = {
           type: 'tool.result',
           timestamp: Date.now(),
@@ -239,6 +246,10 @@ export function executeToolDirectly(
           toolName: tc.name,
           result,
           isError: false,
+          // P1: Structured output validation fields
+          structuredOutput: validationMetadata.structuredOutput,
+          isValid: validationMetadata.isValid,
+          validationError: validationMetadata.validationError,
         };
         const newMessages: Message[] = [
           ...state.messages,
@@ -521,6 +532,12 @@ export function executeBatchTools(
           state: batchState,
         });
 
+        // P1: Validate tool output if outputSchema is defined
+        const toolDef = ctx.tools.get(r.tc.name);
+        const validationMetadata = toolDef
+          ? validateToolOutputForEvent(r.result, toolDef)
+          : { structuredOutput: undefined, isValid: undefined, validationError: undefined };
+
         events.push({
           event: {
             type: 'tool.result',
@@ -530,6 +547,10 @@ export function executeBatchTools(
             toolName: r.tc.name,
             result: r.result,
             isError: r.isError,
+            // P1: Structured output validation fields
+            structuredOutput: validationMetadata.structuredOutput,
+            isValid: validationMetadata.isValid,
+            validationError: validationMetadata.validationError,
           },
           state: batchState,
         });

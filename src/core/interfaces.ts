@@ -50,6 +50,13 @@ export interface LLMResponse {
   toolCalls?: ToolCall[];
   finishReason: 'stop' | 'tool_calls' | 'length' | 'error' | 'cancelled';
   usage?: LLMUsage;
+  // P1: Optional reasoning capture for decision traceability
+  reasoning?: {
+    rawOutput?: string;
+    thoughtProcess?: string;
+    model?: string;
+    confidence?: number;
+  };
 }
 
 /**

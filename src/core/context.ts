@@ -198,6 +198,10 @@ export interface AgentContext {
   /** Planner for task planning and plan validation */
   planner?: Planner;
 
+  // ----- Decision Trace (optional) -----
+  /** Decision trace storage for decision traceability */
+  decisionTraceStorage?: import('../contracts/decision-trace-storage.js').DecisionTraceStorage;
+
   // ----- Plugin Pipeline (optional) -----
   /** Plugin pipeline for event interception and observation */
   pluginPipeline?: (source: Observable<AgentEvent>) => Observable<AgentEvent>;

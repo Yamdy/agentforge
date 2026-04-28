@@ -514,6 +514,8 @@ function callLLMInner(
         toolCalls: response.toolCalls,
         finishReason: response.finishReason,
         usage: response.usage,
+        // P1: Capture reasoning if provided by LLM adapter
+        reasoning: response.reasoning,
       };
       return of({ event: responseEvent, state, repairAttempt } as StepContext);
     }),
@@ -767,6 +769,8 @@ function callLLMStreamingInner(
           content: accumulatedContent,
           toolCalls: accumulatedToolCalls.length > 0 ? accumulatedToolCalls : undefined,
           finishReason,
+          // Note: Streaming doesn't provide reasoning capture
+          // Reasoning is only available in non-streaming mode
         };
         subscriber.next({ event: responseEvent, state, repairAttempt });
         subscriber.complete();

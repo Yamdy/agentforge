@@ -80,6 +80,7 @@ export const AgentEventTypeSchema = z.enum([
   'permission.prompt',
   'permission.decision',
   'context.updated',
+  'decision.trace',
 ]);
 
 export type AgentEventType = z.infer<typeof AgentEventTypeSchema>;
@@ -233,6 +234,15 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
         completionTokens: z.number(),
       })
       .optional(),
+    // P1: Reasoning capture for decision traceability
+    reasoning: z
+      .object({
+        rawOutput: z.string().optional(),
+        thoughtProcess: z.string().optional(),
+        model: z.string().optional(),
+        confidence: z.number().min(0).max(1).optional(),
+      })
+      .optional(),
   }),
 
   z.object({
@@ -286,6 +296,10 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
     toolName: z.string(),
     result: z.string(),
     isError: z.boolean().default(false),
+    // P1: Structured output validation fields
+    structuredOutput: z.unknown().optional(),
+    isValid: z.boolean().optional(),
+    validationError: z.string().optional(),
   }),
 
   z.object({
@@ -578,6 +592,37 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
     promptId: z.string(),
     decision: z.enum(['allow', 'deny', 'allow_always']),
   }),
+
+  // ----- decision.trace (P1: Decision traceability) -----
+  z.object({
+    type: z.literal('decision.trace'),
+    timestamp: z.number(),
+    sessionId: z.string(),
+    step: z.number(),
+    decisionType: z.enum([
+      'tool_selection',
+      'tool_argument',
+      'completion',
+      'retry',
+      'replan',
+      'subagent_delegation',
+    ]),
+    context: z.object({
+      inputs: z.record(z.string(), z.unknown()),
+      availableOptions: z.array(z.unknown()).optional(),
+      selected: z.unknown(),
+      rationale: z.string().optional(),
+    }),
+    llmReasoning: z
+      .object({
+        rawOutput: z.string().optional(),
+        thoughtProcess: z.string().optional(),
+        model: z.string().optional(),
+      })
+      .optional(),
+    confidence: z.number().min(0).max(1).optional(),
+    parentDecisionId: z.string().optional(),
+  }),
 ]);
 
 export type AgentEvent = z.infer<typeof AgentEventSchema>;
@@ -657,6 +702,13 @@ export function isPermissionEvent(
   event: AgentEvent
 ): event is Extract<AgentEvent, { type: `permission.${string}` }> {
   return event.type.startsWith('permission.');
+}
+
+/** Check if event is a Decision Trace event */
+export function isDecisionTraceEvent(
+  event: AgentEvent
+): event is Extract<AgentEvent, { type: 'decision.trace' }> {
+  return event.type === 'decision.trace';
 }
 
 // ============================================================
