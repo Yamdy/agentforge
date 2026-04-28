@@ -265,6 +265,16 @@ export interface AgentConfig {
     sources: string[];
   };
 
+  /** Summarization configuration (auto-compress long conversations) */
+  summarization?: {
+    /** Token threshold to trigger compression */
+    tokenThreshold: number;
+    /** Number of recent messages to preserve */
+    preserveRecent: number;
+    /** Directory for offloaded history files */
+    offloadDir?: string;
+  };
+
   // ----- Advanced -----
   /** LLM adapter instance (overrides model config) */
   llmAdapter?: LLMAdapter;

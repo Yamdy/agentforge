@@ -357,3 +357,98 @@ describe('Plugin Chain (Skills + Memory)', () => {
     expect(events[0]?.type).toBe('llm.request');
   });
 });
+
+// ============================================================
+// SummarizationPlugin Tests
+// ============================================================
+
+import { createSummarizationPlugin } from '../../src/plugins/summarization-plugin.js';
+
+describe('SummarizationPlugin', () => {
+  let ctx: PluginContext;
+
+  beforeEach(() => {
+    ctx = createPluginContext();
+  });
+
+  it('should pass through when below token threshold', async () => {
+    const plugin = createSummarizationPlugin({
+      tokenThreshold: 10000,
+      preserveRecent: 5,
+    });
+
+    const messages: Message[] = [
+      { role: 'user', content: 'Hello' },
+      { role: 'assistant', content: 'Hi there!' },
+    ];
+
+    const source$ = of(createLLMRequestEvent(messages));
+    const result$ = buildPluginPipeline(source$, [plugin], ctx);
+    const events = await firstValueFrom(result$.pipe(toArray()));
+
+    const llmRequest = events.find(e => e.type === 'llm.request') as Extract<AgentEvent, { type: 'llm.request' }>;
+
+    // Below threshold, no compression
+    expect(llmRequest.messages).toHaveLength(2);
+  });
+
+  it('should compress when above token threshold', async () => {
+    const plugin = createSummarizationPlugin({
+      tokenThreshold: 20, // Very low threshold for testing (actual messages will exceed this)
+      preserveRecent: 2,
+    });
+
+    // Create messages that will definitely exceed 20 tokens
+    const messages: Message[] = [
+      { role: 'user', content: 'A'.repeat(200) },  // ~66 tokens
+      { role: 'assistant', content: 'B'.repeat(200) },
+      { role: 'user', content: 'C'.repeat(200) },
+      { role: 'assistant', content: 'D'.repeat(200) },
+      { role: 'user', content: 'E'.repeat(200) },
+    ];
+
+    const source$ = of(createLLMRequestEvent(messages));
+    const result$ = buildPluginPipeline(source$, [plugin], ctx);
+    const events = await firstValueFrom(result$.pipe(toArray()));
+
+    const llmRequest = events.find(e => e.type === 'llm.request') as Extract<AgentEvent, { type: 'llm.request' }>;
+
+    // Should have fewer messages after compression
+    expect(llmRequest.messages.length).toBeLessThan(5);
+    expect(llmRequest.messages.length).toBeGreaterThanOrEqual(2); // At least preserveRecent
+  });
+
+  it('should not compress when threshold equals zero', async () => {
+    const plugin = createSummarizationPlugin({
+      tokenThreshold: 0, // Never trigger
+      preserveRecent: 2,
+    });
+
+    const messages: Message[] = [
+      { role: 'user', content: 'Hello' },
+      { role: 'assistant', content: 'Hi' },
+    ];
+
+    const source$ = of(createLLMRequestEvent(messages));
+    const result$ = buildPluginPipeline(source$, [plugin], ctx);
+    const events = await firstValueFrom(result$.pipe(toArray()));
+
+    const llmRequest = events.find(e => e.type === 'llm.request') as Extract<AgentEvent, { type: 'llm.request' }>;
+
+    expect(llmRequest.messages).toHaveLength(2);
+  });
+
+  it('should pass through non-llm.request events', async () => {
+    const plugin = createSummarizationPlugin({
+      tokenThreshold: 100,
+      preserveRecent: 2,
+    });
+
+    const source$ = of(createAgentStepEvent());
+    const result$ = buildPluginPipeline(source$, [plugin], ctx);
+    const events = await firstValueFrom(result$.pipe(toArray()));
+
+    expect(events).toHaveLength(1);
+    expect(events[0]?.type).toBe('agent.step');
+  });
+});

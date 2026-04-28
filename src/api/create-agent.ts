@@ -37,7 +37,7 @@ import {
 } from '../operators/index.js';
 import { createLLMAdapter, parseModelSpec } from '../adapters/index.js';
 import { createPluginManager, createPluginContext, type Plugin } from '../plugins/index.js';
-import { createMemoryPlugin, createSkillsPlugin } from '../plugins/index.js';
+import { createMemoryPlugin, createSkillsPlugin, createSummarizationPlugin } from '../plugins/index.js';
 import { FileBasedMemory } from '../memory/index.js';
 import { createMCPClient, adaptMCPTools } from '../mcp/index.js';
 import type { MCPClient, MCPStatus } from '../core/interfaces.js';
@@ -730,6 +730,11 @@ export function createAgent(config: AgentConfig): CreateAgentResult {
   // Auto-create Skills Plugin if skills config is provided
   if (config.skills?.sources && config.skills.sources.length > 0) {
     allPlugins.push(createSkillsPlugin(config.skills.sources));
+  }
+
+  // Auto-create Summarization Plugin if summarization config is provided
+  if (config.summarization) {
+    allPlugins.push(createSummarizationPlugin(config.summarization));
   }
 
   if (allPlugins.length > 0) {
