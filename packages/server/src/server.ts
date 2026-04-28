@@ -24,6 +24,12 @@ import {
 } from './handlers/agents.js';
 import { getConfig } from './handlers/config.js';
 import { healthCheck, readinessCheck, metrics } from './handlers/health.js';
+import { createCORSHandler, type CORSOptions } from './middleware/cors.js';
+import { createAuthHandler, type AuthOptions } from './middleware/auth.js';
+import { createLoggerHandler, type LoggerOptions } from './middleware/logger.js';
+import { createErrorHandler } from './middleware/error-handler.js';
+import { openAPISpec } from './openapi/spec.js';
+import { createSwaggerUIHandler } from './openapi/swagger-ui.js';
 
 export interface ServerOptions {
   port?: number;
@@ -31,6 +37,12 @@ export interface ServerOptions {
   version?: string;
   /** Path to playground.html. Defaults to auto-detecting from package structure. */
   playgroundPath?: string;
+  /** CORS configuration */
+  cors?: CORSOptions;
+  /** Authentication configuration */
+  auth?: AuthOptions;
+  /** Logger configuration */
+  logger?: LoggerOptions;
 }
 
 /**
@@ -87,9 +99,41 @@ export function createAgentForgeServer(options: ServerOptions): {
   router.add('GET', '/ready', readinessCheck);
   router.add('GET', '/metrics', metrics);
 
+  // Create middleware handlers
+  const corsHandler = createCORSHandler(options.cors);
+  const authHandler = createAuthHandler(options.auth);
+  const loggerHandler = createLoggerHandler(options.logger);
+  const errorHandler = createErrorHandler();
+
+  // Swagger UI handler
+  const swaggerHandler = createSwaggerUIHandler(openAPISpec);
+
   const httpServer = createServer(
-    (req: IncomingMessage, res: ServerResponse) => {
-      handleRequest(req, res, router, serverState, playgroundPath);
+    async (req: IncomingMessage, res: ServerResponse) => {
+      const startTime = Date.now();
+
+      try {
+        // 1. CORS (handles preflight)
+        if (corsHandler(req, res)) return;
+
+        // 2. Auth
+        if (await authHandler(req, res)) return;
+
+        // 3. Logger
+        loggerHandler(req, res, startTime);
+
+        // 4. Swagger UI
+        const pathname = (req.url ?? '/').split('?')[0];
+        if (pathname === '/docs' || pathname === '/swagger') {
+          swaggerHandler(req, res);
+          return;
+        }
+
+        // 5. Main request handling
+        await handleRequest(req, res, router, serverState, playgroundPath);
+      } catch (err) {
+        errorHandler(err, req, res);
+      }
     },
   );
 
