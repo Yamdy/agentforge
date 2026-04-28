@@ -4,6 +4,9 @@ RXJS-EVENT-STREAM-DESIGN.md
 
 dist
 
+# Git worktrees
+.worktrees
+
 examples/skills
 
 coverage
