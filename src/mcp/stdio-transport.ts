@@ -16,6 +16,16 @@ import type { JSONRPCMessage } from './types.js';
 import { parseJSONRPCMessage } from './types.js';
 
 // ============================================================
+// Constants
+// ============================================================
+
+/** Time to wait for graceful shutdown before SIGTERM (ms) */
+const SHUTDOWN_TIMEOUT_MS = 5000;
+
+/** Time to wait after SIGTERM before SIGKILL (ms) */
+const SIGKILL_DELAY_MS = 1000;
+
+// ============================================================
 // Stdio Transport Config
 // ============================================================
 
@@ -166,12 +176,12 @@ export class StdioTransport implements MCPTransport {
     // Graceful shutdown: stdin.end() -> SIGTERM -> SIGKILL
     process.stdin?.end();
 
-    // Wait for process to exit (max 5 seconds)
+    // Wait for process to exit
     await new Promise<void>(resolve => {
       const timeout = setTimeout(() => {
         process.kill('SIGTERM');
-        setTimeout(() => process.kill('SIGKILL'), 1000);
-      }, 5000);
+        setTimeout(() => process.kill('SIGKILL'), SIGKILL_DELAY_MS);
+      }, SHUTDOWN_TIMEOUT_MS);
 
       process.on('close', () => {
         clearTimeout(timeout);

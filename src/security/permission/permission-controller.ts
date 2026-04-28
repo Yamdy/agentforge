@@ -112,8 +112,9 @@ export class DefaultPermissionController implements PermissionController {
     return this.autoAllowSet.has(permission);
   }
 
-  cancel(_promptId: string): void {
-    // Channel-level cancel not implemented yet
+  cancel(promptId: string): void {
+    // Cancel by answering with 'deny'
+    this.channel.answer(promptId, 'deny');
   }
 
   clearAutoAllow(): void {

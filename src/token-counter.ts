@@ -261,22 +261,3 @@ export function countMessagesTokens(messages: Message[], model?: ModelEncoding):
   const counter = getTokenCounter(model ? { model } : undefined);
   return counter.countMessagesTokens(messages);
 }
-
-// ============================================================
-// Backward Compatibility
-// ============================================================
-
-/**
- * @deprecated Use countTokens() or TokenCounter instead
- */
-export function estimateTokens(messages: Message[]): number {
-  return countMessagesTokens(messages);
-}
-
-/**
- * @deprecated Use countTokens() or TokenCounter instead
- */
-export function estimateMessageTokens(message: Message): number {
-  const counter = getTokenCounter();
-  return counter.countMessageTokens(message);
-}

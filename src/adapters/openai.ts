@@ -20,6 +20,8 @@ import type {
 } from '../core/interfaces.js';
 import type { JSONSchema7 } from 'json-schema';
 import type { Message, ToolCall } from '../core/events.js';
+import type { Logger } from '../core/logger.js';
+import { DefaultLogger } from '../core/logger.js';
 
 // ============================================================
 // Types
@@ -37,6 +39,8 @@ export interface OpenAIAdapterOptions {
   organization?: string;
   /** Project ID */
   project?: string;
+  /** Logger instance */
+  logger?: Logger;
 }
 
 // ============================================================
@@ -53,9 +57,11 @@ export class OpenAIAdapter implements LLMAdapter {
   readonly provider = 'openai';
 
   private readonly model: ReturnType<typeof openai>;
+  private readonly logger: Logger;
 
   constructor(modelName: string, options?: OpenAIAdapterOptions) {
     this.name = `openai-${modelName}`;
+    this.logger = options?.logger ?? new DefaultLogger('openai');
 
     // Create OpenAI provider instance with options or use default
     if (options && (options.apiKey || options.baseURL || options.organization || options.project)) {
@@ -225,7 +231,7 @@ export class OpenAIAdapter implements LLMAdapter {
       return response;
     } catch (error) {
       // Errors-as-events: Return error response instead of throwing
-      console.error('[OpenAI Adapter] Chat error:', error);
+      this.logger.error('Chat error', error instanceof Error ? error : undefined);
       return {
         content: '',
         finishReason: 'error',

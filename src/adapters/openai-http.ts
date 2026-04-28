@@ -13,10 +13,13 @@ import type {
 } from '../core/interfaces.js';
 import type { Observable } from 'rxjs';
 import { EMPTY } from 'rxjs';
+import type { Logger } from '../core/logger.js';
+import { DefaultLogger } from '../core/logger.js';
 
 export interface OpenAIHttpAdapterOptions {
   apiKey?: string;
   baseURL?: string;
+  logger?: Logger;
 }
 
 /**
@@ -76,6 +79,7 @@ export function createOpenAIHttpAdapter(
 ): LLMAdapter {
   const apiKey = options.apiKey ?? process.env.OPENAI_API_KEY ?? '';
   const baseURL = options.baseURL ?? 'https://api.openai.com/v1';
+  const logger = options.logger ?? new DefaultLogger('openai-http');
 
   // Store tools for use in chat calls
   const registeredTools: ToolDefinition[] = [];
@@ -131,7 +135,7 @@ export function createOpenAIHttpAdapter(
             errorMsg.includes('tool') ||
             errorMsg.includes('function')
           ) {
-            console.warn(`[OpenAI HTTP Adapter] API doesn't support tools, retrying without tools`);
+            logger.warn("API doesn't support tools, retrying without tools");
 
             const bodyWithoutTools: Record<string, unknown> = {
               model: modelName,
@@ -206,7 +210,7 @@ export function createOpenAIHttpAdapter(
 
         return result;
       } catch (error) {
-        console.error('[OpenAI HTTP Adapter] Chat error:', error);
+        logger.error('Chat error', error instanceof Error ? error : undefined);
         return {
           content: '',
           finishReason: 'error',
@@ -215,7 +219,7 @@ export function createOpenAIHttpAdapter(
     },
 
     stream(): Observable<never> {
-      // Streaming not implemented for HTTP adapter
+      // HTTP adapter does not support streaming - use AI SDK adapters (openai.ts) for streaming
       return EMPTY;
     },
   };

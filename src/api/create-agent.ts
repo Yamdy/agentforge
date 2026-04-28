@@ -767,7 +767,7 @@ export function createAgent(config: AgentConfig): CreateAgentResult {
       if (toolDef) {
         ctx.tools.register(toolDef);
       } else {
-        console.warn(`Tool "${toolName}" not found in global registry, skipping.`);
+        ctx.logger?.warn(`Tool "${toolName}" not found in global registry, skipping.`);
       }
     }
   }
@@ -824,13 +824,13 @@ export function createAgent(config: AgentConfig): CreateAgentResult {
           })
           .catch((error: unknown) => {
             // MCP connection failure must never crash the agent
-            console.warn(
+            ctx.logger?.warn(
               `Failed to connect to MCP server "${serverConfig.name}": ${error instanceof Error ? error.message : String(error)}`
             );
           });
       } catch (error) {
         // createMCPClient can throw synchronously for invalid configs
-        console.warn(
+        ctx.logger?.warn(
           `Failed to create MCP client for "${serverConfig.name}": ${error instanceof Error ? error.message : String(error)}`
         );
       }
