@@ -59,3 +59,16 @@ export { loggingPlugin } from './logging-plugin.js';
 export { createMemoryPlugin } from './memory-plugin.js';
 export { createSkillsPlugin, type SkillMetadata } from './skills-plugin.js';
 export { createSummarizationPlugin, type SummarizationPluginConfig } from './summarization-plugin.js';
+
+// ============================================================
+// TodoList Plugin (re-exported from tools for convenience)
+// ============================================================
+
+export {
+  createTodoListPlugin,
+  formatTodoState,
+  type TodoItem,
+  type TodoListState,
+  type TodoStatus,
+  type TodoPriority,
+} from '../tools/todo-list.js';
