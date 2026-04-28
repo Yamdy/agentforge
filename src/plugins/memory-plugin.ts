@@ -6,6 +6,10 @@
  *
  * Uses existing InterceptorPlugin interface - zero new concepts.
  *
+ * Supports two modes:
+ * - **autoDiscover**: Walks up from cwd to root, collecting AGENTS.md files
+ * - **Default**: Uses configured sources via memory.load()
+ *
  * @module
  */
 
@@ -15,6 +19,18 @@ import type { InterceptorPlugin, PluginContext } from '../plugins/plugin.js';
 import type { AgentEvent, Message } from '../core/events.js';
 import type { PersistentMemory } from '../memory/persistent.js';
 import type { MemoryConfig, MemoryEntry } from '../memory/types.js';
+import { loadAgentsMd } from '../memory/agents-md.js';
+
+/**
+ * Extended MemoryConfig with auto-discovery options.
+ */
+export interface MemoryPluginConfig extends MemoryConfig {
+  /** Enable auto-discovery of AGENTS.md files (walks up from cwd) */
+  autoDiscover?: boolean;
+
+  /** Starting directory for auto-discovery (default: process.cwd()) */
+  cwd?: string;
+}
 
 /**
  * Create a Memory Plugin
@@ -26,12 +42,12 @@ import type { MemoryConfig, MemoryEntry } from '../memory/types.js';
  * Priority: 10 (after Skills at 5, so Memory appears first in final messages)
  *
  * @param memory - PersistentMemory implementation
- * @param config - Memory configuration
+ * @param config - Memory configuration (supports autoDiscover option)
  * @returns InterceptorPlugin
  */
 export function createMemoryPlugin(
   memory: PersistentMemory,
-  config: MemoryConfig
+  config: MemoryPluginConfig
 ): InterceptorPlugin {
   let entries: MemoryEntry[] = [];
   let loaded = false;
@@ -45,12 +61,31 @@ export function createMemoryPlugin(
 
     intercept(event: AgentEvent, _ctx: PluginContext): Observable<AgentEvent> {
       if (event.type === 'agent.start' && !loaded) {
-        // Load AGENTS.md files (IO operation, wrapped in from())
+        if (config.autoDiscover) {
+          // Auto-discover AGENTS.md files by walking up from cwd
+          return from(loadAgentsMd({ cwd: config.cwd })).pipe(
+            map(result => {
+              if (result.content) {
+                entries = [{
+                  id: 'agents-md-auto',
+                  content: result.content,
+                  sourcePath: result.paths.join(', '),
+                  createdAt: Date.now(),
+                  updatedAt: Date.now(),
+                }];
+              }
+              loaded = true;
+              return event;
+            })
+          );
+        }
+
+        // Original logic: load from configured sources
         return from(memory.load(config.sources)).pipe(
           map(result => {
             entries = result.entries;
             loaded = true;
-            return event; // Don't modify agent.start event
+            return event;
           })
         );
       }
