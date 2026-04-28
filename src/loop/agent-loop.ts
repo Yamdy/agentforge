@@ -84,6 +84,8 @@ export interface AgentLoopConfig {
   checkpoint?: CheckpointConfig;
   /** Conversation history for multi-turn context */
   history?: Message[];
+  /** System prompt - added as system message at start of conversation */
+  systemPrompt?: string;
 }
 
 /**
@@ -380,6 +382,10 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
 
     // Build messages array with history
     const messages: Message[] = [];
+    // Add system message first if configured
+    if (config.systemPrompt) {
+      messages.push({ role: 'system', content: config.systemPrompt });
+    }
     if (config.history && config.history.length > 0) {
       messages.push(...config.history);
     }
