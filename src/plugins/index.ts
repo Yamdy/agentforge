@@ -51,3 +51,10 @@ export { metricsPlugin } from './metrics-plugin.js';
 // ============================================================
 
 export { loggingPlugin } from './logging-plugin.js';
+
+// ============================================================
+// Memory & Skills Plugins
+// ============================================================
+
+export { createMemoryPlugin } from './memory-plugin.js';
+export { createSkillsPlugin, type SkillMetadata } from './skills-plugin.js';

@@ -36,7 +36,9 @@ import {
   retryOnEventType,
 } from '../operators/index.js';
 import { createLLMAdapter, parseModelSpec } from '../adapters/index.js';
-import { createPluginManager, createPluginContext } from '../plugins/index.js';
+import { createPluginManager, createPluginContext, type Plugin } from '../plugins/index.js';
+import { createMemoryPlugin, createSkillsPlugin } from '../plugins/index.js';
+import { FileBasedMemory } from '../memory/index.js';
 import { createMCPClient, adaptMCPTools } from '../mcp/index.js';
 import type { MCPClient, MCPStatus } from '../core/interfaces.js';
 import {
@@ -716,7 +718,21 @@ export function createAgent(config: AgentConfig): CreateAgentResult {
   const ctx = builder.build();
 
   // Set up plugin pipeline if configured
-  if (config.plugins && config.plugins.length > 0) {
+  // Collect all plugins: explicit plugins + auto-created memory/skills plugins
+  const allPlugins: Plugin[] = [...(config.plugins ?? [])];
+
+  // Auto-create Memory Plugin if memory config is provided
+  if (config.memory?.enabled && config.memory.sources.length > 0) {
+    const memory = new FileBasedMemory(config.memory);
+    allPlugins.push(createMemoryPlugin(memory, config.memory));
+  }
+
+  // Auto-create Skills Plugin if skills config is provided
+  if (config.skills?.sources && config.skills.sources.length > 0) {
+    allPlugins.push(createSkillsPlugin(config.skills.sources));
+  }
+
+  if (allPlugins.length > 0) {
     const manager = createPluginManager();
     const pluginContext = createPluginContext({
       sessionId,
@@ -725,7 +741,7 @@ export function createAgent(config: AgentConfig): CreateAgentResult {
       ...(ctx.services.metrics !== undefined ? { metrics: ctx.services.metrics } : {}),
     });
     manager.setContext(pluginContext);
-    for (const plugin of config.plugins) {
+    for (const plugin of allPlugins) {
       manager.register(plugin);
     }
     ctx.pluginPipeline = (source: Observable<AgentEvent>): Observable<AgentEvent> => {
@@ -840,6 +856,9 @@ export function createAgent(config: AgentConfig): CreateAgentResult {
     }),
     ...(resolved.history.length > 0 && {
       history: resolved.history,
+    }),
+    ...(resolved.systemPrompt && {
+      systemPrompt: resolved.systemPrompt,
     }),
   };
 

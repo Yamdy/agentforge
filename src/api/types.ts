@@ -250,6 +250,21 @@ export interface AgentConfig {
   /** MCP server configurations */
   mcp?: MCPServerConfig[];
 
+  // ----- Memory & Skills -----
+  /** Persistent memory configuration (AGENTS.md files) */
+  memory?: {
+    /** Whether memory is enabled */
+    enabled: boolean;
+    /** AGENTS.md file paths */
+    sources: string[];
+  };
+
+  /** Skills configuration (SKILL.md directories) */
+  skills?: {
+    /** Skill directory paths */
+    sources: string[];
+  };
+
   // ----- Advanced -----
   /** LLM adapter instance (overrides model config) */
   llmAdapter?: LLMAdapter;
