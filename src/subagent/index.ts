@@ -36,6 +36,9 @@ export type {
   SubagentRunOptions,
   SubagentResult,
   SubagentEntry,
+  SubagentMode,
+  SubagentAsyncResult,
+  AsyncSubagentHandle,
 } from './types.js';
 
 // Registry

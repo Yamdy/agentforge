@@ -25,6 +25,11 @@ export interface AgentLoop {
 }
 
 /**
+ * Subagent execution mode
+ */
+export type SubagentMode = 'sync' | 'async' | 'compiled';
+
+/**
  * Subagent configuration for registration.
  *
  * Contains all information needed to register and run a subagent.
@@ -43,8 +48,46 @@ export interface SubagentConfig {
   /** Agent mode (primary, subagent, or all) */
   mode?: AgentMode;
 
+  /** Subagent execution mode */
+  executionMode?: SubagentMode;
+
   /** Optional configuration passed to the agent */
   config?: Record<string, unknown>;
+
+  /** Compiled mode configuration */
+  compiledConfig?: {
+    model: { provider: string; model: string };
+    tools: string[];
+    systemPrompt?: string;
+    maxSteps?: number;
+  };
+
+  /** Async mode configuration */
+  asyncConfig?: {
+    onComplete?: (result: SubagentAsyncResult) => void;
+    onError?: (error: Error) => void;
+  };
+}
+
+/**
+ * Result of an async subagent execution
+ */
+export interface SubagentAsyncResult {
+  sessionId: string;
+  status: 'completed' | 'error' | 'cancelled';
+  output?: string;
+  error?: Error;
+  events: AgentEvent[];
+}
+
+/**
+ * Handle for an async subagent execution
+ */
+export interface AsyncSubagentHandle {
+  sessionId: string;
+  status(): Promise<'running' | 'completed' | 'error'>;
+  result(): Promise<SubagentAsyncResult>;
+  cancel(): Promise<void>;
 }
 
 /**

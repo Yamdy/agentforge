@@ -12,7 +12,7 @@
  * @module agentforge/subagent
  */
 
-import { Observable, of, concat, EMPTY } from 'rxjs';
+import { Observable, of, concat, EMPTY, Subject, Subscription } from 'rxjs';
 import { map, catchError, takeUntil } from 'rxjs/operators';
 import type { AgentEvent, Message } from '../core/events.js';
 import {
@@ -20,7 +20,7 @@ import {
   type SubagentInfo,
 } from '../core/interfaces.js';
 import { serializeError, generateId } from '../core/events.js';
-import type { SubagentConfig, SubagentEntry, AgentLoop } from './types.js';
+import type { SubagentConfig, SubagentEntry, AgentLoop, AsyncSubagentHandle, SubagentAsyncResult } from './types.js';
 
 /**
  * Subagent Registry
@@ -48,6 +48,7 @@ import type { SubagentConfig, SubagentEntry, AgentLoop } from './types.js';
  */
 export class SubagentRegistry implements ISubagentRegistry {
   private readonly subagents: Map<string, SubagentEntry> = new Map();
+  private readonly asyncRuns: Map<string, AsyncSubagentHandle> = new Map();
   private readonly destroy$: Observable<void>;
 
   constructor(destroy$?: Observable<void>) {
@@ -138,9 +139,16 @@ export class SubagentRegistry implements ISubagentRegistry {
 
     const sessionId = generateId('session');
     const parentSessionId = options?.sessionMessages?.[0]?.name ?? '';
-    const agent = entry.config.agent;
 
-    return this.runWithFullEventStream(agent, input, name, sessionId, parentSessionId);
+    // Route based on execution mode
+    switch (entry.config.executionMode) {
+      case 'async':
+        return this.runAsync(entry, input, name, sessionId, parentSessionId);
+      case 'compiled':
+      case 'sync':
+      default:
+        return this.runWithFullEventStream(entry.config.agent, input, name, sessionId, parentSessionId);
+    }
   }
 
   /**
@@ -264,6 +272,109 @@ export class SubagentRegistry implements ISubagentRegistry {
   getConfig(name: string): SubagentConfig | undefined {
     const entry = this.subagents.get(name);
     return entry?.config;
+  }
+
+  /**
+   * Run a subagent in async mode.
+   *
+   * Returns immediately with a subagent.start event.
+   * The actual execution happens in the background.
+   */
+  private runAsync(
+    entry: SubagentEntry,
+    input: string,
+    subagentName: string,
+    sessionId: string,
+    parentSessionId: string
+  ): Observable<AgentEvent> {
+    const events: AgentEvent[] = [];
+
+    // Start async execution
+    const subscription = this.runWithFullEventStream(
+      entry.config.agent,
+      input,
+      subagentName,
+      sessionId,
+      parentSessionId
+    ).subscribe({
+      next: (event) => {
+        events.push(event);
+      },
+      complete: () => {
+        const result: SubagentAsyncResult = {
+          sessionId,
+          status: 'completed',
+          events,
+        };
+
+        // Call onComplete callback
+        entry.config.asyncConfig?.onComplete?.(result);
+
+        // Cleanup
+        this.asyncRuns.delete(sessionId);
+      },
+      error: (error) => {
+        const result: SubagentAsyncResult = {
+          sessionId,
+          status: 'error',
+          error: error instanceof Error ? error : new Error(String(error)),
+          events,
+        };
+
+        // Call onError callback
+        entry.config.asyncConfig?.onError?.(error instanceof Error ? error : new Error(String(error)));
+
+        // Cleanup
+        this.asyncRuns.delete(sessionId);
+      },
+    });
+
+    // Create handle
+    const handle: AsyncSubagentHandle = {
+      sessionId,
+      status: async () => {
+        if (this.asyncRuns.has(sessionId)) {
+          return 'running';
+        }
+        const lastEvent = events[events.length - 1];
+        if (lastEvent?.type === 'agent.error' || lastEvent?.type === 'subagent.error') {
+          return 'error';
+        }
+        return 'completed';
+      },
+      result: async () => {
+        return {
+          sessionId,
+          status: 'completed',
+          events,
+        };
+      },
+      cancel: async () => {
+        subscription.unsubscribe();
+        this.asyncRuns.delete(sessionId);
+      },
+    };
+
+    this.asyncRuns.set(sessionId, handle);
+
+    // Return only subagent.start event (don't wait for completion)
+    const startEvent: AgentEvent = {
+      type: 'subagent.start',
+      timestamp: Date.now(),
+      sessionId,
+      parentSessionId,
+      subagentName,
+      input,
+    };
+
+    return of(startEvent);
+  }
+
+  /**
+   * Get the handle for an async subagent execution.
+   */
+  getAsyncHandle(sessionId: string): AsyncSubagentHandle | undefined {
+    return this.asyncRuns.get(sessionId);
   }
 }
 
