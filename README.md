@@ -1,8 +1,17 @@
 # AgentForge
 
-> Production-ready Agent framework with MPU (Minimum Production Usable) modules - RxJS event stream + Zod type safety
+> **Agent 开发框架底座（Harness）** — 模型是认知决策核心，框架是工程管控基座  
+> 基于 RxJS 事件流 + Zod 类型安全，提供可观测、可中断、可恢复的智能体构建能力
 
-AgentForge 是一个基于 **RxJS 事件流** + **Zod 类型安全** 的 Agent 框架底座，提供可观测、可中断、可恢复的智能体构建能力。
+AgentForge 是一个 **Agent Harness 框架**，核心理念是：
+
+```
+Agent = LLM（认知决策核心）+ Harness（工程管控基座）
+```
+
+- **模型负责**：推理、决策、语义理解
+- **框架负责**：执行管控、资源约束、状态持久、安全隔离、行为可观测
+- **所有 Agent 行为必须经过 Harness 管控，不可绕过**
 
 ## 特性
 

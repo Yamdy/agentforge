@@ -13,6 +13,8 @@ coverage
 
 docs/.vitepress
 
+.gitnexus
+
 # Environment files with secrets
 .env
 tests/e2e/.env

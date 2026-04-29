@@ -2,8 +2,8 @@
 layout: home
 hero:
   name: AgentForge
-  text: 生产级 Agent 框架
-  tagline: 基于 RxJS 事件流 + Zod 类型安全的 Agent 框架
+  text: Agent 开发框架底座
+  tagline: 模型是智能核心，框架是工程管控基座 —— 基于 RxJS 事件流 + Zod 类型安全的 Agent Harness
   image:
     src: /logo.svg
     alt: AgentForge
@@ -16,9 +16,13 @@ hero:
       link: /api/
     - theme: alt
       text: GitHub
-      link: https://github.com/your-org/agentforge
+      link: https://github.com/Yamdy/agentforge
 
 features:
+  - icon: 🎯
+    title: Agent Harness 架构
+    details: 模型是认知决策核心，框架是工程管控基座。所有 Agent 行为必须经过 Harness 管控，不可绕过。
+
   - icon: 🔄
     title: RxJS 事件流
     details: 基于 Observable 的异步事件流架构，支持背压控制和取消机制，天然处理复杂的异步场景。

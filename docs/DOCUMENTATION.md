@@ -14,6 +14,7 @@
 |------|------|
 | [README.md](./design/README.md) | 设计文档索引 - 完整的文档导航 |
 | [00-OVERVIEW.md](./design/00-OVERVIEW.md) | 设计理念、核心思想、为什么是 RxJS + Zod |
+| [harness.md](./design/harness.md) | **Agent Harness 核心概念** — E/T/C/S/L/V 六大工程要件 |
 | [01-CORE-TYPES.md](./design/01-CORE-TYPES.md) | 事件类型定义（40 种事件 Schema）、Agent 状态定义 |
 | [02-ZOD-CONTRACT.md](./design/02-ZOD-CONTRACT.md) | Zod 数据契约层、信任度分级模型 |
 | [03-DI.md](./design/03-DI.md) | 轻量依赖注入、依赖倒置、三层 Context 结构 |

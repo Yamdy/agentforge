@@ -4,7 +4,7 @@ export default defineConfig({
   title: 'AgentForge',
   description: 'Production-ready Agent framework based on RxJS event stream + Zod type safety',
   lang: 'zh-CN',
-  ignoreDeadLinks: true,
+  // ignoreDeadLinks: true,  // 注释掉以发现潜在链接问题
   
   head: [
     ['meta', { name: 'theme-color', content: '#3eaf7c' }],
@@ -108,7 +108,7 @@ export default defineConfig({
     },
 
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/your-org/agentforge' },
+      { icon: 'github', link: 'https://github.com/Yamdy/agentforge' },
     ],
 
     footer: {

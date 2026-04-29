@@ -14,6 +14,7 @@
 | 文档 | 描述 |
 |------|------|
 | [00-OVERVIEW.md](./00-OVERVIEW.md) | 设计理念、核心思想、为什么是 RxJS + Zod、落地铁律 |
+| [harness.md](./harness.md) | **Agent Harness 核心概念** — E/T/C/S/L/V 六大工程要件、行业定位、伪陷阱规避 |
 | [01-CORE-TYPES.md](./01-CORE-TYPES.md) | 事件类型定义（40 种事件 Schema）、Agent 状态定义、检查点定义 |
 
 ### 核心架构
