@@ -40,8 +40,10 @@ import type {
   InputSanitizer,
 } from './interfaces.js';
 import type { Logger } from './logger.js';
+import { NoopTracer, NoopMetrics } from './defaults.js';
 import type { QuotaController } from '../quota/quota-controller.js';
 import type { CompactionManager } from '../memory/index.js';
+import type { PromptBuilder } from './interfaces.js';
 import type {
   HealthChecker,
   MetricsCollector,
@@ -201,6 +203,10 @@ export interface AgentContext {
   // ----- Decision Trace (optional) -----
   /** Decision trace storage for decision traceability */
   decisionTraceStorage?: import('../contracts/decision-trace-storage.js').DecisionTraceStorage;
+
+  // ----- Prompt Construction (optional) -----
+  /** Prompt builder for constructing LLM prompts. If not set, messages are passed through as-is. */
+  promptBuilder?: PromptBuilder;
 
   // ----- Plugin Pipeline (optional) -----
   /** Plugin pipeline for event interception and observation */
@@ -613,6 +619,8 @@ export function generateSessionId(prefix = 'session'): string {
 export function createDefaultAppServices(): ApplicationServices {
   return {
     schemaRegistry: new SimpleSchemaRegistry(),
+    tracer: new NoopTracer(),
+    metrics: new NoopMetrics(),
     llmFactory: {
       create: (): LLMAdapter => {
         throw new Error('LLMFactory not configured');

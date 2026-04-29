@@ -20,11 +20,54 @@ import {
 import type { QuotaUsage } from '../../quota/quota-controller.js';
 import type { CompactionContext } from '../../memory/index.js';
 import type { HandlerDeps, StepContext } from '../agent-loop.js';
+import type { PromptBuilder, ToolDefinition } from '../../core/interfaces.js';
+import { z } from 'zod';
 import { executeBatchTools } from './tool-execution.js';
 
 // ============================================================
 // Internal Helpers
 // ============================================================
+
+/**
+ * Build messages for LLM invocation.
+ *
+ * When a PromptBuilder is available in the context, uses it to construct
+ * the full prompt payload (system message from template + tool instructions +
+ * history + token budget estimation). Otherwise, passes state.messages
+ * through as-is (backward compatible).
+ *
+ * @param messages - Current message history from agent state
+ * @param promptBuilder - Optional PromptBuilder from AgentContext
+ * @param systemPrompt - Optional system prompt template
+ * @param toolDefs - Available tool definitions (with Zod schemas)
+ * @returns Message array to send to the LLM
+ */
+function buildMessages(
+  messages: Message[],
+  promptBuilder: PromptBuilder | undefined,
+  systemPrompt: string | undefined,
+  toolDefs: ToolDefinition<z.ZodTypeAny>[]
+): Message[] {
+  if (!promptBuilder) {
+    // No PromptBuilder — pass messages through as-is (backward compatible)
+    return messages;
+  }
+
+  // Use PromptBuilder to construct the full prompt payload.
+  // history = state.messages (complete history, enabling token budget truncation)
+  // input = '' (input is already the last message in state.messages)
+  const buildOptions: import('../../core/interfaces.js').PromptBuildOptions = {};
+  if (systemPrompt !== undefined) {
+    buildOptions.systemTemplate = systemPrompt;
+  }
+  const result = promptBuilder.build(
+    messages,
+    '', // input is already in state.messages
+    toolDefs,
+    buildOptions
+  );
+  return result.messages;
+}
 
 /**
  * 粗略估算消息 token 数。
@@ -95,13 +138,19 @@ export function emitCheckpoint(
       },
     };
     // Don't crash the loop - just log and continue
-    console.error('Checkpoint creation failed:', err);
+    ctx.logger?.error(
+      'Checkpoint creation failed',
+      err instanceof Error ? err : new Error(String(err))
+    );
     return of({ event: errorEvent, state } as StepContext);
   }
 
   // Fire-and-forget save — don't block the event flow
   ctx.checkpoint.save(cp).catch(err => {
-    console.error('Checkpoint save failed:', err);
+    ctx.logger?.error(
+      'Checkpoint save failed',
+      err instanceof Error ? err : new Error(String(err))
+    );
   });
 
   const checkpointEvent: AgentEvent = {
@@ -203,7 +252,7 @@ export function handleLLMRequest(deps: HandlerDeps, state: AgentState): Observab
       }),
       catchError(() => {
         // Cost check failure must never crash the loop
-        console.warn('Cost check failed, allowing request');
+        deps.ctx.logger?.warn('Cost check failed, allowing request');
         return doLLMRequest(deps, state);
       })
     );
@@ -485,7 +534,7 @@ export function callLLM(
         return callLLMInner(deps, state, repairAttempt);
       }),
       catchError(() => {
-        console.warn('Quota check failed, allowing request');
+        deps.ctx.logger?.warn('Quota check failed, allowing request');
         return callLLMInner(deps, state, repairAttempt);
       })
     );
@@ -500,11 +549,18 @@ function callLLMInner(
 ): Observable<StepContext> {
   const { ctx, config, sessionId } = deps;
 
+  // Build messages: use PromptBuilder if available, otherwise pass through as-is
+  const toolDefs = ctx.tools
+    .list()
+    .map(name => ctx.tools.get(name)!)
+    .filter((t): t is ToolDefinition<z.ZodTypeAny> => t !== undefined);
+  const messages = buildMessages(state.messages, ctx.promptBuilder, config.systemPrompt, toolDefs);
+
   const llmOptions: LLMOptions = {
     tools: ctx.tools.getFunctionDefs(),
   };
 
-  return from(ctx.llm.chat(state.messages, llmOptions)).pipe(
+  return from(ctx.llm.chat(messages, llmOptions)).pipe(
     mergeMap(response => {
       const responseEvent: AgentEvent = {
         type: 'llm.response',
@@ -619,7 +675,7 @@ export function callLLMStreaming(
         return callLLMStreamingInner(deps, state, repairAttempt);
       }),
       catchError(() => {
-        console.warn('Quota check failed, allowing request');
+        deps.ctx.logger?.warn('Quota check failed, allowing request');
         return callLLMStreamingInner(deps, state, repairAttempt);
       })
     );
@@ -633,6 +689,13 @@ function callLLMStreamingInner(
   repairAttempt: number = 0
 ): Observable<StepContext> {
   const { ctx, config, sessionId } = deps;
+
+  // Build messages: use PromptBuilder if available, otherwise pass through as-is
+  const toolDefs = ctx.tools
+    .list()
+    .map(name => ctx.tools.get(name)!)
+    .filter((t): t is ToolDefinition<z.ZodTypeAny> => t !== undefined);
+  const messages = buildMessages(state.messages, ctx.promptBuilder, config.systemPrompt, toolDefs);
 
   return new Observable<StepContext>(subscriber => {
     // Emit stream start first
@@ -654,7 +717,7 @@ function callLLMStreamingInner(
       tools: ctx.tools.getFunctionDefs(),
     };
 
-    const subscription = ctx.llm.stream(state.messages, llmOptions).subscribe({
+    const subscription = ctx.llm.stream(messages, llmOptions).subscribe({
       next(chunk) {
         // Handle text chunks
         if (chunk.text) {

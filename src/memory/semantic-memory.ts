@@ -63,15 +63,15 @@ export class SemanticMemory {
   /**
    * Save a memory entry
    *
-   * Generates embedding and stores in vector database.
+   * Generates embedding via the embedding model and stores in vector database.
    */
-  save(entry: MemoryEntry): void {
-    // 注：完整实现需要 async 版本以支持 await embed()
-    // 当前为同步接口，embedding 需在外部预计算
+  async save(entry: MemoryEntry): Promise<void> {
+    // Generate real embedding from content
+    const embedding = await this._embeddingModel.embed(entry.content);
 
     const doc: VectorDocument = {
       id: entry.id,
-      embedding: [], // placeholder，实际应由外部 embed() 返回
+      embedding,
       content: entry.content,
       metadata: {
         sourcePath: entry.sourcePath,
@@ -91,11 +91,12 @@ export class SemanticMemory {
    * @param threshold - Min similarity score
    * @returns Matching memory entries
    */
-  search(_query: string, limit?: number, threshold?: number): MemoryEntry[] {
-    // 注：完整实现需要 async 版本以支持 embed()
-    // 当前为同步接口，query embedding 需在外部预计算
+  async search(query: string, limit?: number, threshold?: number): Promise<MemoryEntry[]> {
+    // Generate real embedding from query
+    const queryEmbedding = await this._embeddingModel.embed(query);
+
     const results = this.vectorStore.search(
-      [], // placeholder query embedding
+      queryEmbedding,
       limit ?? this.defaultLimit,
       threshold ?? this.defaultThreshold
     );

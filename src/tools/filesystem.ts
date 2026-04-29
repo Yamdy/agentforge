@@ -14,7 +14,7 @@
  */
 
 import { z } from 'zod';
-import { readFile, writeFile, mkdir, readdir, stat } from 'fs/promises';
+import { readFile, writeFile, mkdir, readdir, stat, unlink, rmdir } from 'fs/promises';
 import { resolve, join, dirname, relative } from 'path';
 import type { ToolDefinition } from '../core/interfaces.js';
 
@@ -29,15 +29,126 @@ import type { ToolDefinition } from '../core/interfaces.js';
  * @param writable - Allow write operations (default: true). When false, write_file and edit_file reject.
  * @param maxFileSize - Maximum file size in bytes for read/write operations (default: 10MB).
  * @param excludePatterns - Glob patterns to exclude from search operations.
+ * @param backend - Optional FilesystemBackend implementation. Defaults to LocalFilesystemBackend.
  */
 export interface FilesystemToolsConfig {
   rootDir: string;
   writable?: boolean;
   maxFileSize?: number;
   excludePatterns?: string[];
+  backend?: FilesystemBackend;
 }
 
 const DEFAULT_MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+
+// ============================================================
+// Filesystem Backend Interface
+// ============================================================
+
+/**
+ * FilesystemBackend — abstraction for filesystem operations.
+ *
+ * Provides a pluggable backend for the filesystem tools, enabling
+ * replacement of local filesystem with cloud storage (S3, Azure Blob, etc.).
+ *
+ * This is a tool-level interface, NOT a framework-level DI interface
+ * (it lives in tools/filesystem.ts, not core/interfaces.ts).
+ */
+export interface FilesystemBackend {
+  /** Read file content as UTF-8 string */
+  read(path: string): Promise<string>;
+
+  /** Write content to file, creating parent directories if needed */
+  write(path: string, content: string): Promise<void>;
+
+  /** List directory contents with type indicators */
+  list(path: string): Promise<Array<{ name: string; isDirectory: boolean; size?: number }>>;
+
+  /** Get file/directory metadata */
+  stat(path: string): Promise<{ size: number; mtime: Date; isFile: boolean; isDirectory: boolean }>;
+
+  /** Create directory (with recursive option) */
+  mkdir(path: string, options?: { recursive?: boolean }): Promise<void>;
+
+  /** Delete file or directory */
+  delete(path: string): Promise<void>;
+}
+
+// ============================================================
+// Local Filesystem Backend
+// ============================================================
+
+/**
+ * LocalFilesystemBackend — default implementation using Node.js fs/promises.
+ *
+ * All paths are resolved relative to rootDir for sandbox safety.
+ */
+export class LocalFilesystemBackend implements FilesystemBackend {
+  private rootDir: string;
+
+  constructor(rootDir: string) {
+    this.rootDir = resolve(rootDir);
+  }
+
+  async read(path: string): Promise<string> {
+    const safePath = resolveSafePath(this.rootDir, path);
+    return readFile(safePath, 'utf-8');
+  }
+
+  async write(path: string, content: string): Promise<void> {
+    const safePath = resolveSafePath(this.rootDir, path);
+    await mkdir(dirname(safePath), { recursive: true });
+    await writeFile(safePath, content, 'utf-8');
+  }
+
+  async list(path: string): Promise<Array<{ name: string; isDirectory: boolean; size?: number }>> {
+    const safePath = resolveSafePath(this.rootDir, path);
+    const entries = await readdir(safePath, { withFileTypes: true });
+    const result: Array<{ name: string; isDirectory: boolean; size?: number }> = [];
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        result.push({ name: `${entry.name}/`, isDirectory: true });
+      } else {
+        try {
+          const fullPath = join(safePath, entry.name);
+          const stats = await stat(fullPath);
+          result.push({ name: entry.name, isDirectory: false, size: stats.size });
+        } catch {
+          result.push({ name: entry.name, isDirectory: false });
+        }
+      }
+    }
+    return result;
+  }
+
+  async stat(
+    path: string
+  ): Promise<{ size: number; mtime: Date; isFile: boolean; isDirectory: boolean }> {
+    const safePath = resolveSafePath(this.rootDir, path);
+    const stats = await stat(safePath);
+    return {
+      size: stats.size,
+      mtime: stats.mtime,
+      isFile: stats.isFile(),
+      isDirectory: stats.isDirectory(),
+    };
+  }
+
+  async mkdir(path: string, options?: { recursive?: boolean }): Promise<void> {
+    const safePath = resolveSafePath(this.rootDir, path);
+    await mkdir(safePath, options);
+  }
+
+  async delete(path: string): Promise<void> {
+    const safePath = resolveSafePath(this.rootDir, path);
+    const stats = await stat(safePath);
+    if (stats.isDirectory()) {
+      await rmdir(safePath, { recursive: true });
+    } else {
+      await unlink(safePath);
+    }
+  }
+}
 
 // ============================================================
 // Security Helpers
@@ -71,10 +182,16 @@ export function isWithinRoot(rootDir: string, filePath: string): boolean {
  * Validate that a path is within root and return the safe resolved path.
  * Returns an error message string if validation fails, or the safe path if it passes.
  */
-function validatePath(rootDir: string, filePath: string): { ok: true; safePath: string } | { ok: false; error: string } {
+function validatePath(
+  rootDir: string,
+  filePath: string
+): { ok: true; safePath: string } | { ok: false; error: string } {
   const resolved = resolveSafePath(rootDir, filePath);
   if (!isWithinRoot(rootDir, resolved)) {
-    return { ok: false, error: `Error: Access denied. Path "${filePath}" resolves outside the sandbox directory.` };
+    return {
+      ok: false,
+      error: `Error: Access denied. Path "${filePath}" resolves outside the sandbox directory.`,
+    };
   }
   return { ok: true, safePath: resolved };
 }
@@ -85,7 +202,12 @@ function validatePath(rootDir: string, filePath: string): { ok: true; safePath: 
 
 const ReadFileSchema = z.object({
   path: z.string().describe('Path to the file to read (relative to rootDir or absolute)'),
-  offset: z.number().int().min(1).optional().describe('Line number to start reading from (1-based)'),
+  offset: z
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .describe('Line number to start reading from (1-based)'),
   limit: z.number().int().min(1).optional().describe('Maximum number of lines to read'),
 });
 
@@ -98,11 +220,18 @@ const EditFileSchema = z.object({
   path: z.string().describe('Path to the file to edit (relative to rootDir or absolute)'),
   search: z.string().describe('Text to search for'),
   replace: z.string().describe('Text to replace with'),
-  replaceAll: z.boolean().optional().default(false).describe('Replace all occurrences (default: first only)'),
+  replaceAll: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe('Replace all occurrences (default: first only)'),
 });
 
 const LsSchema = z.object({
-  path: z.string().default('.').describe('Path to the directory to list (relative to rootDir or absolute)'),
+  path: z
+    .string()
+    .default('.')
+    .describe('Path to the directory to list (relative to rootDir or absolute)'),
 });
 
 const GlobSchema = z.object({
@@ -113,7 +242,10 @@ const GlobSchema = z.object({
 const GrepSchema = z.object({
   pattern: z.string().describe('Regular expression pattern to search for'),
   path: z.string().default('.').describe('Path to search in (relative to rootDir or absolute)'),
-  includePatterns: z.array(z.string()).optional().describe('File patterns to include (e.g., ["*.ts"])'),
+  includePatterns: z
+    .array(z.string())
+    .optional()
+    .describe('File patterns to include (e.g., ["*.ts"])'),
 });
 
 // ============================================================
@@ -315,7 +447,7 @@ function createLsTool(config: FilesystemToolsConfig): ToolDefinition {
       try {
         const entries = await readdir(safePath, { withFileTypes: true });
         const lines = await Promise.all(
-          entries.map(async (entry) => {
+          entries.map(async entry => {
             if (entry.isDirectory()) {
               return `${entry.name}/`;
             }
@@ -330,7 +462,7 @@ function createLsTool(config: FilesystemToolsConfig): ToolDefinition {
             } catch {
               return entry.name;
             }
-          }),
+          })
         );
         return lines.join('\n');
       } catch (err) {
@@ -404,7 +536,7 @@ async function findFiles(
   rootDir: string,
   currentDir: string,
   pattern: string,
-  excludePatterns: string[],
+  excludePatterns: string[]
 ): Promise<string[]> {
   const results: string[] = [];
   await walkDir(rootDir, currentDir, pattern, excludePatterns, results);
@@ -416,7 +548,7 @@ async function walkDir(
   currentDir: string,
   pattern: string,
   excludePatterns: string[],
-  results: string[],
+  results: string[]
 ): Promise<void> {
   let entries;
   try {
@@ -455,11 +587,12 @@ function matchGlob(filePath: string, pattern: string): boolean {
   // Convert glob pattern to regex
   // Step 1: Split on ** to handle globstar separately
   const parts = normalizedPattern.split('**');
-  const regexParts = parts.map((part) =>
-    part
-      .replace(/[.+^${}()|[\]\\]/g, '\\$&') // Escape regex special chars
-      .replace(/\*/g, '[^/]*') // * matches anything except /
-      .replace(/\?/g, '[^/]'), // ? matches single char except /
+  const regexParts = parts.map(
+    part =>
+      part
+        .replace(/[.+^${}()|[\]\\]/g, '\\$&') // Escape regex special chars
+        .replace(/\*/g, '[^/]*') // * matches anything except /
+        .replace(/\?/g, '[^/]') // ? matches single char except /
   );
 
   // Join with .* (globstar: matches anything including /)
@@ -485,7 +618,7 @@ function matchGlob(filePath: string, pattern: string): boolean {
 function isExcluded(relPath: string, excludePatterns: string[]): boolean {
   if (excludePatterns.length === 0) return false;
   const normalizedPath = relPath.replace(/\\/g, '/');
-  return excludePatterns.some((pattern) => matchGlob(normalizedPath, pattern));
+  return excludePatterns.some(pattern => matchGlob(normalizedPath, pattern));
 }
 
 /**
@@ -547,7 +680,7 @@ async function grepDir(
   currentDir: string,
   regex: RegExp,
   includePatterns: string[],
-  results: string[],
+  results: string[]
 ): Promise<void> {
   let entries;
   try {
@@ -567,7 +700,10 @@ async function grepDir(
       // Match against both the full relative path and just the filename
       const normalizedRelPath = relPath.replace(/\\/g, '/');
       const fileName = entry.name;
-      if (includePatterns.length > 0 && !includePatterns.some((p) => matchGlob(normalizedRelPath, p) || matchGlob(fileName, p))) {
+      if (
+        includePatterns.length > 0 &&
+        !includePatterns.some(p => matchGlob(normalizedRelPath, p) || matchGlob(fileName, p))
+      ) {
         continue;
       }
 

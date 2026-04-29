@@ -24,6 +24,7 @@ import type {
   ErrorHandler,
   ToolContext,
   FunctionDefinition as FunctionDefinitionInterface,
+  PromptBuilder,
 } from './interfaces.js';
 import type { QuotaController } from '../quota/quota-controller.js';
 import type { CompactionManager } from '../memory/index.js';
@@ -204,6 +205,20 @@ export class ContextBuilder {
   }
 
   /**
+   * Set prompt builder for constructing LLM prompts
+   *
+   * When set, the prompt builder will be used in the LLM call path
+   * to construct messages from templates instead of raw passthrough.
+   *
+   * @param builder - PromptBuilder instance
+   * @returns this
+   */
+  withPromptBuilder(builder: PromptBuilder): this {
+    this.context.promptBuilder = builder;
+    return this;
+  }
+
+  /**
    * Set plugin pipeline for event interception
    *
    * @param pipeline - Pipeline function that transforms Observable<AgentEvent>
@@ -254,6 +269,7 @@ export class ContextBuilder {
     if (this.context.abortSignal) ctx.abortSignal = this.context.abortSignal;
     if (this.context.onError) ctx.onError = this.context.onError;
     if (this.context.pluginPipeline !== undefined) ctx.pluginPipeline = this.context.pluginPipeline;
+    if (this.context.promptBuilder) ctx.promptBuilder = this.context.promptBuilder;
 
     return ctx;
   }

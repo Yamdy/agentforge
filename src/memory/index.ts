@@ -26,6 +26,16 @@ export {
 export type { PersistentMemory } from './persistent.js';
 
 // ============================================================
+// Persistent Memory Store (Session Persistence)
+// ============================================================
+
+export {
+  type PersistentMemoryStore,
+  type SessionMetadata,
+  type PersistedSession,
+} from './persistent-store.js';
+
+// ============================================================
 // File-Based Memory
 // ============================================================
 
@@ -116,11 +126,7 @@ export {
 // AGENTS.md Auto-Discovery
 // ============================================================
 
-export {
-  type AgentsMdConfig,
-  type AgentsMdResult,
-  loadAgentsMd,
-} from './agents-md.js';
+export { type AgentsMdConfig, type AgentsMdResult, loadAgentsMd } from './agents-md.js';
 
 // ============================================================
 // SQLite Vector Store (NEW - P0)
