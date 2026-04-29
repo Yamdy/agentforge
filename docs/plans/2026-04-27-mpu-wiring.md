@@ -1,6 +1,8 @@
 # MPU Dead Slots Wiring Plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Status: ✅ COMPLETED** — All 7 chunks implemented. circuitBreaker/rateLimiter/inputSanitizer/errorClassifier wired in handlers/llm.ts, permissionPolicy/permissionController/sandboxExecutor in handlers/tool-execution.ts, planner in handlers/lifecycle.ts, pluginPipeline in agent-loop.ts, productionPreset in create-agent.ts, errorClassifier in error path.
+
+> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Wire all 9 dead AgentContext slots + plugin system + productionPreset into the agent loop, making MPU modules functionally active.
 
@@ -61,7 +63,7 @@ Each wiring task must decide: **blocking** (guard pattern) or **fire-and-forget*
 
 ### Task 1.1: Write failing tests for LLM guards
 
-- [ ] **Step 1: Test circuitBreaker gate**
+- [x] **Step 1: Test circuitBreaker gate**
 
 Create test in `tests/loop/handlers/llm.spec.ts`:
 
@@ -88,7 +90,7 @@ describe('Circuit Breaker Integration', () => {
 });
 ```
 
-- [ ] **Step 2: Test rateLimiter gate**
+- [x] **Step 2: Test rateLimiter gate**
 
 ```typescript
 describe('Rate Limiter Integration', () => {
@@ -107,7 +109,7 @@ describe('Rate Limiter Integration', () => {
 });
 ```
 
-- [ ] **Step 3: Test inputSanitizer transform**
+- [x] **Step 3: Test inputSanitizer transform**
 
 ```typescript
 describe('Input Sanitizer Integration', () => {
@@ -135,14 +137,14 @@ describe('Input Sanitizer Integration', () => {
 });
 ```
 
-- [ ] **Step 4: Run tests to verify they fail**
+- [x] **Step 4: Run tests to verify they fail**
 
 Run: `npx vitest run tests/loop/handlers/llm.spec.ts --reporter=verbose`
 Expected: FAIL — circuitBreaker/rateLimiter/inputSanitizer properties don't exist on mock context yet
 
 ### Task 1.2: Implement LLM guard wiring
 
-- [ ] **Step 5: Add circuitBreaker check in `handleLLMRequest`**
+- [x] **Step 5: Add circuitBreaker check in `handleLLMRequest`**
 
 In `src/loop/handlers/llm.ts`, at the TOP of `handleLLMRequest()`, BEFORE the cost check:
 
@@ -171,7 +173,7 @@ if (ctx.circuitBreaker?.shouldTrip()) {
 }
 ```
 
-- [ ] **Step 6: Add rateLimiter check in `handleLLMRequest`**
+- [x] **Step 6: Add rateLimiter check in `handleLLMRequest`**
 
 After circuitBreaker check, before cost check:
 
@@ -204,7 +206,7 @@ if (ctx.rateLimiter) {
 }
 ```
 
-- [ ] **Step 7: Add inputSanitizer check in `doLLMRequest`**
+- [x] **Step 7: Add inputSanitizer check in `doLLMRequest`**
 
 At the TOP of `doLLMRequest()`, before compaction:
 
@@ -264,7 +266,7 @@ if (ctx.inputSanitizer) {
 }
 ```
 
-- [ ] **Step 8: Add errorClassifier on LLM error path**
+- [x] **Step 8: Add errorClassifier on LLM error path**
 
 In the LLM error handling (catchError blocks), add after error event:
 
@@ -276,12 +278,12 @@ if (ctx.errorClassifier) {
 }
 ```
 
-- [ ] **Step 9: Run tests to verify they pass**
+- [x] **Step 9: Run tests to verify they pass**
 
 Run: `npx vitest run tests/loop/handlers/llm.spec.ts --reporter=verbose`
 Expected: PASS
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add src/loop/handlers/llm.ts tests/loop/handlers/llm.spec.ts
@@ -298,7 +300,7 @@ git commit -m "feat: wire circuitBreaker, rateLimiter, inputSanitizer, errorClas
 
 ### Task 2.1: Write failing tests for tool execution guards
 
-- [ ] **Step 1: Test permissionPolicy gate**
+- [x] **Step 1: Test permissionPolicy gate**
 
 ```typescript
 describe('Permission Policy Integration', () => {
@@ -327,7 +329,7 @@ describe('Permission Policy Integration', () => {
 });
 ```
 
-- [ ] **Step 2: Test sandboxExecutor routing**
+- [x] **Step 2: Test sandboxExecutor routing**
 
 ```typescript
 describe('SandboxExecutor Integration', () => {
@@ -341,14 +343,14 @@ describe('SandboxExecutor Integration', () => {
 });
 ```
 
-- [ ] **Step 3: Run tests to verify they fail**
+- [x] **Step 3: Run tests to verify they fail**
 
 Run: `npx vitest run tests/loop/handlers/tool-execution.spec.ts --reporter=verbose`
 Expected: FAIL — properties not on context mock yet
 
 ### Task 2.2: Implement tool execution guard wiring
 
-- [ ] **Step 4: Add permissionPolicy check in `executeSingleTool`**
+- [x] **Step 4: Add permissionPolicy check in `executeSingleTool`**
 
 In `src/loop/handlers/tool-execution.ts`, BEFORE the existing `securityGuard` check:
 
@@ -419,7 +421,7 @@ if (ctx.permissionPolicy) {
 }
 ```
 
-- [ ] **Step 6: Add sandboxExecutor routing in `executeSingleTool`**
+- [x] **Step 6: Add sandboxExecutor routing in `executeSingleTool`**
 
 In `src/loop/handlers/tool-execution.ts`, add imports at top:
 
@@ -491,7 +493,7 @@ And update `createAgentLoop` where `deps` is constructed:
 const deps: HandlerDeps = { ctx, config, sessionId, destroy$: destroy$.asObservable() };
 ```
 
-- [ ] **Step 6b: Add errorClassifier on tool error path**
+- [x] **Step 6b: Add errorClassifier on tool error path**
 
 In `executeSingleTool`, after tool execution fails (the catchError block), add:
 
@@ -507,12 +509,12 @@ if (ctx.errorClassifier && result.isError) {
 }
 ```
 
-- [ ] **Step 6: Run tests to verify they pass**
+- [x] **Step 6: Run tests to verify they pass**
 
 Run: `npx vitest run tests/loop/handlers/tool-execution.spec.ts --reporter=verbose`
 Expected: PASS
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/loop/handlers/tool-execution.ts tests/loop/handlers/tool-execution.spec.ts
@@ -531,7 +533,7 @@ git commit -m "feat: wire permissionPolicy, permissionController, sandboxExecuto
 
 ### Task 3.1: Write failing test for planner integration
 
-- [ ] **Step 1: Test planner hook in agent.start**
+- [x] **Step 1: Test planner hook in agent.start**
 
 ```typescript
 describe('Planner Integration', () => {
@@ -548,14 +550,14 @@ describe('Planner Integration', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/loop/handlers/lifecycle.spec.ts --reporter=verbose`
 Expected: FAIL — planner not called yet
 
 ### Task 3.2: Implement planner hook
 
-- [ ] **Step 3: Add planner plan call in `handleAgentStart`**
+- [x] **Step 3: Add planner plan call in `handleAgentStart`**
 
 In `src/loop/handlers/lifecycle.ts`:
 
@@ -584,12 +586,12 @@ if (ctx.planner) {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `npx vitest run tests/loop/handlers/lifecycle.spec.ts --reporter=verbose`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/loop/handlers/lifecycle.ts tests/loop/handlers/lifecycle.spec.ts
@@ -610,7 +612,7 @@ git commit -m "feat: wire planner into agent.start handler"
 
 ### Task 4.1: Add pluginPipeline to AgentContext
 
-- [ ] **Step 1: Test that plugins are applied to event stream**
+- [x] **Step 1: Test that plugins are applied to event stream**
 
 ```typescript
 describe('Plugin System Integration', () => {
@@ -639,13 +641,13 @@ describe('Plugin System Integration', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Expected: FAIL — `plugins` not in AgentConfig yet
 
 ### Task 4.1b: Test ContextBuilder.withPluginPipeline()
 
-- [ ] **Step 2b: Test that pluginPipeline is correctly built**
+- [x] **Step 2b: Test that pluginPipeline is correctly built**
 
 ```typescript
 describe('ContextBuilder withPluginPipeline', () => {
@@ -673,7 +675,7 @@ describe('ContextBuilder withPluginPipeline', () => {
 
 ### Task 4.2: Implement plugin pipeline injection
 
-- [ ] **Step 3: Add `pluginPipeline` field to `AgentContext`**
+- [x] **Step 3: Add `pluginPipeline` field to `AgentContext`**
 
 In `src/core/context.ts`, add to `AgentContext` interface:
 
@@ -683,7 +685,7 @@ In `src/core/context.ts`, add to `AgentContext` interface:
 pluginPipeline?: <T>(source: Observable<T>) => Observable<T>;
 ```
 
-- [ ] **Step 4: Add `withPluginPipeline()` builder method**
+- [x] **Step 4: Add `withPluginPipeline()` builder method**
 
 In `src/core/context-builder.ts`:
 
@@ -708,7 +710,7 @@ if (this.state.pluginPipeline !== undefined) {
 }
 ```
 
-- [ ] **Step 5: Wire pluginPipeline into `createAgentLoop`**
+- [x] **Step 5: Wire pluginPipeline into `createAgentLoop`**
 
 In `src/loop/agent-loop.ts`, inside `run()` function, after the `expand(step)` pipe:
 
@@ -722,7 +724,7 @@ if (ctx.pluginPipeline) {
 }
 ```
 
-- [ ] **Step 6: Add `plugins` config to `AgentConfig` and wire in `createAgent`**
+- [x] **Step 6: Add `plugins` config to `AgentConfig` and wire in `createAgent`**
 
 In `src/api/types.ts`, add to `AgentConfig`:
 
@@ -751,12 +753,12 @@ if (config.plugins && config.plugins.length > 0) {
 }
 ```
 
-- [ ] **Step 7: Run tests to verify they pass**
+- [x] **Step 7: Run tests to verify they pass**
 
 Run: `npx vitest run tests/api/create-agent.spec.ts --reporter=verbose`
 Expected: PASS
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/core/context.ts src/core/context-builder.ts src/loop/agent-loop.ts src/api/create-agent.ts src/api/types.ts tests/api/create-agent.spec.ts
@@ -773,7 +775,7 @@ git commit -m "feat: wire plugin system into agent loop via pluginPipeline conte
 
 ### Task 5.1: Wire productionPreset
 
-- [ ] **Step 1: Test production preset application**
+- [x] **Step 1: Test production preset application**
 
 ```typescript
 describe('Production Preset', () => {
@@ -788,7 +790,7 @@ describe('Production Preset', () => {
 });
 ```
 
-- [ ] **Step 2: Implement production preset wiring**
+- [x] **Step 2: Implement production preset wiring**
 
 In `src/api/create-agent.ts`, in `AgentImpl.run$()`, after the debug/test preset block:
 
@@ -805,12 +807,12 @@ Add the import:
 import { productionPreset } from '../operators/index.js';
 ```
 
-- [ ] **Step 3: Run tests**
+- [x] **Step 3: Run tests**
 
 Run: `npx vitest run tests/api/create-agent.spec.ts --reporter=verbose`
 Expected: PASS
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/api/create-agent.ts tests/api/create-agent.spec.ts
@@ -827,7 +829,7 @@ git commit -m "feat: wire productionPreset into createAgent"
 
 ### Task 6.1: Wire errorClassifier on agent.error events
 
-- [ ] **Step 1: In `agent-loop.ts`, add errorClassifier call on `agent.error` events**
+- [x] **Step 1: In `agent-loop.ts`, add errorClassifier call on `agent.error` events**
 
 Already has `ctx.auditLogger?.append()` for `agent.error`. Add after it:
 
@@ -843,12 +845,12 @@ if (event.type === 'agent.error') {
 }
 ```
 
-- [ ] **Step 2: Run full test suite**
+- [x] **Step 2: Run full test suite**
 
 Run: `npx vitest run --reporter=verbose`
 Expected: PASS (all existing + new tests)
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/loop/agent-loop.ts src/loop/handlers/llm.ts
@@ -866,7 +868,7 @@ git commit -m "feat: wire errorClassifier and circuitBreaker recording into erro
 
 Currently NOT exported: sandbox, audit, storage, lifecycle, validation, security, planning, resilience
 
-- [ ] **Step 1: Add the following exports to `src/index.ts`**
+- [x] **Step 1: Add the following exports to `src/index.ts`**
 
 ```typescript
 // ============================================================
@@ -890,12 +892,12 @@ export { DefaultErrorClassifier, DefaultCircuitBreaker, DefaultAutoRepairer } fr
 export { PlannerImpl, PlanExecutorImpl } from './planning/index.js';
 ```
 
-- [ ] **Step 2: Verify build**
+- [x] **Step 2: Verify build**
 
 Run: `npm run build`
 Expected: PASS
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/index.ts

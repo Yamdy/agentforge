@@ -351,12 +351,40 @@ export function zodToFunctionDef<T extends z.ZodTypeAny>(
 }
 
 /**
- * Convert a ToolDefinition with Zod schema to FunctionDefinition.
+ * Convert a ToolDefinition with Zod or JSON Schema parameters to FunctionDefinition.
  *
- * @param tool - Tool definition with Zod parameters
+ * Supports two parameter formats:
+ * 1. Zod schema (preferred) — converted via zodToJsonSchema
+ * 2. Plain JSON Schema object — passed through directly
+ *
+ * @param tool - Tool definition with Zod or JSON Schema parameters
  * @returns FunctionDefinition for LLM tool calling
  */
 export function toolToFunctionDef(tool: ToolDefinition): FunctionDefinition {
+  const params = tool.parameters;
+
+  // Check if parameters is already a plain JSON Schema object (not a Zod schema)
+  // Zod schemas have _def.typeName; plain JSON Schema objects have type: 'object' and properties
+  if (
+    params !== null &&
+    typeof params === 'object' &&
+    !('_def' in (params as object)) &&
+    'type' in (params as object)
+  ) {
+    // Parameters is already a JSON Schema object — use it directly
+    const jsonSchema = params as {
+      type: 'object';
+      properties: Record<string, unknown>;
+      required?: string[];
+    };
+    return {
+      name: tool.name,
+      description: tool.description,
+      parameters: jsonSchema,
+    };
+  }
+
+  // Parameters is a Zod schema — convert it
   return zodToFunctionDef(tool.name, tool.description, tool.parameters as z.ZodTypeAny);
 }
 

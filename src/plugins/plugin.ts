@@ -1,17 +1,23 @@
 /**
- * AgentForge Plugin System - Core Interfaces
+ * AgentForge Plugin System - New Imperative Interfaces
+ *
+ * Replaces the RxJS-based Interceptor/Observer pattern with:
+ * - RequestHook: modify messages before LLM call
+ * - ToolHook: check/block tool execution
+ * - LifecycleHook: (input, output) => Promise<void> at cut-points
+ * - Event subscriptions: pure observation, non-blocking
  *
  * Design principles:
- * - Hook = Horizontal slice enhancement (operators), DI = Vertical capability replacement (interface implementations)
- * - Interceptors use concatMap (block main flow), Observers use tap (non-blocking)
- * - PluginContext is restricted - no llm/tools/memory access
+ * - Plugin errors are isolated — never crash the agent loop
+ * - Hooks execute in priority order (lower = earlier)
+ * - HookRegistry is the single point of registration
  *
- * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN/07-PLUGIN-SYSTEM.md
+ * @see docs/design/24-ARCH-REFACTOR.md
  */
 
 import { z } from 'zod';
-import { Observable } from 'rxjs';
-import type { AgentEventType, AgentEvent } from '../core/events.js';
+import type { AgentEventType } from '../core/events.js';
+import type { RequestHook, ToolHook, HookFn, HookName } from '../core/hooks.js';
 import type { Tracer, Metrics } from '../core/interfaces.js';
 
 // ============================================================
@@ -26,20 +32,14 @@ import type { Tracer, Metrics } from '../core/interfaces.js';
  * - tools: ToolRegistry - plugins should not execute tools directly
  * - memory: MemoryStore - plugins should not read/write memory directly
  * - checkpoint: CheckpointStorage - plugins should not manipulate checkpoints
- *
- * These capabilities should be injected via DI (vertical replacement),
- * not accessed via plugins (horizontal slice).
  */
 export interface PluginContext {
   /** Read-only session identifier */
   readonly sessionId: string;
-
   /** Read-only agent name */
   readonly agentName: string;
-
   /** Distributed tracer for observability */
   readonly tracer?: Tracer;
-
   /** Metrics collector for observability */
   readonly metrics?: Metrics;
 }
@@ -49,135 +49,93 @@ export interface PluginContext {
 // ============================================================
 
 /**
- * Plugin base interface
+ * Plugin base interface.
  *
- * All plugins share common metadata and lifecycle hooks.
- * Use PluginSchema for third-party plugin validation.
+ * Plugins register hooks and/or event subscriptions.
+ * They do NOT intercept event streams — they hook into cut-points.
  */
 export interface Plugin {
   /** Unique plugin identifier */
   readonly name: string;
 
-  /** Plugin type - determines execution pattern */
-  readonly type: 'interceptor' | 'observer';
-
-  /**
-   * Execution priority (lower = earlier)
-   * Interceptors execute before observers
-   * Default: 100
-   */
-  readonly priority: number;
-
-  /**
-   * Event types to subscribe to
-   * Empty array = all events
-   */
-  readonly eventTypes: readonly AgentEventType[];
-
   /** Whether plugin is currently enabled */
   enabled: boolean;
 
+  /** Request hooks — modify messages before each LLM call */
+  requestHooks?: RequestHook[];
+
+  /** Tool hooks — check/block tool execution before it runs */
+  toolHooks?: ToolHook[];
+
+  /** Lifecycle hooks — observe lifecycle cut-points */
+  lifecycleHooks?: Array<{ name: HookName; fn: HookFn; priority?: number }>;
+
+  /** Event subscriptions — pure observation, non-blocking */
+  eventSubscriptions?: Array<{
+    event: AgentEventType;
+    handler: (event: unknown) => void | Promise<void>;
+  }>;
+
   /**
-   * Initialize plugin with restricted context
-   * Called once when plugin is registered
+   * Initialize plugin with restricted context.
+   * Called once when plugin is registered.
    */
   init?(ctx: PluginContext): void | Promise<void>;
 
   /**
-   * Cleanup resources
-   * Called when plugin is unregistered
+   * Cleanup resources.
+   * Called when plugin is unregistered.
    */
   destroy?(): void;
 }
 
 // ============================================================
-// Interceptor Plugin (Blocking, can modify events)
+// Legacy Types (for backward compat during migration)
 // ============================================================
 
 /**
- * Interceptor plugin - blocks main flow, can modify events
- *
- * Execution: Uses concatMap - each interceptor must complete
- * before the next one starts.
- *
- * Capabilities:
- * - Modify events (return new event)
- * - Block flow (return EMPTY)
- * - Replace with different event (return different type)
- *
- * Use cases:
- * - Permission checks
- * - Rate limiting
- * - Memory loading
- * - HITL decisions
+ * @deprecated Use Plugin interface directly. Interceptor pattern is replaced by RequestHook + ToolHook.
  */
-export interface InterceptorPlugin extends Plugin {
+export interface InterceptorPlugin {
+  readonly name: string;
   readonly type: 'interceptor';
-
-  /**
-   * Intercept an event
-   *
-   * @param event - The current event
-   * @param ctx - Restricted plugin context
-   * @returns Observable emitting zero or more events
-   *
-   * Return patterns:
-   * - of(event) - pass through unchanged
-   * - of(newEvent) - replace with new event
-   * - of(event1, event2) - emit multiple events
-   * - EMPTY - block the event (terminate this branch)
-   */
-  intercept(event: AgentEvent, ctx: PluginContext): Observable<AgentEvent>;
+  readonly priority: number;
+  readonly eventTypes: readonly string[];
+  enabled: boolean;
+  init?(ctx: PluginContext): void | Promise<void>;
+  destroy?(): void;
+  intercept?: (event: any, ctx: PluginContext) => any;
+  requestHooks?: RequestHook[];
+  toolHooks?: ToolHook[];
+  lifecycleHooks?: Array<{ name: HookName; fn: HookFn; priority?: number }>;
+  eventSubscriptions?: Array<{ event: string; handler: (event: unknown) => void | Promise<void> }>;
 }
 
-// ============================================================
-// Observer Plugin (Non-blocking, read-only)
-// ============================================================
-
 /**
- * Observer plugin - non-blocking, read-only side effects
- *
- * Execution: Uses tap - never blocks main flow
- * Errors are caught and logged, never propagated.
- *
- * Use cases:
- * - Logging
- * - Metrics collection
- * - Auditing
- * - Webhook notifications
+ * @deprecated Use Plugin interface directly. Observer pattern is replaced by eventSubscriptions.
  */
-export interface ObserverPlugin extends Plugin {
+export interface ObserverPlugin {
+  readonly name: string;
   readonly type: 'observer';
-
-  /**
-   * Observe an event (read-only)
-   *
-   * @param event - The current event (read-only)
-   * @param ctx - Restricted plugin context
-   * @returns void or Promise<void> (result ignored)
-   *
-   * Notes:
-   * - Return value is ignored
-   * - Exceptions are caught and logged
-   * - Never blocks main flow
-   * - If async, fire-and-forget pattern
-   */
-  observe(event: AgentEvent, ctx: PluginContext): void | Promise<void>;
+  readonly priority: number;
+  readonly eventTypes: readonly string[];
+  enabled: boolean;
+  init?(ctx: PluginContext): void | Promise<void>;
+  destroy?(): void;
+  observe?: (event: any, ctx: PluginContext) => void | Promise<void>;
+  requestHooks?: RequestHook[];
+  toolHooks?: ToolHook[];
+  lifecycleHooks?: Array<{ name: HookName; fn: HookFn; priority?: number }>;
+  eventSubscriptions?: Array<{ event: string; handler: (event: unknown) => void | Promise<void> }>;
 }
 
 // ============================================================
 // Plugin Validation Schema (Tier 1 for third-party plugins)
 // ============================================================
 
-/**
- * Zod schema for validating third-party plugins
- *
- * Use this to validate plugins from external sources
- * before registration.
- */
 export const PluginSchema = z.object({
   name: z.string().min(1),
-  type: z.enum(['interceptor', 'observer']),
+  type: z.enum(['interceptor', 'observer']).optional(),
   priority: z.number().int().default(100),
   eventTypes: z.array(z.string()).default([]),
   enabled: z.boolean().default(true),
@@ -185,40 +143,29 @@ export const PluginSchema = z.object({
 
 /**
  * Validate a third-party plugin definition
- *
- * @param raw - Unknown plugin object
- * @returns Validated partial plugin
- * @throws ZodError if validation fails
  */
 export function validatePlugin(raw: unknown): z.infer<typeof PluginSchema> {
   return PluginSchema.parse(raw);
 }
 
 // ============================================================
-// Type Guards
+// Type Guards (backward compat)
 // ============================================================
 
-/**
- * Check if plugin is an interceptor
- */
-export function isInterceptorPlugin(plugin: Plugin): plugin is InterceptorPlugin {
-  return plugin.type === 'interceptor';
+/** @deprecated — all plugins now use lifecycle hooks, not intercept/observe */
+export function isInterceptorPlugin(plugin: any): plugin is InterceptorPlugin {
+  return (plugin as any).type === 'interceptor';
 }
 
-/**
- * Check if plugin is an observer
- */
-export function isObserverPlugin(plugin: Plugin): plugin is ObserverPlugin {
-  return plugin.type === 'observer';
+/** @deprecated — all plugins now use lifecycle hooks, not intercept/observe */
+export function isObserverPlugin(plugin: any): plugin is ObserverPlugin {
+  return (plugin as any).type === 'observer';
 }
 
 // ============================================================
 // Plugin Context Factory
 // ============================================================
 
-/**
- * Options for creating a plugin context
- */
 export interface CreatePluginContextOptions {
   sessionId: string;
   agentName: string;
@@ -226,14 +173,7 @@ export interface CreatePluginContextOptions {
   metrics?: Metrics;
 }
 
-/**
- * Create a restricted plugin context
- *
- * @param options - Context options
- * @returns Frozen plugin context
- */
 export function createPluginContext(options: CreatePluginContextOptions): PluginContext {
-  // Build context with conditional properties to satisfy exactOptionalPropertyTypes
   return options.tracer !== undefined || options.metrics !== undefined
     ? {
         sessionId: options.sessionId,

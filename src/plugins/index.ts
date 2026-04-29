@@ -7,7 +7,7 @@
  */
 
 // ============================================================
-// Core Interfaces
+// Core Interfaces (new imperative API)
 // ============================================================
 
 export {
@@ -24,15 +24,10 @@ export {
 } from './plugin.js';
 
 // ============================================================
-// Pipeline Builder
+// Pipeline Builder (new imperative API)
 // ============================================================
 
-export {
-  buildPluginPipeline,
-  emptyPipeline,
-  blockingPipeline,
-  replacePipeline,
-} from './pipeline.js';
+export { applyPlugins, buildPluginPipeline, emptyPipeline, blockingPipeline, replacePipeline } from './pipeline.js';
 
 // ============================================================
 // Plugin Manager
@@ -45,17 +40,7 @@ export { PluginManager, createPluginManager } from './manager.js';
 // ============================================================
 
 export { metricsPlugin } from './metrics-plugin.js';
-
-// ============================================================
-// Built-in Plugins
-// ============================================================
-
 export { loggingPlugin } from './logging-plugin.js';
-
-// ============================================================
-// Memory & Skills Plugins
-// ============================================================
-
 export { createMemoryPlugin } from './memory-plugin.js';
 export { createSkillsPlugin, type SkillMetadata } from './skills-plugin.js';
 export { createSummarizationPlugin, type SummarizationPluginConfig } from './summarization-plugin.js';

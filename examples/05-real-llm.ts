@@ -440,20 +440,14 @@ async function example2_withTools() {
   const adapter = new AISDKAdapter();
 
   // 定义简单工具 - 计算器
-  // 注意: ToolDefinition 需要包含 execute 函数
+  // 注意: AgentForge 的 ToolDefinition.parameters 使用 Zod schema（不是 JSON Schema）
+  // 框架也支持 JSON Schema 格式，但推荐使用 Zod 以获得类型安全
   const calculatorTool: ToolDefinition = {
     name: 'calculator',
     description: '执行简单的数学计算。输入数学表达式，返回计算结果。例如: "2 + 3 * 4"',
-    parameters: {
-      type: 'object',
-      properties: {
-        expression: {
-          type: 'string',
-          description: '数学表达式，如 "2 + 3 * 4"',
-        },
-      },
-      required: ['expression'],
-    },
+    parameters: z.object({
+      expression: z.string().describe('数学表达式，如 "2 + 3 * 4"'),
+    }),
     execute: async (args: unknown) => {
       const { expression } = args as { expression: string };
       try {

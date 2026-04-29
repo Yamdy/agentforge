@@ -57,6 +57,7 @@ import type { SecurityGuard } from '../security/guard.js';
 import type { Planner } from '../planning/types.js';
 import { Observable, Subject } from 'rxjs';
 import type { HITLAskOptions } from './interfaces.js';
+import type { HookRegistry } from './hooks.js';
 // ============================================================
 // Application Services (Global Singleton)
 // ============================================================
@@ -211,6 +212,9 @@ export interface AgentContext {
   // ----- Plugin Pipeline (optional) -----
   /** Plugin pipeline for event interception and observation */
   pluginPipeline?: (source: Observable<AgentEvent>) => Observable<AgentEvent>;
+
+  /** Hook registry for lifecycle/request/tool hooks (non-RxJS) */
+  hookRegistry?: HookRegistry;
 
   // ----- Control Signals -----
   /** Abort signal for cancellation */

@@ -1,59 +1,42 @@
 /**
- * AgentForge Plugin Manager
+ * AgentForge Plugin Manager — Imperative Version
  *
- * Manages plugin registration, lifecycle, and pipeline construction.
+ * Manages plugin registration, lifecycle, and hook activation.
+ * Internally wraps a HookRegistry + AgentEventEmitter.
+ *
+ * No RxJS — plugins register hooks, not intercept event streams.
  *
  * Lifecycle:
- * 1. Register plugin -> init() called with context
- * 2. Enable/disable -> marks enabled flag (requires rebuild)
- * 3. Unregister -> destroy() called, removed from registry
+ * 1. Register plugin => init() called with context
+ * 2. buildPipeline() => registers hooks + event subscriptions
+ * 3. Unregister => destroy() called, hooks removed
  *
- * Pipeline building:
- * - Pipeline is immutable once built
- * - Enable/disable requires rebuilding the pipeline
- * - Use buildPipeline() after changing plugin state
- *
- * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN/07-PLUGIN-SYSTEM.md
+ * @see docs/design/24-ARCH-REFACTOR.md
  */
 
-import { Observable } from 'rxjs';
-import type { AgentEvent } from '../core/events.js';
-import type { Plugin, PluginContext, InterceptorPlugin, ObserverPlugin } from './plugin.js';
+import type { AgentEventEmitter } from '../core/events.js';
+import { HookRegistry } from '../core/hooks.js';
+import type { Plugin, PluginContext } from './plugin.js';
 import { validatePlugin } from './plugin.js';
-import { buildPluginPipeline } from './pipeline.js';
-
-// ============================================================
-// Plugin Manager
-// ============================================================
+import { applyPlugins } from './pipeline.js';
 
 /**
- * Plugin manager - registration, lifecycle, and pipeline construction
- *
- * Usage:
- * ```typescript
- * const manager = new PluginManager();
- * manager.register(loggingPlugin);
- * manager.register(permissionPlugin);
- *
- * const pipeline = manager.buildPipeline(source, ctx);
- * pipeline.subscribe(event => { ... });
- * ```
+ * Plugin manager — registration, lifecycle, and hook activation.
  */
 export class PluginManager {
   private readonly plugins: Map<string, Plugin> = new Map();
   private pluginContext?: PluginContext;
+  /** Combined unregister function from applyPlugins */
+  private unregisterHooks?: () => void;
 
   /**
-   * Register a plugin
-   *
-   * Validates the plugin and calls init() if context is available.
+   * Register a plugin.
    *
    * @param plugin - Plugin to register
    * @throws Error if plugin with same name is already registered
    */
   register(plugin: Plugin): void {
     // Validate third-party plugins (Tier 1 safety)
-    // Internal plugins skip validation for performance
     if (!this.isInternalPlugin(plugin)) {
       validatePlugin(plugin);
     }
@@ -66,15 +49,12 @@ export class PluginManager {
 
     // Initialize if context is already set
     if (this.pluginContext && plugin.init) {
-      // Safe to ignore promise - init can be async
       void this.safeInit(plugin);
     }
   }
 
   /**
-   * Register multiple plugins
-   *
-   * @param plugins - Plugins to register
+   * Register multiple plugins.
    */
   registerAll(plugins: readonly Plugin[]): void {
     for (const plugin of plugins) {
@@ -83,155 +63,90 @@ export class PluginManager {
   }
 
   /**
-   * Unregister a plugin
-   *
-   * Calls destroy() on the plugin if defined.
-   *
-   * @param name - Plugin name to unregister
+   * Unregister a plugin.
    */
   unregister(name: string): void {
     const plugin = this.plugins.get(name);
     if (plugin) {
       if (plugin.destroy) {
-        try {
-          plugin.destroy();
-        } catch {
-          // Silently ignore destroy errors
-        }
+        try { plugin.destroy(); } catch { /* isolate */ }
       }
       this.plugins.delete(name);
     }
   }
 
-  /**
-   * Enable a plugin
-   *
-   * Note: Requires rebuilding the pipeline to take effect.
-   *
-   * @param name - Plugin name to enable
-   */
   enable(name: string): void {
     const plugin = this.plugins.get(name);
-    if (plugin) {
-      plugin.enabled = true;
-    }
+    if (plugin) plugin.enabled = true;
   }
 
-  /**
-   * Disable a plugin
-   *
-   * Note: Requires rebuilding the pipeline to take effect.
-   *
-   * @param name - Plugin name to disable
-   */
   disable(name: string): void {
     const plugin = this.plugins.get(name);
-    if (plugin) {
-      plugin.enabled = false;
-    }
+    if (plugin) plugin.enabled = false;
   }
 
-  /**
-   * Check if a plugin is registered
-   *
-   * @param name - Plugin name
-   * @returns True if plugin is registered
-   */
   has(name: string): boolean {
     return this.plugins.has(name);
   }
 
-  /**
-   * Get a plugin by name
-   *
-   * @param name - Plugin name
-   * @returns Plugin or undefined
-   */
   get(name: string): Plugin | undefined {
     return this.plugins.get(name);
   }
 
-  /**
-   * Get all registered plugins
-   *
-   * @returns Array of all plugins
-   */
   getAll(): Plugin[] {
     return [...this.plugins.values()];
   }
 
-  /**
-   * Get all enabled plugins
-   *
-   * @returns Array of enabled plugins
-   */
   getActivePlugins(): Plugin[] {
-    return [...this.plugins.values()].filter(p => p.enabled);
+    return [...this.plugins.values()].filter((p) => p.enabled);
   }
 
-  /**
-   * Get all interceptor plugins
-   *
-   * @returns Array of interceptor plugins
-   */
-  getInterceptors(): InterceptorPlugin[] {
-    return [...this.plugins.values()].filter(
-      (p): p is InterceptorPlugin => p.type === 'interceptor'
-    );
+  /** @deprecated — all plugins now use lifecycle hooks */
+  getInterceptors(): any[] {
+    return [...this.plugins.values()].filter((p: any) => p.type === 'interceptor');
   }
 
-  /**
-   * Get all observer plugins
-   *
-   * @returns Array of observer plugins
-   */
-  getObservers(): ObserverPlugin[] {
-    return [...this.plugins.values()].filter(
-      (p): p is ObserverPlugin => p.type === 'observer'
-    );
+  /** @deprecated — all plugins now use lifecycle hooks */
+  getObservers(): any[] {
+    return [...this.plugins.values()].filter((p: any) => p.type === 'observer');
   }
 
-  /**
-   * Set the plugin context
-   *
-   * This context is used for all plugin initialization.
-   *
-   * @param ctx - Plugin context
-   */
   setContext(ctx: PluginContext): void {
     this.pluginContext = ctx;
   }
 
-  /**
-   * Get the current plugin context
-   *
-   * @returns Current context or undefined
-   */
   getContext(): PluginContext | undefined {
     return this.pluginContext;
   }
 
   /**
-   * Build the plugin pipeline
+   * Build the plugin pipeline — registers all plugin hooks and event subscriptions.
    *
-   * Creates a new pipeline from all active plugins.
-   * Must be called after enabling/disabling plugins.
-   *
-   * @param source - Source observable
-   * @param ctx - Plugin context (optional if already set)
-   * @returns Pipeline observable
+   * @param hookRegistryOrSource - HookRegistry (new API) or Observable source (old API)
+   * @param emitterOrCtx         - EventEmitter (new API) or PluginContext (old API)
+   * @param ctx                  - Plugin context (new API only)
    */
   buildPipeline(
-    source: Observable<AgentEvent>,
+    hookRegistryOrSource: HookRegistry | any,
+    emitterOrCtx?: AgentEventEmitter | PluginContext,
     ctx?: PluginContext
-  ): Observable<AgentEvent> {
-    // Update context if provided
-    if (ctx) {
-      this.pluginContext = ctx;
+  ): any {
+    // Detect old API: first arg is Observable (has .pipe/.subscribe)
+    if (hookRegistryOrSource && typeof hookRegistryOrSource.pipe === 'function') {
+      // Old API: return pass-through Observable
+      return hookRegistryOrSource;
     }
 
-    const context = this.pluginContext;
-    if (!context) {
+    const hookRegistry = hookRegistryOrSource as HookRegistry;
+    const emitter = emitterOrCtx as AgentEventEmitter;
+    const context = (ctx ?? (emitterOrCtx && !('emit' in emitterOrCtx!) ? emitterOrCtx : undefined)) as PluginContext | undefined;
+
+    if (context) {
+      this.pluginContext = context;
+    }
+
+    const resolvedCtx = this.pluginContext;
+    if (!resolvedCtx) {
       throw new Error('Plugin context not set. Call setContext() or pass ctx parameter.');
     }
 
@@ -242,86 +157,59 @@ export class PluginManager {
       }
     }
 
-    return buildPluginPipeline(source, this.getActivePlugins(), context);
+    // Remove previous hook registrations
+    this.unregisterHooks?.();
+
+    // Apply all plugins — register hooks + subscriptions
+    this.unregisterHooks = applyPlugins(
+      this.getActivePlugins(),
+      hookRegistry,
+      emitter,
+      resolvedCtx
+    );
   }
 
   /**
-   * Clear all plugins
-   *
-   * Calls destroy() on all plugins that define it.
+   * Clear all plugins.
    */
   clear(): void {
+    this.unregisterHooks?.();
     for (const plugin of this.plugins.values()) {
       if (plugin.destroy) {
-        try {
-          plugin.destroy();
-        } catch {
-          // Silently ignore destroy errors
-        }
+        try { plugin.destroy(); } catch { /* isolate */ }
       }
     }
     this.plugins.clear();
   }
 
-  /**
-   * Get plugin count
-   *
-   * @returns Total number of registered plugins
-   */
   get size(): number {
     return this.plugins.size;
   }
 
-  /**
-   * Get active plugin count
-   *
-   * @returns Number of enabled plugins
-   */
   get activeCount(): number {
     return this.getActivePlugins().length;
   }
 
   // ============================================================
-  // Private Helpers
+  // Private
   // ============================================================
 
-  /**
-   * Safely initialize a plugin
-   *
-   * Catches and logs any errors during initialization.
-   */
   private async safeInit(plugin: Plugin): Promise<void> {
     if (!plugin.init || !this.pluginContext) return;
-
     try {
       await plugin.init(this.pluginContext);
     } catch (err) {
-      // Log but don't throw - plugin init failure shouldn't crash the system
       console.error(`Plugin "${plugin.name}" init failed:`, err);
     }
   }
 
-  /**
-   * Check if plugin is internal (skip validation)
-   *
-   * Internal plugins are defined within the framework and
-   * don't need runtime validation.
-   */
   private isInternalPlugin(plugin: Plugin): boolean {
-    // Check if plugin was imported from AgentForge internals
-    // Internal plugins have a marker symbol
     return '_internal' in plugin;
   }
 }
 
-// ============================================================
-// Plugin Manager Factory
-// ============================================================
-
 /**
- * Create a new plugin manager
- *
- * @returns New PluginManager instance
+ * Create a new plugin manager.
  */
 export function createPluginManager(): PluginManager {
   return new PluginManager();

@@ -736,3 +736,92 @@ export function generateId(prefix = ''): string {
   const random = Math.random().toString(36).slice(2, 9);
   return prefix ? `${prefix}-${timestamp}-${random}` : `${timestamp}-${random}`;
 }
+
+// ============================================================
+// Agent Event Emitter (lightweight, no RxJS dependency)
+// ============================================================
+
+/**
+ * Lightweight typed event emitter for Agent events.
+ *
+ * Replaces RxJS Subject/Observable for event distribution.
+ * Listeners can be registered per-event-type or catch-all.
+ * All listeners are fire-and-forget — errors in one listener
+ * do not affect others.
+ */
+export class AgentEventEmitter {
+  private typed = new Map<string, Set<(event: unknown) => void>>();
+  private any = new Set<(event: AgentEvent) => void>();
+
+  /**
+   * Register a listener for a specific event type.
+   * @returns Unregister function
+   */
+  on<E extends AgentEvent>(type: E['type'], fn: (event: E) => void): () => void {
+    const existing = this.typed.get(type);
+    if (existing) {
+      existing.add(fn as (event: unknown) => void);
+    } else {
+      this.typed.set(type, new Set([fn as (event: unknown) => void]));
+    }
+    return () => {
+      const set = this.typed.get(type);
+      if (set) set.delete(fn as (event: unknown) => void);
+    };
+  }
+
+  /**
+   * Register a catch-all listener for ALL event types.
+   * @returns Unregister function
+   */
+  onAny(fn: (event: AgentEvent) => void): () => void {
+    this.any.add(fn);
+    return () => {
+      this.any.delete(fn);
+    };
+  }
+
+  /**
+   * Emit an event to all registered listeners.
+   * Typed listeners fire first, then catch-all listeners.
+   * Errors in listeners are silently caught (never propagate).
+   */
+  async emit(event: AgentEvent): Promise<void> {
+    const tasks: Promise<void>[] = [];
+
+    // Typed listeners
+    const typedSet = this.typed.get(event.type);
+    if (typedSet) {
+      for (const fn of typedSet) {
+        tasks.push(
+          Promise.resolve()
+            .then(() => fn(event))
+            .catch(() => {
+              /* isolate */
+            })
+        );
+      }
+    }
+
+    // Catch-all listeners
+    for (const fn of this.any) {
+      tasks.push(
+        Promise.resolve()
+          .then(() => fn(event))
+          .catch(() => {
+            /* isolate */
+          })
+      );
+    }
+
+    await Promise.allSettled(tasks);
+  }
+
+  /**
+   * Remove all listeners.
+   */
+  clear(): void {
+    this.typed.clear();
+    this.any.clear();
+  }
+}

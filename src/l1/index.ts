@@ -67,8 +67,8 @@ export const L1AgentConfigSchema = z.object({
   // Tools (list of tool names or detailed configs)
   tools: z.union([z.array(z.string()), z.array(ToolConfigSchema)]).default([]),
 
-  // Preset (production, debug, test)
-  preset: z.enum(['production', 'debug', 'test']).optional(),
+  // Preset (production, debug, development, test)
+  preset: z.enum(['production', 'debug', 'development', 'test']).optional(),
 
   // Streaming
   streaming: z.boolean().default(false),
@@ -91,6 +91,26 @@ export const L1AgentConfigSchema = z.object({
       storage: z.enum(['memory', 'sqlite']).default('memory'),
       path: z.string().optional(),
     })
+    .optional(),
+
+  // Observability
+  tracing: z
+    .union([
+      z.boolean(),
+      z.object({
+        exporter: z.enum(['console', 'otel', 'custom']),
+        endpoint: z.string().optional(),
+      }),
+    ])
+    .optional(),
+
+  metrics: z
+    .union([
+      z.boolean(),
+      z.object({
+        prefix: z.string().optional(),
+      }),
+    ])
     .optional(),
 
   // Extensions
@@ -224,6 +244,29 @@ function toL2Config(l1Config: L1AgentConfig): AgentConfig {
       checkpointConfig.path = l1Config.checkpoint.path;
     }
     l2Config.checkpoint = checkpointConfig as unknown as CheckpointConfig;
+  }
+
+  // Tracing - convert to TracingConfig
+  if (l1Config.tracing !== undefined) {
+    if (typeof l1Config.tracing === 'boolean') {
+      l2Config.tracing = l1Config.tracing;
+    } else {
+      l2Config.tracing = {
+        exporter: l1Config.tracing.exporter,
+        ...(l1Config.tracing.endpoint !== undefined && { endpoint: l1Config.tracing.endpoint }),
+      };
+    }
+  }
+
+  // Metrics - convert to MetricsConfig
+  if (l1Config.metrics !== undefined) {
+    if (typeof l1Config.metrics === 'boolean') {
+      l2Config.metrics = l1Config.metrics;
+    } else {
+      l2Config.metrics = {
+        ...(l1Config.metrics.prefix !== undefined && { prefix: l1Config.metrics.prefix }),
+      };
+    }
   }
 
   return l2Config;

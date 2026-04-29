@@ -1,498 +1,769 @@
 /**
- * AgentForge Agent Loop Implementation
+ * AgentForge Agent Loop — Imperative Implementation
  *
- * Core expand-based agent loop using RxJS + Zod.
- * This is the heart of the framework - handles event routing, LLM calls,
- * tool execution, and state management.
+ * Replaces the RxJS expand() recursion with an imperative while(true) loop.
+ * All control flow (token budget, error recovery, tool partitioning, compaction)
+ * is inline in a single closure — no event-type switch, no handler delegation.
  *
  * Design principles:
- * - Observable<AgentEvent> stream with expand recursion
- * - State passed through StepContext, never mutated
- * - Errors as events (agent.error + done), never RxJS throws
- * - Terminal events (done, agent.error, cancel) return EMPTY
+ * - while(true) + await (not expand + switch)
+ * - HookRegistry for plugin cut-points (not event-stream interception)
+ * - AgentEventEmitter for observability (not RxJS Observable)
+ * - AbortController for cancellation (not takeUntil)
+ * - Errors-as-events for error reporting (not RxJS error channel)
  *
- * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN.md
+ * @see docs/design/24-ARCH-REFACTOR.md
+ * @see docs/design/25-DE-RXJS.md
  */
 
-import { Observable, of, EMPTY, Subject } from 'rxjs';
-import { expand, map, takeUntil, mergeMap, catchError, finalize, take } from 'rxjs/operators';
 import {
   type AgentEvent,
-  type AgentState,
-  type AgentContext,
   type Message,
-  isTerminalEvent,
+  type ToolCall,
+  type SerializedError,
+  AgentEventEmitter,
   serializeError,
 } from '../core/index.js';
-import type { DecisionTrace } from '../contracts/decision-trace-storage.js';
-
-import {
-  handleAgentStart,
-  handleLLMRequest,
-  handleLLMResponse,
-  handleLLMOutputInvalid,
-  handleToolCall,
-  handleToolResult,
-  handleBatchComplete,
-  handleHITLAsk,
-} from './handlers/index.js';
+import { Observable } from 'rxjs';
+import type { AgentContext, AgentLoopState } from '../core/index.js';
+import { HookRegistry } from '../core/hooks.js';
+import { createInitialLoopState } from '../core/state.js';
+import { checkTokenBudget, createBudgetTracker, shouldCompact } from './token-budget.js';
+import { analyzeLLMError, RECOVERY_LIMITS } from './error-analyzer.js';
+import { partitionToolCalls } from './tool-partition.js';
 
 // ============================================================
 // Types
 // ============================================================
 
-/**
- * Step Context - passed through expand recursion
- *
- * Contains current event and state snapshot.
- * State is immutable - handlers return new state objects.
- */
-export interface StepContext {
-  event: AgentEvent;
-  state: AgentState;
-  /** Repair attempt counter (for LLM output invalidation) */
-  repairAttempt?: number;
-}
-
-/**
- * Checkpoint configuration options
- */
-export interface CheckpointConfig {
-  /** Enable automatic checkpointing */
-  enabled: boolean;
-  /** When to save checkpoints */
-  interval: 'step' | 'tool_result' | 'llm_response';
-}
-
-/**
- * Agent Loop Configuration
- */
 export interface AgentLoopConfig {
-  /** Model configuration for the agent */
-  model: {
-    provider: string;
-    model: string;
-  };
-  /** Maximum steps before termination */
-  maxSteps: number;
-  /** Maximum LLM repair attempts for invalid output */
-  maxLLMRepairAttempts: number;
-  /** Enable parallel tool execution */
-  parallelToolCalls: boolean;
-  /** Enable streaming LLM responses */
+  model: { provider: string; model: string };
+  maxSteps?: number;
+  maxLLMRepairAttempts?: number;
+  parallelToolCalls?: boolean;
   streaming?: boolean;
-  /** Checkpoint configuration */
-  checkpoint?: CheckpointConfig;
-  /** Conversation history for multi-turn context */
-  history?: Message[];
-  /** System prompt - added as system message at start of conversation */
-  systemPrompt?: string;
+  tokenBudget?: number | undefined;
+  fallbackModel?: { provider: string; model: string } | undefined;
+  history?: Message[] | undefined;
+  systemPrompt?: string | undefined;
 }
 
 /**
- * Agent Loop Return Type
+ * Agent Loop instance returned by createAgentLoop()
  */
 export interface AgentLoop {
-  /** Run the agent with input, returns event stream */
-  run(input: string): Observable<AgentEvent>;
-  /** Destroy signal for cleanup */
-  destroy$: Observable<void>;
-  /** Get the current agent state (null if not yet started) */
-  getCurrentState(): AgentState | null;
-}
-
-/**
- * Handler Dependencies - passed to all extracted handler functions.
- *
- * Replaces closure-captured variables (ctx, config, sessionId) that
- * handlers previously accessed from the createAgentLoop scope.
- */
-export interface HandlerDeps {
-  ctx: AgentContext;
-  config: AgentLoopConfig;
-  sessionId: string;
-  destroy$: Observable<void>;
+  /** Run the agent loop with user input. Returns final output text. */
+  run(input: string): Promise<string>;
+  /** @deprecated Observable wrapper for backward compat */
+  run$(input: string): Observable<AgentEvent>;
+  /** Subscribe to typed events */
+  on<E extends AgentEvent>(type: E['type'], fn: (e: E) => void): () => void;
+  /** Subscribe to all events */
+  onAny(fn: (e: AgentEvent) => void): () => void;
+  /** Cancel current execution */
+  cancel(): void;
+  /** Pause execution (blocks the loop) */
+  pause(): void;
+  /** Resume execution */
+  resume(): void;
+  /** Get current loop state (null if not started) */
+  getState(): AgentLoopState | null;
+  /** Clean up all resources */
+  destroy(): void;
 }
 
 // ============================================================
 // Factory
 // ============================================================
 
-/**
- * Create Agent Loop
- *
- * Core factory function that creates an agent loop instance.
- * Uses expand recursion to process events until termination.
- *
- * @param ctx - Agent context with dependencies
- * @param config - Loop configuration
- * @returns Agent loop instance with run() method
- */
 export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): AgentLoop {
-  const sessionId = ctx.sessionId;
-  const destroy$ = new Subject<void>();
+  const emitter = new AgentEventEmitter();
+  const hooks = ctx.hookRegistry ?? new HookRegistry();
+  let abortController: AbortController | null = null;
+  let state: AgentLoopState | null = null;
   let isRunning = false;
-  let latestState: AgentState | null = null;
 
-  // Build handler dependencies (replaces closure-captured variables)
-  const deps: HandlerDeps = { ctx, config, sessionId, destroy$: destroy$.asObservable() };
+  // ── Pause/Resume ──
+  let paused = false;
+  let resumePromise: Promise<void> | null = null;
+  let resumeResolve: (() => void) | null = null;
+
+  // ── Streaming ──
 
   // ============================================================
-  // Core Step Function - Routes all events
+  // Lifecycle Hook Runner (error-isolated)
   // ============================================================
 
-  /**
-   * step() - Recursive step function for expand
-   *
-   * Routes events to appropriate handlers.
-   * Terminal events return EMPTY to end the stream.
-   */
-  function step(sctx: StepContext): Observable<StepContext> {
-    const { event, state } = sctx;
+  async function runLifecycleHook(name: string, input: unknown, output: unknown): Promise<void> {
+    for (const h of hooks.getLifecycleHooks(name as any)) {
+      try { await h(input, output); } catch { /* isolate */ }
+    }
+  }
 
-    // Track latest state for external access (e.g., pause/resume)
-    latestState = state;
+  // ============================================================
+  // Error Recovery
+  // ============================================================
 
-    // MPU M5: Audit terminal events before stream ends (fire-and-forget)
-    if (event.type === 'agent.error') {
-      ctx.auditLogger?.append({
-        sessionId,
-        agentName: state.agentName,
-        eventType: 'agent.error',
-        action: 'agent.error',
-        resource: state.agentName,
-        result: 'error',
-        details: { error: event.error },
+  async function handleLLMError(error: unknown, signal: AbortSignal): Promise<'continue' | 'throw'> {
+    if (signal.aborted) return 'throw';
+
+    const analysis = analyzeLLMError(error as Error, config.model.model, (error as any).status);
+
+    if (analysis.recoverable && state) {
+      switch (analysis.recovery) {
+        case 'escalate_output_tokens':
+          if (state.recovery.outputTokenEscalationCount < RECOVERY_LIMITS.outputTokenEscalation) {
+            state.recovery.outputTokenEscalationCount++;
+            await runLifecycleHook('recovery.escalate', { error: analysis.message }, {});
+            return 'continue';
+          }
+          break;
+
+        case 'inject_recovery_message':
+          if (state.recovery.recoveryMessageCount < RECOVERY_LIMITS.recoveryMessage) {
+            state.recovery.recoveryMessageCount++;
+            state.messages.push({
+              role: 'user',
+              content: 'Output token limit hit. Resume directly — no apology, no recap.',
+            });
+            await runLifecycleHook('recovery.compact', { error: analysis.message }, {});
+            return 'continue';
+          }
+          break;
+
+        case 'switch_fallback_model':
+          if (config.fallbackModel && state.recovery.fallbackSwitchCount < RECOVERY_LIMITS.fallbackSwitch) {
+            state.recovery.fallbackSwitchCount++;
+            config.model = config.fallbackModel;
+            await runLifecycleHook('recovery.fallback', { error: analysis.message }, { model: config.fallbackModel });
+            return 'continue';
+          }
+          break;
+
+        case 'trigger_compaction':
+          if (ctx.compactionManager && state.recovery.compactionRetryCount < RECOVERY_LIMITS.compactionRetry) {
+            state.recovery.compactionRetryCount++;
+            if (state) {
+              await runLifecycleHook('compaction.before', {
+                sessionId: ctx.sessionId,
+                messages: state.messages,
+                tokenCount: state.tokens.prompt + state.tokens.completion,
+              }, {});
+              const result = await ctx.compactionManager.compact({
+                sessionId: ctx.sessionId,
+                messages: state.messages,
+                maxTokens: 8000,
+                currentTokenEstimate: state.tokens.prompt + state.tokens.completion,
+              });
+              state.messages = result.messages as Message[];
+              await runLifecycleHook('compaction.after', {
+                sessionId: ctx.sessionId,
+                messages: state.messages,
+              }, {});
+            }
+            return 'continue';
+          }
+          break;
+      }
+    }
+
+    return 'throw';
+  }
+
+  // ============================================================
+  // Tool Execution
+  // ============================================================
+
+  async function executeToolBatch(
+    batch: { calls: ToolCall[]; isConcurrencySafe: boolean },
+    signal: AbortSignal
+  ): Promise<Message[]> {
+    const results: Message[] = [];
+
+    for (const tc of batch.calls) {
+      if (signal.aborted) break;
+
+      // Emit tool.call
+      emitter.emit({
+        type: 'tool.call',
+        timestamp: Date.now(),
+        sessionId: ctx.sessionId,
+        toolCallId: tc.id,
+        toolName: tc.name,
+        args: tc.args,
       });
 
-      // MPU M4: Error classification + circuit breaker recording (fire-and-forget)
-      if (ctx.errorClassifier && event.error) {
-        try {
-          const severity = ctx.errorClassifier.classify(event.error);
-          if (severity === 'moderate' || severity === 'severe') {
-            ctx.circuitBreaker?.recordFailure(severity);
-          }
-        } catch {
-          // Error classifier failure must never crash the loop
+      // ── MPU M5: Audit tool call ──
+      ctx.auditLogger?.append({
+        sessionId: ctx.sessionId,
+        agentName: ctx.agentName,
+        eventType: 'tool.call',
+        action: 'tool.call',
+        resource: tc.name,
+        result: 'success',
+        details: { toolCallId: tc.id },
+      });
+
+      // ── ToolHook: permission check ──
+      let blocked = false;
+      for (const h of hooks.getToolHooks()) {
+        if (!(await h.beforeExecute(tc, state!))) {
+          blocked = true;
+          break;
+        }
+      }
+
+      if (blocked) {
+        const deniedMsg: Message = {
+          role: 'tool',
+          content: `Permission denied for tool: ${tc.name}`,
+          toolCallId: tc.id,
+          name: tc.name,
+        };
+        results.push(deniedMsg);
+        emitter.emit({
+          type: 'tool.result',
+          timestamp: Date.now(),
+          sessionId: ctx.sessionId,
+          toolCallId: tc.id,
+          toolName: tc.name,
+          result: deniedMsg.content,
+          isError: true,
+        });
+        continue;
+      }
+
+      // ── Execute tool ──
+      await runLifecycleHook('tool.execute.before', {
+        sessionId: ctx.sessionId,
+        toolName: tc.name,
+        callId: tc.id,
+        args: tc.args,
+      }, {});
+
+      emitter.emit({
+        type: 'tool.execute',
+        timestamp: Date.now(),
+        sessionId: ctx.sessionId,
+        toolCallId: tc.id,
+        toolName: tc.name,
+      });
+
+      // ── MPU M5: Audit tool execution ──
+      ctx.auditLogger?.append({
+        sessionId: ctx.sessionId,
+        agentName: ctx.agentName,
+        eventType: 'tool.execute',
+        action: 'tool.execute',
+        resource: tc.name,
+        result: 'success',
+        details: { toolCallId: tc.id },
+      });
+
+      try {
+        const result = await ctx.tools.execute(tc.name, tc.args, { toolCallId: tc.id, parentSessionId: ctx.sessionId });
+
+        await runLifecycleHook('tool.execute.after', {
+          sessionId: ctx.sessionId,
+          toolName: tc.name,
+          callId: tc.id,
+          args: tc.args,
+        }, { result });
+
+        const resultStr = typeof result === 'string' ? result : JSON.stringify(result);
+        results.push({
+          role: 'tool',
+          content: resultStr,
+          toolCallId: tc.id,
+          name: tc.name,
+        });
+
+        emitter.emit({
+          type: 'tool.result',
+          timestamp: Date.now(),
+          sessionId: ctx.sessionId,
+          toolCallId: tc.id,
+          toolName: tc.name,
+          result: resultStr,
+          isError: false,
+        });
+
+        // ── MPU M5: Audit tool result (success) ──
+        ctx.auditLogger?.append({
+          sessionId: ctx.sessionId,
+          agentName: ctx.agentName,
+          eventType: 'tool.result',
+          action: 'tool.result',
+          resource: tc.name,
+          result: 'success',
+          details: { toolCallId: tc.id },
+        });
+
+        // ── MPU M10: Result validation ──
+        if (ctx.services.resultValidator) {
+          try {
+            const validation = ctx.services.resultValidator.validate(tc.name, resultStr);
+            if (!validation.valid) {
+              ctx.logger?.warn(`Tool result validation failed for ${tc.name}:`, { errors: validation.errors });
+            }
+          } catch { /* isolate */ }
+        }
+      } catch (err) {
+        const errStr = err instanceof Error ? err.message : String(err);
+
+        await runLifecycleHook('tool.execute.error', {
+          sessionId: ctx.sessionId,
+          toolName: tc.name,
+          callId: tc.id,
+          error: err,
+        }, { retry: false });
+
+        results.push({
+          role: 'tool',
+          content: `Error: ${errStr}`,
+          toolCallId: tc.id,
+          name: tc.name,
+        });
+
+        emitter.emit({
+          type: 'tool.result',
+          timestamp: Date.now(),
+          sessionId: ctx.sessionId,
+          toolCallId: tc.id,
+          toolName: tc.name,
+          result: errStr,
+          isError: true,
+        });
+
+        // ── MPU M5 + M4: Audit + circuit breaker on tool error ──
+        ctx.auditLogger?.append({
+          sessionId: ctx.sessionId,
+          agentName: ctx.agentName,
+          eventType: 'tool.result',
+          action: 'tool.result',
+          resource: tc.name,
+          result: 'error',
+          details: { toolCallId: tc.id, error: errStr },
+        });
+
+        if (ctx.errorClassifier && ctx.circuitBreaker) {
+          try {
+            const severity = ctx.errorClassifier.classify({
+              name: 'ToolExecutionError',
+              message: errStr,
+              stack: undefined,
+            });
+            ctx.circuitBreaker.recordFailure(severity);
+          } catch { /* isolate */ }
         }
       }
     }
 
-    // Terminal events end the stream
-    if (isTerminalEvent(event)) {
-      return EMPTY;
-    }
-
-    // Pause check: block the loop while paused
-    //
-    // Design spec: "Use NEVER to block, not bufferToggle (avoids memory leak)"
-    // Current implementation: onResume() Observable is functionally equivalent to
-    // NEVER + external resume signal — it blocks the stream without buffering events
-    // and requires an explicit resume() call to continue.
-    // When paused, expand recursion is suspended until resume signal fires,
-    // then step(sctx) re-processes the current event with the updated state.
-    if (ctx.pauseController.isPaused()) {
-      return ctx.pauseController.onResume().pipe(
-        take(1),
-        mergeMap(() => step(sctx))
-      );
-    }
-
-    switch (event.type) {
-      case 'agent.start':
-        return handleAgentStart(deps, state, event);
-
-      case 'llm.request':
-        // MPU M5: Audit LLM request (fire-and-forget)
-        ctx.auditLogger?.append({
-          sessionId,
-          agentName: state.agentName,
-          eventType: 'llm.request',
-          action: 'llm.request',
-          resource: state.model.model,
-          result: 'success',
-          details: { messages: state.messages.length, model: state.model },
-        });
-        return handleLLMRequest(deps, state);
-
-      case 'llm.response':
-        // MPU M5: Audit LLM response (fire-and-forget)
-        ctx.auditLogger?.append({
-          sessionId,
-          agentName: state.agentName,
-          eventType: 'llm.response',
-          action: 'llm.response',
-          resource: state.model.model,
-          result: 'success',
-          details: { finishReason: event.finishReason, usage: event.usage },
-        });
-        // MPU M7: Record cost (fire-and-forget)
-        if (ctx.services.costTracker && event.usage) {
-          ctx.services.costTracker
-            .record(sessionId, state.model.model, event.usage)
-            .catch(() => {});
-        }
-        return handleLLMResponse(deps, state, event, sctx.repairAttempt);
-
-      case 'llm.output.invalid':
-        return handleLLMOutputInvalid(deps, state, event, sctx.repairAttempt ?? 0);
-
-      case 'tool.call':
-        return handleToolCall(deps, state, event);
-
-      case 'tool.result':
-        // MPU M5: Audit tool result (fire-and-forget)
-        ctx.auditLogger?.append({
-          sessionId,
-          agentName: state.agentName,
-          eventType: 'tool.result',
-          action: 'tool.result',
-          resource: event.toolName,
-          result: event.isError ? 'error' : 'success',
-          details: { toolCallId: event.toolCallId },
-        });
-        // MPU M10: Result validation (warn only, never blocks)
-        if (ctx.services.resultValidator && !event.isError) {
-          try {
-            const validation = ctx.services.resultValidator.validate(event.toolName, event.result);
-            if (!validation.valid) {
-              console.warn(
-                `Tool result validation failed for ${event.toolName}:`,
-                validation.errors
-              );
-            }
-          } catch {
-            // Validation failure must never crash the loop
-          }
-        }
-        // MPU M4: Error classification on tool error (fire-and-forget)
-        if (ctx.errorClassifier && ctx.circuitBreaker && event.isError) {
-          try {
-            const severity = ctx.errorClassifier.classify({
-              name: 'ToolExecutionError',
-              message: String(event.result),
-              stack: undefined,
-            });
-            ctx.circuitBreaker.recordFailure(severity);
-          } catch {
-            // Error classifier must never crash the loop
-          }
-        }
-        return handleToolResult(deps, state, event);
-
-      case 'tool.batch.complete':
-        return handleBatchComplete(deps, state, event);
-
-      case 'tool.execute':
-        // MPU M5: Audit tool execution (fire-and-forget)
-        ctx.auditLogger?.append({
-          sessionId,
-          agentName: state.agentName,
-          eventType: 'tool.execute',
-          action: 'tool.execute',
-          resource: event.toolName,
-          result: 'success',
-          details: { toolCallId: event.toolCallId },
-        });
-        // Passive event — no further processing needed
-        return EMPTY;
-
-      case 'hitl.ask':
-        // HITL ask event - subscribe to ctx.hitl.ask() Observable
-        // This is the NEVER-blocking pattern: Observable doesn't emit until answer arrives
-        return handleHITLAsk(deps, state, event);
-
-      case 'hitl.answer':
-        // HITL answer event - pure observability, no action needed
-        // The hitl.ask handler already processes the answer and emits tool.result
-        return EMPTY;
-
-      // ===== Layer 2: Subsystem Lifecycle (transparent pass-through) =====
-      case 'mcp.connecting':
-      case 'mcp.connected':
-      case 'mcp.disconnected':
-      case 'mcp.tools_changed':
-      case 'mcp.error':
-      case 'workflow.start':
-      case 'workflow.step.start':
-      case 'workflow.step.end':
-      case 'workflow.suspend':
-      case 'workflow.resume':
-      case 'workflow.complete':
-      case 'workflow.error':
-      case 'compaction.start':
-      case 'compaction.complete':
-      case 'permission.prompt':
-      case 'permission.decision':
-      case 'subagent.start':
-      case 'subagent.step':
-      case 'subagent.complete':
-      case 'subagent.error':
-        // Subagent events - handled in handleSubagentDelegation(), transparent pass-through here
-        return of(sctx);
-
-      case 'decision.trace':
-        // P1: Decision trace - store if storage is configured (fire-and-forget)
-        if (ctx.decisionTraceStorage) {
-          // Extract trace data from event (exclude 'type' field)
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          const { type: _, ...traceData } = event;
-          ctx.decisionTraceStorage
-            .append({
-              ...traceData,
-              id: `dt-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-              step: state.step,
-            } as DecisionTrace)
-            .catch(() => {
-              // Fire-and-forget: storage failure must never crash the loop
-            });
-        }
-        // Pass-through: event is already emitted to subscriber
-        return of(sctx);
-
-      default:
-        // All other events are passive/observational:
-        // - llm.stream.* (emitted directly by callLLMStreaming)
-        // - tool.error, tool.batch, tool.batch.start, tool.result.delta
-        // - checkpoint (emitted by emitCheckpoint)
-        // - state.change, context.updated
-        // - llm.error, mcp.*, workflow.*, compaction.*, permission.*
-        // Returning EMPTY prevents infinite expand recursion — these events are
-        // already emitted to the subscriber by their respective handler functions.
-        return EMPTY;
-    }
+    return results;
   }
 
   // ============================================================
-  // Run Entry Point
+  // Main Run Function
   // ============================================================
 
-  function run(input: string): Observable<AgentEvent> {
+  async function run(input: string): Promise<string> {
+    // ── Re-entry guard ──
     if (isRunning) {
-      // Errors-as-events: emit agent.error + done instead of throwing via RxJS error channel
-      const errorEvent: AgentEvent = {
+      const errEvent: AgentEvent = {
         type: 'agent.error',
         timestamp: Date.now(),
-        sessionId,
-        error: {
-          name: 'AgentAlreadyRunningError',
-          message: 'Agent is already running',
-        },
+        sessionId: ctx.sessionId,
+        error: { name: 'AgentAlreadyRunningError', message: 'Agent is already running' },
       };
-
-      const doneEvent: AgentEvent = {
+      emitter.emit(errEvent);
+      emitter.emit({
         type: 'done',
         timestamp: Date.now(),
-        sessionId,
+        sessionId: ctx.sessionId,
         reason: 'error',
-      };
-
-      return of(errorEvent, doneEvent);
+      });
+      return '';
     }
     isRunning = true;
 
-    const startEvent: AgentEvent = {
-      type: 'agent.start',
-      timestamp: Date.now(),
-      sessionId,
-      input,
-      agentName: ctx.agentName,
-      model: config.model,
-    };
+    // ── Cancel previous run, create new AbortController ──
+    abortController?.abort();
+    abortController = new AbortController();
+    const signal = abortController.signal;
 
-    // Build messages array with history
+    // ── Wire external abort signal ──
+    if (ctx.abortSignal) {
+      if (ctx.abortSignal.aborted) {
+        isRunning = false;
+        return '';
+      }
+      ctx.abortSignal.addEventListener('abort', () => abortController?.abort(), { once: true });
+    }
+
+    paused = false;
+    resumePromise = null;
+    resumeResolve = null;
+
+    // ── Initialize state ──
     const messages: Message[] = [];
-    // Add system message first if configured
     if (config.systemPrompt) {
       messages.push({ role: 'system', content: config.systemPrompt });
     }
-    if (config.history && config.history.length > 0) {
+    if (config.history?.length) {
       messages.push(...config.history);
     }
     messages.push({ role: 'user', content: input });
 
-    const initialState: AgentState = {
-      sessionId,
+    state = createInitialLoopState({
+      sessionId: ctx.sessionId,
       agentName: ctx.agentName,
       model: config.model,
       messages,
-      step: 0,
-      maxSteps: config.maxSteps,
-      pendingToolCalls: [],
-      output: '',
-      tokens: { prompt: 0, completion: 0 },
-    };
+      maxSteps: config.maxSteps ?? 10,
+    });
 
-    // Build the event stream
-    let eventStream: Observable<AgentEvent> = of({
-      event: startEvent,
-      state: initialState,
-    } as StepContext).pipe(
-      expand(step),
-      map(sctx => sctx.event),
-      takeUntil(destroy$),
-      takeUntil(
-        ctx.abortSignal
-          ? new Observable<void>(subscriber => {
-              if (ctx.abortSignal?.aborted) {
-                subscriber.next();
-                subscriber.complete();
-                return;
-              }
-              const handler = (): void => {
-                subscriber.next();
-                subscriber.complete();
-              };
-              ctx.abortSignal?.addEventListener('abort', handler);
-              return () => {
-                ctx.abortSignal?.removeEventListener('abort', handler);
-              };
-            })
-          : new Observable<void>(() => {})
-      )
-    );
+    const maxSteps = state.maxSteps;
+    const tokenBudget = config.tokenBudget ?? 200_000;
+    const budgetTracker = createBudgetTracker();
 
-    // Apply plugin pipeline if configured
-    if (ctx.pluginPipeline) {
-      eventStream = ctx.pluginPipeline(eventStream);
+    // ── Emit agent.start ──
+    emitter.emit({
+      type: 'agent.start',
+      timestamp: Date.now(),
+      sessionId: ctx.sessionId,
+      input,
+      agentName: ctx.agentName,
+      model: config.model,
+    });
+
+    await runLifecycleHook('session.start', {
+      sessionId: ctx.sessionId,
+      agentName: ctx.agentName,
+      input,
+      model: config.model,
+    }, {});
+
+    // ====================================================================
+    // MAIN LOOP
+    // ====================================================================
+    try {
+      while (true) {
+        // ── Guard: abort ──
+        if (signal.aborted) break;
+
+        // ── Guard: pause ──
+        if (paused) {
+          await resumePromise;
+          if (signal.aborted) break;
+        }
+
+        // ── Guard: max steps ──
+        if (state.step >= maxSteps) {
+          emitter.emit({
+            type: 'agent.complete',
+            timestamp: Date.now(),
+            sessionId: ctx.sessionId,
+            output: state.output,
+            steps: state.step,
+          });
+          emitter.emit({
+            type: 'done',
+            timestamp: Date.now(),
+            sessionId: ctx.sessionId,
+            reason: 'length',
+          });
+          await runLifecycleHook('session.end', {
+            sessionId: ctx.sessionId,
+            reason: 'max_steps',
+            steps: state.step,
+            tokens: state.tokens,
+          }, {});
+          return state.output;
+        }
+
+        // ── Lifecycle: step.begin ──
+        await runLifecycleHook('step.begin', {
+          sessionId: ctx.sessionId,
+          step: state.step,
+          maxSteps,
+          messageCount: state.messages.length,
+        }, {});
+
+        // ── 1. Request Hooks: transform messages ──
+        let msgs = [...state.messages];
+        for (const h of hooks.getRequestHooks()) {
+          msgs = await h.apply(msgs, state);
+        }
+
+        await runLifecycleHook('llm.request.before', {
+          sessionId: ctx.sessionId,
+          messages: msgs,
+          model: config.model,
+        }, {});
+
+        // ── MPU M7: Quota check ──
+        if (ctx.quota) {
+          const usage = ctx.quota.getUsage(ctx.sessionId);
+          const limits = ctx.quota.getLimits();
+          const ok = (usage as any).usedTokens < (limits as any).maxTokensPerSession;
+          if (!ok) {
+            const err: SerializedError = { name: 'QuotaExceededError', message: 'Token/cost quota exceeded' };
+            emitter.emit({
+              type: 'agent.error',
+              timestamp: Date.now(),
+              sessionId: ctx.sessionId,
+              error: err,
+            });
+            emitter.emit({
+              type: 'done',
+              timestamp: Date.now(),
+              sessionId: ctx.sessionId,
+              reason: 'error',
+            });
+            return state.output;
+          }
+        }
+
+        // ── 2. LLM Call ──
+        // ── MPU M5: Audit LLM request ──
+        ctx.auditLogger?.append({
+          sessionId: ctx.sessionId,
+          agentName: ctx.agentName,
+          eventType: 'llm.request',
+          action: 'llm.request',
+          resource: config.model.model,
+          result: 'success',
+          details: { messages: msgs.length, model: config.model },
+        });
+
+        let response;
+        try {
+          response = await ctx.llm.chat(msgs, { signal } as any);
+          state.tokens.prompt += response.usage?.promptTokens ?? 0;
+          state.tokens.completion += response.usage?.completionTokens ?? 0;
+        } catch (error) {
+          await runLifecycleHook('llm.error', { error, messages: msgs }, {});
+          const recovery = await handleLLMError(error, signal);
+          if (recovery === 'continue') {
+            state.step++;
+            continue;
+          }
+          throw error;
+        }
+
+        // ── Emit llm.response ──
+        emitter.emit({
+          type: 'llm.response',
+          timestamp: Date.now(),
+          sessionId: ctx.sessionId,
+          content: response.content,
+          toolCalls: response.toolCalls,
+          finishReason: response.finishReason,
+          usage: response.usage,
+        } as AgentEvent);
+
+        await runLifecycleHook('llm.response.after', {
+          sessionId: ctx.sessionId,
+          step: state.step,
+          response,
+          usage: response.usage,
+        }, {});
+
+        // ── MPU M5: Audit LLM response ──
+        ctx.auditLogger?.append({
+          sessionId: ctx.sessionId,
+          agentName: ctx.agentName,
+          eventType: 'llm.response',
+          action: 'llm.response',
+          resource: config.model.model,
+          result: 'success',
+          details: { finishReason: response.finishReason, usage: response.usage },
+        });
+
+        // ── MPU M7: Record cost ──
+        if (ctx.services.costTracker && response.usage) {
+          ctx.services.costTracker.record(ctx.sessionId, config.model.model, response.usage).catch(() => {});
+        }
+
+        // ── 3. Completion check + Token Budget ──
+        if (response.finishReason === 'stop' || !response.toolCalls?.length) {
+          const decision = checkTokenBudget(budgetTracker, tokenBudget, state.tokens);
+          if (decision === 'continue') {
+            // Nudge the LLM to continue with more output
+            state.messages = [
+              ...state.messages,
+              { role: 'assistant', content: response.content },
+              { role: 'user', content: 'Continue from where you left off. Do not repeat or summarize.' },
+            ];
+            state.step++;
+            continue;
+          }
+          state.output = response.content;
+          await runLifecycleHook('session.end', {
+            sessionId: ctx.sessionId,
+            reason: 'completed',
+            steps: state.step,
+            tokens: state.tokens,
+          }, {});
+          emitter.emit({
+            type: 'agent.complete',
+            timestamp: Date.now(),
+            sessionId: ctx.sessionId,
+            output: response.content,
+            steps: state.step,
+            tokens: { input: state.tokens.prompt, output: state.tokens.completion },
+          });
+          emitter.emit({
+            type: 'done',
+            timestamp: Date.now(),
+            sessionId: ctx.sessionId,
+            reason: 'stop',
+          });
+          return response.content;
+        }
+
+        // ── 4. Tool Execution ──
+        // Add assistant response to messages
+        state.messages = [
+          ...state.messages,
+          ...msgs.slice(state.messages.length), // RequestHook-injected messages
+          { role: 'assistant', content: response.content ?? '' } as Message,
+        ];
+
+        const toolCalls = response.toolCalls!;
+        const batches = partitionToolCalls(toolCalls, ctx.tools);
+        const toolResults: Message[] = [];
+
+        for (const batch of batches) {
+          if (signal.aborted) break;
+
+          const results = await executeToolBatch(batch, signal);
+          toolResults.push(...results);
+        }
+
+        // ── 5. Append tool results, increment step ──
+        state.messages = [...state.messages, ...toolResults];
+        state.step++;
+
+        await runLifecycleHook('step.end', {
+          sessionId: ctx.sessionId,
+          step: state.step,
+          toolCallsExecuted: toolCalls.length,
+        }, {});
+
+        // ── Compaction check ──
+        if (shouldCompact(state.messages, state.tokens)) {
+          await runLifecycleHook('compaction.before', {
+            sessionId: ctx.sessionId,
+            messages: state.messages,
+            tokenCount: state.tokens.prompt + state.tokens.completion,
+          }, {});
+          if (ctx.compactionManager) {
+            const result = await ctx.compactionManager.compact({
+              sessionId: ctx.sessionId,
+              messages: state.messages,
+              maxTokens: 8000,
+              currentTokenEstimate: state.tokens.prompt + state.tokens.completion,
+            });
+            state.messages = result.messages as Message[];
+          }
+          await runLifecycleHook('compaction.after', {
+            sessionId: ctx.sessionId,
+            messages: state.messages,
+          }, {});
+        }
+      }
+    } catch (error) {
+      // ── Errors-as-events ──
+      const err: SerializedError = serializeError(error);
+      const errEvent: AgentEvent = {
+        type: 'agent.error',
+        timestamp: Date.now(),
+        sessionId: ctx.sessionId,
+        error: err,
+      };
+      emitter.emit(errEvent);
+      emitter.emit({
+        type: 'done',
+        timestamp: Date.now(),
+        sessionId: ctx.sessionId,
+        reason: 'error',
+      });
+
+      // ── MPU M5: Audit error ──
+      ctx.auditLogger?.append({
+        sessionId: ctx.sessionId,
+        agentName: ctx.agentName,
+        eventType: 'agent.error',
+        action: 'agent.error',
+        resource: ctx.agentName,
+        result: 'error',
+        details: { error: err },
+      });
+
+      // ── MPU M4: Circuit breaker ──
+      if (ctx.errorClassifier && ctx.circuitBreaker) {
+        try {
+          const severity = ctx.errorClassifier.classify(err);
+          if (severity === 'moderate' || severity === 'severe') {
+            ctx.circuitBreaker.recordFailure(severity);
+          }
+        } catch { /* isolate */ }
+      }
+
+      // ── Notify error handler ──
+      const errorObj = error instanceof Error ? error : new Error(String(error));
+      ctx.onError?.(errorObj, errEvent, 'unknown');
+      ctx.logger?.error('Agent loop unexpected error', errorObj);
+
+      throw error;
+    } finally {
+      isRunning = false;
+      abortController = null;
     }
 
-    return eventStream.pipe(
-      // 🔴 P0 修复：全局 catchError 作为安全网 - 任何未捕获的错误转换为 agent.error + done
-      catchError(error => {
-        // Notify error handler
-        const err = error instanceof Error ? error : new Error(String(error));
-        const globalErrorEvent: AgentEvent = {
-          type: 'agent.error',
-          timestamp: Date.now(),
-          sessionId,
-          error: serializeError(err),
-        };
-        ctx.onError?.(err, globalErrorEvent, 'unknown');
-        console.error('Agent loop unexpected error:', error);
-        const errorEvent: AgentEvent = {
-          type: 'agent.error',
-          timestamp: Date.now(),
-          sessionId,
-          error: serializeError(error),
-        };
-        const doneEvent: AgentEvent = {
-          type: 'done',
-          timestamp: Date.now(),
-          sessionId,
-          reason: 'error',
-        };
-        return of(errorEvent, doneEvent);
-      }),
-      finalize(() => {
-        isRunning = false;
-      })
-    );
+    return state?.output ?? '';
   }
+
+  // ============================================================
+  // Return
+  // ============================================================
 
   return {
     run,
-    destroy$: destroy$.asObservable(),
-    getCurrentState: () => latestState,
+    on: emitter.on.bind(emitter),
+    onAny: emitter.onAny.bind(emitter),
+    cancel: () => {
+      abortController?.abort();
+      isRunning = false;
+    },
+    pause: () => {
+      paused = true;
+      resumePromise = new Promise<void>((r) => { resumeResolve = r; });
+    },
+    resume: () => {
+      paused = false;
+      resumeResolve?.();
+      resumeResolve = null;
+      resumePromise = null;
+    },
+    getState: () => state,
+    /** @deprecated Use run() + on() instead. Returns Observable for backward compat with tests. */
+    run$(input: string): Observable<AgentEvent> {
+      return new Observable<AgentEvent>(subscriber => {
+        const unreg = emitter.onAny(event => subscriber.next(event));
+        run(input).then(
+          () => { subscriber.complete(); unreg(); },
+          err => { subscriber.error(err); unreg(); }
+        );
+      });
+    },
+    destroy: () => {
+      abortController?.abort();
+      emitter.clear();
+      hooks.clear();
+      isRunning = false;
+      state = null;
+    },
   };
 }

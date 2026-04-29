@@ -58,10 +58,46 @@
 - Prettier 配置 ✅
 - AGENTS.md 创建 ✅
 
+### MCP 集成完成
+- AgentForgeMCPClient ✅ — stdio/HTTP 双传输实现
+- adaptMCPTools ✅ — JSON Schema → Zod 转换
+- createAgent 接入 ✅ — 后台连接、工具发现、onStatusChange
+- MCP Tier 1 校验 ✅ — mcp-contract.ts
+
+### HTTP Server 完成
+- packages/server/ ✅ — SSE 流式传输、Session 管理、Agent Factory
+- handlers/ ✅ — sessions, agents, config, health
+- middleware/ ✅ — auth, cors, error-handler, logger
+- CLI ✅ — agentforge server 命令
+
+### MPU 模块接线完成
+- circuitBreaker ✅ — handlers/llm.ts
+- rateLimiter ✅ — handlers/llm.ts
+- inputSanitizer ✅ — handlers/llm.ts
+- permissionPolicy ✅ — handlers/tool-execution.ts
+- permissionController ✅ — handlers/tool-execution.ts
+- sandboxExecutor ✅ — handlers/tool-execution.ts
+- planner ✅ — handlers/lifecycle.ts (fire-and-forget)
+- pluginPipeline ✅ — agent-loop.ts
+- productionPreset ✅ — create-agent.ts
+- errorClassifier ✅ — agent-loop.ts + handlers/llm.ts
+
+### LLM 适配器完成
+- OpenAI ✅ — @ai-sdk/openai
+- Anthropic ✅ — @ai-sdk/anthropic
+- Google ✅ — @ai-sdk/google
+- Ollama ✅ — ai-sdk-ollama
+
+### 开发体验增强完成
+- 修复 wiring gap ✅ — createAgent() 现在正确消费 tracing/metrics 配置
+- development preset ✅ — ConsoleTracer + ConsoleMetrics + developmentPreset operator
+- L1 扩展 ✅ — L1AgentConfigSchema 支持 development preset + tracing/metrics 字段
+- 优先级链 ✅ — 显式配置 > preset 默认值 > 全局默认值
+
 ### 当前验证状态
 - TypeScript: ✅ 编译干净
 - ESLint: ✅ 0 errors
-- Tests: ✅ 345 passed
+- Tests: ✅ 1742 passed (73 test files)
 
 ## Relevant files / directories
 
@@ -118,10 +154,22 @@ hitl.ask → Observable subscription (NEVER-blocking until answer)
 
 ## Remaining Tasks
 
-1. **Layer 2 事件实现** — SubAgent/MCP/Workflow 生命周期
-2. **真实 LLM Adapter** — OpenAI/Anthropic 适配器
-3. **Husky + lint-staged** — 提交前自动检查
-4. **Performance Metrics** — 内置计时和吞吐量追踪
+1. ~~**3 个缺失操作符**~~ — ✅ 已实现（`filterEventType`, `takeUntilTerminal`, `collectMetrics` 在 `src/operators/index.ts`）
+2. ~~**DefaultSandboxExecutor**~~ — ✅ 已实现（`InProcessSandboxExecutor` 在 `src/security/sandbox/in-process-sandbox.ts`）
+3. ~~**MemoryQuotaController**~~ — ✅ 已实现（`MemoryQuotaController` 在 `src/quota/memory-quota-controller.ts`）
+4. ~~**SubAgent 事件路由**~~ — ✅ 已实现（`src/subagent/orchestrator.ts` + transparent expand passthrough）
+5. ~~**Workflow/Pipeline**~~ — ✅ 已实现（`SequentialPipeline`, `ParallelPipeline` 在 `src/workflow/pipeline.ts`）
+6. ~~**Tracer 默认实现**~~ — ✅ 已实现（`NoopTracer` + `ConsoleTracer` 在 `src/core/defaults.ts`）
+7. ~~**Metrics 默认实现**~~ — ✅ 已实现（`NoopMetrics` + `ConsoleMetrics` + `BridgeMetrics` 在 `src/core/defaults.ts`）
+8. ~~**ctx.logger 接线**~~ — ✅ 已完成（handlers 中 `console.error/warn` → `ctx.logger?.error/warn`）
+9. ~~**Wiring Gap 修复**~~ — ✅ 已完成（createAgent() 正确消费 tracing/metrics 配置）
+10. ~~**Development Preset**~~ — ✅ 已完成（ConsoleTracer + ConsoleMetrics + developmentPreset operator）
+11. **Planner Phase 2** — 计划结果注入 AgentState（低优先级，非核心循环）
+
+### 当前验证状态
+- TypeScript: ✅ 编译干净
+- ESLint: ✅ 0 errors
+- Tests: ✅ 1726 passed (72 test files)
 
 ---
 

@@ -1,6 +1,8 @@
 # MCP Client Integration Implementation Plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [x]`) syntax for tracking.
+
+**Status: ✅ COMPLETED** — All chunks implemented. MCP client creation, background connection, tool discovery, onStatusChange subscription, and destroy cleanup are all wired into createAgent(). Both stdio and HTTP transports are implemented with reconnection logic.
 
 **Goal:** Wire the existing MCP client module into the agent loop, enabling tool discovery from MCP servers at agent creation time and automatic re-registration on reconnect.
 
@@ -44,7 +46,7 @@ No changes to: `src/loop/agent-loop.ts`, `src/loop/handlers/lifecycle.ts`, `src/
 
 ### Task 1.1: Update all context types and builders
 
-- [ ] **Step 1: Update `src/core/context.ts`**
+- [x] **Step 1: Update `src/core/context.ts`**
 
 Change the MCP field on `AgentContext`. Find:
 ```typescript
@@ -58,7 +60,7 @@ Replace with:
   mcpClients?: Map<string, MCPClient>;
 ```
 
-- [ ] **Step 2: Update `src/core/context-builder.ts`**
+- [x] **Step 2: Update `src/core/context-builder.ts`**
 
 1. Change the state field from `mcp` to `mcpClients` (if there's a state type):
 ```typescript
@@ -82,7 +84,7 @@ With:
     if (this.context.mcpClients !== undefined) ctx.mcpClients = this.context.mcpClients;
 ```
 
-- [ ] **Step 3: Update `src/api/context-builder.ts`**
+- [x] **Step 3: Update `src/api/context-builder.ts`**
 
 1. Change the state field (line 84):
 ```typescript
@@ -108,7 +110,7 @@ With:
       ctx.mcpClients = this.state.mcpClients;
 ```
 
-- [ ] **Step 4: Add `serverName` public getter to `AgentForgeMCPClient`**
+- [x] **Step 4: Add `serverName` public getter to `AgentForgeMCPClient`**
 
 In `src/mcp/client.ts`, add a public getter to the `AgentForgeMCPClient` class:
 
@@ -121,7 +123,7 @@ In `src/mcp/client.ts`, add a public getter to the `AgentForgeMCPClient` class:
 
 This is a convenience accessor for debugging/logging. We do NOT add `serverName` to the `MCPClient` interface — the Map key serves as the identifier.
 
-- [ ] **Step 5: Add missing exports to `src/mcp/index.ts`**
+- [x] **Step 5: Add missing exports to `src/mcp/index.ts`**
 
 Verify that `MCPEvent` and `CreateMCPClientOptions` are included in the Client section exports. If `MCPEvent` type is missing, add it:
 
@@ -136,7 +138,7 @@ export {
 } from './client.js';
 ```
 
-- [ ] **Step 6: Find and fix all `ctx.mcp` references**
+- [x] **Step 6: Find and fix all `ctx.mcp` references**
 
 Search for `ctx\.mcp[^C]` and `.mcp` property access across the entire codebase. Update any test mocks that reference the old `mcp` field to `mcpClients`. Known locations:
 - `src/core/context.ts` — updated in Step 1
@@ -144,12 +146,12 @@ Search for `ctx\.mcp[^C]` and `.mcp` property access across the entire codebase.
 - `src/api/context-builder.ts` — updated in Step 3
 - `src/api/create-agent.ts` — will be updated in Chunk 2
 
-- [ ] **Step 7: Run build + tests**
+- [x] **Step 7: Run build + tests**
 
 Run: `npm run build && npx vitest run`
 Expected: PASS (may need test mock updates for context objects)
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/core/context.ts src/core/context-builder.ts src/api/context-builder.ts src/mcp/client.ts src/mcp/index.ts tests/
@@ -167,7 +169,7 @@ This is the main wiring chunk. `createAgent()` reads `config.mcp`, creates clien
 
 ### Task 2.1: Wire MCP client creation
 
-- [ ] **Step 1: Add imports to create-agent.ts**
+- [x] **Step 1: Add imports to create-agent.ts**
 
 Add near the existing imports:
 
@@ -179,7 +181,7 @@ import { Subscription } from 'rxjs';
 
 Verify `MCPStatus` is re-exported from `../core/index.js`. If not, import from `'../core/interfaces.js'`.
 
-- [ ] **Step 2: Add `mcpSubscriptions` field to `AgentImpl`**
+- [x] **Step 2: Add `mcpSubscriptions` field to `AgentImpl`**
 
 Add inside the `AgentImpl` class:
 
@@ -187,7 +189,7 @@ Add inside the `AgentImpl` class:
   private readonly mcpSubscriptions: Subscription[] = [];
 ```
 
-- [ ] **Step 3: Add MCP client creation block in `createAgent()`**
+- [x] **Step 3: Add MCP client creation block in `createAgent()`**
 
 After the `// Build the context` line and after tool name resolution from global registry, add:
 
@@ -260,7 +262,7 @@ After the `// Build the context` line and after tool name resolution from global
   }
 ```
 
-- [ ] **Step 4: Add subscriptions to AgentImpl after creation**
+- [x] **Step 4: Add subscriptions to AgentImpl after creation**
 
 After `const agent = new AgentImpl(...)`, add:
 
@@ -271,7 +273,7 @@ After `const agent = new AgentImpl(...)`, add:
   }
 ```
 
-- [ ] **Step 5: Add MCP cleanup in `destroy()`**
+- [x] **Step 5: Add MCP cleanup in `destroy()`**
 
 In `AgentImpl.destroy()`, add BEFORE the existing `this.loopDestroySubscription?.unsubscribe()`:
 
@@ -294,12 +296,12 @@ In `AgentImpl.destroy()`, add BEFORE the existing `this.loopDestroySubscription?
     }
 ```
 
-- [ ] **Step 6: Run build + tests**
+- [x] **Step 6: Run build + tests**
 
 Run: `npm run build && npx vitest run`
 Expected: PASS
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/api/create-agent.ts
@@ -316,11 +318,11 @@ git commit -m "feat: wire MCP client creation, background tool discovery, and au
 
 ### Task 3.1: Verify exports and add test
 
-- [ ] **Step 1: Verify MCP exports from `src/index.ts`**
+- [x] **Step 1: Verify MCP exports from `src/index.ts`**
 
 Check that `MCPClient`, `MCPServerConfig`, `createMCPClient`, `adaptMCPTools` are exported. Add any missing exports.
 
-- [ ] **Step 2: Write integration test skeleton**
+- [x] **Step 2: Write integration test skeleton**
 
 Create `tests/integration/mcp-integration.spec.ts`:
 
@@ -337,12 +339,12 @@ describe('MCP Integration', () => {
 });
 ```
 
-- [ ] **Step 3: Run build + full test suite**
+- [x] **Step 3: Run build + full test suite**
 
 Run: `npm run build && npx vitest run`
 Expected: PASS
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/index.ts tests/integration/mcp-integration.spec.ts

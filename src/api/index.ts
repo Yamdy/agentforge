@@ -16,64 +16,14 @@
  * ```typescript
  * import { createAgent } from 'agentforge';
  *
- * const agent = createAgent({
- *   name: 'assistant',
- *   model: { provider: 'openai', model: 'gpt-4o' },
- *   maxSteps: 10,
- *   timeout: 60000,
- * });
- *
- * // Promise mode
- * const result = await agent.run('Hello!');
- *
- * // Streaming mode
- * agent.stream('Tell me a story', {
- *   onText: (delta) => process.stdout.write(delta),
- *   onComplete: (result) => console.log('\nDone:', result),
- * });
- * ```
- *
- * ## L3 Quick Start (Framework developers)
- *
- * ```typescript
- * import { runAgent, AgentContextBuilder } from 'agentforge/api';
- * import { filter, tap, timeout } from 'rxjs/operators';
- *
  * const ctx = AgentContextBuilder.create()
  *   .withLLM(myLLMAdapter)
  *   .withTools([readTool, writeTool])
  *   .build();
  *
- * runAgent(ctx, 'Hello, world!').pipe(
- *   timeout(60000),
- *   filter(e => e.type.startsWith('tool.')),
- *   tap(e => console.log(`[${e.type}]`, e)),
- * ).subscribe({
- *   next: (event) => handleEvent(event),
- *   complete: () => console.log('Done'),
- * });
+ * // Promise mode
+ * const result = await agent.run('Hello!');
  * ```
- *
- * ## Core Exports
- *
- * ### L2 API
- * - `createAgent(config)` - Configuration-based agent factory
- * - `AgentConfig` - Main configuration type
- * - `Agent` - Agent interface
- *
- * ### L3 Run Functions
- * - `runAgent(ctx, input, options?)` - Direct Observable return
- * - `runAgentWithControl(ctx, input, options?)` - With control interface
- * - `runAgentToCompletion(ctx, input, options?)` - Promise form
- *
- * ### AgentLoop Class
- * - `AgentLoop` - Full control over loop lifecycle
- * - `createAgentLoopInstance()` - Factory function
- *
- * ### Context Building
- * - `AgentContextBuilder` - Fluent context builder
- * - `createMinimalContext(llm, tools)` - Quick factory
- * - `createContextWithHITL(llm, tools)` - HITL-enabled factory
  *
  * @module
  */
@@ -90,7 +40,7 @@ export {
   // Agent interface
   type Agent,
   type StreamHandlers,
-  type AgentSubscription,
+  type RunHandlers,
   type CreateAgentResult,
   // Configuration subtypes
   type AgentModelConfig,
@@ -124,10 +74,8 @@ export {
 
 export {
   AgentLoop,
-  createAgentLoopInstance,
   type AgentLoopOptions,
   type AgentLoopState,
-  type AgentControl,
   type AgentLoopInstance,
 } from './agent-loop.js';
 

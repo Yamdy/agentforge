@@ -12,7 +12,6 @@
  */
 
 import { z } from 'zod';
-import { Observable, of } from 'rxjs';
 import type { ToolDefinition } from '../core/interfaces.js';
 import type { InterceptorPlugin, PluginContext } from '../plugins/plugin.js';
 import type { AgentEvent, Message } from '../core/events.js';
@@ -223,24 +222,14 @@ export function createTodoListPlugin(state: TodoListState): InterceptorPlugin {
     eventTypes: ['llm.request'],
     enabled: true,
 
-    intercept(event: AgentEvent, _ctx: PluginContext): Observable<AgentEvent> {
-      if (event.type !== 'llm.request') return of(event);
-
-      // Skip injection when no todos
-      if (state.items.length === 0) return of(event);
+    intercept(event: AgentEvent, _ctx: PluginContext): any {
+      if (event.type !== 'llm.request') return event;
+      if (state.items.length === 0) return event;
 
       const todoPrompt = formatTodoState(state);
+      const todoMessage: Message = { role: 'system', content: todoPrompt, name: 'todo-list' };
 
-      const todoMessage: Message = {
-        role: 'system',
-        content: todoPrompt,
-        name: 'todo-list',
-      };
-
-      return of({
-        ...event,
-        messages: [todoMessage, ...event.messages],
-      });
+      return { ...event, messages: [todoMessage, ...event.messages] };
     },
   };
 }

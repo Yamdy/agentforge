@@ -13,8 +13,6 @@
  * @module
  */
 
-import { Observable, of, from } from 'rxjs';
-import { map } from 'rxjs/operators';
 import type { InterceptorPlugin, PluginContext } from '../plugins/plugin.js';
 import type { AgentEvent, Message } from '../core/events.js';
 import type { PersistentMemory } from '../memory/persistent.js';
@@ -59,55 +57,35 @@ export function createMemoryPlugin(
     eventTypes: ['agent.start', 'llm.request'],
     enabled: config.enabled,
 
-    intercept(event: AgentEvent, _ctx: PluginContext): Observable<AgentEvent> {
+    intercept(event: AgentEvent, _ctx: PluginContext): any {
       if (event.type === 'agent.start' && !loaded) {
         if (config.autoDiscover) {
-          // Auto-discover AGENTS.md files by walking up from cwd
-          return from(loadAgentsMd(config.cwd ? { cwd: config.cwd } : {})).pipe(
-            map(result => {
-              if (result.content) {
-                entries = [
-                  {
-                    id: 'agents-md-auto',
-                    content: result.content,
-                    sourcePath: result.paths.join(', '),
-                    createdAt: Date.now(),
-                    updatedAt: Date.now(),
-                  },
-                ];
-              }
-              loaded = true;
-              return event;
-            })
-          );
-        }
-
-        // Original logic: load from configured sources
-        return from(memory.load(config.sources)).pipe(
-          map(result => {
-            entries = result.entries;
+          return loadAgentsMd(config.cwd ? { cwd: config.cwd } : {}).then(result => {
+            if (result.content) {
+              entries = [{
+                id: 'agents-md-auto',
+                content: result.content,
+                sourcePath: result.paths.join(', '),
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+              }];
+            }
             loaded = true;
             return event;
-          })
-        );
-      }
-
-      if (event.type === 'llm.request' && loaded && entries.length > 0) {
-        // Inject memory into messages
-        const memoryText = memory.formatForPrompt(entries);
-        const memoryMessage: Message = {
-          role: 'system',
-          content: memoryText,
-          name: 'memory',
-        };
-
-        return of({
-          ...event,
-          messages: [memoryMessage, ...event.messages],
+          });
+        }
+        return memory.load(config.sources).then(result => {
+          entries = result.entries;
+          loaded = true;
+          return event;
         });
       }
-
-      return of(event);
+      if (event.type === 'llm.request' && loaded && entries.length > 0) {
+        const memoryText = memory.formatForPrompt(entries);
+        const memoryMessage: Message = { role: 'system', content: memoryText, name: 'memory' };
+        return { ...event, messages: [memoryMessage, ...event.messages] };
+      }
+      return event;
     },
   };
 }

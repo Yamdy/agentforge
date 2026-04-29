@@ -7,19 +7,15 @@
  * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN/12-API-DESIGN.md
  */
 
-import type { Observable } from 'rxjs';
-import type { MonoTypeOperatorFunction } from 'rxjs';
 import type {
   AgentEvent,
-  AgentEventType,
-  Checkpoint,
   Message,
   ModelConfig,
-  ModelSpec,
-  ToolDefinition,
-  LLMAdapter,
+  AgentLoopState,
   Tracer,
   Metrics,
+  ModelSpec,
+  ToolDefinition,
   CheckpointStorage,
 } from '../core/index.js';
 import type { Plugin } from '../plugins/index.js';
@@ -277,16 +273,16 @@ export interface AgentConfig {
 
   // ----- Advanced -----
   /** LLM adapter instance (overrides model config) */
-  llmAdapter?: LLMAdapter;
+  llmAdapter?: any;
 
   /** Custom operators to apply */
-  operators?: MonoTypeOperatorFunction<AgentEvent>[];
+  operators?: any[];
 
   /** Plugin configurations for event interception and observation */
   plugins?: Plugin[];
 
-  /** Preset configuration ('production' | 'debug' | 'test') */
-  preset?: 'production' | 'debug' | 'test';
+  /** Preset configuration ('production' | 'debug' | 'development' | 'test') */
+  preset?: 'production' | 'debug' | 'development' | 'test';
 }
 
 // ============================================================
@@ -348,18 +344,19 @@ export interface StreamHandlers {
 }
 
 // ============================================================
-// Agent Subscription
+// Run Handlers
 // ============================================================
 
 /**
- * Subscription returned by stream() method
+ * Callback handlers for agent.run()
  */
-export interface AgentSubscription {
-  /** Cancel the execution */
-  unsubscribe(): void;
-
-  /** Promise that resolves with final result */
-  result: Promise<string>;
+export interface RunHandlers {
+  onToken?: (delta: string) => void;
+  onToolCall?: (event: AgentEvent) => void;
+  onToolResult?: (event: AgentEvent) => void;
+  onComplete?: (output: string) => void;
+  onError?: (error: AgentEvent) => void;
+  onEvent?: (event: AgentEvent) => void;
 }
 
 // ============================================================
@@ -369,49 +366,34 @@ export interface AgentSubscription {
 /**
  * Agent interface returned by createAgent()
  *
- * Provides multiple ways to execute the agent:
- * - run(): Promise-based, returns final result
- * - stream(): Callback-based, provides real-time updates
- * - run$(): RxJS Observable, full control (L3 access)
+ * Imperative API: run() returns Promise<string>, events via on() callback.
  */
 export interface Agent {
   // ----- Execution -----
 
   /** Run the agent and return the final result */
-  run(input: string): Promise<string>;
-
-  /** Run the agent with streaming callbacks */
-  stream(input: string, handlers: StreamHandlers): AgentSubscription;
-
-  /** Run the agent and return an Observable of events (L3 access) */
-  run$(input: string): Observable<AgentEvent>;
+  run(input: string, handlers?: RunHandlers): Promise<string>;
 
   // ----- Control -----
 
   /** Cancel current execution */
-  cancel(reason?: string): void;
+  cancel(): void;
 
-  /** Pause current execution and return checkpoint */
-  pause(): Promise<Checkpoint>;
+  /** Pause current execution */
+  pause(): Promise<void>;
 
-  /** Resume from checkpoint */
-  resume(checkpoint: Checkpoint): Promise<string>;
+  /** Resume execution */
+  resume(): void;
 
   // ----- Event Listening -----
 
   /** Listen for specific event types */
-  on(eventType: AgentEventType, handler: (event: AgentEvent) => void): () => void;
+  on(eventType: string, handler: (event: AgentEvent) => void): () => void;
 
-  // ----- Dynamic Configuration -----
+  // ----- State -----
 
-  /** Add a custom operator to the pipeline */
-  use(operator: MonoTypeOperatorFunction<AgentEvent>): this;
-
-  /** Clear all additional operators */
-  clearOperators(): this;
-
-  /** Register tools dynamically */
-  registerTool(tool: ToolDefinition | ToolDefinition[]): this;
+  /** Get current agent loop state (null if not started) */
+  getState(): AgentLoopState | null;
 
   // ----- Lifecycle -----
 

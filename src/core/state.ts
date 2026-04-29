@@ -7,7 +7,7 @@
  */
 
 import { z } from 'zod';
-import { MessageSchema, ToolCallSchema } from './events.js';
+import { MessageSchema, ToolCallSchema, type Message } from './events.js';
 
 // ============================================================
 // Batch Context (for parallel tool execution tracking)
@@ -268,6 +268,76 @@ export function updateLastCheckpoint(
  */
 export function setOutput(state: AgentState, output: string): AgentState {
   return updateState(state, { output });
+}
+
+// ============================================================
+// Recovery State (for error recovery tracking)
+// ============================================================
+
+export interface RecoveryState {
+  outputTokenEscalationCount: number;
+  recoveryMessageCount: number;
+  fallbackSwitchCount: number;
+  compactionRetryCount: number;
+}
+
+// ============================================================
+// Token Budget State (for token budget diminishing returns)
+// ============================================================
+
+export interface TokenBudgetState {
+  continuationCount: number;
+  lastDeltaTokens: number;
+  lastGlobalTurnTokens: number;
+  startedAt: number;
+}
+
+// ============================================================
+// Agent Loop State (imperative loop runtime state)
+// ============================================================
+
+export interface AgentLoopState {
+  sessionId: string;
+  agentName: string;
+  model: ModelConfig;
+  messages: Message[];
+  step: number;
+  maxSteps: number;
+  tokens: { prompt: number; completion: number };
+  output: string;
+  recovery: RecoveryState;
+  budget: TokenBudgetState;
+}
+
+export function createInitialLoopState(opts: {
+  sessionId: string;
+  agentName: string;
+  model: ModelConfig;
+  messages: Message[];
+  maxSteps: number;
+}): AgentLoopState {
+  return {
+    sessionId: opts.sessionId,
+    agentName: opts.agentName,
+    model: opts.model,
+    messages: opts.messages,
+    step: 0,
+    maxSteps: opts.maxSteps,
+    tokens: { prompt: 0, completion: 0 },
+    output: '',
+    recovery: {
+      outputTokenEscalationCount: 0,
+      recoveryMessageCount: 0,
+      fallbackSwitchCount: 0,
+      compactionRetryCount: 0,
+    },
+    budget: {
+      continuationCount: 0,
+      lastDeltaTokens: 0,
+      lastGlobalTurnTokens: 0,
+      startedAt: Date.now(),
+    },
+  };
 }
 
 // ============================================================

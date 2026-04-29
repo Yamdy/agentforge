@@ -64,6 +64,13 @@
 | [18-QUOTA-INTEGRATION.md](./18-QUOTA-INTEGRATION.md) | Quota 集成到 Agent Loop — 成本控制 |
 | [19-EVENT-ROUTING.md](./19-EVENT-ROUTING.md) | 事件路由补全 — MCP/Workflow/Compaction 等生命周期事件 |
 | [20-PUBLISH-READINESS.md](./20-PUBLISH-READINESS.md) | 发布就绪性 — API 导出补全 + package.json 配置 |
+| [21-TOKEN-BUDGET.md](./21-TOKEN-BUDGET.md) | **Token 预算 + 递减收益检测** — 参考 ClaudeCode 实现 |
+| [22-ERROR-RECOVERY.md](./22-ERROR-RECOVERY.md) | **分级错误恢复** — max_output_tokens/prompt_too_long/model_overloaded |
+| [23-TOOL-CONCURRENCY.md](./23-TOOL-CONCURRENCY.md) | **Per-Tool 并发安全判定** — isConcurrencySafe() + 工具分批执行 |
+| [24-ARCH-REFACTOR.md](./24-ARCH-REFACTOR.md) | **内核重构设计** — Imperative 循环 + Hook 切面（参考 ClaudeCode + OpenCode） |
+| [25-DE-RXJS.md](./25-DE-RXJS.md) | **移除 RxJS** — 全栈重构，事件类型 40+→18，依赖消除 |
+| [26-FRAMEWORK-COMPARISON.md](./26-FRAMEWORK-COMPARISON.md) | **框架横向对比** — ClaudeCode/OpenCode/OpenHarness/DeepAgents/Mastra/AgentScope |
+| [27-IMPLEMENTATION-PLAN.md](./27-IMPLEMENTATION-PLAN.md) | **实施计划** — 6 Phase 逐文件变更指南 |
 
 ### 总览
 
@@ -93,7 +100,7 @@
 | **事件流** | 05, 06, 10 |
 | **插件扩展** | 07, 08 |
 | **分布式通信** | 09 |
-| **生产就绪** | 06, 14, 15, 07 (安全整合) |
+| **生产就绪** | 06, 14, 15, 07 (安全整合), 21, 22, 23 |
 | **安全合规** | 17, 07, 06, 10 |
 
 ---
@@ -143,6 +150,8 @@
 | v13 | 2026-04-26 | **1.0阻塞项设计**: 新增 18-QUOTA-INTEGRATION.md、19-EVENT-ROUTING.md、20-PUBLISH-READINESS.md |
 | v14 | 2026-04-26 | **评审修复**: Quota consume/fire-and-forget说明、Event Routing Compaction同步性约束、Publish peerDependencies+prepublishOnly+sideEffects验证 |
 | v15 | 2026-04-27 | **Adapter 重构**: 新增 adapter-system.ts (错误分类/重试/Provider注册)，参考 AgentScope/Mastra/OpenCode/DeepAgents |
+| v16 | 2026-04-29 | **ClaudeCode 借鉴设计**: 新增 21-TOKEN-BUDGET.md (Token预算+递减收益)、22-ERROR-RECOVERY.md (分级错误恢复)、23-TOOL-CONCURRENCY.md (Per-Tool并发安全) |
+| v17 | 2026-04-30 | **架构重构设计**: 新增 24-ARCH-REFACTOR.md (Imperative循环+Hook切面)、25-DE-RXJS.md (移除RxJS全栈重构)、26-FRAMEWORK-COMPARISON.md (6框架横比) |
 
 ---
 
@@ -173,6 +182,12 @@
 | **Quota 集成** | 18-QUOTA-INTEGRATION.md | `src/quota/*.ts` | 📝 模块存在，待集成到主循环 |
 | **事件路由补全** | 19-EVENT-ROUTING.md | `src/loop/agent-loop.ts` | 📝 待评审 |
 | **发布就绪性** | 20-PUBLISH-READINESS.md | `src/index.ts`, `package.json` | 📝 待评审 |
+| **Token 预算** | 21-TOKEN-BUDGET.md | `src/loop/token-budget.ts` | 📝 设计完成 |
+| **错误恢复** | 22-ERROR-RECOVERY.md | `src/loop/error-analyzer.ts` | 📝 设计完成 |
+| **工具并发安全** | 23-TOOL-CONCURRENCY.md | `src/loop/tool-partition.ts` | 📝 设计完成 |
+| **架构重构** | 24-ARCH-REFACTOR.md | `src/core/hooks.ts`, `src/loop/agent-loop.ts` | 📝 设计完成 |
+| **移除 RxJS** | 25-DE-RXJS.md | 87 文件 | 📝 设计完成 |
+| **框架横比** | 26-FRAMEWORK-COMPARISON.md | — | 📝 设计完成 |
 | **P1: 规划/执行分离** | 08-SUBSYSTEMS.md | - | 🔮 未实现 |
 | **P1: outputSchema** | 01-CORE-TYPES.md | `src/contracts/tool-output-contract.ts` | ✅ 已实现 |
 | **P1: 决策追溯** | 01-CORE-TYPES.md | `src/contracts/decision-trace-storage.ts` | ✅ 已实现 |

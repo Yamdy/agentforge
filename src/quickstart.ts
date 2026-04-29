@@ -27,21 +27,19 @@
  */
 
 import { z } from 'zod';
-import type { Observable } from 'rxjs';
+import type { ToolDefinition, ToolContext } from './core/interfaces.js';
+
+// ============================================================
 import { createAgent } from './api/create-agent.js';
 import type {
   AgentConfig,
   Agent as AgentInterface,
-  StreamHandlers,
-  AgentSubscription,
 } from './api/types.js';
 import {
   getLLMAdapterFactory,
   openaiAdapterFactory,
   anthropicAdapterFactory,
 } from './adapters/index.js';
-import type { ToolDefinition, ToolContext } from './core/interfaces.js';
-import type { AgentEvent } from './core/events.js';
 
 // ============================================================
 // Auto-register built-in providers
@@ -212,44 +210,23 @@ export class Agent {
   }
 
   /**
-   * Stream a response (callback-based).
-   *
-   * @param input - The user message
-   * @param handlers - Callback handlers for streaming events
-   * @returns Subscription with result promise and cancel function
-   */
-  stream(input: string, handlers: StreamHandlers): AgentSubscription {
-    return this.agent.stream(input, handlers);
-  }
-
-  /**
-   * Get the raw Observable event stream (advanced usage).
-   *
-   * @param input - The user message
-   * @returns Observable of agent events
-   */
-  run$(input: string): Observable<AgentEvent> {
-    return this.agent.run$(input);
-  }
-
-  /**
    * Cancel the current execution.
    */
-  cancel(reason?: string): void {
-    this.agent.cancel(reason);
+  cancel(): void {
+    this.agent.cancel();
   }
 
   /**
-   * Pause the current execution and return a checkpoint.
+   * Pause the current execution.
    */
-  pause(): Promise<import('./core/index.js').Checkpoint> {
+  pause(): Promise<void> {
     return this.agent.pause();
   }
 
   /**
-   * Resume from a checkpoint.
+   * Resume from a pause.
    */
-  resume(checkpoint: import('./core/index.js').Checkpoint): Promise<string> {
-    return this.agent.resume(checkpoint);
+  resume(): void {
+    this.agent.resume();
   }
 }

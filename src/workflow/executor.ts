@@ -12,10 +12,9 @@
  * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN/08-SUBSYSTEMS.md
  */
 
-import { Observable, of, firstValueFrom } from 'rxjs';
-import { map, filter, catchError, timeout, tap, take } from 'rxjs/operators';
-import { type AgentEvent, type AgentContext, serializeError } from '../core/index.js';
-import { AgentLoop, type AgentLoopOptions } from '../api/agent-loop.js';
+import { Observable } from 'rxjs';
+import { type AgentEvent, type AgentContext, type SerializedError, serializeError } from '../core/index.js';
+import { createAgentLoop } from '../loop/agent-loop.js';
 import { type WorkflowStep, type WorkflowStepResult } from './types.js';
 
 // ============================================================
@@ -68,11 +67,9 @@ export class WorkflowExecutor {
     const sessionId = this.agentContext.sessionId;
     const startTime = Date.now();
 
-    // Generate step prompt from input
     const prompt = step.prompt(input);
     const stepName = step.name ?? step.id;
 
-    // Emit step start event
     const stepStartEvent: AgentEvent = {
       type: 'workflow.step.start',
       timestamp: startTime,
@@ -82,77 +79,29 @@ export class WorkflowExecutor {
       stepName,
     };
 
-    // Create agent loop for this step
-    const agentOptions: AgentLoopOptions = {
-      model: {
-        provider: this.agentContext.llm.provider,
-        model: this.agentContext.llm.name,
-      },
-      maxSteps: 10,
-      maxLLMRepairAttempts: 3,
-      parallelToolCalls: false,
-      streaming: false,
-    };
-
-    const agent = new AgentLoop(this.agentContext, agentOptions);
-
-    // Execute agent and capture output
-    const agentEvents$ = agent.run$(prompt).pipe(
-      // Map agent events with workflowId for correlation
-      map(event => this.mapEventWithWorkflowId(event, workflowId)),
-      // Handle timeout if specified
-      step.timeout ? timeout(step.timeout) : tap(),
-      catchError(error => {
-        const errorEvent: AgentEvent = {
-          type: 'workflow.error',
-          timestamp: Date.now(),
-          sessionId,
-          workflowId,
-          error: serializeError(error),
-          stepId: step.id,
-        };
-        return of(errorEvent);
-      })
-    );
-
-    // Return combined stream: start + agent events + end
     return new Observable<AgentEvent>(subscriber => {
       let stepFailed = false;
 
-      // Emit start event
       subscriber.next(stepStartEvent);
 
-      const subscription = agentEvents$.subscribe({
-        next: event => {
-          subscriber.next(event);
+      (async () => {
+        try {
+          const loop = createAgentLoop(this.agentContext, {
+            model: { provider: this.agentContext.llm.provider, model: this.agentContext.llm.name },
+            maxSteps: 10,
+            maxLLMRepairAttempts: 3,
+            parallelToolCalls: false,
+            streaming: false,
+          });
 
-          // Track errors
-          if (event.type === 'agent.error') {
-            stepFailed = true;
-          }
+          loop.onAny(event => {
+            const mapped = this.mapEventWithWorkflowId(event, workflowId);
+            if (mapped.type === 'agent.error') stepFailed = true;
+            subscriber.next(mapped);
+          });
 
-          // Track workflow error
-          if (event.type === 'workflow.error') {
-            stepFailed = true;
-          }
-        },
-        error: () => {
-          stepFailed = true;
+          await loop.run(prompt as string);
 
-          // Emit step end event with failure
-          const stepEndEvent: AgentEvent = {
-            type: 'workflow.step.end',
-            timestamp: Date.now(),
-            sessionId,
-            workflowId,
-            stepId: step.id,
-            result: 'failure',
-          };
-          subscriber.next(stepEndEvent);
-          subscriber.complete();
-        },
-        complete: () => {
-          // Emit step end event
           const stepEndEvent: AgentEvent = {
             type: 'workflow.step.end',
             timestamp: Date.now(),
@@ -163,13 +112,29 @@ export class WorkflowExecutor {
           };
           subscriber.next(stepEndEvent);
           subscriber.complete();
-        },
-      });
-
-      return () => {
-        subscription.unsubscribe();
-        agent.destroy();
-      };
+        } catch (error) {
+          stepFailed = true;
+          const errorEvent: AgentEvent = {
+            type: 'workflow.error',
+            timestamp: Date.now(),
+            sessionId,
+            workflowId,
+            error: serializeError(error),
+            stepId: step.id,
+          };
+          subscriber.next(errorEvent);
+          const stepEndEvent: AgentEvent = {
+            type: 'workflow.step.end',
+            timestamp: Date.now(),
+            sessionId,
+            workflowId,
+            stepId: step.id,
+            result: 'failure',
+          };
+          subscriber.next(stepEndEvent);
+          subscriber.complete();
+        }
+      })();
     });
   }
 
@@ -187,7 +152,7 @@ export class WorkflowExecutor {
   async executeStepAsync(
     step: WorkflowStep,
     input: unknown,
-    workflowId: string
+    _workflowId: string
   ): Promise<WorkflowStepResult> {
     const startTime = Date.now();
     let output: unknown;
@@ -205,22 +170,26 @@ export class WorkflowExecutor {
       }
 
       // Execute and wait for completion
-      const events = await firstValueFrom(
-        this.executeStep(step, input, workflowId).pipe(
-          filter(e => e.type === 'agent.complete' || e.type === 'agent.error'),
-          take(1)
-        )
-      );
+      const loop = createAgentLoop(this.agentContext, {
+        model: { provider: this.agentContext.llm.provider, model: this.agentContext.llm.name },
+        maxSteps: 10,
+        maxLLMRepairAttempts: 3,
+        parallelToolCalls: false,
+        streaming: false,
+      });
 
-      if (events.type === 'agent.complete') {
-        output = events.output;
-      } else if (events.type === 'agent.error') {
-        const errEvent = events;
-        error = {
-          name: errEvent.error.name,
-          message: errEvent.error.message,
-          stack: errEvent.error.stack,
-        };
+      let capturedOutput = '';
+      let capturedError: SerializedError | undefined;
+
+      loop.on('agent.complete' as any, (e: any) => { capturedOutput = e.output; });
+      loop.on('agent.error' as any, (e: any) => { capturedError = e.error; });
+
+      await loop.run(step.prompt(input) as string);
+
+      if (capturedError) {
+        error = { name: capturedError.name, message: capturedError.message, stack: capturedError.stack };
+      } else {
+        output = capturedOutput;
       }
     } catch (err) {
       const serialized = serializeError(err);

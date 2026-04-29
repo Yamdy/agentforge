@@ -7,10 +7,7 @@
  */
 
 export {
-  type StepContext,
   type AgentLoopConfig,
   type AgentLoop,
-  type HandlerDeps,
-  type CheckpointConfig,
   createAgentLoop,
 } from './agent-loop.js';

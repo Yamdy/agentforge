@@ -9,8 +9,6 @@
  * @module
  */
 
-import { Observable, of, from } from 'rxjs';
-import { map } from 'rxjs/operators';
 import type { InterceptorPlugin, PluginContext } from '../plugins/plugin.js';
 import type { AgentEvent, Message } from '../core/events.js';
 import { SkillRegistry } from '../skill/loader.js';
@@ -52,26 +50,18 @@ export function createSkillsPlugin(sources: string[]): InterceptorPlugin {
     eventTypes: ['agent.start', 'llm.request'],
     enabled: true,
 
-    intercept(event: AgentEvent, _ctx: PluginContext): Observable<AgentEvent> {
+    intercept(event: AgentEvent, _ctx: PluginContext): any {
       if (event.type === 'agent.start') {
-        // Scan skill directories (IO operation)
-        return from(registry.discover(sources)).pipe(
-          map(discovered => {
-            skills = discovered.map(s => {
-              const meta: SkillMetadata = {
-                name: s.frontmatter.name,
-                description: s.frontmatter.description,
-                path: s.location,
-              };
-              // exactOptionalPropertyTypes: only assign if not undefined
-              if (s.frontmatter.license !== undefined) meta.license = s.frontmatter.license;
-              if (s.frontmatter.compatibility !== undefined) meta.compatibility = s.frontmatter.compatibility;
-              if (s.frontmatter.allowedTools !== undefined) meta.allowedTools = s.frontmatter.allowedTools;
-              return meta;
-            });
-            return event; // Don't modify agent.start event
-          })
-        );
+        return registry.discover(sources).then(discovered => {
+          skills = discovered.map(s => {
+            const meta: SkillMetadata = { name: s.frontmatter.name, description: s.frontmatter.description, path: s.location };
+            if (s.frontmatter.license !== undefined) meta.license = s.frontmatter.license;
+            if (s.frontmatter.compatibility !== undefined) meta.compatibility = s.frontmatter.compatibility;
+            if (s.frontmatter.allowedTools !== undefined) meta.allowedTools = s.frontmatter.allowedTools;
+            return meta;
+          });
+          return event;
+        });
       }
 
       if (event.type === 'llm.request' && skills.length > 0) {
@@ -97,13 +87,13 @@ export function createSkillsPlugin(sources: string[]): InterceptorPlugin {
           name: 'skills',
         };
 
-        return of({
+        return {
           ...event,
           messages: [skillsMessage, ...event.messages],
-        });
+        };
       }
 
-      return of(event);
+      return event;
     },
   };
 }

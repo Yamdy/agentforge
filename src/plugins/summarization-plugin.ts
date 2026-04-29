@@ -9,7 +9,6 @@
  * @module
  */
 
-import { Observable, of, defer } from 'rxjs';
 import type { InterceptorPlugin, PluginContext } from '../plugins/plugin.js';
 import type { AgentEvent } from '../core/events.js';
 import { estimateTokens, truncateOldest } from '../memory/strategies.js';
@@ -94,30 +93,17 @@ export function createSummarizationPlugin(config: SummarizationPluginConfig): In
     eventTypes: ['llm.request'],
     enabled: config.enabled ?? true,
 
-    intercept(event: AgentEvent, _ctx: PluginContext): Observable<AgentEvent> {
-      if (event.type !== 'llm.request') return of(event);
-
+    intercept(event: AgentEvent, _ctx: PluginContext): any {
+      if (event.type !== 'llm.request') return event;
       const tokens = estimateTokens(event.messages);
-
-      // Below threshold, no compression needed
-      if (!shouldCompact(tokens, config)) return of(event);
-
-      // Compress: truncate oldest messages
+      if (!shouldCompact(tokens, config)) return event;
       const result = truncateOldest(event.messages, config.preserveRecent);
-
-      if (result.removedCount === 0) return of(event);
-
-      // Offload removed messages (async, wrapped in defer)
+      if (result.removedCount === 0) return event;
       if (offloadManager) {
         const removed = event.messages.slice(0, result.removedCount);
-        return defer(async () => {
-          await offloadManager.offload(event.sessionId, removed);
-          return { ...event, messages: result.messages };
-        });
+        return offloadManager.offload(event.sessionId, removed).then(() => ({ ...event, messages: result.messages }));
       }
-
-      // No offload manager, just compress
-      return of({ ...event, messages: result.messages });
+      return { ...event, messages: result.messages };
     },
   };
 }

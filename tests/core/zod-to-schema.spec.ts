@@ -425,4 +425,54 @@ describe('toolsToFunctionDefs', () => {
     const defs = toolsToFunctionDefs([]);
     expect(defs).toEqual([]);
   });
+
+  it('handles ToolDefinition with JSON Schema parameters (plain object)', () => {
+    // This is the format used by LLM APIs and some examples
+    const tool: ToolDefinition = {
+      name: 'calculator',
+      description: 'Perform a calculation',
+      parameters: {
+        type: 'object',
+        properties: {
+          expression: { type: 'string', description: 'Math expression' },
+        },
+        required: ['expression'],
+      },
+      execute: async () => '42',
+    };
+
+    const def = toolToFunctionDef(tool);
+
+    expect(def.name).toBe('calculator');
+    expect(def.description).toBe('Perform a calculation');
+    expect(def.parameters.type).toBe('object');
+    expect(def.parameters.properties).toEqual({
+      expression: { type: 'string', description: 'Math expression' },
+    });
+    expect(def.parameters.required).toEqual(['expression']);
+  });
+
+  it('handles ToolDefinition with JSON Schema without required field', () => {
+    const tool: ToolDefinition = {
+      name: 'search',
+      description: 'Search for items',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string' },
+          limit: { type: 'number' },
+        },
+      },
+      execute: async () => 'results',
+    };
+
+    const def = toolToFunctionDef(tool);
+
+    expect(def.name).toBe('search');
+    expect(def.parameters.type).toBe('object');
+    expect(def.parameters.properties).toEqual({
+      query: { type: 'string' },
+      limit: { type: 'number' },
+    });
+  });
 });

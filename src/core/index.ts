@@ -38,6 +38,7 @@ export {
   isPermissionEvent,
   serializeError,
   generateId,
+  AgentEventEmitter,
 } from './events.js';
 
 // ============================================================
@@ -73,6 +74,16 @@ export {
   setOutput,
   initContextManagement,
   recordCompaction as recordStateCompaction,
+} from './state.js';
+
+export type {
+  RecoveryState,
+  TokenBudgetState,
+  AgentLoopState,
+} from './state.js';
+
+export {
+  createInitialLoopState,
 } from './state.js';
 
 // ============================================================
@@ -192,6 +203,25 @@ export {
 
 export type { Logger } from './logger.js';
 export { DefaultLogger, NoopLogger } from './logger.js';
+
+// ============================================================
+// Hooks
+// ============================================================
+
+export {
+  HookName,
+  type HookFn,
+  type LifecycleHookEntry,
+  type RequestHook,
+  type ToolHook,
+  HookRegistry,
+} from './hooks.js';
+
+// ============================================================
+// Defaults (Tracer / Metrics implementations for DI)
+// ============================================================
+
+export { NoopTracer, ConsoleTracer, NoopMetrics, ConsoleMetrics, BridgeMetrics } from './defaults.js';
 
 // ============================================================
 // Zod to Schema

@@ -125,7 +125,7 @@ const result = await agent.run('What are its benefits?');
 
 ```typescript
 import { createAgentLoop, ContextBuilder } from 'agentforge';
-import { timeoutOnEventType, retryOnEventType, collectMetrics } from 'agentforge';
+import { timeoutOnEventType, retryOnEventType, recordMetrics } from 'agentforge';
 
 const ctx = new ContextBuilder()
   .withLLMAdapter(myLLMAdapter)
@@ -138,7 +138,7 @@ loop.run$('Hello!')
   .pipe(
     timeoutOnEventType('done', 30000),
     retryOnEventType('agent.error', 3),
-    collectMetrics({ increment: (key) => {...} }),
+    recordMetrics({ increment: (key) => {...} }),
   )
   .subscribe({
     next: (event) => console.log(event.type),
@@ -181,14 +181,13 @@ loop.run$('Hello!')
 
 | 操作符 | 用途 |
 |--------|------|
-| `filterEventType` | 过滤特定事件类型 |
-| `takeUntilTerminal` | 直到终端事件 |
-| `collectMetrics` | 收集指标统计 |
 | `timeoutOnEventType` | 基于事件类型的超时 |
 | `retryOnEventType` | 基于事件类型的重试 |
 | `checkpoint` | 保存检查点 |
 | `logEvents` | 事件日志 |
 | `productionPreset` | 生产环境预设组合 |
+| `traceEvents` | 事件追踪（带时间戳和耗时） |
+| `recordMetrics` | 事件指标收集（步数/令牌/工具调用统计） |
 
 ## 示例
 

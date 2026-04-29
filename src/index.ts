@@ -1,31 +1,25 @@
 /**
  * AgentForge - Unified Public API
  *
- * Agent framework based on RxJS event stream + Zod type safety.
+ * Agent framework with imperative event loop + Hook cut-point system.
  *
  * @example Configuration Mode
  * ```typescript
- * import { createAgent, AgentConfig } from 'agentforge';
+ * import { createAgent } from 'agentforge';
  *
- * const config: AgentConfig = {
+ * const agent = createAgent({
  *   name: 'my-agent',
  *   model: { provider: 'openai', model: 'gpt-4' },
  *   maxSteps: 10,
- * };
+ * });
  *
- * const agent = createAgent(config, { llm: myAdapter, tools: myRegistry });
- * const events$ = agent.run('Hello, world!');
+ * const result = await agent.run('Hello, world!');
+ * console.log(result);
  * ```
  *
- * @example Programming Mode
+ * @example Event Observation
  * ```typescript
- * import { createAgentLoop, AgentEvent, AgentState } from 'agentforge';
- *
- * const loop = createAgentLoop(context, config);
- * loop.run('Hello').subscribe({
- *   next: (event: AgentEvent) => console.log(event.type),
- *   complete: () => console.log('Done'),
- * });
+ * agent.on('tool.call', (event) => console.log('Tool called:', event.toolName));
  * ```
  *
  * @module agentforge
@@ -240,6 +234,32 @@ export type { AgentStateEnum } from './core/state-machine.js';
 export { AgentStateMachine, isValidTransition, getValidTransitions } from './core/state-machine.js';
 
 // ============================================================
+// Core - Default DI Implementations
+// ============================================================
+
+/**
+ * Default implementations for core DI interfaces.
+ *
+ * These provide zero-config defaults so `createAgent()` works out of the box.
+ * Replace with production implementations (OTel, Prometheus, etc.) as needed.
+ *
+ * @example
+ * ```typescript
+ * import { ConsoleTracer, ConsoleMetrics, BridgeMetrics } from 'agentforge';
+ * import { MetricsCollectorImpl } from 'agentforge/observability';
+ *
+ * // Development: console logging
+ * const tracer = new ConsoleTracer();
+ * const metrics = new ConsoleMetrics();
+ *
+ * // Production: bridge to Prometheus
+ * const collector = new MetricsCollectorImpl({ prefix: 'agentforge' });
+ * const metrics = new BridgeMetrics(collector);
+ * ```
+ */
+export { NoopTracer, ConsoleTracer, NoopMetrics, ConsoleMetrics, BridgeMetrics } from './core/defaults.js';
+
+// ============================================================
 // API - Configuration Mode (createAgent)
 // ============================================================
 
@@ -254,7 +274,7 @@ export {
   createAgent,
   type Agent,
   type StreamHandlers,
-  type AgentSubscription,
+  type RunHandlers,
 } from './api/index.js';
 
 // ============================================================
@@ -268,78 +288,58 @@ export {
  * Provides direct access to the expand-based event stream.
  */
 export {
-  type StepContext,
   type AgentLoopConfig,
   type AgentLoop,
   createAgentLoop,
 } from './loop/index.js';
 
 // ============================================================
-// RxJS Operators
+// Hooks System
 // ============================================================
 
-/**
- * Custom RxJS operators for agent event stream processing.
- *
- * @example
- * ```typescript
- * import { filterEventType, takeUntilTerminal, collectMetrics } from 'agentforge';
- *
- * event$.pipe(
- *   filterEventType('llm.response'),
- *   takeUntilTerminal(),
- *   collectMetrics(metrics => console.log(metrics)),
- * );
- * ```
- */
 export {
-  // Filter operators
-  filterEventType,
-  filterEventTypePrefix,
-  // Terminal condition operators
-  takeUntilTerminal,
-  onTerminal,
-  // Event helpers
-  tapEvent,
-  tapEvents,
-  // Metrics operators
-  collectMetrics,
-  type AgentMetrics,
-  // Grouping operators
-  groupByStep,
-  // Rate limiting operators
-  dedupeEventTypes,
-  // Transform operators
-  transformLLMParams,
-  transformToolArgs,
-  compressMessages,
-  injectSystemPrompt,
-  type LLMTransformParams,
-  // Logging operators
-  logEvents,
-  traceEvents,
-  recordMetrics,
-  exportEvents,
-  checkpoint,
-  type Logger,
-  // Control operators
-  retryOnEventType,
-  timeoutOnEventType,
-  requirePermission,
-  maxStepsLimit,
-  pauseOnSignal,
-  // Output operators
-  eventToString,
-  withLatency,
-  type EventWithLatency,
-  // Presets
-  productionPreset,
-  debugPreset,
-  testPreset,
-  createPreset,
-  type ProductionPresetConfig,
-  type DebugPresetConfig,
-  type TestPresetConfig,
+  HookName,
+  type HookFn,
+  type LifecycleHookEntry,
+  type RequestHook,
+  type ToolHook,
+  HookRegistry,
+} from './core/hooks.js';
+
+// ============================================================
+// Event Emitter
+// ============================================================
+
+export { AgentEventEmitter } from './core/events.js';
+
+// ============================================================
+// New State Types
+// ============================================================
+
+export type {
+  RecoveryState,
+  TokenBudgetState,
+  AgentLoopState,
+} from './core/state.js';
+
+export { createInitialLoopState } from './core/state.js';
+
+// ============================================================
+// RxJS Operators (backward-compat stubs)
+// ============================================================
+
+export {
+  filterEventType, filterEventTypePrefix,
+  takeUntilTerminal, onTerminal,
+  tapEvent, tapEvents,
+  collectMetrics, groupByStep, dedupeEventTypes,
+  transformLLMParams, transformToolArgs, compressMessages, injectSystemPrompt,
+  logEvents, traceEvents, recordMetrics, exportEvents, checkpoint,
+  retryOnEventType, timeoutOnEventType, requirePermission, maxStepsLimit, pauseOnSignal,
+  eventToString, withLatency,
+  productionPreset, debugPreset, testPreset, developmentPreset, createPreset,
+  type AgentMetrics, type LLMTransformParams, type EventWithLatency, type Logger,
+  type ProductionPresetConfig, type DebugPresetConfig, type TestPresetConfig,
 } from './operators/index.js';
 
 // ============================================================
@@ -559,14 +559,11 @@ export {
   isObserverPlugin,
   type CreatePluginContextOptions,
   createPluginContext,
-  // Pipeline
-  buildPluginPipeline,
-  emptyPipeline,
-  blockingPipeline,
-  replacePipeline,
   // Manager
   PluginManager,
   createPluginManager,
+  // New imperative
+  applyPlugins,
 } from './plugins/index.js';
 
 // ============================================================

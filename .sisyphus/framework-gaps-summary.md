@@ -1,16 +1,17 @@
 # AgentForge 模块差距总结
 
 > 基于 AgentScope, DeepAgents, Mastra 框架对比分析
+> 更新时间：2026-04-29 — 基于代码审计修正
 
 ---
 
-## P0 - 核心缺失 (立即实现)
+## P0 - 核心缺失 (全部已完成 ✅)
 
 | 模块 | 当前状态 | 行动项 |
 |------|---------|--------|
-| **LLM Adapter** | Mock only | 实现 `OpenAIAdapter` 使用 `@ai-sdk/openai-compatible` |
-| **MCP Client** | 接口定义 | 实现 `StdIOMCPClient` |
-| **Git Hooks** | ❌ | 添加 Husky + lint-staged |
+| **LLM Adapter** | ✅ AI SDK v6 完整实现 | ~~实现 `OpenAIAdapter`~~ 已完成 |
+| **MCP Client** | ✅ 完整接入 | ~~实现 `StdIOMCPClient`~~ 已完成 |
+| **Git Hooks** | ✅ Husky + lint-staged | 已完成 |
 
 ---
 
@@ -28,7 +29,7 @@
 
 | 模块 | 当前状态 | 参考实现 |
 |------|---------|---------|
-| **Planning** | ❌ | DeepAgents `TodoListMiddleware` + `write_todos` |
+| **Planning** | ✅ fire-and-forget (Phase 1) | DeepAgents `TodoListMiddleware` + `write_todos`（Phase 2: 注入 AgentState 待实现） |
 | **Filesystem** | ❌ | DeepAgents `FilesystemBackend` |
 | **Summarization** | 事件定义 | DeepAgents 85% threshold auto-compaction |
 
@@ -45,7 +46,7 @@
 
 ## 详细报告
 
-完整对比分析见: `docs/framework-comparison-analysis.md`
+完整对比分析见: `docs/analysis/analysis_agentforge_gap.md`
 
 ---
 
@@ -61,8 +62,8 @@ AgentForge:  Observable<AgentEvent> + expand + errors-as-events
 ## 实施优先级
 
 ```
-Week 1-2: P0 (LLM Adapter + MCP Client + Git Hooks)
+Week 1-2: P0 ✅ 已完成（LLM Adapter + MCP Client + Git Hooks）
 Week 3-5: P1 (SubAgent + MsgHub + Pipeline)
-Week 6-7: P2 (Planning + Filesystem + Summarization)
+Week 6-7: P2 (Planning Phase 2 + Filesystem + Summarization)
 Week 8:   P3 (OTel + Metrics)
 ```

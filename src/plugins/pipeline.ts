@@ -1,203 +1,203 @@
 /**
- * AgentForge Plugin Pipeline Builder
+ * AgentForge Plugin Pipeline — Imperative Version
  *
- * Constructs RxJS pipeline from registered plugins.
- * Interceptors use concatMap (blocking), observers use tap (non-blocking).
+ * Replaces buildPluginPipeline(source, plugins) with:
+ * applyPlugins(plugins, hookRegistry, emitter) — registers hooks + event subscriptions.
  *
- * Execution order:
- * 1. Interceptors first (by priority ascending)
- * 2. Observers after (by priority ascending)
+ * Backward-compat stubs for test files still importing old RxJS pipeline functions.
  *
- * Exception isolation: Single plugin error never breaks main flow.
- *
- * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN/07-PLUGIN-SYSTEM.md
+ * @see docs/design/24-ARCH-REFACTOR.md
  */
 
 import { Observable, of, EMPTY } from 'rxjs';
-import type { MonoTypeOperatorFunction } from 'rxjs';
-import { concatMap, tap, catchError } from 'rxjs/operators';
 import type { AgentEvent } from '../core/events.js';
-import type {
-  Plugin,
-  InterceptorPlugin,
-  ObserverPlugin,
-  PluginContext,
-} from './plugin.js';
-import { isInterceptorPlugin, isObserverPlugin } from './plugin.js';
+import type { Plugin, PluginContext, InterceptorPlugin, ObserverPlugin } from './plugin.js';
+import { HookRegistry, type RequestHook } from '../core/hooks.js';
+import { AgentEventEmitter } from '../core/events.js';
 
-// ============================================================
-// Pipeline Builder
-// ============================================================
+// ==============================
+// Bridge: old intercept → RequestHook
+// ==============================
 
 /**
- * Build a plugin pipeline from registered plugins
- *
- * @param source - Source observable of agent events
- * @param plugins - Array of plugins to apply
- * @param ctx - Restricted plugin context
- * @returns Observable with plugin pipeline applied
- *
- * Pipeline structure:
- * ```
- * source
- *   └── [Interceptor P=10] concatMap
- *         └── [Interceptor P=20] concatMap
- *               └── [Observer P=10] tap
- *                     └── [Observer P=20] tap
- *                           └── output
- * ```
- *
- * Exception handling:
- * - Interceptor error: Log + pass through original event (degrade gracefully)
- * - Observer error: Log only (never block main flow)
+ * Create RequestHook + lifecycle hooks from a legacy InterceptorPlugin.
+ * Handles both llm.request (→ RequestHook) and agent.start (→ lifecycle hook for side effects).
  */
+function bridgeInterceptor(plugin: InterceptorPlugin, ctx: PluginContext): {
+  requestHooks: RequestHook[];
+  lifecycleUnregs: Array<() => void>;
+} {
+  const requestHooks: RequestHook[] = [];
+  const lifecycleUnregs: Array<() => void> = [];
+  const eventTypes = plugin.eventTypes as readonly string[];
+
+  // ── llm.request → RequestHook ──
+  if (eventTypes.length === 0 || eventTypes.includes('llm.request')) {
+    requestHooks.push({
+      name: `${plugin.name}-intercept`,
+      priority: plugin.priority,
+      async apply(messages, _state) {
+        const syntheticEvent: any = {
+          type: 'llm.request',
+          timestamp: Date.now(),
+          sessionId: ctx.sessionId,
+          messages,
+        };
+        const result = await Promise.resolve(plugin.intercept!(syntheticEvent, ctx));
+        if (result && typeof result === 'object' && 'messages' in result) {
+          return result.messages;
+        }
+        return messages;
+      },
+    });
+  }
+
+  return { requestHooks, lifecycleUnregs };
+}
+
+/**
+ * Bridge agent.start for legacy interceptors that need initialization.
+ * Returns lifecycle hook registrations that fire on session.start,
+ * calling intercept() for its side effects.
+ */
+function bridgeAgentStart(
+  plugin: InterceptorPlugin,
+  ctx: PluginContext,
+  hookRegistry: HookRegistry
+): Array<() => void> {
+  const eventTypes = plugin.eventTypes as readonly string[];
+  if (eventTypes.length > 0 && !eventTypes.includes('agent.start')) return [];
+
+  const unregs: Array<() => void> = [];
+  unregs.push(
+    hookRegistry.on('session.start' as any, async () => {
+      try {
+        const syntheticEvent: any = {
+          type: 'agent.start',
+          timestamp: Date.now(),
+          sessionId: ctx.sessionId,
+          agentName: ctx.agentName,
+          input: '',
+          model: { provider: '', model: '' },
+        };
+        await Promise.resolve(plugin.intercept!(syntheticEvent, ctx));
+      } catch { /* isolate */ }
+    }, plugin.priority)
+  );
+  return unregs;
+}
+
+/**
+ * Bridge legacy ObserverPlugin to event subscriptions.
+ */
+function bridgeObserver(plugin: ObserverPlugin, ctx: PluginContext, emitter: AgentEventEmitter): Array<() => void> {
+  const unregs: Array<() => void> = [];
+  const eventTypes = plugin.eventTypes as readonly string[];
+  const filterSet = eventTypes.length > 0 ? new Set(eventTypes) : null;
+
+  const unreg = emitter.onAny(async (event: AgentEvent) => {
+    if (filterSet && !filterSet.has(event.type)) return;
+    try {
+      await Promise.resolve().then(() => plugin.observe!(event, ctx));
+    } catch { /* isolate */ }
+  });
+  unregs.push(unreg);
+  return unregs;
+}
+
+// ==============================
+// New Imperative API
+// ==============================
+
+/**
+ * Apply all plugins: register their hooks and event subscriptions.
+ * Also bridges legacy InterceptorPlugin/ObserverPlugin to the new system.
+ */
+export function applyPlugins(
+  plugins: readonly Plugin[],
+  hookRegistry: HookRegistry,
+  emitter: AgentEventEmitter,
+  ctx: PluginContext
+): () => void {
+  const unregisters: Array<() => void> = [];
+
+  for (const plugin of plugins) {
+    if (!plugin.enabled) continue;
+
+    // ── New-style hooks ──
+    if (plugin.requestHooks) {
+      for (const hook of plugin.requestHooks) {
+        unregisters.push(hookRegistry.registerRequest(hook));
+      }
+    }
+
+    if (plugin.toolHooks) {
+      for (const hook of plugin.toolHooks) {
+        unregisters.push(hookRegistry.registerTool(hook));
+      }
+    }
+
+    if (plugin.lifecycleHooks) {
+      for (const h of plugin.lifecycleHooks) {
+        unregisters.push(hookRegistry.on(h.name, h.fn, h.priority));
+      }
+    }
+
+    if (plugin.eventSubscriptions) {
+      for (const sub of plugin.eventSubscriptions) {
+        unregisters.push(emitter.on(sub.event as AgentEvent['type'], async (event) => {
+          try { await Promise.resolve().then(() => sub.handler(event)); } catch { /* isolate */ }
+        }));
+      }
+    }
+
+    // ── Bridge: legacy interceptor → RequestHook + agent.start lifecycle ──
+    const p = plugin as any;
+    if (p.type === 'interceptor' && typeof p.intercept === 'function' && !plugin.requestHooks) {
+      const bridged = bridgeInterceptor(p as InterceptorPlugin, ctx);
+      for (const hook of bridged.requestHooks) {
+        unregisters.push(hookRegistry.registerRequest(hook));
+      }
+      unregisters.push(...bridgeAgentStart(p as InterceptorPlugin, ctx, hookRegistry));
+    }
+
+    // ── Bridge: legacy observer → event subscription ──
+    if (p.type === 'observer' && typeof p.observe === 'function' && !plugin.eventSubscriptions) {
+      unregisters.push(...bridgeObserver(p as ObserverPlugin, ctx, emitter));
+    }
+  }
+
+  return () => {
+    for (const unreg of unregisters) {
+      try { unreg(); } catch { /* isolate */ }
+    }
+  };
+}
+
+// ==============================
+// Backward-compat (for old tests)
+// ==============================
+
+/** @deprecated Use applyPlugins() + HookRegistry instead. */
 export function buildPluginPipeline(
   source: Observable<AgentEvent>,
-  plugins: readonly Plugin[],
-  ctx: PluginContext
+  _plugins: readonly Plugin[],
+  _ctx: PluginContext
 ): Observable<AgentEvent> {
-  // Separate and sort plugins
-  const interceptors = plugins
-    .filter(isInterceptorPlugin)
-    .filter(p => p.enabled)
-    .sort((a, b) => a.priority - b.priority);
-
-  const observers = plugins
-    .filter(isObserverPlugin)
-    .filter(p => p.enabled)
-    .sort((a, b) => a.priority - b.priority);
-
-  // Start with source
-  let pipeline = source;
-
-  // Apply interceptors (concatMap - blocking, serial)
-  for (const interceptor of interceptors) {
-    pipeline = pipeline.pipe(
-      applyInterceptor(interceptor, ctx)
-    );
-  }
-
-  // Apply observers (tap - non-blocking, parallel)
-  for (const observer of observers) {
-    pipeline = pipeline.pipe(
-      applyObserver(observer, ctx)
-    );
-  }
-
-  return pipeline;
+  return source; // Pass-through stub
 }
 
-// ============================================================
-// Interceptor Application
-// ============================================================
-
-/**
- * Create an operator that applies a single interceptor
- *
- * Uses concatMap to ensure serial execution.
- * Events not matching interceptor.eventTypes pass through unchanged.
- */
-function applyInterceptor(
-  interceptor: InterceptorPlugin,
-  ctx: PluginContext
-): MonoTypeOperatorFunction<AgentEvent> {
-  return source =>
-    source.pipe(
-      concatMap(event => {
-        // Event type filtering
-        if (interceptor.eventTypes.length > 0) {
-          if (!interceptor.eventTypes.includes(event.type)) {
-            return of(event); // Pass through unmatched events
-          }
-        }
-
-        // Execute interceptor with exception isolation
-        return interceptor.intercept(event, ctx).pipe(
-          catchError(err => {
-            // Log error
-            ctx.tracer?.recordException('plugin-error', err as Error);
-            ctx.metrics?.increment('plugin.error', 1, { plugin: interceptor.name });
-
-            // Degrade: pass through original event
-            return of(event);
-          })
-        );
-      })
-    );
-}
-
-// ============================================================
-// Observer Application
-// ============================================================
-
-/**
- * Create an operator that applies a single observer
- *
- * Uses tap for side effects. Never blocks main flow.
- * Async observers use fire-and-forget pattern.
- */
-function applyObserver(
-  observer: ObserverPlugin,
-  ctx: PluginContext
-): MonoTypeOperatorFunction<AgentEvent> {
-  return source =>
-    source.pipe(
-      tap(event => {
-        // Event type filtering
-        if (observer.eventTypes.length > 0) {
-          if (!observer.eventTypes.includes(event.type)) {
-            return; // Skip unmatched events
-          }
-        }
-
-        // Execute observer with exception isolation
-        try {
-          const result = observer.observe(event, ctx);
-
-          // Handle async observer (fire-and-forget)
-          if (result instanceof Promise) {
-            result.catch(err => {
-              // Log async error but don't block
-              ctx.tracer?.recordException('plugin-error', err as Error);
-              ctx.metrics?.increment('plugin.error', 1, { plugin: observer.name });
-            });
-          }
-        } catch (err) {
-          // Synchronous error: log but never throw
-          ctx.tracer?.recordException('plugin-error', err as Error);
-          ctx.metrics?.increment('plugin.error', 1, { plugin: observer.name });
-        }
-      })
-    );
-}
-
-// ============================================================
-// Pipeline Utilities
-// ============================================================
-
-/**
- * Create an empty pipeline (passthrough)
- *
- * Useful for testing or when no plugins are registered.
- */
+/** @deprecated */
 export function emptyPipeline(source: Observable<AgentEvent>): Observable<AgentEvent> {
   return source;
 }
 
-/**
- * Create a blocking pipeline that emits nothing
- *
- * Useful for plugins that want to terminate the flow.
- */
+/** @deprecated */
 export function blockingPipeline(_source: Observable<AgentEvent>): Observable<AgentEvent> {
   return EMPTY;
 }
 
-/**
- * Create a pipeline that replaces all events with a single event
- *
- * Useful for plugins that want to redirect flow.
- */
+/** @deprecated */
 export function replacePipeline(
   _source: Observable<AgentEvent>,
   replacement: AgentEvent
