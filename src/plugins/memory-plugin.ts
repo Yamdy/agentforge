@@ -63,16 +63,18 @@ export function createMemoryPlugin(
       if (event.type === 'agent.start' && !loaded) {
         if (config.autoDiscover) {
           // Auto-discover AGENTS.md files by walking up from cwd
-          return from(loadAgentsMd({ cwd: config.cwd })).pipe(
+          return from(loadAgentsMd(config.cwd ? { cwd: config.cwd } : {})).pipe(
             map(result => {
               if (result.content) {
-                entries = [{
-                  id: 'agents-md-auto',
-                  content: result.content,
-                  sourcePath: result.paths.join(', '),
-                  createdAt: Date.now(),
-                  updatedAt: Date.now(),
-                }];
+                entries = [
+                  {
+                    id: 'agents-md-auto',
+                    content: result.content,
+                    sourcePath: result.paths.join(', '),
+                    createdAt: Date.now(),
+                    updatedAt: Date.now(),
+                  },
+                ];
               }
               loaded = true;
               return event;

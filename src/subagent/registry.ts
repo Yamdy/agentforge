@@ -12,7 +12,7 @@
  * @module agentforge/subagent
  */
 
-import { Observable, of, concat, EMPTY, Subject, Subscription } from 'rxjs';
+import { Observable, of, concat, EMPTY } from 'rxjs';
 import { map, catchError, takeUntil } from 'rxjs/operators';
 import type { AgentEvent, Message } from '../core/events.js';
 import {
@@ -20,7 +20,13 @@ import {
   type SubagentInfo,
 } from '../core/interfaces.js';
 import { serializeError, generateId } from '../core/events.js';
-import type { SubagentConfig, SubagentEntry, AgentLoop, AsyncSubagentHandle, SubagentAsyncResult } from './types.js';
+import type {
+  SubagentConfig,
+  SubagentEntry,
+  AgentLoop,
+  AsyncSubagentHandle,
+  SubagentAsyncResult,
+} from './types.js';
 
 /**
  * Subagent Registry
@@ -147,7 +153,13 @@ export class SubagentRegistry implements ISubagentRegistry {
       case 'compiled':
       case 'sync':
       default:
-        return this.runWithFullEventStream(entry.config.agent, input, name, sessionId, parentSessionId);
+        return this.runWithFullEventStream(
+          entry.config.agent,
+          input,
+          name,
+          sessionId,
+          parentSessionId
+        );
     }
   }
 
@@ -297,7 +309,7 @@ export class SubagentRegistry implements ISubagentRegistry {
       sessionId,
       parentSessionId
     ).subscribe({
-      next: (event) => {
+      next: event => {
         events.push(event);
       },
       complete: () => {
@@ -313,16 +325,11 @@ export class SubagentRegistry implements ISubagentRegistry {
         // Cleanup
         this.asyncRuns.delete(sessionId);
       },
-      error: (error) => {
-        const result: SubagentAsyncResult = {
-          sessionId,
-          status: 'error',
-          error: error instanceof Error ? error : new Error(String(error)),
-          events,
-        };
-
+      error: error => {
         // Call onError callback
-        entry.config.asyncConfig?.onError?.(error instanceof Error ? error : new Error(String(error)));
+        entry.config.asyncConfig?.onError?.(
+          error instanceof Error ? error : new Error(String(error))
+        );
 
         // Cleanup
         this.asyncRuns.delete(sessionId);
@@ -332,26 +339,27 @@ export class SubagentRegistry implements ISubagentRegistry {
     // Create handle
     const handle: AsyncSubagentHandle = {
       sessionId,
-      status: async () => {
+      status: () => {
         if (this.asyncRuns.has(sessionId)) {
-          return 'running';
+          return Promise.resolve('running');
         }
         const lastEvent = events[events.length - 1];
         if (lastEvent?.type === 'agent.error' || lastEvent?.type === 'subagent.error') {
-          return 'error';
+          return Promise.resolve('error');
         }
-        return 'completed';
+        return Promise.resolve('completed');
       },
-      result: async () => {
-        return {
+      result: () => {
+        return Promise.resolve({
           sessionId,
           status: 'completed',
           events,
-        };
+        });
       },
-      cancel: async () => {
+      cancel: () => {
         subscription.unsubscribe();
         this.asyncRuns.delete(sessionId);
+        return Promise.resolve();
       },
     };
 
