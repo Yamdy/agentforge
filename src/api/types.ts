@@ -374,6 +374,9 @@ export interface Agent {
   /** Run the agent and return the final result */
   run(input: string, handlers?: RunHandlers): Promise<string>;
 
+  /** @deprecated Observable wrapper for backward compat */
+  run$?(input: string): any;
+
   // ----- Control -----
 
   /** Cancel current execution */
