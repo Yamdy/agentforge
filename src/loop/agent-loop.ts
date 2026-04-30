@@ -23,6 +23,7 @@ import {
   type SerializedError,
   AgentEventEmitter,
   serializeError,
+  generateId,
 } from '../core/index.js';
 import { Observable } from 'rxjs';
 import type { AgentContext, AgentLoopState } from '../core/index.js';
@@ -598,7 +599,15 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           details: { finishReason: response.finishReason, usage: response.usage },
         });
 
-        // ── MPU M7: Record cost ──
+        // ── Emit checkpoint after LLM response ──
+        emitter.emit({
+          type: 'checkpoint',
+          timestamp: Date.now(),
+          sessionId: ctx.sessionId,
+          checkpointId: generateId('cp'),
+          position: 'after_llm',
+          state: state,
+        } as AgentEvent);
         if (ctx.services.costTracker && response.usage) {
           ctx.services.costTracker.record(ctx.sessionId, config.model.model, response.usage).catch(() => {});
         }
@@ -668,6 +677,16 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           step: state.step,
           toolCallsExecuted: toolCalls.length,
         }, {});
+
+        // ── Emit checkpoint after tool execution ──
+        emitter.emit({
+          type: 'checkpoint',
+          timestamp: Date.now(),
+          sessionId: ctx.sessionId,
+          checkpointId: generateId('cp'),
+          position: 'after_tool',
+          state: state,
+        } as AgentEvent);
 
         // ── Compaction check ──
         if (shouldCompact(state.messages, state.tokens)) {
