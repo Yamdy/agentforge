@@ -16,8 +16,8 @@ describe('MCP Integration (createAgent)', () => {
       model: 'openai/gpt-4o-mini',
     });
     expect(agent).toBeDefined();
-    expect(agent.context.sessionId).toBeDefined();
-    expect(agent.context.agentName).toBe('no-mcp-agent');
+    expect(agent.ctx.sessionId).toBeDefined();
+    expect(agent.ctx.agentName).toBe('no-mcp-agent');
   });
 
   it('should create agent with empty MCP array without error', () => {
@@ -27,7 +27,7 @@ describe('MCP Integration (createAgent)', () => {
       mcp: [],
     });
     expect(agent).toBeDefined();
-    expect(agent.context.sessionId).toBeDefined();
+    expect(agent.ctx.sessionId).toBeDefined();
   });
 
   it('should have sessionId as non-empty string', () => {
@@ -35,7 +35,7 @@ describe('MCP Integration (createAgent)', () => {
       name: 'test-agent',
       model: 'openai/gpt-4o-mini',
     });
-    expect(typeof agent.context.sessionId).toBe('string');
-    expect(agent.context.sessionId.length).toBeGreaterThan(0);
+    expect(typeof agent.ctx.sessionId).toBe('string');
+    expect(agent.ctx.sessionId.length).toBeGreaterThan(0);
   });
 });

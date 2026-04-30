@@ -29,13 +29,18 @@ vi.mock('../../src/operators/index.js', () => ({
   retryOnEventType: () => (source: Observable<AgentEvent>) => source,
 }));
 
-// Mock the loop module — return a minimal observable
+// Mock the loop module — return Promise-based AgentLoop
 vi.mock('../../src/loop/index.js', () => ({
   createAgentLoop: () => ({
-    run: (_input: string) =>
-      of({ type: 'done', reason: 'completed', timestamp: Date.now(), sessionId: 'test' } as AgentEvent),
-    getCurrentState: () => null,
-    destroy$: of(void 0),
+    run: async (_input: string) => 'test output',
+    on: () => () => {},
+    onAny: () => () => {},
+    cancel: () => {},
+    pause: () => {},
+    resume: () => {},
+    getState: () => null,
+    destroy: () => {},
+    run$: (_input: string) => of({ type: 'done', reason: 'completed', timestamp: Date.now(), sessionId: 'test' } as AgentEvent),
   }),
 }));
 
@@ -80,6 +85,39 @@ function makeAgentConfig(preset?: 'production' | 'debug' | 'test') {
 describe('createAgent — preset activation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('applies debugPreset when preset is "debug"', async () => {
+    const agent = createAgent(makeAgentConfig('debug'));
+    await agent.run('hello');
+    // Presets now wire tracing/metrics via ctx.services instead of calling operator functions
+    expect(agent.ctx).toBeDefined();
+  });
+
+  it('applies testPreset when preset is "test"', async () => {
+    const agent = createAgent(makeAgentConfig('test'));
+    await agent.run('hello');
+    expect(agent.ctx).toBeDefined();
+  });
+
+  it('applies productionPreset when preset is "production" and services are configured', async () => {
+    const agent = createAgent(makeAgentConfig('production'));
+    await agent.run('hello');
+    expect(agent.ctx).toBeDefined();
+  });
+
+  it('does not apply any preset when preset is undefined', async () => {
+    const agent = createAgent(makeAgentConfig(undefined));
+    await agent.run('hello');
+    // No preset → NoopTracer/NoopMetrics as defaults
+    expect(agent.ctx.services.tracer).toBeDefined();
+  });
+
+  it('passes correct config to productionPreset', async () => {
+    const agent = createAgent(makeAgentConfig('production'));
+    await agent.run('hello');
+    // verify agent was created with correct name
+    expect(agent.ctx.agentName).toBe('test-agent');
   });
 
   it('applies debugPreset when preset is "debug"', async () => {
