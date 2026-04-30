@@ -10,6 +10,7 @@
  */
 
 import { Observable, of, EMPTY } from 'rxjs';
+import { mergeMap, tap } from 'rxjs/operators';
 import type { AgentEvent } from '../core/events.js';
 import type { Plugin, PluginContext, InterceptorPlugin, ObserverPlugin } from './plugin.js';
 import { HookRegistry, type RequestHook } from '../core/hooks.js';
@@ -181,10 +182,45 @@ export function applyPlugins(
 /** @deprecated Use applyPlugins() + HookRegistry instead. */
 export function buildPluginPipeline(
   source: Observable<AgentEvent>,
-  _plugins: readonly Plugin[],
-  _ctx: PluginContext
+  plugins: readonly Plugin[],
+  ctx: PluginContext
 ): Observable<AgentEvent> {
-  return source; // Pass-through stub — plugin tests need direct HookRegistry setup per Phase 6
+  const interceptors = (plugins as any[]).filter(
+    (p: any) => p.type === 'interceptor' && p.enabled && typeof p.intercept === 'function'
+  );
+  const observers = (plugins as any[]).filter(
+    (p: any) => p.type === 'observer' && p.enabled && typeof p.observe === 'function'
+  );
+
+  let pipeline = source;
+
+  for (const ic of interceptors) {
+    const eventTypes: string[] = ic.eventTypes || [];
+    pipeline = pipeline.pipe(
+      mergeMap(async (event: AgentEvent) => {
+        if (eventTypes.length > 0 && !eventTypes.includes(event.type)) return event;
+        try {
+          const result = await Promise.resolve(ic.intercept(event, ctx));
+          return result || event;
+        } catch { return event; }
+      })
+    );
+  }
+
+  for (const ob of observers) {
+    const eventTypes: string[] = ob.eventTypes || [];
+    pipeline = pipeline.pipe(
+      tap((event: AgentEvent) => {
+        if (eventTypes.length > 0 && !eventTypes.includes(event.type)) return;
+        try {
+          const r = ob.observe(event, ctx);
+          if (r instanceof Promise) r.catch(() => {});
+        } catch { /* isolate */ }
+      })
+    );
+  }
+
+  return pipeline;
 }
 
 /** @deprecated */
