@@ -7,7 +7,6 @@
  * @packageDocumentation
  */
 
-import { Observable } from 'rxjs';
 import { generateText, streamText, jsonSchema } from 'ai';
 import { anthropic, createAnthropic } from '@ai-sdk/anthropic';
 import type {
@@ -179,47 +178,23 @@ export class AnthropicAdapter implements LLMAdapter {
     }
   }
 
-  stream(messages: Message[], options?: LLMOptions): Observable<LLMChunk> {
-    return new Observable<LLMChunk>(subscriber => {
-      const run = async (): Promise<void> => {
-        try {
-          const { systemPrompt, filteredMessages } = this.extractSystemPrompt(messages);
-          const tools = this.convertTools(options?.tools as FunctionDefinition[] | undefined);
-          const toolChoice = this.convertToolChoice(options?.toolChoice as ToolChoice | undefined);
+  async *stream(messages: Message[], options?: LLMOptions): AsyncGenerator<LLMChunk> {
+    const { systemPrompt, filteredMessages } = this.extractSystemPrompt(messages);
+    const tools = this.convertTools(options?.tools as FunctionDefinition[] | undefined);
+    const toolChoice = this.convertToolChoice(options?.toolChoice as ToolChoice | undefined);
 
-          const config: Record<string, unknown> = {
-            model: this.model,
-            messages: this.convertMessages(filteredMessages),
-          };
+    const config: Record<string, unknown> = { model: this.model, messages: this.convertMessages(filteredMessages) };
+    if (systemPrompt) config.system = systemPrompt;
+    if (options?.temperature !== undefined) config.temperature = options.temperature;
+    if (options?.maxTokens !== undefined) config.maxTokens = options.maxTokens;
+    if (options?.topP !== undefined) config.topP = options.topP;
+    if (options?.stopSequences && options.stopSequences.length > 0) config.stopSequences = options.stopSequences;
+    if (tools) { config.tools = tools; if (toolChoice) config.toolChoice = toolChoice; }
 
-          if (systemPrompt) config.system = systemPrompt;
-          if (options?.temperature !== undefined) config.temperature = options.temperature;
-          if (options?.maxTokens !== undefined) config.maxTokens = options.maxTokens;
-          if (options?.topP !== undefined) config.topP = options.topP;
-          if (options?.stopSequences && options.stopSequences.length > 0) {
-            config.stopSequences = options.stopSequences;
-          }
-          if (tools) {
-            config.tools = tools;
-            if (toolChoice) config.toolChoice = toolChoice;
-          }
-
-          const result = streamText(config as Parameters<typeof streamText>[0]);
-
-          for await (const textPart of result.textStream) {
-            subscriber.next({ text: textPart });
-          }
-
-          subscriber.complete();
-        } catch (error) {
-          subscriber.error(error instanceof Error ? error : new Error(String(error)));
-        }
-      };
-
-      run().catch(error =>
-        subscriber.error(error instanceof Error ? error : new Error(String(error)))
-      );
-    });
+    const result = streamText(config as Parameters<typeof streamText>[0]);
+    for await (const textPart of result.textStream) {
+      yield { text: textPart };
+    }
   }
 
   formatTools(tools: FunctionDefinition[]): unknown {

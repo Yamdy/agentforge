@@ -10,9 +10,8 @@ import type {
   LLMOptions,
   Message,
   ToolDefinition,
+  LLMChunk,
 } from '../core/interfaces.js';
-import type { Observable } from 'rxjs';
-import { EMPTY } from 'rxjs';
 import type { Logger } from '../core/logger.js';
 import { DefaultLogger } from '../core/logger.js';
 
@@ -218,9 +217,8 @@ export function createOpenAIHttpAdapter(
       }
     },
 
-    stream(): Observable<never> {
-      // HTTP adapter does not support streaming - use AI SDK adapters (openai.ts) for streaming
-      return EMPTY;
+    async *stream(): AsyncGenerator<LLMChunk> {
+      // HTTP adapter does not support streaming
     },
   };
 

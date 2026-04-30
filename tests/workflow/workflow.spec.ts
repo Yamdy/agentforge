@@ -88,8 +88,8 @@ class MockLLMAdapter implements LLMAdapter {
     return { content: 'Default response', finishReason: 'stop' };
   }
 
-  stream(): Observable<LLMResponse> {
-    return of({ content: 'stream', finishReason: 'stop' });
+  async *stream(): AsyncGenerator<LLMChunk> {
+    yield { text: 'stream' };
   }
 
   getCallCount(): number {

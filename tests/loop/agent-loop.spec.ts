@@ -84,8 +84,8 @@ class MockLLMAdapter implements LLMAdapter {
     return { content: 'Default response', finishReason: 'stop' };
   }
 
-  stream(_messages: AgentState['messages']): Observable<LLMResponse> {
-    return of({ content: 'stream', finishReason: 'stop' });
+  async *stream(_messages: AgentState['messages']): AsyncGenerator<LLMChunk> {
+    yield { text: 'stream' };
   }
 
   getCallCount(): number {
@@ -241,7 +241,7 @@ describe('Phase 2a: Agent Loop', () => {
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(agent.run('Hi there').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('Hi there').pipe(toArray()));
 
       const types = events.map(e => e.type);
       expect(types).toContain('agent.start');
@@ -281,7 +281,7 @@ describe('Phase 2a: Agent Loop', () => {
       const config = createTestConfig({ parallelToolCalls: false });
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(agent.run('What is the weather in Beijing?').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('What is the weather in Beijing?').pipe(toArray()));
 
       const types = events.map(e => e.type);
       expect(types).toContain('tool.execute');
@@ -327,7 +327,7 @@ describe('Phase 2a: Agent Loop', () => {
       const config = createTestConfig({ parallelToolCalls: true });
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(agent.run('Check weather and calculate').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('Check weather and calculate').pipe(toArray()));
 
       expect(events.find(e => e.type === 'tool.batch.start')).toBeDefined();
       expect(events.find(e => e.type === 'tool.batch')).toBeDefined();
@@ -369,7 +369,7 @@ describe('Phase 2a: Agent Loop', () => {
       const config = createTestConfig({ parallelToolCalls: true });
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(agent.run('Test batch with failure').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('Test batch with failure').pipe(toArray()));
 
       // Batch emits tool.result for each tool in the batch
       const toolResults = events.filter(e => e.type === 'tool.result');
@@ -411,7 +411,7 @@ describe('Phase 2a: Agent Loop', () => {
       const config = createTestConfig({ maxLLMRepairAttempts: 2 });
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(agent.run('Get weather').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('Get weather').pipe(toArray()));
 
       expect(events.find(e => e.type === 'llm.output.invalid')).toBeDefined();
 
@@ -438,7 +438,7 @@ describe('Phase 2a: Agent Loop', () => {
       const config = createTestConfig({ maxLLMRepairAttempts: 1 });
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(agent.run('Get weather').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('Get weather').pipe(toArray()));
 
       // Should emit invalid event
       expect(events.find(e => e.type === 'llm.output.invalid')).toBeDefined();
@@ -477,7 +477,7 @@ describe('Phase 2a: Agent Loop', () => {
       const config = createTestConfig({ parallelToolCalls: false });
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(agent.run('Delete the test file').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('Delete the test file').pipe(toArray()));
 
       // Two LLM calls = two tool executions (ask_permission first, then nothing second)
       // Actually - second LLM call doesn't have tools, so only one tool execution
@@ -517,7 +517,7 @@ describe('Phase 2a: Agent Loop', () => {
       const config = createTestConfig({ parallelToolCalls: false });
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(agent.run('Test error handling').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('Test error handling').pipe(toArray()));
 
       const toolResult = events.find(e => e.type === 'tool.result');
       expect(toolResult).toBeDefined();
@@ -540,7 +540,7 @@ describe('Phase 2a: Agent Loop', () => {
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(agent.run('Test LLM error').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('Test LLM error').pipe(toArray()));
 
       // LLM error should be captured as events
       expect(events.find(e => e.type === 'agent.error')).toBeDefined();
@@ -580,7 +580,7 @@ describe('Phase 2a: Agent Loop', () => {
       const config = createTestConfig({ maxSteps: 2, parallelToolCalls: false });
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(agent.run('Loop test').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('Loop test').pipe(toArray()));
 
       const complete = events.find(e => e.type === 'agent.complete');
       expect(complete).toBeDefined();
@@ -614,7 +614,7 @@ describe('Phase 2a: Agent Loop', () => {
       const config = createTestConfig({ parallelToolCalls: false });
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(agent.run('Test step events').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('Test step events').pipe(toArray()));
 
       // Verify LLM was called twice (step 1 and step 2)
       expect(llm.getCallCount()).toBe(2);
@@ -641,7 +641,7 @@ describe('Phase 2a: Agent Loop', () => {
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(agent.run('Hello').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('Hello').pipe(toArray()));
 
       const response = events.find(e => e.type === 'llm.response');
       expect(response).toBeDefined();
@@ -669,7 +669,7 @@ describe('Phase 2a: Agent Loop', () => {
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(agent.run('Hello').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('Hello').pipe(toArray()));
 
       const response = events.find(e => e.type === 'llm.response');
       expect(response).toBeDefined();
@@ -706,7 +706,7 @@ describe('Phase 2a: Agent Loop', () => {
       const config = createTestConfig({ maxLLMRepairAttempts: 3, parallelToolCalls: false });
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(agent.run('Get weather').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('Get weather').pipe(toArray()));
 
       // Should emit llm.output.invalid then repair
       expect(events.find(e => e.type === 'llm.output.invalid')).toBeDefined();
@@ -742,7 +742,7 @@ describe('Phase 2a: Agent Loop', () => {
       const config = createTestConfig({ maxLLMRepairAttempts: 2, parallelToolCalls: false });
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(agent.run('Test repair').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('Test repair').pipe(toArray()));
 
       // Should emit multiple invalid events
       const invalidEvents = events.filter(e => e.type === 'llm.output.invalid');
@@ -777,7 +777,7 @@ describe('Phase 2a: Agent Loop', () => {
       ctx.pauseController.pause();
 
       // Start the loop - it should block
-      const eventsPromise = firstValueFrom(agent.run('Hello').pipe(toArray()));
+      const eventsPromise = firstValueFrom(agent.run$('Hello').pipe(toArray()));
 
       // Resume after a short delay
       setTimeout(() => {
@@ -844,7 +844,7 @@ describe('Phase 2a: Agent Loop', () => {
         }, 0);
       });
 
-      const events = await firstValueFrom(agent.run('Delete file').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('Delete file').pipe(toArray()));
       askSubscription.unsubscribe();
 
       // Should emit hitl.ask event
@@ -892,7 +892,7 @@ describe('Phase 2a: Agent Loop', () => {
       const config = createTestConfig({ parallelToolCalls: false });
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(agent.run('Delete file').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('Delete file').pipe(toArray()));
 
       // Without HITL controller, the HITL_REQUIRED: prefix stays in the result
       const toolResult = events.find(e => e.type === 'tool.result');
@@ -920,7 +920,7 @@ describe('Phase 2a: Agent Loop', () => {
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(agent.run('Hi').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('Hi').pipe(toArray()));
 
       const types = events.map(e => e.type);
 
@@ -964,7 +964,7 @@ describe('Phase 2a: Agent Loop', () => {
       const config = createTestConfig({ parallelToolCalls: false });
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(agent.run('Get weather').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('Get weather').pipe(toArray()));
 
       const types = events.map(e => e.type);
 
@@ -1001,7 +1001,7 @@ describe('Phase 2a: Agent Loop', () => {
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(agent.run('Hello').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('Hello').pipe(toArray()));
 
       // Find all events before llm.response
       const responseIdx = events.findIndex(e => e.type === 'llm.response');
@@ -1031,7 +1031,7 @@ describe('Phase 2a: Agent Loop', () => {
       const config = createTestConfig({ parallelToolCalls: false });
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(agent.run('Calculate').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('Calculate').pipe(toArray()));
 
       const types = events.map(e => e.type);
 
@@ -1065,7 +1065,7 @@ describe('Phase 2a: Agent Loop', () => {
       const config = createTestConfig({ parallelToolCalls: false });
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(agent.run('Weather').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('Weather').pipe(toArray()));
 
       // Should have exactly one tool.call for single tool
       const callEvents = events.filter(e => e.type === 'tool.call');
@@ -1105,7 +1105,7 @@ describe('Phase 2a: Agent Loop', () => {
       });
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(agent.run('Hi').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('Hi').pipe(toArray()));
 
       // Should emit a checkpoint event
       const checkpointEvents = events.filter(e => e.type === 'checkpoint');
@@ -1149,7 +1149,7 @@ describe('Phase 2a: Agent Loop', () => {
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(agent.run('Hi').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('Hi').pipe(toArray()));
 
       // Should NOT emit checkpoint events
       const checkpointEvents = events.filter(e => e.type === 'checkpoint');
@@ -1171,7 +1171,7 @@ describe('Phase 2a: Agent Loop', () => {
       });
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(agent.run('Hi').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('Hi').pipe(toArray()));
 
       // Should NOT emit checkpoint events (no storage)
       const checkpointEvents = events.filter(e => e.type === 'checkpoint');
@@ -1206,7 +1206,7 @@ describe('Phase 2a: Agent Loop', () => {
       });
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(agent.run('Get weather').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('Get weather').pipe(toArray()));
 
       // Should emit checkpoint events for each LLM response
       const checkpointEvents = events.filter(e => e.type === 'checkpoint');
@@ -1255,7 +1255,7 @@ describe('Phase 2a: Agent Loop', () => {
       });
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(agent.run('Calculate').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('Calculate').pipe(toArray()));
 
       const types = events.map(e => e.type);
 
@@ -1291,7 +1291,7 @@ describe('Phase 2a: Agent Loop', () => {
 
       const agent = createAgentLoop(ctx, config);
       // Should not throw - checkpoint save failure is fire-and-forget
-      const events = await firstValueFrom(agent.run('Hi').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('Hi').pipe(toArray()));
 
       // Should still complete normally
       expect(events.find(e => e.type === 'agent.complete')).toBeDefined();
@@ -1313,10 +1313,10 @@ describe('Phase 2a: Agent Loop', () => {
       const agent = createAgentLoop(ctx, config);
 
       // First call to run() sets isRunning = true
-      const firstRun$ = agent.run('first');
+      const firstRun$ = agent.run$('first');
 
       // Second call should emit agent.error + done (errors-as-events pattern)
-      const secondRun$ = agent.run('second');
+      const secondRun$ = agent.run$('second');
       const secondEvents = await firstValueFrom(secondRun$.pipe(toArray()));
 
       // Should emit agent.error event (not throw via RxJS error channel)
@@ -1344,11 +1344,11 @@ describe('Phase 2a: Agent Loop', () => {
       const agent = createAgentLoop(ctx, config);
 
       // First run completes
-      const firstEvents = await firstValueFrom(agent.run('first').pipe(toArray()));
+      const firstEvents = await firstValueFrom(agent.run$('first').pipe(toArray()));
       expect(firstEvents.find(e => e.type === 'agent.complete')).toBeDefined();
 
       // Second run should work after first completes
-      const secondEvents = await firstValueFrom(agent.run('second').pipe(toArray()));
+      const secondEvents = await firstValueFrom(agent.run$('second').pipe(toArray()));
       expect(secondEvents.find(e => e.type === 'agent.complete')).toBeDefined();
     });
 
@@ -1361,13 +1361,13 @@ describe('Phase 2a: Agent Loop', () => {
       const agent = createAgentLoop(ctx, config);
 
       // First run fails
-      const firstEvents = await firstValueFrom(agent.run('first').pipe(toArray()));
+      const firstEvents = await firstValueFrom(agent.run$('first').pipe(toArray()));
       expect(firstEvents.find(e => e.type === 'agent.error')).toBeDefined();
 
       // Second run should work after error
       llm.setFailNTimes(0);
       llm.setResponses([{ content: 'success after error', finishReason: 'stop' }]);
-      const secondEvents = await firstValueFrom(agent.run('second').pipe(toArray()));
+      const secondEvents = await firstValueFrom(agent.run$('second').pipe(toArray()));
       expect(secondEvents.find(e => e.type === 'agent.complete')).toBeDefined();
     });
   });

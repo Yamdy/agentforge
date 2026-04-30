@@ -7,7 +7,6 @@
  * @packageDocumentation
  */
 
-import { Observable } from 'rxjs';
 import { generateText, streamText, jsonSchema } from 'ai';
 import { openai, createOpenAI } from '@ai-sdk/openai';
 import type {
@@ -242,68 +241,34 @@ export class OpenAIAdapter implements LLMAdapter {
   /**
    * Streaming chat completion
    */
-  stream(messages: Message[], options?: LLMOptions): Observable<LLMChunk> {
-    return new Observable<LLMChunk>(subscriber => {
-      const run = async (): Promise<void> => {
-        try {
-          // Build config with only defined options
-          const config: Record<string, unknown> = {
-            model: this.model,
-            messages: this.convertMessages(messages),
-          };
+  async *stream(messages: Message[], options?: LLMOptions): AsyncGenerator<LLMChunk> {
+    const config: Record<string, unknown> = {
+      model: this.model,
+      messages: this.convertMessages(messages),
+    };
 
-          if (options?.temperature !== undefined) {
-            config.temperature = options.temperature;
-          }
-          if (options?.maxTokens !== undefined) {
-            config.maxTokens = options.maxTokens;
-          }
-          if (options?.topP !== undefined) {
-            config.topP = options.topP;
-          }
-          if (options?.stopSequences && options.stopSequences.length > 0) {
-            config.stopSequences = options.stopSequences;
-          }
+    if (options?.temperature !== undefined) config.temperature = options.temperature;
+    if (options?.maxTokens !== undefined) config.maxTokens = options.maxTokens;
+    if (options?.topP !== undefined) config.topP = options.topP;
+    if (options?.stopSequences && options.stopSequences.length > 0) {
+      config.stopSequences = options.stopSequences;
+    }
 
-          const tools = options?.tools as FunctionDefinition[] | undefined;
-          if (tools && tools.length > 0) {
-            const toolsRecord: Record<
-              string,
-              { description: string; parameters: ReturnType<typeof jsonSchema> }
-            > = {};
-            for (const tool of tools) {
-              toolsRecord[tool.name] = {
-                description: tool.description,
-                parameters: jsonSchema(tool.parameters as JSONSchema7),
-              };
-            }
-            config.tools = toolsRecord;
+    const tools = options?.tools as FunctionDefinition[] | undefined;
+    if (tools && tools.length > 0) {
+      const toolsRecord: Record<string, { description: string; parameters: ReturnType<typeof jsonSchema> }> = {};
+      for (const tool of tools) {
+        toolsRecord[tool.name] = { description: tool.description, parameters: jsonSchema(tool.parameters as JSONSchema7) };
+      }
+      config.tools = toolsRecord;
+      const toolChoice = this.convertToolChoice(options?.toolChoice as ToolChoice | undefined);
+      if (toolChoice) config.toolChoice = toolChoice;
+    }
 
-            const toolChoice = this.convertToolChoice(
-              options?.toolChoice as ToolChoice | undefined
-            );
-            if (toolChoice) {
-              config.toolChoice = toolChoice;
-            }
-          }
-
-          const result = streamText(config as Parameters<typeof streamText>[0]);
-
-          // Iterate over the text stream
-          for await (const textPart of result.textStream) {
-            subscriber.next({ text: textPart });
-          }
-
-          subscriber.complete();
-        } catch (error) {
-          subscriber.error(error instanceof Error ? error : new Error(String(error)));
-        }
-      };
-
-      run().catch(error => {
-        subscriber.error(error instanceof Error ? error : new Error(String(error)));
-      });
-    });
+    const result = streamText(config as Parameters<typeof streamText>[0]);
+    for await (const textPart of result.textStream) {
+      yield { text: textPart };
+    }
   }
 
   /**

@@ -92,7 +92,7 @@ export interface LLMAdapter {
   chat(messages: Message[], options?: LLMOptions): Promise<LLMResponse>;
 
   /** Streaming chat completion */
-  stream(messages: Message[], options?: LLMOptions): Observable<LLMChunk>;
+  stream(messages: Message[], options?: LLMOptions): AsyncGenerator<LLMChunk>;
 
   // ===== Provider-specific normalization methods =====
 

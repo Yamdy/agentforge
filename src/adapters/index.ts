@@ -8,7 +8,6 @@
  */
 
 import { createRequire } from 'node:module';
-import { EMPTY } from 'rxjs';
 import type { LLMAdapter, LLMResponse } from '../core/interfaces.js';
 
 // ============================================================
@@ -297,7 +296,9 @@ class LLMAdapterFactoryImpl {
             `Install @ai-sdk/${provider} and register a factory.`
         );
       },
-      stream: () => EMPTY,
+      async *stream() {
+        // No streaming support
+      },
     };
   }
 }

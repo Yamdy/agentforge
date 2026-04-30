@@ -50,6 +50,8 @@ import {
 // ============================================================
 
 class MockStreamingLLMAdapter implements LLMAdapter {
+  readonly name = 'mock-streaming';
+  readonly provider = 'mock';
   private responses: LLMResponse[] = [];
   private streamingChunks: LLMChunk[][] = [];
   private callCount = 0;
@@ -73,12 +75,14 @@ class MockStreamingLLMAdapter implements LLMAdapter {
     return { content: 'Default response', finishReason: 'stop' };
   }
 
-  stream(_messages: AgentState['messages']): Observable<LLMChunk> {
+  async *stream(_messages: AgentState['messages']): AsyncGenerator<LLMChunk> {
     this.callCount++;
     const chunks = this.streamingChunks.length > 0
       ? this.streamingChunks[this.callCount - 1] ?? []
       : [];
-    return from(chunks);
+    for (const chunk of chunks) {
+      yield chunk;
+    }
   }
 
   getCallCount(): number {
@@ -178,7 +182,7 @@ describe('Phase 2c: Streaming LLM', () => {
     const config = createTestConfig({ streaming: true });
 
     const agent = createAgentLoop(ctx, config);
-    const events = await firstValueFrom(agent.run('Hi').pipe(toArray()));
+    const events = await firstValueFrom(agent.run$('Hi').pipe(toArray()));
 
     const types = events.map(e => e.type);
 
@@ -218,7 +222,7 @@ describe('Phase 2c: Streaming LLM', () => {
     const config = createTestConfig({ streaming: true, parallelToolCalls: false });
 
     const agent = createAgentLoop(ctx, config);
-    const events = await firstValueFrom(agent.run('Get weather').pipe(toArray()));
+    const events = await firstValueFrom(agent.run$('Get weather').pipe(toArray()));
 
     const types = events.map(e => e.type);
 
@@ -249,7 +253,7 @@ describe('Phase 2c: Streaming LLM', () => {
     };
 
     const agent = createAgentLoop(errorCtx, errorConfig);
-    const events = await firstValueFrom(agent.run('Hello').pipe(toArray()));
+    const events = await firstValueFrom(agent.run$('Hello').pipe(toArray()));
 
     // Should emit some stream text then error
     expect(events.find(e => e.type === 'llm.stream.text')).toBeDefined();

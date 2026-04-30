@@ -110,23 +110,15 @@ describe('GoogleAdapter', () => {
   });
 
   describe('stream()', () => {
-    it('should emit chunks via Observable', async () => {
+    it('should yield chunks via AsyncGenerator', async () => {
       const chunks: string[] = [];
-      
-      await new Promise<void>((resolve, reject) => {
-        adapter.stream(sampleMessages).subscribe({
-          next: (chunk) => {
-            if (chunk.text) chunks.push(chunk.text);
-          },
-          complete: () => resolve(),
-          error: reject,
-        });
-      });
-
+      for await (const chunk of adapter.stream(sampleMessages)) {
+        if (chunk.text) chunks.push(chunk.text);
+      }
       expect(chunks).toEqual(['Hello', ' from', ' Gemini']);
     });
 
-    it('should emit errors via subscriber.error()', async () => {
+    it('should throw errors from stream', async () => {
       const { streamText } = await import('ai');
       vi.mocked(streamText).mockReturnValueOnce({
         textStream: (async function* () {
@@ -134,16 +126,11 @@ describe('GoogleAdapter', () => {
         })(),
       } as any);
 
-      await new Promise<void>((resolve) => {
-        adapter.stream(sampleMessages).subscribe({
-          next: () => {},
-          error: (err) => {
-            expect(err.message).toBe('Stream Error');
-            resolve();
-          },
-          complete: () => resolve(),
-        });
-      });
+      await expect(async () => {
+        for await (const _chunk of adapter.stream(sampleMessages)) {
+          // should throw before yielding
+        }
+      }).rejects.toThrow('Stream Error');
     });
   });
 });

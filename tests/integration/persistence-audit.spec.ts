@@ -84,8 +84,8 @@ class MockLLMAdapter implements LLMAdapter {
     return { content: 'Default response', finishReason: 'stop' };
   }
 
-  stream(_messages: AgentState['messages']): Observable<LLMResponse> {
-    return of({ content: 'stream', finishReason: 'stop' });
+  async *stream(_messages: AgentState['messages']): AsyncGenerator<LLMChunk> {
+    yield { text: 'stream' };
   }
 }
 

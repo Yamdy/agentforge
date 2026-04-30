@@ -11,9 +11,7 @@
  * 4. Provider registry with lazy loading
  */
 
-import type { LLMAdapter, LLMResponse, LLMOptions, Message } from '../core/interfaces.js';
-import type { Observable } from 'rxjs';
-import { EMPTY } from 'rxjs';
+import type { LLMAdapter, LLMResponse, LLMOptions, Message, LLMChunk } from '../core/interfaces.js';
 
 // ============================================================
 // Error Classification (inspired by OpenCode)
@@ -226,8 +224,8 @@ export function createHttpAdapter(
       return { content: '', finishReason: 'error' };
     },
 
-    stream(): Observable<never> {
-      return EMPTY;
+    async *stream(): AsyncGenerator<LLMChunk> {
+      // No streaming support in adapter-system
     },
   };
 }

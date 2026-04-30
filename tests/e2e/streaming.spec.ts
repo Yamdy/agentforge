@@ -216,47 +216,24 @@ class RealLLMAdapter implements LLMAdapter {
    * Streaming chat completion
    * Returns Observable<LLMChunk> for AgentForge streaming
    */
-  stream(messages: Message[], options?: LLMOptions): Observable<LLMChunk> {
-    return new Observable<LLMChunk>((subscriber) => {
-      const run = async () => {
-        try {
-          const tools = this.convertTools(options?.tools as FunctionDefinition[] | undefined);
-
-          const { fullStream } = await streamText({
-            model: this.model,
-            messages: this.convertMessages(messages),
-            temperature: options?.temperature ?? 0.7,
-            ...(tools ? { tools } : {}),
-          });
-
-          for await (const chunk of fullStream) {
-            if (chunk.type === 'text-delta') {
-              const textDelta = (chunk as { text?: string }).text;
-              if (textDelta) {
-                subscriber.next({ text: textDelta });
-              }
-            } else if (chunk.type === 'tool-call') {
-              const toolCallChunk = chunk as {
-                toolCallId: string;
-                toolName: string;
-                input?: unknown;
-              };
-              subscriber.next({
-                toolCallId: toolCallChunk.toolCallId,
-                toolName: toolCallChunk.toolName,
-                argsDelta: JSON.stringify(toolCallChunk.input ?? {}),
-              });
-            }
-          }
-
-          subscriber.complete();
-        } catch (error) {
-          subscriber.error(error);
-        }
-      };
-
-      run();
+  async *stream(messages: Message[], options?: LLMOptions): AsyncGenerator<LLMChunk> {
+    const tools = this.convertTools(options?.tools as FunctionDefinition[] | undefined);
+    const { fullStream } = streamText({
+      model: this.model,
+      messages: this.convertMessages(messages),
+      temperature: options?.temperature ?? 0.7,
+      ...(tools ? { tools } : {}),
     });
+
+    for await (const chunk of fullStream) {
+      if (chunk.type === 'text-delta') {
+        const textDelta = (chunk as { text?: string }).text;
+        if (textDelta) yield { text: textDelta };
+      } else if (chunk.type === 'tool-call') {
+        const tcc = chunk as { toolCallId: string; toolName: string; input?: unknown };
+        yield { toolCallId: tcc.toolCallId, toolName: tcc.toolName, argsDelta: JSON.stringify(tcc.input ?? {}) };
+      }
+    }
   }
 }
 

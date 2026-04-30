@@ -31,8 +31,8 @@ class MockLLMAdapter implements LLMAdapter {
     };
   }
 
-  stream(_messages: Message[]) {
-    return of({ text: 'Hello!', finishReason: 'stop' as const });
+  async *stream(_messages: Message[]): AsyncGenerator<LLMChunk> {
+    yield { text: 'Hello!' };
   }
 }
 
