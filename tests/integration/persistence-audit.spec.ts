@@ -293,7 +293,7 @@ describe('Integration: Persistence + Audit Logging', () => {
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(agent.run('Hi').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('Hi').pipe(toArray()));
 
       // Should have at least one checkpoint saved
       expect(checkpointStorage.savedCheckpoints.length).toBeGreaterThan(0);
@@ -312,7 +312,7 @@ describe('Integration: Persistence + Audit Logging', () => {
       const config = createTestConfig({ checkpoint: undefined });
 
       const agent = createAgentLoop(ctx, config);
-      await firstValueFrom(agent.run('Hi').pipe(toArray()));
+      await firstValueFrom(agent.run$('Hi').pipe(toArray()));
 
       expect(checkpointStorage.savedCheckpoints).toHaveLength(0);
     });
@@ -331,7 +331,7 @@ describe('Integration: Persistence + Audit Logging', () => {
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
-      await firstValueFrom(agent.run('Weather?').pipe(toArray()));
+      await firstValueFrom(agent.run$('Weather?').pipe(toArray()));
 
       // Should have multiple checkpoints (after_llm for both LLM calls)
       expect(checkpointStorage.savedCheckpoints.length).toBeGreaterThanOrEqual(1);
@@ -351,7 +351,7 @@ describe('Integration: Persistence + Audit Logging', () => {
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
-      await firstValueFrom(agent.run('Hi').pipe(toArray()));
+      await firstValueFrom(agent.run$('Hi').pipe(toArray()));
 
       const llmRequestEntries = auditLogger.getEntriesByEventType('llm.request');
       expect(llmRequestEntries.length).toBeGreaterThan(0);
@@ -382,7 +382,7 @@ describe('Integration: Persistence + Audit Logging', () => {
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
-      await firstValueFrom(agent.run('Weather?').pipe(toArray()));
+      await firstValueFrom(agent.run$('Weather?').pipe(toArray()));
 
       // Should have tool.execute audit entry
       const toolExecuteEntries = auditLogger.getEntriesByEventType('tool.execute');
@@ -419,7 +419,7 @@ describe('Integration: Persistence + Audit Logging', () => {
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
-      await firstValueFrom(agent.run('Do something').pipe(toArray()));
+      await firstValueFrom(agent.run$('Do something').pipe(toArray()));
 
       const toolResultEntries = auditLogger.getEntriesByEventType('tool.result');
       expect(toolResultEntries.length).toBeGreaterThan(0);
@@ -440,7 +440,7 @@ describe('Integration: Persistence + Audit Logging', () => {
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
-      await firstValueFrom(agent.run('Hi').pipe(toArray()));
+      await firstValueFrom(agent.run$('Hi').pipe(toArray()));
 
       const errorEntries = auditLogger.getEntriesByEventType('agent.error');
       expect(errorEntries.length).toBeGreaterThan(0);
@@ -471,7 +471,7 @@ describe('Integration: Persistence + Audit Logging', () => {
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
-      await firstValueFrom(agent.run('Weather?').pipe(toArray()));
+      await firstValueFrom(agent.run$('Weather?').pipe(toArray()));
 
       // All audit entries should have the correct sessionId
       for (const entry of auditLogger.entries) {
@@ -499,7 +499,7 @@ describe('Integration: Persistence + Audit Logging', () => {
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
-      await firstValueFrom(agent.run('Hi').pipe(toArray()));
+      await firstValueFrom(agent.run$('Hi').pipe(toArray()));
 
       const llmResponseEntries = auditLogger.getEntriesByEventType('llm.response');
       expect(llmResponseEntries.length).toBeGreaterThan(0);
@@ -525,7 +525,7 @@ describe('Integration: Persistence + Audit Logging', () => {
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
-      await firstValueFrom(agent.run('Calculate 1+2').pipe(toArray()));
+      await firstValueFrom(agent.run$('Calculate 1+2').pipe(toArray()));
 
       const toolExecuteEntries = auditLogger.getEntriesByEventType('tool.execute');
       expect(toolExecuteEntries.length).toBeGreaterThan(0);
@@ -549,7 +549,7 @@ describe('Integration: Persistence + Audit Logging', () => {
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
-      await firstValueFrom(agent.run('Weather in Shanghai?').pipe(toArray()));
+      await firstValueFrom(agent.run$('Weather in Shanghai?').pipe(toArray()));
 
       const eventTypes = new Set(auditLogger.entries.map(e => e.eventType));
 
@@ -582,7 +582,7 @@ describe('Integration: Persistence + Audit Logging', () => {
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(agent.run('Weather?').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('Weather?').pipe(toArray()));
 
       // Checkpoint events emitted
       const checkpointEvents = events.filter(e => e.type === 'checkpoint');

@@ -119,7 +119,7 @@ describe.skipIf(skipIfNoLLM)('E2E: Real LLM Tests', () => {
 
         const agent = createAgentLoop(ctx, config);
         const events = await firstValueFrom(
-          agent.run('What is 2+2? Reply with just the number.').pipe(toArray()),
+          agent.run$('What is 2+2? Reply with just the number.').pipe(toArray()),
         );
 
         // Verify event sequence
@@ -162,7 +162,7 @@ describe.skipIf(skipIfNoLLM)('E2E: Real LLM Tests', () => {
 
         const agent = createAgentLoop(ctx, config);
         const events = await firstValueFrom(
-          agent.run('Say nothing, just reply with an empty message if possible.').pipe(toArray()),
+          agent.run$('Say nothing, just reply with an empty message if possible.').pipe(toArray()),
         );
 
         // Should still complete
@@ -185,7 +185,7 @@ describe.skipIf(skipIfNoLLM)('E2E: Real LLM Tests', () => {
 
         const agent = createAgentLoop(ctx, config);
         const events = await firstValueFrom(
-          agent.run('Tell me a short story about a cat. Keep it brief, 2-3 sentences.').pipe(toArray()),
+          agent.run$('Tell me a short story about a cat. Keep it brief, 2-3 sentences.').pipe(toArray()),
         );
 
         // Verify streaming events (may vary based on API support)
@@ -243,7 +243,7 @@ describe.skipIf(skipIfNoLLM)('E2E: Real LLM Tests', () => {
 
         // Use a prompt that might trigger tool use
         const eventsPromise = firstValueFrom(
-          agent.run('What is the weather in Tokyo today?').pipe(toArray()),
+          agent.run$('What is the weather in Tokyo today?').pipe(toArray()),
         );
 
         const events = await eventsPromise;
@@ -293,7 +293,7 @@ describe.skipIf(skipIfNoLLM)('E2E: Real LLM Tests', () => {
 
         const agent = createAgentLoop(ctx, config);
         const events = await firstValueFrom(
-          agent.run('What is the current weather in Beijing? Use the get_weather tool.').pipe(toArray()),
+          agent.run$('What is the current weather in Beijing? Use the get_weather tool.').pipe(toArray()),
         );
 
         // Check if tool was called (LLM decides)
@@ -346,7 +346,7 @@ describe.skipIf(skipIfNoLLM)('E2E: Real LLM Tests', () => {
 
         const agent = createAgentLoop(ctx, config);
         const events = await firstValueFrom(
-          agent.run('Use the failing_tool to test error handling.').pipe(toArray()),
+          agent.run$('Use the failing_tool to test error handling.').pipe(toArray()),
         );
 
         // If tool was called, check error result
@@ -380,7 +380,7 @@ describe.skipIf(skipIfNoLLM)('E2E: Real LLM Tests', () => {
 
         // First turn: introduce name
         const events1 = await firstValueFrom(
-          agent.run('My name is Alice. Remember this for later.').pipe(toArray()),
+          agent.run$('My name is Alice. Remember this for later.').pipe(toArray()),
         );
 
         const complete1 = events1.find(e => e.type === 'agent.complete');
@@ -390,7 +390,7 @@ describe.skipIf(skipIfNoLLM)('E2E: Real LLM Tests', () => {
         // Note: The agent loop doesn't automatically persist messages between runs
         // This test verifies the agent can complete a second run
         const events2 = await firstValueFrom(
-          agent.run('What is my name? (If you remember from the previous conversation, tell me.)').pipe(toArray()),
+          agent.run$('What is my name? (If you remember from the previous conversation, tell me.)').pipe(toArray()),
         );
 
         const complete2 = events2.find(e => e.type === 'agent.complete');
@@ -413,7 +413,7 @@ describe.skipIf(skipIfNoLLM)('E2E: Real LLM Tests', () => {
         // Run three sequential requests
         for (let i = 0; i < 3; i++) {
           const events = await firstValueFrom(
-            agent.run(`Request number ${i + 1}: What is ${i + 1} + ${i + 1}?`).pipe(toArray()),
+            agent.run$(`Request number ${i + 1}: What is ${i + 1} + ${i + 1}?`).pipe(toArray()),
           );
 
           const completeEvent = events.find(e => e.type === 'agent.complete');
@@ -436,7 +436,7 @@ describe.skipIf(skipIfNoLLM)('E2E: Real LLM Tests', () => {
 
         const agent = createAgentLoop(ctx, config);
         const events = await firstValueFrom(
-          agent.run('Hello, this is a normal request.').pipe(toArray()),
+          agent.run$('Hello, this is a normal request.').pipe(toArray()),
         );
 
         // Verify no RxJS error channel usage
@@ -479,7 +479,7 @@ describe.skipIf(skipIfNoLLM)('E2E: Real LLM Tests', () => {
 
         const agent = createAgentLoop(ctx, config);
         const events = await firstValueFrom(
-          agent.run('Keep using the get_info tool repeatedly.').pipe(toArray()),
+          agent.run$('Keep using the get_info tool repeatedly.').pipe(toArray()),
         );
 
         // Should terminate due to max steps
@@ -506,7 +506,7 @@ describe.skipIf(skipIfNoLLM)('E2E: Real LLM Tests', () => {
 
         const agent = createAgentLoop(ctx, config);
         const events = await firstValueFrom(
-          agent.run('Hello!').pipe(toArray()),
+          agent.run$('Hello!').pipe(toArray()),
         );
 
         const types = events.map(e => e.type);
@@ -545,7 +545,7 @@ describe.skipIf(skipIfNoLLM)('E2E: Real LLM Tests', () => {
 
         const agent = createAgentLoop(ctx, config);
         const events = await firstValueFrom(
-          agent.run('What time is it?').pipe(toArray()),
+          agent.run$('What time is it?').pipe(toArray()),
         );
 
         // All events should have timestamps
@@ -575,7 +575,7 @@ describe.skipIf(skipIfNoLLM)('E2E: Real LLM Tests', () => {
         const agent = createAgentLoop(ctx, config);
 
         // Create subscription
-        const sub = agent.run('Quick test.').subscribe({
+        const sub = agent.run$('Quick test.').subscribe({
           next: () => {},
           complete: () => {},
         });
@@ -602,7 +602,7 @@ describe.skipIf(skipIfNoLLM)('E2E: Real LLM Tests', () => {
 
         // Subscribe and track
         let eventCount = 0;
-        const sub = agent.run('Long response requested.').subscribe({
+        const sub = agent.run$('Long response requested.').subscribe({
           next: () => {
             eventCount++;
           },

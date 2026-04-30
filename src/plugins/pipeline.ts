@@ -184,7 +184,7 @@ export function buildPluginPipeline(
   _plugins: readonly Plugin[],
   _ctx: PluginContext
 ): Observable<AgentEvent> {
-  return source; // Pass-through stub
+  return source; // Pass-through stub — plugin tests need direct HookRegistry setup
 }
 
 /** @deprecated */

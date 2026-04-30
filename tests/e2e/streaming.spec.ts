@@ -382,7 +382,7 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
 
       const agent = createAgentLoop(ctx, config);
       const events = await firstValueFrom(
-        agent.run('Say hello in exactly 5 words.').pipe(toArray())
+        agent.run$('Say hello in exactly 5 words.').pipe(toArray())
       );
 
       const streamTextEvents = events.filter(e => e.type === 'llm.stream.text');
@@ -402,7 +402,7 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
 
       const agent = createAgentLoop(ctx, config);
       const events = await firstValueFrom(
-        agent.run('Say hi.').pipe(toArray())
+        agent.run$('Say hi.').pipe(toArray())
       );
 
       const types = events.map(e => e.type);
@@ -420,7 +420,7 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
 
       const agent = createAgentLoop(ctx, config);
       const events = await firstValueFrom(
-        agent.run('Say bye.').pipe(toArray())
+        agent.run$('Say bye.').pipe(toArray())
       );
 
       const types = events.map(e => e.type);
@@ -437,7 +437,7 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
 
       const agent = createAgentLoop(ctx, config);
       const events = await firstValueFrom(
-        agent.run('Count from 1 to 5, each number on a new line.').pipe(toArray())
+        agent.run$('Count from 1 to 5, each number on a new line.').pipe(toArray())
       );
 
       const streamTextEvents = events.filter(e => e.type === 'llm.stream.text');
@@ -464,7 +464,7 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
 
       const agent = createAgentLoop(ctx, config);
       const events = await firstValueFrom(
-        agent.run('What is the weather in Beijing?').pipe(toArray())
+        agent.run$('What is the weather in Beijing?').pipe(toArray())
       );
 
       const toolCallEvents = events.filter(e => e.type === 'llm.stream.tool_call');
@@ -486,7 +486,7 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
 
       const agent = createAgentLoop(ctx, config);
       const events = await firstValueFrom(
-        agent.run('Calculate 25 * 4 + 10').pipe(toArray())
+        agent.run$('Calculate 25 * 4 + 10').pipe(toArray())
       );
 
       // If LLM makes tool call, verify tool.result is present
@@ -507,7 +507,7 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
 
       const agent = createAgentLoop(ctx, config);
       const events = await firstValueFrom(
-        agent.run('Get weather for Shanghai and tell me if it is good for outdoor activities.').pipe(toArray())
+        agent.run$('Get weather for Shanghai and tell me if it is good for outdoor activities.').pipe(toArray())
       );
 
       const toolExecuteEvents = events.filter(e => e.type === 'tool.execute');
@@ -534,7 +534,7 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
       const cancel$ = new Subject<void>();
 
       const eventsPromise = firstValueFrom(
-        agent.run('Write a long story about a cat.').pipe(
+        agent.run$('Write a long story about a cat.').pipe(
           takeUntil(cancel$),
           toArray()
         )
@@ -563,7 +563,7 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
 
       // First subscription - cancelled
       const cancel$ = new Subject<void>();
-      const firstRun$ = agent.run('Say hello.').pipe(takeUntil(cancel$));
+      const firstRun$ = agent.run$('Say hello.').pipe(takeUntil(cancel$));
 
       // Start and immediately cancel
       setTimeout(() => cancel$.next(), 100);
@@ -574,7 +574,7 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
 
       // Second subscription should work
       const events = await firstValueFrom(
-        agent.run('Say goodbye.').pipe(toArray())
+        agent.run$('Say goodbye.').pipe(toArray())
       );
 
       expect(events.find(e => e.type === 'agent.complete')).toBeDefined();
@@ -592,7 +592,7 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
 
       const agent = createAgentLoop(ctx, config);
       const events = await firstValueFrom(
-        agent.run('Say "test".').pipe(toArray())
+        agent.run$('Say "test".').pipe(toArray())
       );
 
       const types = events.map(e => e.type);
@@ -616,7 +616,7 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
 
       const agent = createAgentLoop(ctx, config);
       const events = await firstValueFrom(
-        agent.run('Count from 1 to 3.').pipe(toArray())
+        agent.run$('Count from 1 to 3.').pipe(toArray())
       );
 
       const streamEvents = events.filter(e =>
@@ -637,7 +637,7 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
 
       const agent = createAgentLoop(ctx, config);
       const events = await firstValueFrom(
-        agent.run('Hello.').pipe(toArray())
+        agent.run$('Hello.').pipe(toArray())
       );
 
       const types = events.map(e => e.type);
@@ -671,7 +671,7 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
 
       const agent = createAgentLoop(ctx, config);
       const events = await firstValueFrom(
-        agent.run('Hello.').pipe(toArray())
+        agent.run$('Hello.').pipe(toArray())
       );
 
       // Should have some text before error
@@ -707,7 +707,7 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
 
       // Use a timeout to ensure test doesn't hang
       const eventsPromise = firstValueFrom(
-        agent.run('Hello.').pipe(
+        agent.run$('Hello.').pipe(
           takeUntil(
             new Observable<void>(sub => {
               setTimeout(() => { sub.next(); sub.complete(); }, 2000);
@@ -739,7 +739,7 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
 
       const agent = createAgentLoop(ctx, config);
       const events = await firstValueFrom(
-        agent.run('Hello.').pipe(toArray())
+        agent.run$('Hello.').pipe(toArray())
       );
 
       // Should still have start and end events
@@ -760,7 +760,7 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
 
       const agent = createAgentLoop(ctx, config);
       const events = await firstValueFrom(
-        agent.run('Tell me a short joke.').pipe(toArray())
+        agent.run$('Tell me a short joke.').pipe(toArray())
       );
 
       const types = events.map(e => e.type);
@@ -784,7 +784,7 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
 
       const agent = createAgentLoop(ctx, config);
       const events = await firstValueFrom(
-        agent.run('Hi.').pipe(toArray())
+        agent.run$('Hi.').pipe(toArray())
       );
 
       const responseEvent = events.find(e => e.type === 'llm.response');

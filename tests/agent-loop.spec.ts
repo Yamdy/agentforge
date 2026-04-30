@@ -610,7 +610,7 @@ describe('Agent Loop - Phase 0 Prototype', () => {
         parallelToolCalls: true,
       });
 
-      const events = await firstValueFrom(agent.run('Hi there').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('Hi there').pipe(toArray()));
 
       const types = events.map(e => e.type);
       expect(types).toContain('agent.start');
@@ -647,7 +647,7 @@ describe('Agent Loop - Phase 0 Prototype', () => {
         parallelToolCalls: false,
       });
 
-      const events = await firstValueFrom(agent.run('What is the weather in Beijing?').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('What is the weather in Beijing?').pipe(toArray()));
 
       const types = events.map(e => e.type);
       expect(types).toContain('tool.execute');
@@ -696,7 +696,7 @@ describe('Agent Loop - Phase 0 Prototype', () => {
         parallelToolCalls: true,
       });
 
-      const events = await firstValueFrom(agent.run('Check weather and calculate').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('Check weather and calculate').pipe(toArray()));
 
       expect(events.find(e => e.type === 'tool.batch.start')).toBeDefined();
       expect(events.find(e => e.type === 'tool.batch')).toBeDefined();
@@ -738,7 +738,7 @@ describe('Agent Loop - Phase 0 Prototype', () => {
         parallelToolCalls: true,
       });
 
-      const events = await firstValueFrom(agent.run('Test batch with failure').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('Test batch with failure').pipe(toArray()));
 
       const toolResults = events.filter(e => e.type === 'tool.result');
       expect(toolResults).toHaveLength(2);
@@ -770,7 +770,7 @@ describe('Agent Loop - Phase 0 Prototype', () => {
         parallelToolCalls: false,
       });
 
-      const events = await firstValueFrom(agent.run('Get weather').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('Get weather').pipe(toArray()));
 
       expect(events.find(e => e.type === 'llm.output.invalid')).toBeDefined();
       expect(events.find(e => e.type === 'agent.error')).toBeDefined();
@@ -809,7 +809,7 @@ describe('Agent Loop - Phase 0 Prototype', () => {
         parallelToolCalls: false,
       });
 
-      const events = await firstValueFrom(agent.run('Delete the test file').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('Delete the test file').pipe(toArray()));
 
       // 验证工具被调用（通过 registry log）
       const log = toolRegistry.getExecutionLog();
@@ -846,7 +846,7 @@ describe('Agent Loop - Phase 0 Prototype', () => {
         parallelToolCalls: false,
       });
 
-      const events = await firstValueFrom(agent.run('Test error handling').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('Test error handling').pipe(toArray()));
 
       const toolResult = events.find(e => e.type === 'tool.result');
       expect(toolResult).toBeDefined();
@@ -870,7 +870,7 @@ describe('Agent Loop - Phase 0 Prototype', () => {
         parallelToolCalls: false,
       });
 
-      const events = await firstValueFrom(agent.run('Test LLM error').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('Test LLM error').pipe(toArray()));
 
       // LLM 错误被捕获并转换为事件
       expect(events.find(e => e.type === 'agent.error')).toBeDefined();
@@ -896,7 +896,7 @@ describe('Agent Loop - Phase 0 Prototype', () => {
         parallelToolCalls: false,
       });
 
-      const events = await firstValueFrom(agent.run('Loop test').pipe(toArray()));
+      const events = await firstValueFrom(agent.run$('Loop test').pipe(toArray()));
 
       // 验证因 max steps 而完成
       const complete = events.find(e => e.type === 'agent.complete');

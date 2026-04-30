@@ -489,6 +489,15 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           messageCount: state.messages.length,
         }, {});
 
+        // ── Emit agent.step for backward compat ──
+        emitter.emit({
+          type: 'agent.step',
+          timestamp: Date.now(),
+          sessionId: ctx.sessionId,
+          step: state.step,
+          maxSteps,
+        } as AgentEvent);
+
         // ── 1. Request Hooks: transform messages ──
         let msgs = [...state.messages];
         for (const h of hooks.getRequestHooks()) {
@@ -535,6 +544,15 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           result: 'success',
           details: { messages: msgs.length, model: config.model },
         });
+
+        // ── Emit llm.request for backward compat ──
+        emitter.emit({
+          type: 'llm.request',
+          timestamp: Date.now(),
+          sessionId: ctx.sessionId,
+          messages: msgs,
+          model: config.model,
+        } as AgentEvent);
 
         let response;
         try {
