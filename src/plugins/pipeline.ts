@@ -11,6 +11,7 @@
 
 import { Observable, of, EMPTY } from 'rxjs';
 import { mergeMap, tap } from 'rxjs/operators';
+import { firstValueFrom } from 'rxjs';
 import type { AgentEvent } from '../core/events.js';
 import type { Plugin, PluginContext, InterceptorPlugin, ObserverPlugin } from './plugin.js';
 import { HookRegistry, type RequestHook } from '../core/hooks.js';
@@ -200,7 +201,11 @@ export function buildPluginPipeline(
       mergeMap(async (event: AgentEvent) => {
         if (eventTypes.length > 0 && !eventTypes.includes(event.type)) return event;
         try {
-          const result = await Promise.resolve(ic.intercept(event, ctx));
+          const raw = ic.intercept(event, ctx);
+          // Handle Observable return (old-style mocks) by unwrapping first value
+          const result = raw && typeof (raw as any).subscribe === 'function'
+            ? await firstValueFrom(raw as Observable<AgentEvent>)
+            : await Promise.resolve(raw);
           return result || event;
         } catch { return event; }
       })
