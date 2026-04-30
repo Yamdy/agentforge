@@ -153,21 +153,26 @@ tool.call → tool.execute → tool.result
 监听工具事件：
 
 ```typescript
-agent.run$('Search for AI news').pipe(
-  filter(e => e.type.startsWith('tool.'))
-).subscribe(event => {
-  switch (event.type) {
-    case 'tool.call':
-      console.log(`Calling: ${event.toolName}`, event.args);
-      break;
-    case 'tool.result':
-      console.log(`Result: ${event.result}`, event.isError ? '❌' : '✅');
-      break;
-    case 'tool.error':
-      console.error(`Error: ${event.error.message}`);
-      break;
+const agent = createAgent({
+  name: 'assistant',
+  model: 'openai/gpt-4o',
+  tools: [searchTool],
+});
+
+agent.onAny((event) => {
+  if (event.type === 'tool.call') {
+    console.log(`Calling: ${event.toolName}`, event.args);
+  }
+  if (event.type === 'tool.result') {
+    console.log(`Result: ${event.result}`, event.isError ? '❌' : '✅');
+  }
+  if (event.type === 'tool.error') {
+    console.error(`Error: ${event.error.message}`);
   }
 });
+
+const result = await agent.run('Search for AI news');
+console.log('Output:', result);
 ```
 
 ## 批量工具调用
@@ -175,17 +180,18 @@ agent.run$('Search for AI news').pipe(
 AgentForge 支持并行工具执行：
 
 ```typescript
-agent.run$('Multi-task').pipe(
-  filter(e => e.type === 'tool.batch.start')
-).subscribe(event => {
-  console.log(`Batch started: ${event.totalCalls} calls`);
+const agent = createAgent({
+  name: 'assistant',
+  model: 'openai/gpt-4o',
+  tools: [searchTool, readTool, writeTool],
+  parallelToolCalls: true, // 启用并行工具调用
 });
 
-agent.run$('Multi-task').pipe(
-  filter(e => e.type === 'tool.batch.complete')
-).subscribe(event => {
-  console.log(`Batch done: ${event.successCount} success, ${event.errorCount} failed`);
+agent.on('tool.call', (event) => {
+  console.log(`Tool call: ${event.toolName}`);
 });
+
+const result = await agent.run('Search for AI and read the top result');
 ```
 
 ## 内置工具示例

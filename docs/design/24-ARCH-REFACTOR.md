@@ -1,8 +1,7 @@
-# AgentForge 内核重构设计 — Imperative 循环 + Hook 切面
+# AgentForge 内核重构设计 — Imperative 循环 + Hook 切面 ✅ [COMPLETED 2026-04-30]
 
-> 状态：设计草案
+> 状态：**已完成** — while(true) 循环 + HookRegistry 已实现，1553 测试通过
 > 参考：ClaudeCode `src/query.ts` 循环模式 + OpenCode `Hooks` 接口设计
-> 前置：21-TOKEN-BUDGET.md、22-ERROR-RECOVERY.md、23-TOOL-CONCURRENCY.md（三份设计在本架构下简化实现）
 > 预估工作量：4 天（核心循环 1d + Hook 系统 1d + 事件精简 0.5d + 测试适配 1d + 三份新设计实现 0.5d）
 
 ---

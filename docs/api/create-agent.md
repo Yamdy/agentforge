@@ -51,11 +51,12 @@ interface AgentConfig {
   tracing?: boolean | TracingConfig;
   metrics?: boolean | MetricsConfig;
 
-  // 预设
-  preset?: 'production' | 'debug' | 'test';
-
-  // 自定义操作符
-  operators?: OperatorFunction<AgentEvent>[];
+  // Hook 配置（替代旧版操作符）
+  hooks?: {
+    request?: RequestHook[];
+    tool?: ToolHook[];
+    lifecycle?: LifecycleHook[];
+  };
 
   // HITL 配置
   hitl?: HITLConfig;
@@ -76,21 +77,19 @@ interface Agent {
   run(input: string): Promise<string>;
 
   // 流式模式：回调处理
-  stream(input: string, handlers: StreamHandlers): AgentSubscription;
+  stream(input: string, handlers: StreamHandlers): Promise<void>;
 
-  // Observable 模式：完全控制
-  run$(input: string): Observable<AgentEvent>;
+  // 事件监听（替代旧版 Observable）
+  on(eventType: string, handler: (event: AgentEvent) => void): () => void;
+  onAny(handler: (event: AgentEvent) => void): () => void;
+  run$(input: string): any; // @deprecated 使用 run() + on() 替代
 
   // 控制
   cancel(reason?: string): void;
   pause(): Promise<Checkpoint>;
   resume(checkpoint: Checkpoint): Promise<string>;
 
-  // 事件监听
-  on(eventType: AgentEventType, handler: (event: AgentEvent) => void): () => void;
-
   // 动态配置
-  use(operator: OperatorFunction<AgentEvent>): this;
   registerTool(tool: ToolDefinition | ToolDefinition[]): this;
 }
 ```
@@ -168,25 +167,23 @@ const agent = createAgent({
 });
 ```
 
-### Observable 模式
+### 事件监听模式
 
 ```typescript
-import { filter, tap } from 'rxjs/operators';
+const agent = createAgent({ model: 'openai/gpt-4o', streaming: true });
 
-const agent = createAgent({ model: 'openai/gpt-4o' });
+// 监听流式文本
+agent.on('llm.stream.text', (event) => {
+  process.stdout.write(event.delta);
+});
 
-agent.run$('Hello')
-  .pipe(
-    filter(e => e.type === 'llm.stream.text'),
-    tap(e => {
-      if (e.type === 'llm.stream.text') {
-        process.stdout.write(e.delta);
-      }
-    })
-  )
-  .subscribe({
-    complete: () => console.log('\nDone'),
-  });
+// 监听所有事件
+agent.onAny((event) => {
+  console.log(`[${event.type}]`, event);
+});
+
+const result = await agent.run('Hello');
+console.log('\nDone:', result);
 ```
 
 ### 使用自定义 LLM Adapter

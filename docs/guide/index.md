@@ -1,6 +1,6 @@
 # 简介
 
-AgentForge 是一个生产级的 Agent 框架，专注于类型安全和异步事件流处理。
+AgentForge 是一个生产级的 Agent 框架，专注于类型安全和事件驱动架构。
 
 ## 为什么选择 AgentForge？
 
@@ -48,7 +48,7 @@ agent.use(metricsPlugin);
 
 | 特性 | 描述 |
 |------|------|
-| **事件流** | 50+ 种事件类型，完整追踪 Agent 行为 |
+| **事件流** | 18 种核心事件类型，完整追踪 Agent 行为 |
 | **状态管理** | 不可变状态，支持 Checkpoint 恢复 |
 | **工具调用** | 自动处理工具定义和调用流程 |
 | **流式输出** | 支持 LLM 流式响应，实时输出 |
@@ -61,17 +61,14 @@ agent.use(metricsPlugin);
 
 ### 1. 错误即事件
 
-所有错误都转换为异常抛出，可以用标准的 try-catch 处理：
+所有错误都转换为事件，通过 `agent.on('agent.error', ...)` 处理：
 
 ```typescript
-// 错误处理（框架自动处理）
-try {
-  const result = await agent.run('...');
-  console.log(result);
-} catch (error) {
-  // 优雅处理错误
-  console.error('Agent error:', error);
-}
+agent.on('agent.error', (event) => {
+  console.error('Agent error:', event.error.message);
+});
+
+const result = await agent.run('...');
 ```
 
 ### 2. 轻量 DI
@@ -100,7 +97,7 @@ agent.start → agent.step → llm.request → llm.response → tool.call → to
 
 | 特性 | AgentForge | LangChain | AutoGen |
 |------|------------|-----------|---------|
-| **核心抽象** | Observable 事件流 | Chain | Agent |
+| **核心抽象** | AgentEventEmitter 事件驱动 | Chain | Agent |
 | **类型安全** | Zod 运行时校验 | Pydantic | 无 |
 | **流式处理** | 原生支持 | 需要适配 | 部分支持 |
 | **取消机制** | 内置 | 需要手动实现 | 无 |
@@ -109,33 +106,30 @@ agent.start → agent.step → llm.request → llm.response → tool.call → to
 
 ## 进阶用法
 
-除了 Promise 模式，AgentForge 也提供 Observable 模式，适合需要精细控制流的高级场景：
+除了 Promise 模式，AgentForge 也提供事件订阅模式，适合需要精细控制的高级场景：
 
 ```typescript
 import { createAgent } from 'agentforge';
-import { filterEventType, takeUntilTerminal } from 'agentforge';
 
 const agent = createAgent({
   name: 'assistant',
   model: { provider: 'openai', model: 'gpt-4o' },
 });
 
-// Observable 模式：订阅事件流
-agent.run$('Hello!').pipe(
-  filterEventType('llm.response'),
-  takeUntilTerminal('done')
-).subscribe({
-  next: (event) => console.log('LLM:', event.content),
-  complete: () => console.log('Done'),
-});
+// 事件订阅模式
+agent.on('llm.response', (event) => console.log('LLM:', event.content));
+agent.on('tool.call', (event) => console.log('Tool:', event.toolName));
+agent.on('done', () => console.log('Done'));
+
+const result = await agent.run('Hello!');
 ```
 
-使用 Observable 模式时，你可以：
+使用事件订阅模式时，你可以：
 
 - **实时监控**：监听每个中间步骤的事件
-- **取消执行**：随时取消未完成的 Agent 运行
-- **链式操作**：使用 RxJS 操作符组合复杂逻辑
-- **超时重试**：内置基于事件的超时和重试机制
+- **取消执行**：使用 `agent.cancel()` 随时取消
+- **组合逻辑**：使用 Hook 系统组合复杂逻辑
+- **错误追踪**：通过 `agent.on('agent.error', ...)` 追踪所有错误
 
 更多详情，请参考 [核心概念](/guide/core-concepts) 章节。
 

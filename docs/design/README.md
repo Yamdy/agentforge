@@ -3,7 +3,7 @@
 > 设计日期: 2026-04-24
 > 最后更新: 2026-04-26 (P0 安全架构设计)
 > 状态: **已实现**
-> 核心理念: RxJS 事件流 + Zod 类型安全 = Agent 框架底座
+> 核心理念: 命令式事件驱动 + Zod 类型安全 = Agent 框架底座
 
 ---
 
@@ -24,13 +24,13 @@
 | [02-ZOD-CONTRACT.md](./02-ZOD-CONTRACT.md) | Zod 数据契约层、信任度分级模型（Tier 1/2/3）、校验策略 |
 | [03-DI.md](./03-DI.md) | 轻量依赖注入、依赖倒置、三层 Context 结构、ContextBuilder |
 | [04-PROMPT-BUILDER.md](./04-PROMPT-BUILDER.md) | Prompt 构建、Zod → FunctionDefinition 转换、Skill 分类与动态注入 |
-| [05-EVENT-STREAM.md](./05-EVENT-STREAM.md) | 事件流底座、Observable<AgentEvent>、Agent Loop 核心模式 |
+| 📦 [05-EVENT-STREAM.md](./05-EVENT-STREAM.md) | 已归档 → `docs/archive/rxjs/`（RxJS Observable 已移除） |
 
 ### 约束与保障
 
 | 文档 | 描述 |
 |------|------|
-| [06-FLOW-CONSTRAINTS.md](./06-FLOW-CONSTRAINTS.md) | 流层陷阱与约束、生命周期管理、异步竞态、错误边界、背压策略 |
+| 📦 [06-FLOW-CONSTRAINTS.md](./06-FLOW-CONSTRAINTS.md) | 已归档（RxJS 流约束已不再适用） |
 | [07-PLUGIN-SYSTEM.md](./07-PLUGIN-SYSTEM.md) | Hook + 插件系统、拦截器 vs 观察器、插件接口定义、生命周期管理 |
 
 ### 扩展能力
@@ -46,7 +46,7 @@
 |------|------|
 | [10-FEATURES.md](./10-FEATURES.md) | 特性实现：可观测、可中断、可恢复、重试、超时、打点、HITL |
 | [11-OPERATORS.md](./11-OPERATORS.md) | 操作符库：控制流、变换、通知、组合操作符 |
-| [12-API-DESIGN.md](./12-API-DESIGN.md) | API 设计：L1 零代码、L2 配置式、L3 编程式三层 API |
+| [12-API-DESIGN.md](./12-API-DESIGN.md) | 📦 已归档（含旧 Observable API 示例） |
 
 ### 使用与运维
 
@@ -67,10 +67,9 @@
 | [21-TOKEN-BUDGET.md](./21-TOKEN-BUDGET.md) | **Token 预算 + 递减收益检测** — 参考 ClaudeCode 实现 |
 | [22-ERROR-RECOVERY.md](./22-ERROR-RECOVERY.md) | **分级错误恢复** — max_output_tokens/prompt_too_long/model_overloaded |
 | [23-TOOL-CONCURRENCY.md](./23-TOOL-CONCURRENCY.md) | **Per-Tool 并发安全判定** — isConcurrencySafe() + 工具分批执行 |
-| [24-ARCH-REFACTOR.md](./24-ARCH-REFACTOR.md) | **内核重构设计** — Imperative 循环 + Hook 切面（参考 ClaudeCode + OpenCode） |
-| [25-DE-RXJS.md](./25-DE-RXJS.md) | **移除 RxJS** — 全栈重构，事件类型 40+→18，依赖消除 |
-| [26-FRAMEWORK-COMPARISON.md](./26-FRAMEWORK-COMPARISON.md) | **框架横向对比** — ClaudeCode/OpenCode/OpenHarness/DeepAgents/Mastra/AgentScope |
-| [27-IMPLEMENTATION-PLAN.md](./27-IMPLEMENTATION-PLAN.md) | **实施计划** — 6 Phase 逐文件变更指南 |
+| [24-ARCH-REFACTOR.md](./24-ARCH-REFACTOR.md) | ✅ **已完成** — Imperative 循环 + Hook 切面（参考 ClaudeCode + OpenCode） |
+| [25-DE-RXJS.md](./25-DE-RXJS.md) | ✅ **已完成** — 移除 RxJS，全栈重构，事件类型 50+→18，依赖消除 |
+| [27-IMPLEMENTATION-PLAN.md](./27-IMPLEMENTATION-PLAN.md) | ✅ **已完成** — 6 Phase 逐文件变更指南已执行完毕 |
 
 ### 总览
 
@@ -111,7 +110,7 @@
 
 | # | 铁律 |
 |---|------|
-| 1 | RxJS 管好订阅与销毁，杜绝内存泄漏 |
+| 1 | AgentEventEmitter 管好订阅与销毁，杜绝内存泄漏 |
 | 2 | Zod 统一全链路数据契约，防脏数据、防协议崩坏 |
 | 3 | 轻量 DI 解耦所有外部能力，方便替换与扩展 |
 | 4 | Hook 插件异常隔离，横向能力零侵入 |
@@ -122,10 +121,10 @@
 
 | # | 铁律 |
 |---|------|
-| 1 | 严格隔离同步事务代码，不在 RxJS 流里写强同步锁 |
-| 2 | 全局统一 `destroy$ + takeUntil`，禁止裸订阅 |
+| 1 | 严格隔离同步事务代码，不在循环中写强同步锁 |
+| 2 | 全局统一 `on()` → `unsubscribe`，禁止无清理的监听 |
 | 3 | 插件钩子强制独立 try/catch，禁止击穿主流程 |
-| 4 | 核心主流程 `concatMap` 串行，副作用 `mergeMap` 并行 |
+| 4 | 核心主流程 while(true) 串行，副作用 Promise.all 并行 |
 | 5 | 内部可信数据简化 Zod，外部 LLM/三方输入强校验 |
 | 6 | 封装统一流调试工具：链路ID、阶段打点、流状态快照 |
 

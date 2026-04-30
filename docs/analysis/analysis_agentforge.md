@@ -2,24 +2,24 @@
 
 > 分析时间：2026-04-28
 > 仓库地址：https://github.com/Yamdy/agentforge.git
-> 版本：v0.1.2
+> 版本：v0.1.3 (post-RxJS, 命令式事件驱动)
 
 ---
 
 ## 一、项目定位与核心理念
 
 ### 定位
-AgentForge 是一个**生产级 AI Agent 框架**（MPU - Minimum Production Usable），基于 **RxJS 事件流 + Zod 类型安全** 构建，提供可观测、可中断、可恢复的智能体构建能力。
+AgentForge 是一个**生产级 AI Agent 框架**（MPU - Minimum Production Usable），基于 **命令式事件驱动 + Zod 类型安全** 构建，提供可观测、可中断、可恢复的智能体构建能力。
 
 ### 核心理念
 
-1. **一切皆事件流**：所有 Agent 操作都是 `Observable<AgentEvent>` 的变换，天然可观测、可组合
+1. **一切皆事件**：所有 Agent 操作通过 `AgentEventEmitter` 分发，天然可观测、可组合
 2. **类型安全第一**：Zod Schema 在运行时验证所有事件结构，TypeScript 提供编译时类型推断
-3. **错误即事件**：所有错误转换为 `agent.error` 事件，不使用 RxJS 错误通道，保证流的稳定性
+3. **错误即事件**：所有错误转换为 `agent.error` 事件，不通过异常传播，保证流的稳定性
 4. **三层 API 设计**：
    - **L1（零代码）**：非程序员通过 Markdown/JSON 配置创建 Agent
    - **L2（配置式）**：应用开发者通过 `createAgent(config)` 快速上手
-   - **L3（编程式）**：框架开发者完全控制 `Observable<AgentEvent>` 流
+   - **L3（编程式）**：框架开发者完全控制 `AgentEventEmitter` + `while(true)` 循环
 5. **MPU 模块化**：10 个生产级模块按需启用，零开销默认
 
 ---
@@ -42,10 +42,10 @@ src/
 │   └── zod-to-schema.ts    # Zod → JSON Schema 转换
 │
 ├── loop/           # Agent 循环核心
-│   ├── agent-loop.ts   # expand() 递归引擎（核心调度器）
+│   ├── agent-loop.ts   # while(true) 命令式循环（核心调度器）
 │   └── handlers/       # 事件处理器（LLM, Tool, HITL, SubAgent, Lifecycle）
 │
-├── operators/      # RxJS 操作符库
+├── operators/      # Hook 系统兼容层（stub）
 │   ├── control.ts      # 控制流：retry, timeout, permission, pause
 │   ├── transform.ts    # 变换：inject prompt, compress messages, transform args
 │   ├── notify.ts       # 通知：log, trace, record, export, checkpoint
@@ -176,7 +176,7 @@ Agent Loop (expand 递归引擎)
 │  agent.step (循环) → agent.complete/done     │
 └─────────────────────────────────────────────┘
   ↓
-Observable<AgentEvent> → Operators → 输出
+AgentEventEmitter → Hook 切面 → 输出
 ```
 
 ### 三层上下文模型
@@ -195,7 +195,7 @@ Observable<AgentEvent> → Operators → 输出
 
 | 特性 | 描述 |
 |------|------|
-| RxJS 事件流引擎 | 基于 `expand()` 的递归 Agent Loop，所有操作为 Observable 变换 |
+| 事件驱动循环 | 基于 `while(true)` 的命令式 Agent Loop，所有操作通过 AgentEventEmitter 分发 |
 | Zod 运行时验证 | 50+ 事件 Schema，三层验证策略（Tier 1/2/3） |
 | 不可变状态管理 | AgentState 不可变，通过 update helpers 生成新状态 |
 | 6 状态生命周期 | pending → running → paused/completed/cancelled/error |
@@ -281,7 +281,7 @@ Observable<AgentEvent> → Operators → 输出
 - **工具适配**：MCP 工具 → AgentForge ToolDefinition
 - **JSON Schema → Zod 转换**
 
-### RxJS 操作符库
+### 命令式事件驱动循环
 
 | 类别 | 操作符 |
 |------|--------|
@@ -325,7 +325,7 @@ Observable<AgentEvent> → Operators → 输出
 
 | 包 | 版本 | 用途 |
 |----|------|------|
-| `rxjs` | ^7.0.0 | 响应式事件流引擎（peerDependencies） |
+| `zod` | ^3.23.0 | 运行时类型校验（peerDependency） |
 | `zod` | ^3.23.0 | 运行时类型验证（peerDependencies） |
 | `ai` | ^6.0.168 | Vercel AI SDK v6 |
 | `@ai-sdk/openai` | ^1.0.0 | OpenAI 适配器 |
@@ -427,7 +427,7 @@ Observable<AgentEvent> → Operators → 输出
 
 | 维度 | 评分 | 说明 |
 |------|------|------|
-| **架构设计** | ⭐⭐⭐⭐⭐ | RxJS 事件流 + Zod 类型安全的设计非常优雅，可观测性强 |
+| **架构设计** | ⭐⭐⭐⭐⭐ | 命令式事件驱动 + Zod 类型安全的设计非常优雅，可观测性强 |
 | **模块化程度** | ⭐⭐⭐⭐⭐ | 10 个 MPU 模块 + 子系统分离，按需引入 |
 | **API 层次** | ⭐⭐⭐⭐⭐ | L1/L2/L3 三层 API 覆盖不同用户群体 |
 | **安全体系** | ⭐⭐⭐⭐ | 多层防护：黑名单、权限、速率限制、审计、沙箱 |
@@ -450,7 +450,7 @@ Observable<AgentEvent> → Operators → 输出
 
 ### 总体评价
 
-AgentForge 是一个**架构设计优秀、模块化程度很高**的 AI Agent 框架。其 RxJS 事件流 + Zod 类型安全的核心设计理念在同类框架中具有差异化优势，特别适合需要**强可观测性、可中断/可恢复**的生产级 Agent 应用。
+AgentForge 是一个**架构设计优秀、模块化程度很高**的 AI Agent 框架。其命令式事件驱动 + Zod 类型安全的核心设计理念在同类框架中具有差异化优势，特别适合需要**强可观测性、可中断/可恢复**的生产级 Agent 应用。
 
 项目处于 **v0.1.2 早期阶段**，核心架构已成型，10 个 MPU 模块提供了生产级基础设施。主要挑战在于：(1) 部分 LLM 适配器为 stub；(2) 社区生态尚未建立；(3) 需要更多端到端的实际应用案例验证。
 

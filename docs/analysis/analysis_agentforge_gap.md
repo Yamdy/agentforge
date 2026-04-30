@@ -27,7 +27,7 @@
 
 | # | 必备要件 | AgentForge 现状 | 达标？ | 差距说明 |
 |---|---------|----------------|--------|---------|
-| 1 | **Agent Loop** | ✅ `expand()` 递归引擎，流式输出，工具循环，最大步数限制 | ✅ **达标** | 架构优秀，RxJS Observable 模式甚至超越其他框架 |
+| 1 | **Agent Loop** | ✅ `while(true)` 命令式循环，流式输出，工具循环，最大步数限制 | ✅ **达标** | 架构优秀，AgentEventEmitter 模式甚至超越其他框架 |
 | 2 | **LLM 统一接口** | ✅ AdapterSystem + ProviderRegistry + AI SDK v6（OpenAI/Anthropic/Google/Ollama 全部真实实现） | ✅ **达标** | ~~Google/Ollama 是 Stub~~ — 已用 `@ai-sdk/openai`, `@ai-sdk/anthropic`, `@ai-sdk/google`, `ai-sdk-ollama` 完整实现 |
 | 3 | **工具系统 + MCP** | ✅ ToolRegistry + Zod Schema + MCP (stdio + HTTP 双传输，createAgent 已接入) | ✅ **达标** | MCP 完整实现：AgentForgeMCPClient + SDK 备选客户端 + adaptMCPTools + 自动工具注册 |
 | 4 | **记忆/上下文** | ⚠️ 有压缩策略（truncate/summarize/importance） | ⚠️ **部分达标** | 有压缩，但缺持久化记忆、向量检索、工作记忆 |
@@ -61,7 +61,7 @@
 | 增强特性 | AgentForge 现状 | 差距等级 |
 |---------|----------------|---------|
 | **中间件栈（12层可插拔）** | ⚠️ 有 Plugin 系统（拦截器+观察器），但不是中间件模式 | 🟡 不同方案 |
-| **LangGraph 原生** | ❌ 自研 RxJS 引擎，非 LangGraph | 🔴 不适用 |
+| **LangGraph 原生** | ❌ 自研命令式引擎，非 LangGraph | 🔴 不适用 |
 | **Harness Profile（提供商级配置覆盖）** | ❌ 无 | 🔴 缺失 |
 | **异步远程子 Agent（Agent Protocol）** | ⚠️ A2A 有类似能力，但非 Agent Protocol 标准 | 🟡 部分 |
 | **GitHub Actions 集成** | ❌ 无 action.yml | 🔴 缺失 |
@@ -152,7 +152,7 @@ AgentForge 的差距并非架构缺陷，而是**定位差异**导致的：
 
 | 维度 | AgentForge 的选择 | 行业标准 | 根因 |
 |------|-----------------|---------|------|
-| **核心抽象** | RxJS 事件流 | LangGraph / 消息驱动 | 差异化选择，非缺陷 |
+| **核心抽象** | 命令式事件驱动 | LangGraph / 消息驱动 | 差异化选择，非缺陷 |
 | **LLM 接入** | AI SDK v6 适配 | 自研 Provider 注册表 | 依赖 Vercel AI SDK，覆盖面取决于 SDK |
 | **存储** | SQLite only | 向量库 + 关系库 + 缓存 | v0.1.2 早期，优先级在核心循环 |
 | **RAG** | 无 | 文档处理 + 向量检索 + 重排序 | 定位为 Agent 框架而非 RAG 框架 |
@@ -210,7 +210,7 @@ AgentForge 的差距并非架构缺陷，而是**定位差异**导致的：
 
 | 独占优势 | 说明 | 其他框架有无 |
 |---------|------|------------|
-| **RxJS 事件流** | 所有操作为 Observable 变换，天然可组合、可取消 | ❌ 无 |
+| **事件驱动** | 所有操作通过 AgentEventEmitter 分发，天然可观测、可取消 | ❌ 无 |
 | **三层 API（L1/L2/L3）** | 零代码 → 配置式 → 编程式，覆盖不同用户群体 | ❌ 无（其他最多两层） |
 | **哈希链审计** | 审计日志用哈希链保证完整性，防篡改 | ❌ 无 |
 | **异常熔断** | CircuitBreaker + ErrorClassifier + AutoRepairer 三件套 | ❌ 无 |

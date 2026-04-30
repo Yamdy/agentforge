@@ -1,5 +1,7 @@
 # 预设组合
 
+> ⚠️ **已废弃**：本文档描述的是 RxJS 操作符预设模式。去 RxJS 后，预设通过 `createAgent({ preset: 'production' | 'debug' | 'test' })` 配置。详见 [createAgent API](/api/create-agent)。
+
 预设组合是预配置的操作符组合，用于常见场景。
 
 ## productionPreset

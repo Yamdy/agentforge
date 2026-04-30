@@ -216,29 +216,23 @@ const agent = createAgent({
 > 这是高级用法，大多数用户可以直接使用内置的 OpenAI/Anthropic 适配器，无需关心此部分。
 
 ```typescript
-import type { LLMAdapter, LLMResponse } from 'agentforge';
-import { Observable } from 'rxjs';
+import type { LLMAdapter, LLMResponse, LLMChunk } from 'agentforge';
 
 class MyCustomLLMAdapter implements LLMAdapter {
   readonly name = 'my-custom-llm';
   readonly provider = 'custom';
 
-  async chat(messages, options) {
-    // 实现你的 LLM 调用逻辑
+  async chat(messages, options): Promise<LLMResponse> {
     const response = await fetch('https://my-llm-api.com/chat', {
       method: 'POST',
       body: JSON.stringify({ messages, ...options }),
     });
-
     return response.json() as Promise<LLMResponse>;
   }
 
-  stream(messages, options) {
-    return new Observable((subscriber) => {
-      // 实现流式输出
-      // subscriber.next({ text: 'chunk' });
-      // subscriber.complete();
-    });
+  async *stream(messages, options): AsyncGenerator<LLMChunk> {
+    // 实现流式输出
+    yield { text: 'chunk' };
   }
 }
 
@@ -313,65 +307,65 @@ agent.stream('...', {
 });
 ```
 
-## 高级用法：Observable 模式
+## 高级用法：事件订阅
 
-如果你需要更细粒度的控制事件流，可以使用底层的 Observable API。
+如果你需要更细粒度的控制，可以使用事件订阅 API。
 
-### 获取 Observable 流
+### 监听特定事件
 
 ```typescript
 import { createAgent } from 'agentforge';
-import { firstValueFrom } from 'rxjs';
-import { filter, tap } from 'rxjs/operators';
 
 const agent = createAgent({
   name: 'assistant',
   model: { provider: 'openai', model: 'gpt-4o' },
 });
 
-// 获取 Observable 流
-const observable$ = agent.run('...');
-
-// 方式一：转换为 Promise
-const result = await firstValueFrom(observable$);
-
-// 方式二：订阅并处理特定事件
-observable$.pipe(
-  filter((event) => event.type === 'llm.response'),
-  tap((event) => console.log('LLM 响应:', event))
-).subscribe({
-  next: (event) => console.log(event),
-  complete: () => console.log('完成'),
+// 订阅特定事件类型
+agent.on('llm.response', (event) => {
+  console.log('LLM 响应:', event.content);
 });
+
+agent.on('tool.call', (event) => {
+  console.log('工具调用:', event.toolName);
+});
+
+agent.on('agent.complete', (event) => {
+  console.log('完成:', event.output);
+});
+
+agent.on('agent.error', (event) => {
+  console.error('错误:', event.error.message);
+});
+
+// 运行
+const result = await agent.run('...');
 ```
 
-### 操作符组合
+### Hook 系统
 
-AgentForge 提供了一系列 RxJS 操作符用于高级场景：
+AgentForge 通过 Hook 系统实现高级扩展：
 
 ```typescript
 import { createAgent } from 'agentforge';
-import { timeoutOnEventType, retryOnEventType, takeUntilTerminal } from 'agentforge';
 
 const agent = createAgent({
   name: 'assistant',
   model: { provider: 'openai', model: 'gpt-4o' },
+  hooks: {
+    request: [{
+      name: 'system-prompt',
+      async beforeRequest(messages) {
+        return [{ role: 'system', content: 'You are helpful.' }, ...messages];
+      },
+    }],
+  },
 });
 
-agent.run('...').pipe(
-  // 30 秒内未完成则超时
-  timeoutOnEventType('done', 30000),
-  // 遇到错误时重试 3 次
-  retryOnEventType('agent.error', 3),
-  // 直到完成或错误事件
-  takeUntilTerminal(),
-).subscribe({
-  next: (event) => console.log(event.type),
-  complete: () => console.log('完成'),
-});
+const result = await agent.run('Hello');
 ```
 
-> 注意：Observable 模式适合需要精细控制事件流的场景，如超时处理、重试逻辑、自定义事件过滤等。对于大多数应用场景，Promise 模式或 stream 回调方法已经足够。
+> 注意：事件订阅模式适合需要精细控制的场景。对于大多数应用场景，Promise 模式或 stream 回调方法已经足够。
 
 ## 下一步
 

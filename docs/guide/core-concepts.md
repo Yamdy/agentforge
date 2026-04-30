@@ -2,13 +2,13 @@
 
 理解 AgentForge 的核心概念是高效使用框架的基础。
 
-## 事件流
+## 事件驱动架构
 
-AgentForge 的核心是 **Observable 事件流**。Agent 的所有行为都通过事件表达。
+AgentForge 的核心是 **命令式事件驱动架构**。Agent 的所有行为通过 `AgentEventEmitter` 分发事件，使用 `while(true)` 命令式循环驱动执行。
 
 ### 事件类型
 
-AgentForge 定义了 50+ 种事件类型，分为三层：
+AgentForge 定义了 18 种核心事件类型，分为三层：
 
 ```
 Layer 1: 核心循环事件
@@ -27,11 +27,10 @@ Layer 2: 子系统事件
 ├── subagent.*       - 子 Agent 事件
 ├── mcp.*            - MCP 协议事件
 ├── workflow.*       - 工作流事件
-└── compaction.*     - 压缩事件
 
 Layer 3: 横切事件
-├── permission.*     - 权限事件
-└── context.updated  - 上下文更新
+├── checkpoint       - 检查点保存
+└── cancel           - 取消执行
 ```
 
 ### 事件流示例
@@ -76,19 +75,22 @@ Layer 3: 横切事件
 ### 订阅事件
 
 ```typescript
-import { filter, takeUntil } from 'rxjs/operators';
-import { isTerminalEvent } from 'agentforge';
-
-agent.run('Hello!').pipe(
-  // 过滤特定事件
-  filter((event) => event.type === 'llm.response'),
-  
-  // 在终端事件时完成
-  takeUntilTerminal(),
-).subscribe({
-  next: (event) => console.log(event),
-  complete: () => console.log('Done!'),
+// agent.run() 返回 Promise<string>
+// 使用 agent.on() 订阅事件
+agent.on('llm.response', (event) => {
+  console.log('LLM responded:', event.content);
 });
+
+agent.on('tool.call', (event) => {
+  console.log('Calling tool:', event.toolName);
+});
+
+// 监听所有事件
+agent.onAny((event) => console.log(event.type));
+
+// 运行 Agent
+const output = await agent.run('Hello!');
+console.log(output);
 ```
 
 ## 状态管理
@@ -277,87 +279,74 @@ const agent = createAgent({
 });
 
 // 继续执行
-agent.run().subscribe(...);
+const result = await agent.run('Continue from checkpoint');
 ```
 
-## 插件架构
+## Hook 系统（插件架构）
 
-### 拦截器插件
+Hook 系统通过三层切面替代了旧版的插件拦截模式：
 
-拦截器可以修改或阻止事件：
+| Hook 类型 | 用途 |
+|-----------|------|
+| `RequestHook` | 在 LLM 调用前修改消息列表 |
+| `ToolHook` | 在工具执行前检查权限/阻断 |
+| `LifecycleHook` | 在 Agent 生命周期关键点执行回调 |
+
+### RequestHook 示例
 
 ```typescript
-import type { InterceptorPlugin } from 'agentforge';
-import { of } from 'rxjs';
+import type { RequestHook } from 'agentforge';
 
-const rateLimitPlugin: InterceptorPlugin = {
-  name: 'rate-limiter',
-  type: 'interceptor',
-  priority: 20,
-  eventTypes: ['llm.request'],
-  enabled: true,
-  
-  intercept(event, ctx) {
-    if (event.type === 'llm.request') {
-      if (isRateLimited(ctx.sessionId)) {
-        // 返回错误事件替代原事件
-        return of({
-          type: 'agent.error',
-          timestamp: Date.now(),
-          sessionId: ctx.sessionId,
-          error: { name: 'RateLimited', message: 'Too many requests' },
-        });
-      }
-    }
-    return of(event); // 放行原事件
+const systemPromptHook: RequestHook = {
+  name: 'system-prompt',
+  async beforeRequest(messages, ctx) {
+    // 在每条 LLM 请求前注入 system prompt
+    return [
+      { role: 'system', content: 'You are a helpful assistant.' },
+      ...messages,
+    ];
+  },
+};
+
+const agent = createAgent({
+  name: 'assistant',
+  model: 'openai/gpt-4o',
+  hooks: {
+    request: [systemPromptHook],
+  },
+});
+```
+
+### LifecycleHook 示例
+
+```typescript
+import type { LifecycleHook } from 'agentforge';
+
+const auditHook: LifecycleHook = {
+  name: 'audit-logger',
+  onSessionStart(ctx) {
+    console.log(`Session started: ${ctx.sessionId}`);
+  },
+  onStepEnd(ctx) {
+    console.log(`Step completed: ${ctx.state.step}`);
   },
 };
 ```
 
-### 观察者插件
-
-观察者只能读取事件，不能修改：
+### 通过事件订阅观察（不阻塞主流程）
 
 ```typescript
-import type { ObserverPlugin } from 'agentforge';
+const agent = createAgent({ name: 'assistant', model: 'openai/gpt-4o' });
 
-const analyticsPlugin: ObserverPlugin = {
-  name: 'analytics',
-  type: 'observer',
-  priority: 100,
-  eventTypes: [], // 空数组 = 所有事件
-  enabled: true,
-  
-  observe(event, ctx) {
-    // 发送到分析服务
-    sendToAnalytics({
-      sessionId: ctx.sessionId,
-      eventType: event.type,
-      timestamp: event.timestamp,
-    });
-  },
-};
-```
+// 监听所有事件（纯观察，不阻塞）
+agent.onAny((event) => {
+  console.log(`[${event.type}]`, event);
+});
 
-### 插件执行顺序
-
-```
-事件流 ───► PIIScrubberPlugin (priority: 10)
-              │
-              ▼
-         ApprovalGatePlugin (priority: 15)
-              │
-              ▼
-         RateLimitPlugin (priority: 20)
-              │
-              ▼
-         [其他拦截器...]
-              │
-              ▼
-         AuditLogPlugin (priority: 100)
-              │
-              ▼
-         订阅者
+// 订阅特定事件
+agent.on('tool.result', (event) => {
+  analytics.track('tool_executed', { name: event.toolName });
+});
 ```
 
 ## 下一步

@@ -47,8 +47,8 @@ agent.stream('Hello', {
   onComplete: (result) => console.log('\nDone'),
 });
 
-// Observable 模式
-agent.run$('Hello').subscribe(event => console.log(event.type));
+// 事件监听
+agent.on('llm.response', (e) => console.log(e.content));
 ```
 
 ### 控制

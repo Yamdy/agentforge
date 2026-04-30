@@ -22,11 +22,11 @@
 
 | 维度 | AgentForge | AgentScope | Deep Agents | Mastra | OpenHarness |
 |------|-----------|------------|-------------|--------|-------------|
-| **核心模式** | RxJS 事件流 | 消息驱动 | LangGraph 中间件 | Monorepo 模块化 | Harness 查询引擎 |
+| **核心模式** | 命令式事件驱动 | 消息驱动 | LangGraph 中间件 | Monorepo 模块化 | Harness 查询引擎 |
 | **源文件数** | 155 个 .ts | 215 个 .py | 6 个子包 | 100+ 子包 | 14 个子系统 |
 | **API 层次** | L1/L2/L3 三层 | 统一 API | SDK + CLI | SDK + CLI + Server | CLI + TUI |
 | **状态管理** | 不可变 AgentState | Msg 消息系统 | LangGraph State | MessageList | QueryEngine |
-| **扩展核心** | RxJS 操作符 | Hook + Middleware | 中间件栈 | Provider 注册 | 工具 + 插件 + 技能 |
+| **扩展核心** | Hook 切面 | Hook + Middleware | 中间件栈 | Provider 注册 | 工具 + 插件 + 技能 |
 
 ---
 
@@ -142,7 +142,7 @@
 
 | 框架 | 最佳场景 |
 |------|---------|
-| **AgentForge** | 需要强可观测性、可中断/可恢复的 Agent 应用；RxJS 生态项目 |
+| **AgentForge** | 需要强可观测性、可中断/可恢复的 Agent 应用；事件驱动架构项目 |
 | **AgentScope** | 企业级多智能体系统，特别是阿里云生态、需要分布式部署和模型微调 |
 | **Deep Agents** | 快速获得一个类 Claude Code 的通用 Agent，LangGraph 生态用户 |
 | **Mastra** | TypeScript 全栈开发者，需要最全面的功能 |

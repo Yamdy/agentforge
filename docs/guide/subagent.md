@@ -50,26 +50,25 @@ subagentRegistry.register({
 ### 通过 SubagentRegistry
 
 ```typescript
-import { Observable } from 'agentforge';
-
 // 检查子 Agent 是否存在
 if (subagentRegistry.has('research-agent')) {
+  // 监听子 Agent 事件
+  subagentRegistry.on('subagent.start', (event) => {
+    console.log('SubAgent started:', event.subagentName);
+  });
+  subagentRegistry.on('subagent.complete', (event) => {
+    console.log('SubAgent output:', event.output);
+  });
+  subagentRegistry.on('subagent.error', (event) => {
+    console.error('SubAgent failed:', event.error.message);
+  });
+  
   // 运行子 Agent
-  const events$: Observable<AgentEvent> = subagentRegistry.run(
+  const output = await subagentRegistry.run(
     'research-agent',
     'Search for recent AI breakthroughs'
   );
-  
-  // 订阅子 Agent 事件
-  events$.subscribe(event => {
-    if (event.type === 'subagent.start') {
-      console.log('SubAgent started:', event.subagentName);
-    } else if (event.type === 'subagent.complete') {
-      console.log('SubAgent output:', event.output);
-    } else if (event.type === 'subagent.error') {
-      console.error('SubAgent failed:', event.error.message);
-    }
-  });
+  console.log('Result:', output);
 }
 ```
 
@@ -173,15 +172,9 @@ const delegateTool: ToolDefinition = {
     task: z.string().describe('Task description'),
   }),
   execute: async (args, ctx) => {
-    // 通过 SubagentRegistry 运行子 Agent
     const registry = ctx.subagents;
     if (registry?.has('research-agent')) {
-      const result = await registry.run('research-agent', args.task)
-        .pipe(
-          filter(e => e.type === 'subagent.complete'),
-          map(e => e.output),
-          first()
-        ).toPromise();
+      const result = await registry.run('research-agent', args.task);
       return result ?? 'No result';
     }
     return 'Research agent not available';
@@ -195,15 +188,16 @@ const delegateTool: ToolDefinition = {
 子 Agent 错误被转换为事件，不会影响主 Agent 流程：
 
 ```typescript
-subagentRegistry.run('missing-agent', 'task')
-  .subscribe(event => {
-    if (event.type === 'subagent.error') {
-      console.log('Error name:', event.error.name);
-      // 'SubagentNotFoundError'
-      console.log('Message:', event.error.message);
-      // 'Subagent 'missing-agent' is not registered'
-    }
-  });
+subagentRegistry.on('subagent.error', (event) => {
+  console.log('Error name:', event.error.name);
+  console.log('Message:', event.error.message);
+});
+
+try {
+  await subagentRegistry.run('missing-agent', 'task');
+} catch {
+  // SubagentNotFoundError handled via events
+}
 ```
 
 ## 最佳实践

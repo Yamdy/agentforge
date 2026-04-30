@@ -57,22 +57,16 @@ const workflow = createWorkflow(
 ### 基本执行
 
 ```typescript
-import { filter } from 'rxjs/operators';
+const workflow = createWorkflow({ name: 'research-pipeline', steps }, agentContext);
 
-workflow.run({ topic: 'Quantum Computing' }).subscribe({
-  next: (event) => {
-    if (event.type === 'workflow.start') {
-      console.log('Workflow started');
-    } else if (event.type === 'workflow.step.start') {
-      console.log(`Step started: ${event.stepName}`);
-    } else if (event.type === 'workflow.step.end') {
-      console.log(`Step ended: ${event.stepId}, result: ${event.result}`);
-    } else if (event.type === 'workflow.complete') {
-      console.log('Workflow completed:', event.result);
-    }
-  },
-  complete: () => console.log('Workflow finished'),
-});
+// 监听工作流事件
+workflow.on('workflow.start', () => console.log('Workflow started'));
+workflow.on('workflow.step.start', (e) => console.log(`Step started: ${e.stepId}`));
+workflow.on('workflow.step.end', (e) => console.log(`Step ended: ${e.stepId}`));
+workflow.on('workflow.complete', (e) => console.log('Done:', e.result));
+
+// 运行工作流
+await workflow.run({ topic: 'Quantum Computing' });
 ```
 
 ### 事件流结构
@@ -157,13 +151,13 @@ const steps: WorkflowStep[] = [
 跳过的步骤会产生 `workflow.step.end` 事件，result 为 `'skipped'`：
 
 ```typescript
-workflow.run({ topic: 'test', fastMode: true }).pipe(
-  filter(e => e.type === 'workflow.step.end')
-).subscribe(event => {
+workflow.on('workflow.step.end', (event) => {
   if (event.stepId === 'optional-step') {
     console.log(event.result); // 'skipped'
   }
 });
+
+await workflow.run({ topic: 'test', fastMode: true });
 ```
 
 ## 执行上下文
@@ -212,12 +206,11 @@ const steps: WorkflowStep[] = [
 工作流错误通过事件报告：
 
 ```typescript
-workflow.run(input).subscribe(event => {
-  if (event.type === 'workflow.error') {
-    console.error('Workflow error:', event.error.message);
-    console.log('Failed at step:', event.stepId);
-  }
+workflow.on('workflow.error', (event) => {
+  console.error('Workflow error:', event.error.message);
 });
+
+await workflow.run(input);
 ```
 
 ## Pipeline 模式
@@ -232,7 +225,7 @@ const pipeline = createPipeline()
   .step('process', (ctx) => `Process: ${ctx.previousOutput}`)
   .step('output', (ctx) => `Format: ${ctx.previousOutput}`);
 
-pipeline.run({ input: 'test data' }).subscribe();
+await pipeline.run({ input: 'test data' });
 ```
 
 ## 相关 API

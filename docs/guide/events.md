@@ -1,10 +1,10 @@
 # 事件系统
 
-AgentForge 的核心架构基于 RxJS 事件流。所有操作都是 `Observable<AgentEvent>` 的变换，提供天然的可观测性和可组合性。
+AgentForge 的核心架构基于 **命令式事件驱动**。所有操作通过 `AgentEventEmitter` 分发事件，使用 `while(true)` 循环驱动执行。
 
 ## 事件类型
 
-AgentForge 定义了 50+ 种事件类型，分为三层：
+AgentForge 定义了 18 种核心事件类型，分为三层：
 
 ### Layer 1: 核心 Agent 循环
 
@@ -93,72 +93,71 @@ if (isTerminalEvent(event)) {
 }
 ```
 
-## 事件流处理
+## 事件订阅
 
-使用 RxJS 操作符处理事件流：
+使用 `agent.on()` 方法订阅特定事件，返回 unsubscribe 函数：
 
 ```typescript
-import { filter, map, tap } from 'rxjs/operators';
+import { createAgent } from 'agentforge';
 
-agent.run$('Hello').pipe(
-  // 过滤特定事件类型
-  filter(event => event.type === 'tool.result'),
-  
-  // 变换事件数据
-  map(event => {
-    if (event.type === 'tool.result') {
-      return { toolName: event.toolName, result: event.result };
-    }
-    return null;
-  }),
-  
-  // 记录日志
-  tap(event => console.log('[Event]', event?.type))
-).subscribe();
+const agent = createAgent({ name: 'assistant', model: 'openai/gpt-4o' });
+
+// 订阅特定事件类型
+const unsub1 = agent.on('tool.result', (event) => {
+  console.log(`Tool: ${event.toolName}`, event.result);
+});
+
+// 订阅所有事件
+const unsub2 = agent.onAny((event) => {
+  console.log(`[${event.type}]`, event);
+});
+
+// 运行
+const result = await agent.run('Hello');
+
+// 取消订阅
+unsub1();
+unsub2();
 ```
 
 ## 错误即事件
 
-AgentForge 采用"错误即事件"模式，所有错误转换为事件而非 RxJS 错误通道：
+AgentForge 采用"错误即事件"模式，所有错误转换为事件而非抛出异常：
 
 ```typescript
-// 错误不会通过 subscriber.error() 传播
+// 错误不会通过异常传播
 // 而是转换为 agent.error + done 事件
-agent.run$('Hello').subscribe({
-  next: (event) => {
-    if (event.type === 'agent.error') {
-      // 处理错误事件
-      console.error('Error:', event.error.message);
-    }
-  },
-  complete: () => {
-    // 流正常完成（即使有错误）
-    console.log('Stream completed');
-  },
-  // error: 永远不会被调用
+agent.on('agent.error', (event) => {
+  console.error('Error:', event.error.message);
 });
+
+agent.on('done', (event) => {
+  console.log('Stream ended:', event.reason);
+});
+
+const result = await agent.run('Hello');
+// 即使有错误，result 也会正常返回（可能为空字符串）
 ```
 
-## 自定义事件处理
-
-使用 Agent 的 `on` 方法订阅特定事件：
+## 流式事件处理
 
 ```typescript
-const agent = createAgent({ name: 'assistant', model: 'openai/gpt-4o' });
-
-// 订阅特定事件类型
-const unsubscribe = agent.on('llm.stream.text', (event) => {
-  if (event.type === 'llm.stream.text') {
-    process.stdout.write(event.delta);
-  }
+const agent = createAgent({
+  name: 'streaming-agent',
+  model: 'openai/gpt-4o',
+  streaming: true,
 });
 
-// 取消订阅
-unsubscribe();
+// 监听流式文本
+agent.on('llm.stream.text', (event) => {
+  process.stdout.write(event.delta);
+});
+
+await agent.run('Write a story');
 ```
 
 ## 相关 API
 
 - [AgentEvent API](/api/events) - 事件类型完整参考
 - [状态管理](/guide/state) - AgentState 管理
-- [操作符](/api/operators-control) - 事件流操作符
+- [创建 Agent](/api/create-agent) - Agent 配置 API
