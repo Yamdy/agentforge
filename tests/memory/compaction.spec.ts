@@ -300,19 +300,15 @@ describe('CompactionManager', () => {
         maxTokens: 4000,
       };
 
-      // Collect events
-      const eventsPromise = firstValueFrom(
-        manager.events.pipe(toArray())
-      );
+      // Collect events via callback
+      const events: any[] = [];
+      const unreg = manager.on((payload) => events.push(payload));
 
-      // Compact in background
       const result = await manager.compact(context);
 
-      // Complete the observable (since we're done)
-      // Note: In real usage, we'd need to handle the subscription properly
-
-      // We can check that result was returned
+      unreg();
       expect(result).toBeDefined();
+      expect(events.length).toBe(2); // start + complete
     });
   });
 
