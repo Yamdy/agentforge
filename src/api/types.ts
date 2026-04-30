@@ -398,7 +398,8 @@ export interface Agent {
   /** Get current agent loop state (null if not started) */
   getState(): AgentLoopState | null;
 
-  // ----- Lifecycle -----
+  /** @deprecated Internal context for backward compat */
+  ctx?: any;
 
   /** Destroy the agent and clean up resources */
   destroy(): void;

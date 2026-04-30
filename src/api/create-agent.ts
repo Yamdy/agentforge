@@ -16,6 +16,7 @@ import {
   SimpleToolRegistry,
   createApplicationServices,
 } from '../core/context-builder.js';
+import { ConsoleTracer, ConsoleMetrics, NoopTracer, NoopMetrics } from '../core/defaults.js';
 import { generateId } from '../core/events.js';
 import { HookRegistry } from '../core/hooks.js';
 import { createAgentLoop, type AgentLoopConfig, type AgentLoop } from '../loop/agent-loop.js';
@@ -108,15 +109,43 @@ export function createAgent(
     llm = createLLMAdapter(modelSpec, services as any);
   }
 
+  // ── Wire tracing/metrics ──
+  const appServices = services?.services ?? createApplicationServices({});
+
+  // Set Noop defaults if not configured
+  if (!appServices.tracer) appServices.tracer = new NoopTracer();
+  if (!appServices.metrics) appServices.metrics = new NoopMetrics();
+
+  // Handle tracing config
+  if (config.tracing) {
+    if (typeof config.tracing === 'object' && config.tracing.customTracer) {
+      appServices.tracer = config.tracing.customTracer;
+    } else if (config.tracing === true || (typeof config.tracing === 'object' && config.tracing.exporter !== 'custom')) {
+      appServices.tracer = new ConsoleTracer();
+    }
+  } else if (config.preset === 'development') {
+    appServices.tracer = new ConsoleTracer();
+  }
+
+  // Handle metrics config
+  if (config.metrics) {
+    if (typeof config.metrics === 'object' && config.metrics.customMetrics) {
+      appServices.metrics = config.metrics.customMetrics;
+    } else if (config.metrics === true || (typeof config.metrics === 'object')) {
+      appServices.metrics = new ConsoleMetrics();
+    }
+  } else if (config.preset === 'development') {
+    appServices.metrics = new ConsoleMetrics();
+  }
+
   // ── Build tool registry ──
   const tools = new SimpleToolRegistry();
-  const appServices = services?.services ?? createApplicationServices({});
 
   // ── Build AgentContext ──
   const ctx: AgentContext = {
     sessionId,
     agentName: resolved.name,
-    memory: services?.memory ?? new (require('../memory/file-based.js').FileBasedMemory)({}),
+    memory: services?.memory ?? ({ load: async () => ({ entries: [] }), formatForPrompt: () => '' } as any),
     pauseController: services?.pauseController ?? {
       isPaused: () => false,
       onResume: () => ({ subscribe: () => ({ unsubscribe: () => {} }) } as any),
@@ -228,6 +257,10 @@ export function createAgent(
     /** @deprecated Observable wrapper for backward compat with tests */
     run$: (input: string) => (loop as any).run$(input),
     getState: (): AgentLoopState | null => loop.getState(),
+
+    /** @deprecated Internal context access for backward compat with tests */
+    ctx,
+
     destroy: loop.destroy.bind(loop),
   };
 }
