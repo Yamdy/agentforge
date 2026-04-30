@@ -7,7 +7,12 @@
  * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN/09-A2A.md
  */
 
-import type { Observable } from 'rxjs';
+// Callback-based subscribable type — used only for interface signatures.
+// Replaces rxjs Observable for de-rxjs migration.
+export interface Subscribable<T> {
+  subscribe(observer: { next: (v: T) => void; error?: (e: unknown) => void; complete?: () => void }): { unsubscribe(): void };
+}
+
 import type { A2AMessage } from './types.js';
 import { type A2ATransportType, A2ATransportTypeSchema } from './types.js';
 
@@ -131,10 +136,10 @@ export interface A2ATransport {
   readonly status: TransportStatus;
 
   /** Connection status stream */
-  readonly status$: Observable<TransportStatus>;
+  readonly status$: Subscribable<TransportStatus>;
 
   /** Incoming message stream */
-  readonly messages$: Observable<A2AMessage>;
+  readonly messages$: Subscribable<A2AMessage>;
 
   /** Agent ID for this transport */
   readonly agentId: string;

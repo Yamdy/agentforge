@@ -414,7 +414,7 @@ export interface Agent {
  *
  * Can be used as either:
  * - Agent instance: const agent = createAgent(config); agent.run('hello')
- * - Direct Observable: createAgent(config)('hello').subscribe(...)
+ * - Direct call: createAgent(config).run('hello').then(output => ...)
  */
 export interface CreateAgentResult extends Agent {
   /** The underlying agent context */

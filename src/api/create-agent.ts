@@ -246,6 +246,7 @@ export function createAgent(
         if (handlers.onToolResult) loop.on('tool.result' as any, handlers.onToolResult);
         if (handlers.onComplete) loop.on('agent.complete' as any, (e: any) => handlers.onComplete!(e.output));
         if (handlers.onError) loop.on('agent.error' as any, handlers.onError);
+        if (handlers.onEvent) loop.onAny(handlers.onEvent);
       }
       return loop.run(input);
     },

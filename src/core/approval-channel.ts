@@ -13,8 +13,6 @@
  * @module
  */
 
-import { Observable, Subject } from 'rxjs';
-
 // ============================================================
 // Types
 // ============================================================
@@ -65,11 +63,11 @@ export interface ApprovalPrompt {
  * (HITL question vs Permission request).
  */
 export interface ApprovalChannel {
-  /** Request approval — returns Observable that emits when human answers */
-  ask(options: ApprovalAskOptions): Observable<string>;
+  /** Request approval — calls onAnswer callback when human responds. Returns unsubscribe. */
+  ask(options: ApprovalAskOptions, onAnswer: (answer: string) => void): () => void;
 
-  /** Observable of approval prompts (for UI subscription) */
-  onAsk(): Observable<ApprovalPrompt>;
+  /** Subscribe to approval prompts (for UI). Returns unsubscribe. */
+  onAsk(listener: (prompt: ApprovalPrompt) => void): () => void;
 
   /** Provide an answer — called by UI when human responds */
   answer(promptId: string, response: string): void;
@@ -85,74 +83,61 @@ export interface ApprovalChannel {
 /**
  * Default in-memory ApprovalChannel implementation.
  *
- * Uses Subject pattern identical to DefaultHITLController:
- * - ask() creates a per-request Subject for the answer
- * - onAsk() exposes a shared Subject for UI subscription
- * - answer() resolves the per-request Subject
+ * Uses callback pattern:
+ * - ask() stores a per-request callback for the answer
+ * - onAsk() exposes a listener registry for UI subscription
+ * - answer() invokes the per-request callback
  *
  * This ensures HITL and Permission requests go through the same queue,
  * preventing independent popups from competing for user attention.
  */
 export class DefaultApprovalChannel implements ApprovalChannel {
-  private askSubject = new Subject<ApprovalPrompt>();
-  private answerMap = new Map<string, Subject<string>>();
+  private askListeners = new Set<(prompt: ApprovalPrompt) => void>();
+  private answerCallbacks = new Map<string, (answer: string) => void>();
 
-  ask(options: ApprovalAskOptions): Observable<string> {
-    return new Observable(subscriber => {
-      const answerSubject = new Subject<string>();
-      this.answerMap.set(options.promptId, answerSubject);
+  ask(options: ApprovalAskOptions, onAnswer: (answer: string) => void): () => void {
+    this.answerCallbacks.set(options.promptId, onAnswer);
 
-      // Build prompt notification - conditional for exactOptionalPropertyTypes
-      const prompt: ApprovalPrompt = {
-        promptId: options.promptId,
-        source: options.source,
-        question: options.question,
-      };
-      if (options.context !== undefined) {
-        prompt.context = options.context;
-      }
-      if (options.options !== undefined) {
-        prompt.options = options.options;
-      }
+    // Build prompt notification - conditional for exactOptionalPropertyTypes
+    const prompt: ApprovalPrompt = {
+      promptId: options.promptId,
+      source: options.source,
+      question: options.question,
+    };
+    if (options.context !== undefined) {
+      prompt.context = options.context;
+    }
+    if (options.options !== undefined) {
+      prompt.options = options.options;
+    }
 
-      // Emit prompt to UI subscribers
-      this.askSubject.next(prompt);
+    // Emit prompt to UI subscribers
+    for (const listener of this.askListeners) {
+      try { listener(prompt); } catch { /* isolate */ }
+    }
 
-      // Subscribe to answer and forward
-      const subscription = answerSubject.subscribe({
-        next: answer => {
-          subscriber.next(answer);
-          subscriber.complete();
-        },
-      });
-
-      // Cleanup on unsubscribe
-      return () => {
-        subscription.unsubscribe();
-        this.answerMap.delete(options.promptId);
-      };
-    });
+    // Return unsubscribe
+    return () => {
+      this.answerCallbacks.delete(options.promptId);
+    };
   }
 
-  onAsk(): Observable<ApprovalPrompt> {
-    return this.askSubject.asObservable();
+  onAsk(listener: (prompt: ApprovalPrompt) => void): () => void {
+    this.askListeners.add(listener);
+    return () => { this.askListeners.delete(listener); };
   }
 
   answer(promptId: string, response: string): void {
-    const subject = this.answerMap.get(promptId);
-    if (subject) {
-      subject.next(response);
-      subject.complete();
-      this.answerMap.delete(promptId);
+    const cb = this.answerCallbacks.get(promptId);
+    if (cb) {
+      cb(response);
+      this.answerCallbacks.delete(promptId);
     }
     // If no pending ask, silently ignore (idempotent)
   }
 
   destroy(): void {
-    for (const answerSubject of Array.from(this.answerMap.values())) {
-      answerSubject.complete();
-    }
-    this.answerMap.clear();
-    this.askSubject.complete();
+    this.answerCallbacks.clear();
+    this.askListeners.clear();
   }
 }

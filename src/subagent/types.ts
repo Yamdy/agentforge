@@ -7,21 +7,21 @@
  * @module agentforge/subagent
  */
 
-import type { Observable } from 'rxjs';
 import type { AgentEvent, Message } from '../core/events.js';
 import type { AgentMode } from '../core/interfaces.js';
 
 /**
  * Agent Loop type reference.
  *
- * The AgentLoop interface is defined in loop/agent-loop.ts and provides
- * the run() method for executing agent logic.
+ * Matches the real AgentLoop interface from loop/agent-loop.ts (Promise-based, no Observable).
  */
 export interface AgentLoop {
-  /** Run the agent with input, returns event stream */
-  run(input: string): Observable<AgentEvent>;
-  /** Destroy signal for cleanup */
-  destroy$: Observable<void>;
+  /** Run the agent with input, returns output via Promise */
+  run(input: string): Promise<string>;
+  /** Subscribe to specific event types */
+  on(type: string, listener: (event: AgentEvent) => void): () => void;
+  /** Subscribe to all events */
+  onAny(listener: (event: AgentEvent) => void): () => void;
 }
 
 /**

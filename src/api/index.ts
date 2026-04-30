@@ -9,7 +9,7 @@
  * |-------|-------------|---------------|
  * | L1 | Non-programmers | Config files |
  * | **L2** | **App developers** | **Declarative (createAgent)** |
- * | **L3** | **Framework devs** | **Full Observable control** |
+ * | **L3** | **Framework devs** | **Full event-driven control** |
  *
  * ## L2 Quick Start (Recommended for most users)
  *

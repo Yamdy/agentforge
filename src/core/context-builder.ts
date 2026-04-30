@@ -29,7 +29,8 @@ import type {
 import type { QuotaController } from '../quota/quota-controller.js';
 import type { CompactionManager } from '../memory/index.js';
 import type { ApplicationServices, AgentContext } from './context.js';
-import type { Observable } from 'rxjs';
+/** @deprecated Backward-compat type stub from RxJS era */
+interface _Observable<T> { subscribe(o: { next(v: T): void; error?(e: unknown): void; complete?(): void }): { unsubscribe(): void }; pipe(...ops: any[]): any }
 import type { AgentEvent } from './events.js';
 import {
   InMemoryStore,
@@ -224,7 +225,7 @@ export class ContextBuilder {
    * @param pipeline - Pipeline function that transforms Observable<AgentEvent>
    * @returns this
    */
-  withPluginPipeline(pipeline: (source: Observable<AgentEvent>) => Observable<AgentEvent>): this {
+  withPluginPipeline(pipeline: (source: _Observable<AgentEvent>) => _Observable<AgentEvent>): this {
     this.context.pluginPipeline = pipeline;
     return this;
   }

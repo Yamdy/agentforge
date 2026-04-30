@@ -25,7 +25,6 @@ import {
   serializeError,
   generateId,
 } from '../core/index.js';
-import { Observable } from 'rxjs';
 import type { AgentContext, AgentLoopState } from '../core/index.js';
 import { HookRegistry } from '../core/hooks.js';
 import { createInitialLoopState } from '../core/state.js';
@@ -47,6 +46,7 @@ export interface AgentLoopConfig {
   fallbackModel?: { provider: string; model: string } | undefined;
   history?: Message[] | undefined;
   systemPrompt?: string | undefined;
+  checkpoint?: { enabled?: boolean; interval?: string } | undefined;
 }
 
 /**
@@ -55,8 +55,6 @@ export interface AgentLoopConfig {
 export interface AgentLoop {
   /** Run the agent loop with user input. Returns final output text. */
   run(input: string): Promise<string>;
-  /** @deprecated Observable wrapper for backward compat */
-  run$(input: string): Observable<AgentEvent>;
   /** Subscribe to typed events */
   on<E extends AgentEvent>(type: E['type'], fn: (e: E) => void): () => void;
   /** Subscribe to all events */
@@ -600,14 +598,26 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         });
 
         // ── Emit checkpoint after LLM response ──
-        emitter.emit({
-          type: 'checkpoint',
-          timestamp: Date.now(),
-          sessionId: ctx.sessionId,
-          checkpointId: generateId('cp'),
-          position: 'after_llm',
-          state: state,
-        } as AgentEvent);
+        const cpEnabled = config.checkpoint?.enabled !== false;
+        if (cpEnabled) {
+          const cpId = generateId('cp');
+          emitter.emit({
+            type: 'checkpoint',
+            timestamp: Date.now(),
+            sessionId: ctx.sessionId,
+            checkpointId: cpId,
+            position: 'after_llm',
+            state: state,
+          } as AgentEvent);
+          // Fire-and-forget: never block the loop on checkpoint save
+          ctx.checkpoint?.save({
+            checkpointId: cpId,
+            sessionId: ctx.sessionId,
+            position: 'after_llm',
+            state: state as any,
+            timestamp: Date.now(),
+          } as any).catch(() => {});
+        }
         if (ctx.services.costTracker && response.usage) {
           ctx.services.costTracker.record(ctx.sessionId, config.model.model, response.usage).catch(() => {});
         }
@@ -679,14 +689,25 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         }, {});
 
         // ── Emit checkpoint after tool execution ──
-        emitter.emit({
-          type: 'checkpoint',
-          timestamp: Date.now(),
-          sessionId: ctx.sessionId,
-          checkpointId: generateId('cp'),
-          position: 'after_tool',
-          state: state,
-        } as AgentEvent);
+        const cpEnabled2 = config.checkpoint?.enabled !== false;
+        if (cpEnabled2) {
+          const cpId2 = generateId('cp');
+          emitter.emit({
+            type: 'checkpoint',
+            timestamp: Date.now(),
+            sessionId: ctx.sessionId,
+            checkpointId: cpId2,
+            position: 'after_tool',
+            state: state,
+          } as AgentEvent);
+          ctx.checkpoint?.save({
+            checkpointId: cpId2,
+            sessionId: ctx.sessionId,
+            position: 'after_tool',
+            state: state as any,
+            timestamp: Date.now(),
+          } as any).catch(() => {});
+        }
 
         // ── Compaction check ──
         if (shouldCompact(state.messages, state.tokens)) {
@@ -785,16 +806,6 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       resumePromise = null;
     },
     getState: () => state,
-    /** @deprecated Use run() + on() instead. Returns Observable for backward compat with tests. */
-    run$(input: string): Observable<AgentEvent> {
-      return new Observable<AgentEvent>(subscriber => {
-        const unreg = emitter.onAny(event => subscriber.next(event));
-        run(input).then(
-          () => { subscriber.complete(); unreg(); },
-          _err => { subscriber.complete(); unreg(); } // errors-as-events: already emitted
-        );
-      });
-    },
     destroy: () => {
       abortController?.abort();
       emitter.clear();

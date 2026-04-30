@@ -2,27 +2,12 @@
  * A2A Client - High-Level Agent-to-Agent Communication API
  *
  * Provides a simple API for cross-process agent communication.
- * Integrates with Agent Loop via Observable streams.
+ * Integrates with Agent Loop via callback-based subscriptions.
+ * Callback-based API (de-rxjs migration).
  *
  * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN/09-A2A.md
  */
 
-import {
-  Observable,
-  Subject,
-  BehaviorSubject,
-  Subscription,
-  of,
-} from 'rxjs';
-import {
-  filter,
-  takeUntil,
-  take,
-  timeout,
-  catchError,
-  tap,
-  mergeMap,
-} from 'rxjs/operators';
 import { generateId } from '../core/events.js';
 import {
   type A2AMessage,
@@ -36,6 +21,7 @@ import {
   type TransportStatus,
   TransportError,
 } from './transport.js';
+import type { Subscribable } from './transport.js';
 import { A2AConnection, type A2AConnectionOptions, createConnection } from './connection.js';
 
 // ============================================================
@@ -164,7 +150,12 @@ export interface A2AClientOptions {
  * - Subscribe to incoming messages
  *
  * Errors are emitted as events (errors-as-events pattern), never thrown
- * to the RxJS error channel.
+ * to the error channel.
+ *
+ * Callback-based API (de-rxjs migration):
+ * - onEvent(fn) replaces events$ observable
+ * - onStatus(fn) replaces status$ observable
+ * - onMessage(fn) replaces messages$ observable
  */
 export class A2AClient {
   /** Agent ID for this client */
@@ -179,37 +170,43 @@ export class A2AClient {
   /** Message handler */
   private messageHandler?: A2AMessageHandler;
 
-  /** Client events subject */
-  private readonly eventsSubject = new Subject<A2AClientEvent | A2AClientErrorEvent>();
+  /** Event listeners */
+  private readonly _eventListeners = new Set<(event: A2AClientEvent | A2AClientErrorEvent) => void>();
 
   /** Started flag */
-  private readonly startedSubject = new BehaviorSubject<boolean>(false);
+  private _started = false;
 
-  /** Destroy signal */
-  private readonly destroySubject = new Subject<void>();
+  /** Stopped flag */
+  private _stopped = false;
 
-  /** Subscription for message handling */
-  private messageHandlingSubscription: Subscription | null = null;
+  /** Cleanup functions for subscriptions */
+  private _cleanups: (() => void)[] = [];
 
   /**
-   * Client events observable.
+   * Register a callback for client events.
+   * Returns an unsubscribe function.
    */
-  get events$(): Observable<A2AClientEvent | A2AClientErrorEvent> {
-    return this.eventsSubject.asObservable();
+  onEvent(callback: (event: A2AClientEvent | A2AClientErrorEvent) => void): () => void {
+    this._eventListeners.add(callback);
+    return () => {
+      this._eventListeners.delete(callback);
+    };
   }
 
   /**
-   * Incoming messages observable.
+   * Register a callback for status changes.
+   * Returns an unsubscribe function. Replays current value.
    */
-  get messages$(): Observable<A2AMessage> {
-    return this.connection.messages$;
+  onStatus(callback: (status: TransportStatus) => void): () => void {
+    return this.connection.onStatus(callback);
   }
 
   /**
-   * Connection status observable.
+   * Register a callback for incoming messages.
+   * Returns an unsubscribe function.
    */
-  get status$(): Observable<TransportStatus> {
-    return this.connection.status$;
+  onMessage(callback: (msg: A2AMessage) => void): () => void {
+    return this.connection.onMessage(callback);
   }
 
   /**
@@ -223,7 +220,7 @@ export class A2AClient {
    * Is client started and connected.
    */
   get isStarted(): boolean {
-    return this.startedSubject.getValue();
+    return this._started;
   }
 
   /**
@@ -261,13 +258,13 @@ export class A2AClient {
    * Start the client and connect to remote endpoint.
    */
   async start(): Promise<void> {
-    if (this.isStarted) {
+    if (this._started) {
       return;
     }
 
     try {
       await this.connection.connect();
-      this.startedSubject.next(true);
+      this._started = true;
       this.emitEvent('a2a.client.started', {});
       this.startMessageHandling();
     } catch (error) {
@@ -280,13 +277,13 @@ export class A2AClient {
    * Stop the client and disconnect.
    */
   async stop(): Promise<void> {
-    if (!this.isStarted) {
+    if (!this._started) {
       return;
     }
 
     this.stopMessageHandling();
     await this.connection.disconnect();
-    this.startedSubject.next(false);
+    this._started = false;
     this.emitEvent('a2a.client.stopped', {});
   }
 
@@ -294,12 +291,19 @@ export class A2AClient {
    * Destroy the client and release all resources.
    */
   destroy(): void {
+    this._stopped = true;
+
     this.stopMessageHandling();
     this.connection.destroy();
-    this.startedSubject.next(false);
-    this.destroySubject.next();
-    this.destroySubject.complete();
-    this.eventsSubject.complete();
+    this._started = false;
+
+    // Run all cleanups
+    for (const cleanup of this._cleanups) {
+      try { cleanup(); } catch { /* ignore */ }
+    }
+    this._cleanups = [];
+
+    this._eventListeners.clear();
   }
 
   // ============================================================
@@ -307,82 +311,134 @@ export class A2AClient {
   // ============================================================
 
   /**
-   * Send a request and wait for response.
+   * Send a request and subscribe to the response.
    *
-   * Returns an Observable that:
+   * Returns a Subscribable that:
    * - Emits the response message on success
    * - Emits an error message if the remote agent returns an error
    * - Times out if no response is received within timeout
    *
-   * Errors are emitted as events, not thrown to RxJS error channel.
+   * Errors are emitted as events, not thrown.
    */
   request(
     targetId: string,
     payload: unknown,
     options?: RequestOptions
-  ): Observable<A2AMessage> {
+  ): Subscribable<A2AMessage> {
     const timeoutMs = options?.timeout ?? this.defaultTimeout;
     const requestId = generateId('req');
+    const self = this;
 
-    return new Observable<A2AMessage>((subscriber) => {
-      this.emitEvent('a2a.client.request_sent', {
-        requestId,
-        targetId,
-        timeout: timeoutMs,
-      });
+    return {
+      subscribe(observer: {
+        next?: (v: A2AMessage) => void;
+        error?: (e: Error) => void;
+        complete?: () => void;
+      }): { unsubscribe(): void } {
+        const next = observer.next ?? (() => {});
+        const complete = observer.complete ?? (() => {});
+        let settled = false;
+        let clientTimeoutId: ReturnType<typeof setTimeout> | null = null;
+        let innerUnsub: { unsubscribe(): void } | null = null;
 
-      // Use connection's request method with timeout
-      const subscription = this.connection.request(targetId, payload, { timeout: timeoutMs }).pipe(
-        takeUntil(this.destroySubject),
-        timeout({
-          each: timeoutMs,
-          with: () => {
-            this.emitEvent('a2a.client.timeout', { requestId, targetId });
-            return of({
-              id: generateId('timeout'),
-              from: targetId,
-              to: this.agentId,
-              timestamp: Date.now(),
-              ttl: 0,
-              correlationId: requestId,
-              type: 'error' as const,
-              payload: { code: 'TIMEOUT', message: `Request timed out after ${timeoutMs}ms` },
-              version: A2A_PROTOCOL_VERSION,
-            } as A2AMessage);
-          },
-        }),
-        catchError((error: Error) => {
-          // Convert error to error event/message
-          this.emitError('REQUEST_ERROR', error.message, requestId);
-          return of({
-            id: generateId('err'),
+        self.emitEvent('a2a.client.request_sent', {
+          requestId,
+          targetId,
+          timeout: timeoutMs,
+        });
+
+        // Client-side timeout (safety net; connection also has its own timeout)
+        clientTimeoutId = setTimeout(() => {
+          if (self._stopped || settled) return;
+          settled = true;
+          if (innerUnsub) innerUnsub.unsubscribe();
+          self.emitEvent('a2a.client.timeout', { requestId, targetId });
+          const timeoutMsg: A2AMessage = {
+            id: generateId('timeout'),
             from: targetId,
-            to: this.agentId,
+            to: self.agentId,
             timestamp: Date.now(),
             ttl: 0,
             correlationId: requestId,
             type: 'error' as const,
-            payload: { code: 'REQUEST_ERROR', message: error.message },
+            payload: { code: 'TIMEOUT', message: `Request timed out after ${timeoutMs}ms` },
             version: A2A_PROTOCOL_VERSION,
-          } as A2AMessage);
-        }),
-        tap((response) => {
-          if (response.type === 'response') {
-            this.emitEvent('a2a.client.response_received', {
-              requestId,
-              responseId: response.id,
-            });
-          } else if (response.type === 'error') {
-            this.emitEvent('a2a.client.error_received', {
-              requestId,
-              error: response.payload,
-            });
-          }
-        })
-      ).subscribe(subscriber);
+          };
+          next(timeoutMsg);
+          complete();
+        }, timeoutMs);
 
-      return () => subscription.unsubscribe();
-    });
+        // Subscribe to connection request
+        innerUnsub = self.connection.request(targetId, payload, { timeout: timeoutMs }).subscribe({
+          next: (response: A2AMessage) => {
+            if (self._stopped || settled) return;
+            settled = true;
+
+            // Clear client timeout since we got a response
+            if (clientTimeoutId !== null) {
+              clearTimeout(clientTimeoutId);
+              clientTimeoutId = null;
+            }
+
+            // Emit events based on response type
+            if (response.type === 'response') {
+              self.emitEvent('a2a.client.response_received', {
+                requestId,
+                responseId: response.id,
+              });
+            } else if (response.type === 'error') {
+              self.emitEvent('a2a.client.error_received', {
+                requestId,
+                error: response.payload,
+              });
+            }
+
+            next(response);
+            complete();
+          },
+          error: (err: unknown) => {
+            if (self._stopped || settled) return;
+            settled = true;
+
+            if (clientTimeoutId !== null) {
+              clearTimeout(clientTimeoutId);
+              clientTimeoutId = null;
+            }
+
+            // Convert error to error event/message
+            const errMsg = err instanceof Error ? err.message : String(err);
+            self.emitError('REQUEST_ERROR', errMsg, requestId);
+            const errorMsg: A2AMessage = {
+              id: generateId('err'),
+              from: targetId,
+              to: self.agentId,
+              timestamp: Date.now(),
+              ttl: 0,
+              correlationId: requestId,
+              type: 'error' as const,
+              payload: { code: 'REQUEST_ERROR', message: errMsg },
+              version: A2A_PROTOCOL_VERSION,
+            };
+            next(errorMsg);
+            complete();
+          },
+        });
+
+        return {
+          unsubscribe() {
+            if (clientTimeoutId !== null) {
+              clearTimeout(clientTimeoutId);
+              clientTimeoutId = null;
+            }
+            if (innerUnsub) {
+              innerUnsub.unsubscribe();
+              innerUnsub = null;
+            }
+            settled = true;
+          },
+        };
+      },
+    };
   }
 
   /**
@@ -394,19 +450,18 @@ export class A2AClient {
     options?: RequestOptions
   ): Promise<A2AMessage> {
     return new Promise((resolve, reject) => {
-      this.request(targetId, payload, options)
-        .pipe(take(1))
-        .subscribe({
-          next: (response) => {
-            if (response.type === 'error') {
-              const errorPayload = response.payload as { code: string; message: string };
-              reject(new TransportError(errorPayload.message, errorPayload.code, false));
-            } else {
-              resolve(response);
-            }
-          },
-          error: reject,
-        });
+      const sub = this.request(targetId, payload, options).subscribe({
+        next: (response) => {
+          sub.unsubscribe();
+          if (response.type === 'error') {
+            const errorPayload = response.payload as { code: string; message: string };
+            reject(new TransportError(errorPayload.message, errorPayload.code, false));
+          } else {
+            resolve(response);
+          }
+        },
+        error: reject,
+      });
     });
   }
 
@@ -483,10 +538,13 @@ export class A2AClient {
    */
   setMessageHandler(handler: A2AMessageHandler): void {
     this.messageHandler = handler;
-    if (this.isStarted && !this.messageHandlingSubscription) {
+    if (this._started && this._cleanups.every(c => c !== this._messageHandlingCleanup)) {
       this.startMessageHandling();
     }
   }
+
+  // Track whether the message handling subscription is active
+  private _messageHandlingCleanup: (() => void) | null = null;
 
   /**
    * Subscribe to messages matching a filter.
@@ -494,22 +552,17 @@ export class A2AClient {
   subscribe(
     filterFn: (message: A2AMessage) => boolean = () => true
   ): A2AMessageSubscription {
-    const subscription = this.messages$
-      .pipe(
-        filter(filterFn),
-        takeUntil(this.destroySubject)
-      )
-      .subscribe({
-        next: (message) => {
-          void this.handleMessageInternal(message);
-        },
-        error: () => {
-          // Never propagate to error channel
-        },
-      });
+    const self = this;
+    const cleanup = this.connection.onMessage((message: A2AMessage) => {
+      if (self._stopped) return;
+      if (!filterFn(message)) return;
+      void self.handleMessageInternal(message);
+    });
 
     return {
-      unsubscribe: () => subscription.unsubscribe(),
+      unsubscribe() {
+        cleanup();
+      },
     };
   }
 
@@ -517,31 +570,30 @@ export class A2AClient {
    * Subscribe to requests only.
    */
   subscribeRequests(handler: (message: A2AMessage) => Promise<A2AMessage | void>): A2AMessageSubscription {
-    const subscription = this.messages$
-      .pipe(
-        filter((msg) => msg.type === 'request' && msg.to === this.agentId),
-        takeUntil(this.destroySubject),
-        mergeMap(async (message) => {
-          try {
-            const result = await handler(message);
-            if (result) {
-              await this.connection.send(result);
-            }
-          } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : 'Handler error';
-            await this.connection.respondError(message, 'HANDLER_ERROR', errorMessage);
-            this.emitError('HANDLER_ERROR', errorMessage, message.id);
+    const self = this;
+    const cleanup = this.connection.onMessage((message: A2AMessage) => {
+      if (self._stopped) return;
+      if (message.type !== 'request' || message.to !== self.agentId) return;
+
+      // Fire and forget handler (concurrent processing like mergeMap)
+      handler(message)
+        .then((result) => {
+          if (result) {
+            return self.connection.send(result);
           }
+          return undefined;
         })
-      )
-      .subscribe({
-        error: () => {
-          // Never propagate to error channel
-        },
-      });
+        .catch((error: unknown) => {
+          const errorMessage = error instanceof Error ? error.message : 'Handler error';
+          self.connection.respondError(message, 'HANDLER_ERROR', errorMessage).catch(() => {});
+          self.emitError('HANDLER_ERROR', errorMessage, message.id);
+        });
+    });
 
     return {
-      unsubscribe: () => subscription.unsubscribe(),
+      unsubscribe() {
+        cleanup();
+      },
     };
   }
 
@@ -578,31 +630,26 @@ export class A2AClient {
    * Start handling incoming messages.
    */
   private startMessageHandling(): void {
-    if (this.messageHandlingSubscription) {
+    if (this._messageHandlingCleanup) {
       return;
     }
 
-    this.messageHandlingSubscription = this.messages$
-      .pipe(
-        takeUntil(this.destroySubject),
-        filter((msg) => msg.to === this.agentId || msg.to === A2A_BROADCAST_TARGET)
-      )
-      .subscribe({
-        next: (message) => {
-          void this.handleMessageInternal(message);
-        },
-        error: () => {
-          // Never propagate to error channel
-        },
-      });
+    const self = this;
+    this._messageHandlingCleanup = this.connection.onMessage((message: A2AMessage) => {
+      if (self._stopped) return;
+      if (message.to !== self.agentId && message.to !== A2A_BROADCAST_TARGET) return;
+      void self.handleMessageInternal(message);
+    });
   }
 
   /**
    * Stop handling incoming messages.
    */
   private stopMessageHandling(): void {
-    this.messageHandlingSubscription?.unsubscribe();
-    this.messageHandlingSubscription = null;
+    if (this._messageHandlingCleanup) {
+      this._messageHandlingCleanup();
+      this._messageHandlingCleanup = null;
+    }
   }
 
   /**
@@ -636,12 +683,15 @@ export class A2AClient {
    * Emit a client event.
    */
   private emitEvent(type: A2AClientEventType, details: Record<string, unknown>): void {
-    this.eventsSubject.next({
+    const event: A2AClientEvent = {
       type,
       timestamp: Date.now(),
       agentId: this.agentId,
       details,
-    });
+    };
+    for (const listener of this._eventListeners) {
+      listener(event);
+    }
   }
 
   /**
@@ -655,12 +705,15 @@ export class A2AClient {
     if (correlationId !== undefined) {
       errorPayload.correlationId = correlationId;
     }
-    this.eventsSubject.next({
+    const errorEvent: A2AClientErrorEvent = {
       type: 'a2a.client.error',
       timestamp: Date.now(),
       agentId: this.agentId,
       error: errorPayload,
-    });
+    };
+    for (const listener of this._eventListeners) {
+      listener(errorEvent);
+    }
   }
 }
 
@@ -682,25 +735,61 @@ export function createClient(options: A2AClientOptions): A2AClient {
 /**
  * Mock transport for testing purposes.
  * This should NOT be used in production.
+ * Callback-based (de-rxjs migration).
  */
 export class MockTransport implements A2ATransport {
   readonly name = 'mock';
   readonly agentId: string;
 
-  private statusSubject = new BehaviorSubject<TransportStatus>('disconnected');
-  private messagesSubject = new Subject<A2AMessage>();
+  private _status: TransportStatus = 'disconnected';
+  private _statusListeners = new Set<(status: TransportStatus) => void>();
+  private _messageListeners = new Set<(msg: A2AMessage) => void>();
   private sentMessages: A2AMessage[] = [];
 
-  get status$(): Observable<TransportStatus> {
-    return this.statusSubject.asObservable();
+  get status$(): Subscribable<TransportStatus> {
+    const self = this;
+    return {
+      subscribe(observer: {
+        next?: (v: TransportStatus) => void;
+        error?: (e: unknown) => void;
+        complete?: () => void;
+      }): { unsubscribe(): void } {
+        const next = observer.next ?? (() => {});
+        // Replay current value
+        next(self._status);
+        const listener = (s: TransportStatus) => next(s);
+        self._statusListeners.add(listener);
+        return {
+          unsubscribe() {
+            self._statusListeners.delete(listener);
+          },
+        };
+      },
+    };
   }
 
   get status(): TransportStatus {
-    return this.statusSubject.getValue();
+    return this._status;
   }
 
-  get messages$(): Observable<A2AMessage> {
-    return this.messagesSubject.asObservable();
+  get messages$(): Subscribable<A2AMessage> {
+    const self = this;
+    return {
+      subscribe(observer: {
+        next?: (v: A2AMessage) => void;
+        error?: (e: unknown) => void;
+        complete?: () => void;
+      }): { unsubscribe(): void } {
+        const next = observer.next ?? (() => {});
+        const listener = (msg: A2AMessage) => next(msg);
+        self._messageListeners.add(listener);
+        return {
+          unsubscribe() {
+            self._messageListeners.delete(listener);
+          },
+        };
+      },
+    };
   }
 
   get sentMessagesList(): A2AMessage[] {
@@ -712,19 +801,22 @@ export class MockTransport implements A2ATransport {
   }
 
   async connect(): Promise<void> {
-    this.statusSubject.next('connecting');
+    this._status = 'connecting';
+    this._notifyStatus('connecting');
     // Simulate connection delay
     await new Promise((resolve) => setTimeout(resolve, 10));
-    this.statusSubject.next('connected');
+    this._status = 'connected';
+    this._notifyStatus('connected');
   }
 
   async disconnect(): Promise<void> {
-    this.statusSubject.next('disconnected');
+    this._status = 'disconnected';
+    this._notifyStatus('disconnected');
     await Promise.resolve();
   }
 
   async send(message: A2AMessage): Promise<void> {
-    if (this.status !== 'connected') {
+    if (this._status !== 'connected') {
       throw new TransportError('Not connected', 'NOT_CONNECTED', false);
     }
     this.sentMessages.push(message);
@@ -735,7 +827,9 @@ export class MockTransport implements A2ATransport {
    * Simulate receiving a message (for testing).
    */
   simulateMessage(message: A2AMessage): void {
-    this.messagesSubject.next(message);
+    for (const listener of this._messageListeners) {
+      listener(message);
+    }
   }
 
   /**
@@ -746,8 +840,14 @@ export class MockTransport implements A2ATransport {
   }
 
   destroy(): void {
-    this.statusSubject.complete();
-    this.messagesSubject.complete();
+    this._statusListeners.clear();
+    this._messageListeners.clear();
+  }
+
+  private _notifyStatus(status: TransportStatus): void {
+    for (const listener of this._statusListeners) {
+      listener(status);
+    }
   }
 }
 

@@ -55,7 +55,6 @@ import type {
 } from '../contracts/mpu-interfaces.js';
 import type { SecurityGuard } from '../security/guard.js';
 import type { Planner } from '../planning/types.js';
-import { Observable, Subject } from 'rxjs';
 import type { HITLAskOptions } from './interfaces.js';
 import type { HookRegistry } from './hooks.js';
 // ============================================================
@@ -211,7 +210,8 @@ export interface AgentContext {
 
   // ----- Plugin Pipeline (optional) -----
   /** Plugin pipeline for event interception and observation */
-  pluginPipeline?: (source: Observable<AgentEvent>) => Observable<AgentEvent>;
+  /** @deprecated Plugin pipeline backward-compat — will be removed in v0.2 */
+  pluginPipeline?: (source: any) => any;
 
   /** Hook registry for lifecycle/request/tool hooks (non-RxJS) */
   hookRegistry?: HookRegistry;
@@ -437,136 +437,108 @@ export class DefaultPauseController implements PauseController {
     return this.paused;
   }
 
-  onResume(): Observable<void> {
+  onResume(callback: () => void): () => void {
     if (!this.paused) {
-      return new Observable(subscriber => {
-        subscriber.next();
-        subscriber.complete();
-        return () => {
-          /* no cleanup needed for synchronous completion */
-        };
-      });
+      callback();
+      return () => {};
     }
-    return new Observable(subscriber => {
-      const callback = (): void => {
-        subscriber.next();
-        subscriber.complete();
-      };
-      this.resumeCallbacks.push(callback);
-      return () => {
-        const idx = this.resumeCallbacks.indexOf(callback);
-        if (idx >= 0) {
-          this.resumeCallbacks.splice(idx, 1);
-        }
-      };
-    });
+    this.resumeCallbacks.push(callback);
+    return () => {
+      const idx = this.resumeCallbacks.indexOf(callback);
+      if (idx >= 0) {
+        this.resumeCallbacks.splice(idx, 1);
+      }
+    };
   }
 }
 
 /**
  * Default HITL Controller
  *
- * Implements Observable-based HITL using Subject pattern.
- * The ask() method returns an Observable that:
- * - Emits when answer() is called with matching askId
- * - Never throws errors (errors-as-events handled by caller)
+ * Implements callback-based HITL pattern.
+ * The ask() method registers an onAnswer callback and returns unsubscribe.
  *
- * This enables the NEVER-blocking pattern in expand recursion:
- * - hitl.ask case subscribes to Observable
- * - Observable doesn't emit → expand naturally pauses
- * - External answer() call → Subject emits → expand resumes
+ * This enables the NEVER-blocking pattern in the imperative loop:
+ * - hitl.ask() registers callback, loop awaits Promise
+ * - External answer() call → callback fires → Promise resolves → loop continues
  */
 export class DefaultHITLController implements HITLController {
-  private askSubject = new Subject<{
+  private askListeners: Array<(prompt: {
     askId: string;
     question: string;
     options?: string[];
     metadata?: Record<string, unknown>;
-  }>();
-  private pendingAsks = new Map<string, Subject<string>>();
+  }) => void> = [];
+  private pendingAsks = new Map<string, (answer: string) => void>();
 
   /**
-   * Ask a question - returns Observable that emits when answered.
-   * The Observable represents "pause until human responds" semantics.
+   * Ask a question - registers onAnswer callback. Returns unsubscribe.
    */
-  ask(options: HITLAskOptions): Observable<string> {
-    return new Observable(subscriber => {
-      // Create a Subject for this specific ask
-      const answerSubject = new Subject<string>();
-      this.pendingAsks.set(options.askId, answerSubject);
+  ask(options: HITLAskOptions, onAnswer: (answer: string) => void): () => void {
+    // Register the answer callback
+    this.pendingAsks.set(options.askId, onAnswer);
 
-      // Notify downstream (UI) that we're asking
-      // Build object conditionally to satisfy exactOptionalPropertyTypes
-      const askNotification: {
-        askId: string;
-        question: string;
-        options?: string[];
-        metadata?: Record<string, unknown>;
-      } = {
-        askId: options.askId,
-        question: options.question,
-      };
-      if (options.options !== undefined) {
-        askNotification.options = options.options;
-      }
-      if (options.metadata !== undefined) {
-        askNotification.metadata = options.metadata;
-      }
-      this.askSubject.next(askNotification);
+    // Notify listeners (UI)
+    const askNotification: {
+      askId: string;
+      question: string;
+      options?: string[];
+      metadata?: Record<string, unknown>;
+    } = {
+      askId: options.askId,
+      question: options.question,
+    };
+    if (options.options !== undefined) {
+      askNotification.options = options.options;
+    }
+    if (options.metadata !== undefined) {
+      askNotification.metadata = options.metadata;
+    }
+    for (const listener of this.askListeners) {
+      listener(askNotification);
+    }
 
-      // Subscribe to answer and forward to caller
-      const subscription = answerSubject.subscribe({
-        next: answer => {
-          subscriber.next(answer);
-          subscriber.complete();
-        },
-      });
-
-      // Cleanup on unsubscribe
-      return () => {
-        subscription.unsubscribe();
-        this.pendingAsks.delete(options.askId);
-      };
-    });
+    // Return unsubscribe
+    return () => {
+      this.pendingAsks.delete(options.askId);
+    };
   }
 
   /**
-   * Observable of asks - for UI to subscribe and display prompts.
+   * Subscribe to HITL prompts (for UI). Returns unsubscribe.
    */
-  onAsk(): Observable<{
+  onAsk(listener: (prompt: {
     askId: string;
     question: string;
     options?: string[];
     metadata?: Record<string, unknown>;
-  }> {
-    return this.askSubject.asObservable();
+  }) => void): () => void {
+    this.askListeners.push(listener);
+    return () => {
+      const idx = this.askListeners.indexOf(listener);
+      if (idx >= 0) {
+        this.askListeners.splice(idx, 1);
+      }
+    };
   }
 
   /**
    * Provide an answer - called by external system (UI, CLI, etc.)
    */
   answer(askId: string, answer: string): void {
-    const answerSubject = this.pendingAsks.get(askId);
-    if (answerSubject) {
-      answerSubject.next(answer);
-      answerSubject.complete();
+    const callback = this.pendingAsks.get(askId);
+    if (callback) {
+      callback(answer);
       this.pendingAsks.delete(askId);
     }
-    // If no pending ask, silently ignore (idempotent)
   }
 
   /**
-   * Destroy the controller - cleanup all pending asks and complete subjects.
+   * Destroy the controller - cleanup all pending asks.
    */
   destroy(): void {
-    // Complete all pending answer subjects
-    for (const answerSubject of Array.from(this.pendingAsks.values())) {
-      answerSubject.complete();
-    }
     this.pendingAsks.clear();
-
-    // Complete the ask notification subject
-    this.askSubject.complete();
+    this.askListeners = [];
   }
 }
 

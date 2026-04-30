@@ -122,7 +122,7 @@ export class PluginManager {
   /**
    * Build the plugin pipeline — registers all plugin hooks and event subscriptions.
    *
-   * @param hookRegistryOrSource - HookRegistry (new API) or Observable source (old API)
+   * @param hookRegistryOrSource - HookRegistry (new API) or deprecated Observable source (old API)
    * @param emitterOrCtx         - EventEmitter (new API) or PluginContext (old API)
    * @param ctx                  - Plugin context (new API only)
    */
@@ -133,7 +133,14 @@ export class PluginManager {
   ): any {
     // Detect old API: first arg is Observable (has .pipe/.subscribe)
     if (hookRegistryOrSource && typeof hookRegistryOrSource.pipe === 'function') {
-      // Old API: return pass-through Observable
+      // Old API: initialize plugins first, then return pass-through Observable
+      if (this.pluginContext) {
+        for (const plugin of this.getActivePlugins()) {
+          if (plugin.init) {
+            void this.safeInit(plugin);
+          }
+        }
+      }
       return hookRegistryOrSource;
     }
 

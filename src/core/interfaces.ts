@@ -13,7 +13,6 @@
  * @see docs/RXJS-EVENT-STREAM-DESIGN.md - 轻量依赖注入 section
  */
 
-import { Observable } from 'rxjs';
 import type { Message, ToolCall, AgentEvent } from './events.js';
 import type { Checkpoint } from './checkpoint.js';
 
@@ -416,24 +415,24 @@ export interface HITLAskOptions {
 /**
  * HITL Controller Interface
  *
- * Manages human-in-the-loop interactions using Observable-based async pattern.
+ * Manages human-in-the-loop interactions using callback-based async pattern.
  * This enables the NEVER-blocking pattern where the stream pauses for external input.
  *
- * Design: ask() returns Observable<string> that emits when the human answers.
- * The Observable represents a "pause until answered" semantic - the expand recursion
+ * Design: ask() returns a Promise that resolves when the human answers.
+ * The Promise represents a "pause until answered" semantic — the imperative loop
  * subscribes and waits for the answer before continuing.
  */
 export interface HITLController {
-  /** Ask a question - returns Observable that emits the answer when human responds */
-  ask(options: HITLAskOptions): Observable<string>;
+  /** Ask a question — calls onAnswer callback when human responds. Returns unsubscribe. */
+  ask(options: HITLAskOptions, onAnswer: (answer: string) => void): () => void;
 
-  /** Observable of asks (for UI to subscribe) */
-  onAsk(): Observable<{
+  /** Subscribe to HITL prompts (for UI). Returns unsubscribe. */
+  onAsk(listener: (prompt: {
     askId: string;
     question: string;
     options?: string[];
     metadata?: Record<string, unknown>;
-  }>;
+  }) => void): () => void;
 
   /** Provide an answer (for UI to call) */
   answer(askId: string, answer: string): void;
@@ -461,8 +460,8 @@ export interface PauseController {
   /** Check if paused */
   isPaused(): boolean;
 
-  /** Observable that emits when resumed */
-  onResume(): Observable<void>;
+  /** Register a callback for when resume() is called. Returns unsubscribe. */
+  onResume(callback: () => void): () => void;
 }
 
 // ============================================================
@@ -504,8 +503,8 @@ export interface MCPClient {
   /** Get connection status */
   status(): MCPStatus;
 
-  /** Observable of status changes */
-  onStatusChange(): Observable<MCPStatus>;
+  /** Subscribe to status changes. Returns unsubscribe function. */
+  onStatusChange(listener: (status: MCPStatus) => void): () => void;
 }
 
 /**
@@ -547,12 +546,13 @@ export interface SubagentRegistry {
   /** Check if subagent exists */
   has(name: string): boolean;
 
-  /** Run a subagent */
+  /** Run a subagent — emits events via listener, returns output via Promise */
   run(
     name: string,
     input: string,
+    listener: (event: AgentEvent) => void,
     options?: { sessionMessages?: Message[] }
-  ): Observable<AgentEvent>;
+  ): Promise<string>;
 
   /** List all subagents */
   list(): SubagentInfo[];
@@ -836,22 +836,22 @@ export interface PermissionAskOptions {
  * Permission controller — manages tool execution permissions.
  *
  * Structurally identical to HITLController:
- * - ask() returns Observable<PermissionDecision>
+ * - ask() returns Promise<PermissionDecision>
  * - onAsk() exposes a stream for UI subscription
  * - answer() allows UI to respond
  * - isAutoAllowed() checks the allow_always cache
  */
 export interface PermissionController {
-  /** Request permission — returns Observable that emits when human decides */
-  ask(options: PermissionAskOptions): Observable<PermissionDecision>;
+  /** Request permission — returns Promise that resolves when human decides */
+  ask(options: PermissionAskOptions): Promise<PermissionDecision>;
 
-  /** Observable of permission prompts (for UI subscription) */
-  onAsk(): Observable<{
+  /** Subscribe to permission prompts (for UI). Returns unsubscribe. */
+  onAsk(listener: (prompt: {
     promptId: string;
     permission: string;
     context?: Record<string, unknown>;
     options: PermissionDecision[];
-  }>;
+  }) => void): () => void;
 
   /** Provide a permission decision — called by UI */
   answer(promptId: string, decision: PermissionDecision): void;
