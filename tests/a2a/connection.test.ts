@@ -3,16 +3,10 @@
  *
  * Tests A2AConnection: heartbeat, reconnection, message queue, backlog.
  * Uses vitest fake timers for time-based testing.
+ * Callback-based API (de-rxjs migration).
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import {
-  Subject,
-  BehaviorSubject,
-  firstValueFrom,
-  take,
-} from 'rxjs';
-import type { Observable } from 'rxjs';
 import {
   A2AConnection,
   createConnection,
@@ -27,6 +21,7 @@ import type {
   ReconnectConfig,
   BacklogConfig,
 } from '../../src/a2a/index.js';
+import type { Subscribable } from '../../src/a2a/transport.js';
 import {
   A2A_BROADCAST_TARGET,
   A2A_PROTOCOL_VERSION,
@@ -34,34 +29,94 @@ import {
 import { TransportError } from '../../src/a2a/transport.js';
 
 // ============================================================
+// Test Utilities
+// ============================================================
+
+/** Get the first emitted value from a Subscribable (Promise-based). */
+function firstValue<T>(subscribable: Subscribable<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const sub = subscribable.subscribe({
+      next: (value: T) => {
+        sub.unsubscribe();
+        resolve(value);
+      },
+      error: (err: unknown) => {
+        sub.unsubscribe();
+        reject(err instanceof Error ? err : new Error(String(err)));
+      },
+      complete: () => {
+        sub.unsubscribe();
+        reject(new Error('Completed without emitting value'));
+      },
+    });
+  });
+}
+
+// ============================================================
 // Test Mock Transport
 // ============================================================
 
 /**
  * Controllable mock transport for testing A2AConnection.
+ * Callback-based (de-rxjs migration).
  */
 class TestMockTransport implements A2ATransport {
   readonly name = 'test-mock-transport';
   readonly agentId: string;
 
-  private statusSubject = new BehaviorSubject<TransportStatus>('disconnected');
-  private messagesSubject = new Subject<A2AMessage>();
+  private _status: TransportStatus = 'disconnected';
+  private _statusListeners = new Set<(status: TransportStatus) => void>();
+  private _messageListeners = new Set<(msg: A2AMessage) => void>();
   private sentMessages: A2AMessage[] = [];
   private connectDelay = 0;
   private sendDelay = 0;
   private shouldFailConnect = false;
   private shouldFailSend = false;
 
-  get status$(): Observable<TransportStatus> {
-    return this.statusSubject.asObservable();
+  get status$(): Subscribable<TransportStatus> {
+    const self = this;
+    return {
+      subscribe(observer: {
+        next?: (v: TransportStatus) => void;
+        error?: (e: unknown) => void;
+        complete?: () => void;
+      }): { unsubscribe(): void } {
+        const next = observer.next ?? (() => {});
+        // Replay current value
+        next(self._status);
+        const listener = (s: TransportStatus) => next(s);
+        self._statusListeners.add(listener);
+        return {
+          unsubscribe() {
+            self._statusListeners.delete(listener);
+          },
+        };
+      },
+    };
   }
 
   get status(): TransportStatus {
-    return this.statusSubject.getValue();
+    return this._status;
   }
 
-  get messages$(): Observable<A2AMessage> {
-    return this.messagesSubject.asObservable();
+  get messages$(): Subscribable<A2AMessage> {
+    const self = this;
+    return {
+      subscribe(observer: {
+        next?: (v: A2AMessage) => void;
+        error?: (e: unknown) => void;
+        complete?: () => void;
+      }): { unsubscribe(): void } {
+        const next = observer.next ?? (() => {});
+        const listener = (msg: A2AMessage) => next(msg);
+        self._messageListeners.add(listener);
+        return {
+          unsubscribe() {
+            self._messageListeners.delete(listener);
+          },
+        };
+      },
+    };
   }
 
   get sentMessagesList(): A2AMessage[] {
@@ -89,23 +144,27 @@ class TestMockTransport implements A2ATransport {
   }
 
   async connect(): Promise<void> {
-    this.statusSubject.next('connecting');
+    this._status = 'connecting';
+    this._notifyStatus('connecting');
     if (this.connectDelay > 0) {
       await new Promise((resolve) => setTimeout(resolve, this.connectDelay));
     }
     if (this.shouldFailConnect) {
-      this.statusSubject.next('error');
+      this._status = 'error';
+      this._notifyStatus('error');
       throw new TransportError('Connection failed', 'CONNECT_ERROR', true);
     }
-    this.statusSubject.next('connected');
+    this._status = 'connected';
+    this._notifyStatus('connected');
   }
 
   async disconnect(): Promise<void> {
-    this.statusSubject.next('disconnected');
+    this._status = 'disconnected';
+    this._notifyStatus('disconnected');
   }
 
   async send(message: A2AMessage): Promise<void> {
-    if (this.status !== 'connected') {
+    if (this._status !== 'connected') {
       throw new TransportError('Not connected', 'NOT_CONNECTED', false);
     }
     if (this.sendDelay > 0) {
@@ -118,11 +177,14 @@ class TestMockTransport implements A2ATransport {
   }
 
   simulateMessage(message: A2AMessage): void {
-    this.messagesSubject.next(message);
+    for (const listener of this._messageListeners) {
+      listener(message);
+    }
   }
 
   simulateStatus(status: TransportStatus): void {
-    this.statusSubject.next(status);
+    this._status = status;
+    this._notifyStatus(status);
   }
 
   clearSentMessages(): void {
@@ -130,8 +192,14 @@ class TestMockTransport implements A2ATransport {
   }
 
   destroy(): void {
-    this.statusSubject.complete();
-    this.messagesSubject.complete();
+    this._statusListeners.clear();
+    this._messageListeners.clear();
+  }
+
+  private _notifyStatus(status: TransportStatus): void {
+    for (const listener of this._statusListeners) {
+      listener(status);
+    }
   }
 }
 
@@ -243,12 +311,13 @@ describe('A2AConnection Lifecycle', () => {
     await connection.connect();
     await vi.advanceTimersByTimeAsync(100);
     connection.destroy();
-    expect(() => connection.status$.subscribe()).not.toThrow();
+    // After destroy, registering new listeners should be fine
+    expect(() => connection.onStatus(() => {})).not.toThrow();
   });
 
   it('should emit opening event on connect', async () => {
     const events: ConnectionEvent[] = [];
-    connection.events$.subscribe((e) => {
+    connection.onEvent((e) => {
       if (e.type === 'connection.opening') {
         events.push(e as ConnectionEvent);
       }
@@ -263,7 +332,7 @@ describe('A2AConnection Lifecycle', () => {
 
   it('should emit open event on successful connect', async () => {
     const events: ConnectionEvent[] = [];
-    connection.events$.subscribe((e) => {
+    connection.onEvent((e) => {
       if (e.type === 'connection.open') {
         events.push(e as ConnectionEvent);
       }
@@ -277,7 +346,7 @@ describe('A2AConnection Lifecycle', () => {
 
   it('should emit closing and closed events on disconnect', async () => {
     const events: ConnectionEvent[] = [];
-    connection.events$.subscribe((e) => {
+    connection.onEvent((e) => {
       if (e.type === 'connection.closing' || e.type === 'connection.closed') {
         events.push(e as ConnectionEvent);
       }
@@ -335,7 +404,7 @@ describe('A2AConnection Send', () => {
     await vi.advanceTimersByTimeAsync(100);
 
     const events: ConnectionEvent[] = [];
-    connection.events$.subscribe((e) => {
+    connection.onEvent((e) => {
       if (e.type === 'connection.message_sent') {
         events.push(e as ConnectionEvent);
       }
@@ -388,8 +457,8 @@ describe('A2AConnection Request', () => {
     await connection.connect();
     await vi.advanceTimersByTimeAsync(100);
 
-    const request$ = connection.request('target-agent', { action: 'test' });
-    const subscription = request$.subscribe();
+    const subscribable = connection.request('target-agent', { action: 'test' });
+    const subscription = subscribable.subscribe({});
 
     await vi.advanceTimersByTimeAsync(100);
 
@@ -406,7 +475,7 @@ describe('A2AConnection Request', () => {
     await connection.connect();
     await vi.advanceTimersByTimeAsync(100);
 
-    const subscription = connection.request('target', {}).subscribe();
+    const subscription = connection.request('target', {}).subscribe({});
     await vi.advanceTimersByTimeAsync(100);
 
     const pending = connection.getPendingRequestIds();
@@ -419,8 +488,8 @@ describe('A2AConnection Request', () => {
     await connection.connect();
     await vi.advanceTimersByTimeAsync(100);
 
-    const requestPromise = firstValueFrom(
-      connection.request('target-agent', { action: 'test' }).pipe(take(1))
+    const requestPromise = firstValue(
+      connection.request('target-agent', { action: 'test' })
     );
 
     await vi.advanceTimersByTimeAsync(100);
@@ -448,8 +517,8 @@ describe('A2AConnection Request', () => {
     await connection.connect();
     await vi.advanceTimersByTimeAsync(100);
 
-    const requestPromise = firstValueFrom(
-      connection.request('target-agent', {}).pipe(take(1))
+    const requestPromise = firstValue(
+      connection.request('target-agent', {})
     );
 
     await vi.advanceTimersByTimeAsync(100);
@@ -474,8 +543,9 @@ describe('A2AConnection Request', () => {
     await connection.connect();
     await vi.advanceTimersByTimeAsync(100);
 
-    const request$ = connection.request('target-agent', {}, { timeout: 1000 });
-    const resultPromise = firstValueFrom(request$.pipe(take(1)));
+    const resultPromise = firstValue(
+      connection.request('target-agent', {}, { timeout: 1000 })
+    );
 
     await vi.advanceTimersByTimeAsync(1100);
 
@@ -489,7 +559,7 @@ describe('A2AConnection Request', () => {
     await connection.connect();
     await vi.advanceTimersByTimeAsync(100);
 
-    const subscription = connection.request('target', {}).subscribe();
+    const subscription = connection.request('target', {}).subscribe({});
     await vi.advanceTimersByTimeAsync(100);
 
     const pending = connection.getPendingRequestIds();
@@ -647,7 +717,7 @@ describe('A2AConnection Heartbeat', () => {
     transport = setup.transport;
 
     const events: ConnectionEvent[] = [];
-    connection.events$.subscribe((e) => {
+    connection.onEvent((e) => {
       if (e.type === 'connection.heartbeat_sent') {
         events.push(e as ConnectionEvent);
       }
@@ -683,7 +753,7 @@ describe('A2AConnection Heartbeat', () => {
     transport = setup.transport;
 
     const events: ConnectionEvent[] = [];
-    connection.events$.subscribe((e) => {
+    connection.onEvent((e) => {
       if (e.type === 'connection.heartbeat_timeout') {
         events.push(e as ConnectionEvent);
       }
@@ -743,7 +813,7 @@ describe('A2AConnection Reconnection', () => {
     transport = setup.transport;
 
     const events: ConnectionEvent[] = [];
-    connection.events$.subscribe((e) => {
+    connection.onEvent((e) => {
       if (e.type === 'connection.reconnecting') {
         events.push(e as ConnectionEvent);
       }
@@ -772,7 +842,7 @@ describe('A2AConnection Reconnection', () => {
     transport = setup.transport;
 
     const errorEvents: ConnectionErrorEvent[] = [];
-    connection.events$.subscribe((e) => {
+    connection.onEvent((e) => {
       if (e.type === 'connection.error') {
         errorEvents.push(e as ConnectionErrorEvent);
       }
@@ -796,7 +866,7 @@ describe('A2AConnection Reconnection', () => {
     transport = setup.transport;
 
     const reconnectEvents: ConnectionEvent[] = [];
-    connection.events$.subscribe((e) => {
+    connection.onEvent((e) => {
       if (e.type === 'connection.reconnecting') {
         reconnectEvents.push(e as ConnectionEvent);
       }
@@ -882,7 +952,7 @@ describe('A2AConnection Message Queue', () => {
     transport = setup.transport;
 
     const events: ConnectionEvent[] = [];
-    connection.events$.subscribe((e) => {
+    connection.onEvent((e) => {
       if (e.type === 'connection.message_queued') {
         events.push(e as ConnectionEvent);
       }
@@ -939,7 +1009,7 @@ describe('A2AConnection Backlog Strategies', () => {
     transport = setup.transport;
 
     const events: ConnectionEvent[] = [];
-    connection.events$.subscribe((e) => {
+    connection.onEvent((e) => {
       if (e.type === 'connection.message_queued') {
         events.push(e as ConnectionEvent);
       }
@@ -964,7 +1034,7 @@ describe('A2AConnection Backlog Strategies', () => {
     transport = setup.transport;
 
     const events: ConnectionEvent[] = [];
-    connection.events$.subscribe((e) => {
+    connection.onEvent((e) => {
       if (e.type === 'connection.message_queued') {
         events.push(e as ConnectionEvent);
       }
@@ -1020,12 +1090,12 @@ describe('A2AConnection Incoming Messages', () => {
     vi.useRealTimers();
   });
 
-  it('should emit incoming messages to messages$', async () => {
+  it('should emit incoming messages to onMessage', async () => {
     await connection.connect();
     await vi.advanceTimersByTimeAsync(100);
 
     const messages: A2AMessage[] = [];
-    connection.messages$.subscribe((msg) => messages.push(msg));
+    connection.onMessage((msg) => messages.push(msg));
 
     const notification = createTestMessage('notification', 'sender', 'incoming-test', {});
     transport.simulateMessage(notification);
@@ -1041,7 +1111,7 @@ describe('A2AConnection Incoming Messages', () => {
     await vi.advanceTimersByTimeAsync(100);
 
     const messages: A2AMessage[] = [];
-    connection.messages$.subscribe((msg) => messages.push(msg));
+    connection.onMessage((msg) => messages.push(msg));
 
     const expiredMessage: A2AMessage = {
       id: 'expired',
@@ -1066,7 +1136,7 @@ describe('A2AConnection Incoming Messages', () => {
     await vi.advanceTimersByTimeAsync(100);
 
     const messages: A2AMessage[] = [];
-    connection.messages$.subscribe((msg) => messages.push(msg));
+    connection.onMessage((msg) => messages.push(msg));
 
     const heartbeat = createTestMessage('heartbeat', 'sender', 'incoming-test', { timestamp: Date.now() });
     transport.simulateMessage(heartbeat);
@@ -1081,8 +1151,8 @@ describe('A2AConnection Incoming Messages', () => {
     await vi.advanceTimersByTimeAsync(100);
 
     let resolvedMessage: A2AMessage | undefined;
-    connection.request('target', {}).subscribe((msg) => {
-      resolvedMessage = msg;
+    connection.request('target', {}).subscribe({
+      next: (msg) => { resolvedMessage = msg; },
     });
 
     await vi.advanceTimersByTimeAsync(100);
@@ -1102,8 +1172,8 @@ describe('A2AConnection Incoming Messages', () => {
     await vi.advanceTimersByTimeAsync(100);
 
     let resolvedMessage: A2AMessage | undefined;
-    connection.request('target', {}).subscribe((msg) => {
-      resolvedMessage = msg;
+    connection.request('target', {}).subscribe({
+      next: (msg) => { resolvedMessage = msg; },
     });
 
     await vi.advanceTimersByTimeAsync(100);
@@ -1145,7 +1215,7 @@ describe('A2AConnection Error Handling', () => {
     transport = setup.transport;
 
     const errorEvents: ConnectionErrorEvent[] = [];
-    connection.events$.subscribe((e) => {
+    connection.onEvent((e) => {
       if (e.type === 'connection.error') {
         errorEvents.push(e as ConnectionErrorEvent);
       }
@@ -1167,7 +1237,7 @@ describe('A2AConnection Error Handling', () => {
     transport = setup.transport;
 
     const errorEvents: ConnectionErrorEvent[] = [];
-    connection.events$.subscribe((e) => {
+    connection.onEvent((e) => {
       if (e.type === 'connection.error') {
         errorEvents.push(e as ConnectionErrorEvent);
       }
@@ -1199,7 +1269,7 @@ describe('A2AConnection Error Handling', () => {
     await connection.connect();
     await vi.advanceTimersByTimeAsync(100);
 
-    const subscription = connection.request('target', {}).subscribe();
+    const subscription = connection.request('target', {}).subscribe({});
 
     await vi.advanceTimersByTimeAsync(100);
     await connection.disconnect();
@@ -1211,10 +1281,10 @@ describe('A2AConnection Error Handling', () => {
 });
 
 // ============================================================
-// A2AConnection Status Observable Tests
+// A2AConnection Status Tests
 // ============================================================
 
-describe('A2AConnection Status Observable', () => {
+describe('A2AConnection Status', () => {
   let connection: A2AConnection;
   let transport: TestMockTransport;
 
@@ -1233,9 +1303,9 @@ describe('A2AConnection Status Observable', () => {
     vi.useRealTimers();
   });
 
-  it('should emit status changes', async () => {
+  it('should emit status changes via onStatus', async () => {
     const statuses: TransportStatus[] = [];
-    connection.status$.subscribe((status) => statuses.push(status));
+    connection.onStatus((status) => statuses.push(status));
 
     await connection.connect();
     await vi.advanceTimersByTimeAsync(100);
@@ -1297,7 +1367,7 @@ describe('A2AConnection Default Configuration', () => {
     await vi.advanceTimersByTimeAsync(100);
 
     const events: ConnectionEvent[] = [];
-    connection.events$.subscribe((e) => {
+    connection.onEvent((e) => {
       if (e.type === 'connection.heartbeat_sent') {
         events.push(e as ConnectionEvent);
       }
@@ -1329,8 +1399,9 @@ describe('A2AConnection Default Configuration', () => {
     await connection.connect();
     await vi.advanceTimersByTimeAsync(100);
 
-    const request$ = connection.request('target', {}, { timeout: 500 });
-    const resultPromise = firstValueFrom(request$.pipe(take(1)));
+    const resultPromise = firstValue(
+      connection.request('target', {}, { timeout: 500 })
+    );
 
     await vi.advanceTimersByTimeAsync(600);
 

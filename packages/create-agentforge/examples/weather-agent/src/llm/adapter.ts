@@ -4,8 +4,6 @@
 
 import { createOpenAI } from '@ai-sdk/openai';
 import type { LLMAdapter } from 'agentforge';
-import { from } from 'rxjs';
-import { map } from 'rxjs/operators';
 
 // Initialize OpenAI client
 const openai = createOpenAI({
@@ -41,18 +39,15 @@ export const adapter: LLMAdapter = {
     };
   },
 
-  stream(prompt: string) {
-    return from(
-      model.doStream({
-        inputFormat: 'prompt',
-        mode: { type: 'regular' },
-        prompt,
-      })
-    ).pipe(
-      map((streamResult: { stream: { text: string } }) => ({
-        delta: streamResult.stream.text ?? '',
-        done: false,
-      }))
-    );
+  async *stream(prompt: string) {
+    const stream = model.doStream({
+      inputFormat: 'prompt',
+      mode: { type: 'regular' },
+      prompt,
+    });
+    for await (const result of stream) {
+      yield { delta: (result as any).text ?? '', done: false };
+    }
+    yield { delta: '', done: true };
   },
 };

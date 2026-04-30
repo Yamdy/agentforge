@@ -31,7 +31,8 @@ describe('computeDependencies', () => {
     const deps = computeDependencies(config);
 
     expect(deps['agentforge']).toBe('^0.1.0');
-    expect(deps['rxjs']).toBe('^7.8.1');
+    // rxjs removed from CORE_DEPS (de-rxjs migration)
+    expect(deps['rxjs']).toBeUndefined();
     expect(deps['zod']).toBe('^3.23.8');
     expect(deps['dotenv']).toBe('^16.4.0');
   });
@@ -64,8 +65,8 @@ describe('computeDependencies', () => {
     const config = createConfig({ llm: 'mock' });
     const deps = computeDependencies(config);
 
-    // Should only have core deps
-    expect(Object.keys(deps).sort()).toEqual(['agentforge', 'dotenv', 'rxjs', 'zod']);
+    // Should only have core deps (rxjs removed from CORE_DEPS)
+    expect(Object.keys(deps).sort()).toEqual(['agentforge', 'dotenv', 'zod']);
   });
 
   it('adds better-sqlite3 when checkpoint is enabled', () => {
@@ -93,7 +94,8 @@ describe('computeDependencies', () => {
 
     // Core deps
     expect(deps['agentforge']).toBe('^0.1.0');
-    expect(deps['rxjs']).toBe('^7.8.1');
+    // rxjs removed from CORE_DEPS
+    expect(deps['rxjs']).toBeUndefined();
     expect(deps['zod']).toBe('^3.23.8');
     expect(deps['dotenv']).toBe('^16.4.0');
     // LLM deps

@@ -6,7 +6,18 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { BehaviorSubject } from 'rxjs';
+// No rxjs imports - inline BehaviorSubject replacement
+
+/** Minimal BehaviorSubject replacement for mock transport status tracking */
+class SimpleSubject<T> {
+  private listeners: Array<(v: T) => void> = [];
+  constructor(public value: T) {}
+  next(v: T): void { this.value = v; for (const l of this.listeners) l(v); }
+  subscribe(fn: (v: T) => void): () => void { this.listeners.push(fn); fn(this.value); return () => { const i = this.listeners.indexOf(fn); if (i >= 0) this.listeners.splice(i, 1); }; }
+  complete(): void { this.listeners = []; }
+  get observed(): boolean { return this.listeners.length > 0; }
+}
+
 import type { JSONRPCMessage, JSONRPCRequest, JSONRPCSuccessResponse, JSONRPCErrorResponse } from '../../src/mcp/types.js';
 import type { MCPServerConfig, MCPTool } from '../../src/core/interfaces.js';
 import { AgentForgeMCPClient, type MCPEvent, type MCPClientOptions } from '../../src/mcp/client.js';
@@ -22,7 +33,7 @@ import { registerTransportFactory } from '../../src/mcp/transport.js';
  * Allows simulating messages, delays, and errors.
  */
 class MockTransport implements MCPTransport {
-  private _status: BehaviorSubject<'disconnected' | 'connecting' | 'connected' | 'error'>;
+  private _status: SimpleSubject<'disconnected' | 'connecting' | 'connected' | 'error'>;
   private _onmessage?: (message: JSONRPCMessage) => void;
   private _onerror?: (error: Error) => void;
   private _onclose?: () => void;
@@ -32,7 +43,7 @@ class MockTransport implements MCPTransport {
   private shouldFailSend = false;
 
   constructor() {
-    this._status = new BehaviorSubject<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
+    this._status = new SimpleSubject<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
   }
 
   get status(): 'disconnected' | 'connecting' | 'connected' | 'error' {
@@ -630,22 +641,22 @@ describe('AgentForgeMCPClient Status Observable', () => {
     vi.useRealTimers();
   });
 
-  it('should expose status observable', () => {
-    const status$ = client.onStatusChange();
-    expect(status$).toBeDefined();
-    expect(typeof status$.subscribe).toBe('function');
+  it('should expose status listener', () => {
+    const unsub = client.onStatusChange(() => {});
+    expect(unsub).toBeDefined();
+    expect(typeof unsub).toBe('function');
   });
 
-  it('should emit status changes through observable', async () => {
+  it('should emit status changes through listener', () => {
     const statuses: string[] = [];
-    const subscription = client.onStatusChange().subscribe((status) => {
+    const unsub = client.onStatusChange((status) => {
       statuses.push(status);
     });
 
-    // Initial status
+    // Initial status listener registered
     expect(statuses).toContain('disconnected');
 
-    subscription.unsubscribe();
+    unsub();
   });
 });
 
@@ -1268,9 +1279,9 @@ describe('AgentForgeMCPClient with Mock Transport', () => {
   // ============================================================
 
   describe('onStatusChange()', () => {
-    it('should emit status changes through observable', async () => {
+    it('should emit status changes through listener', async () => {
       const statuses: string[] = [];
-      const subscription = client.onStatusChange().subscribe((status) => {
+      const unsub = client.onStatusChange((status) => {
         statuses.push(status);
       });
 
@@ -1282,7 +1293,7 @@ describe('AgentForgeMCPClient with Mock Transport', () => {
       // Should have transitioned to connected
       expect(statuses).toContain('connected');
 
-      subscription.unsubscribe();
+      unsub();
     });
   });
 

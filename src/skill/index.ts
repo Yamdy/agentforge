@@ -37,7 +37,7 @@
  *   hooks: [createCacheInvalidationHook(registry)],
  * });
  *
- * watcher.events$.subscribe((event) => {
+ * watcher.onReload((event) => {
  *   console.log(`${event.type}: ${event.skillName}`);
  * });
  *

@@ -17,7 +17,6 @@ import {
   createSummarizeCompactionManager,
   createDisabledCompactionManager,
 } from '../../src/memory/compaction.js';
-import { firstValueFrom, toArray } from 'rxjs';
 
 // ============================================================
 // Test Helpers

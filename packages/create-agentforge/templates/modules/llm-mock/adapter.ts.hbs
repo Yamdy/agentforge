@@ -4,8 +4,6 @@
  */
 
 import type { LLMAdapter, LLMResponse, LLMChunk } from 'agentforge';
-import { from, of } from 'rxjs';
-import { delay, map } from 'rxjs/operators';
 
 /**
  * Mock responses for testing
@@ -51,14 +49,12 @@ export const adapter: LLMAdapter = {
   /**
    * Stream mock response chunks
    */
-  stream(prompt: string) {
-    const response = this.generate(prompt).then(r => r.content);
-    
-    return from(response).pipe(
-      map((content): LLMChunk => ({
-        delta: content,
-        done: true,
-      })),
-    );
+  async *stream(prompt: string) {
+    const words = prompt.split(' ');
+    for (const word of words) {
+      await new Promise(r => setTimeout(r, 100));
+      yield { delta: word + ' ', done: false } as LLMChunk;
+    }
+    yield { delta: '', done: true } as LLMChunk;
   },
 };

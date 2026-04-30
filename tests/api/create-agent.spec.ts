@@ -1,36 +1,16 @@
 /**
  * Tests for createAgent preset activation
  *
- * Verifies that the correct preset operator is applied
- * when config.preset is set to 'debug', 'test', or 'production'.
+ * Verifies that the correct services are configured based on preset name.
+ * Presets no longer use RxJS operators (per 25-DE-RXJS).
  */
 
 import { vi, describe, it, expect, beforeEach } from 'vitest';
-import { of, type Observable } from 'rxjs';
-import type { AgentEvent, MonoTypeOperatorFunction } from 'rxjs';
-import type { AgentContext } from '../../src/core/index.js';
-
-// Mock the operators module — we spy on preset functions
-const mockDebugPreset = vi.fn(
-  (): MonoTypeOperatorFunction<AgentEvent> => source => source
-);
-const mockTestPreset = vi.fn(
-  (): MonoTypeOperatorFunction<AgentEvent> => source => source
-);
-const mockProductionPreset = vi.fn(
-  (): MonoTypeOperatorFunction<AgentEvent> => source => source
-);
-
-vi.mock('../../src/operators/index.js', () => ({
-  debugPreset: (...args: unknown[]) => mockDebugPreset(...args),
-  testPreset: (...args: unknown[]) => mockTestPreset(...args),
-  productionPreset: (...args: unknown[]) => mockProductionPreset(...args),
-  timeoutOnEventType: () => (source: Observable<AgentEvent>) => source,
-  retryOnEventType: () => (source: Observable<AgentEvent>) => source,
-}));
+import type { AgentEvent } from '../../src/core/index.js';
+// No rxjs imports needed
 
 // Mock the loop module — return Promise-based AgentLoop
-vi.mock('../../src/loop/index.js', () => ({
+vi.mock('../../src/loop/agent-loop.js', () => ({
   createAgentLoop: () => ({
     run: async (_input: string) => 'test output',
     on: () => () => {},
@@ -40,7 +20,7 @@ vi.mock('../../src/loop/index.js', () => ({
     resume: () => {},
     getState: () => null,
     destroy: () => {},
-    run$: (_input: string) => of({ type: 'done', reason: 'completed', timestamp: Date.now(), sessionId: 'test' } as AgentEvent),
+    run$: (_input: string) => ({ type: 'done', reason: 'completed', timestamp: Date.now(), sessionId: 'test' } as AgentEvent),
   }),
 }));
 
@@ -48,9 +28,8 @@ vi.mock('../../src/loop/index.js', () => ({
 vi.mock('../../src/adapters/index.js', () => ({
   createLLMAdapter: () => ({
     name: 'mock',
-    provider: 'mock',
-    chat: async () => ({ content: 'ok', finishReason: 'stop' }),
-    stream: () => of({ type: 'text', delta: 'ok' }),
+    chat: async () => ({ content: 'mock', finishReason: 'stop' }),
+    stream: async function* () { yield { text: 'mock' }; },
   }),
   parseModelSpec: (spec: string) => {
     const parts = spec.split('/');
@@ -71,7 +50,6 @@ function makeAgentConfig(preset?: 'production' | 'debug' | 'test') {
     model: { provider: 'mock', model: 'mock-model' },
     maxSteps: 1,
     preset,
-    // Provide tracer/metrics/checkpoint so production preset can activate
     tracing: true,
     metrics: true,
     checkpoint: true,
@@ -89,27 +67,30 @@ describe('createAgent — preset activation', () => {
 
   it('applies debugPreset when preset is "debug"', async () => {
     const agent = createAgent(makeAgentConfig('debug'));
-    await agent.run('hello');
-    // Presets now wire tracing/metrics via ctx.services instead of calling operator functions
+    const result = await agent.run('hello');
+    expect(result).toBe('test output');
     expect(agent.ctx).toBeDefined();
+    expect(agent.ctx.agentName).toBe('test-agent');
   });
 
   it('applies testPreset when preset is "test"', async () => {
     const agent = createAgent(makeAgentConfig('test'));
-    await agent.run('hello');
+    const result = await agent.run('hello');
+    expect(result).toBe('test output');
     expect(agent.ctx).toBeDefined();
   });
 
   it('applies productionPreset when preset is "production" and services are configured', async () => {
     const agent = createAgent(makeAgentConfig('production'));
-    await agent.run('hello');
+    const result = await agent.run('hello');
+    expect(result).toBe('test output');
     expect(agent.ctx).toBeDefined();
   });
 
   it('does not apply any preset when preset is undefined', async () => {
     const agent = createAgent(makeAgentConfig(undefined));
     await agent.run('hello');
-    // No preset → NoopTracer/NoopMetrics as defaults
+    // No preset → default services still created
     expect(agent.ctx.services.tracer).toBeDefined();
   });
 
@@ -118,54 +99,5 @@ describe('createAgent — preset activation', () => {
     await agent.run('hello');
     // verify agent was created with correct name
     expect(agent.ctx.agentName).toBe('test-agent');
-  });
-
-  it('applies debugPreset when preset is "debug"', async () => {
-    const agent = createAgent(makeAgentConfig('debug'));
-    await agent.run$('hello').toPromise();
-
-    expect(mockDebugPreset).toHaveBeenCalledOnce();
-    expect(mockTestPreset).not.toHaveBeenCalled();
-    expect(mockProductionPreset).not.toHaveBeenCalled();
-  });
-
-  it('applies testPreset when preset is "test"', async () => {
-    const agent = createAgent(makeAgentConfig('test'));
-    await agent.run$('hello').toPromise();
-
-    expect(mockTestPreset).toHaveBeenCalledOnce();
-    expect(mockDebugPreset).not.toHaveBeenCalled();
-    expect(mockProductionPreset).not.toHaveBeenCalled();
-  });
-
-  it('applies productionPreset when preset is "production" and services are configured', async () => {
-    const agent = createAgent(makeAgentConfig('production'));
-    await agent.run$('hello').toPromise();
-
-    expect(mockProductionPreset).toHaveBeenCalledOnce();
-    expect(mockDebugPreset).not.toHaveBeenCalled();
-    expect(mockTestPreset).not.toHaveBeenCalled();
-  });
-
-  it('does not apply any preset when preset is undefined', async () => {
-    const agent = createAgent(makeAgentConfig(undefined));
-    await agent.run$('hello').toPromise();
-
-    expect(mockDebugPreset).not.toHaveBeenCalled();
-    expect(mockTestPreset).not.toHaveBeenCalled();
-    expect(mockProductionPreset).not.toHaveBeenCalled();
-  });
-
-  it('passes correct config to productionPreset', async () => {
-    const agent = createAgent(makeAgentConfig('production'));
-    await agent.run$('hello').toPromise();
-
-    expect(mockProductionPreset).toHaveBeenCalledOnce();
-    const callArg = mockProductionPreset.mock.calls[0]?.[0];
-    expect(callArg).toBeDefined();
-    expect(callArg).toHaveProperty('tracer');
-    expect(callArg).toHaveProperty('metrics');
-    expect(callArg).toHaveProperty('checkpointStorage');
-    expect(callArg).toHaveProperty('sessionId');
   });
 });

@@ -3,11 +3,12 @@
  */
 
 import 'dotenv/config';
+import type { AgentEvent } from 'agentforge/api';
+import config from '../agentforge.config.js';
 
 {{#if (eq config.apiMode "simple")}}
-// L2 API: Simple configuration-based approach
+// L2 API: Simple mode
 import { createAgent } from 'agentforge';
-import config from '../agentforge.config.js';
 
 const agent = createAgent(config);
 
@@ -16,16 +17,16 @@ const result = await agent.run('Hello! How can I help you today?');
 
 console.log('Agent output:', result);
 
-// Streaming mode (optional)
-agent.stream('Tell me a story', {
-  onText: (delta) => process.stdout.write(delta),
-  onComplete: (result) => console.log('\nCompleted:', result),
+// Event listeners (optional)
+agent.on('agent.complete', (event: AgentEvent) => {
+  console.log('Agent completed:', event);
+});
+agent.on('agent.error', (event: AgentEvent) => {
+  console.error('Agent error:', event);
 });
 {{else}}
 // L3 API: Advanced programmatic control
 import { runAgent, AgentContextBuilder } from 'agentforge/api';
-import { filter, tap, takeUntilTerminal } from 'rxjs/operators';
-import config from '../agentforge.config.js';
 
 // Build context from config
 const ctx = new AgentContextBuilder()
@@ -45,18 +46,28 @@ const ctx = new AgentContextBuilder()
 {{/if}}
   .build();
 
-// Run with Observable control
-runAgent(ctx, 'Hello! How can I help you today?', {
+// Run with event listeners
+const agent = runAgent(ctx, 'Hello! How can I help you today?', {
   maxSteps: {{config.maxSteps}},
-}).pipe(
-  takeUntilTerminal(),
-  tap({
-    next: (event) => {
-      console.log(`[${event.type}]`, event);
-    },
-    complete: () => {
-      console.log('Agent execution completed');
-    },
-  }),
-).subscribe();
+});
+
+// Listen for key events
+agent.on('llm.response', (event: AgentEvent) => {
+  console.log('[llm.response]', event);
+});
+agent.on('tool.call', (event: AgentEvent) => {
+  console.log('[tool.call]', event);
+});
+agent.on('tool.result', (event: AgentEvent) => {
+  console.log('[tool.result]', event);
+});
+agent.on('agent.complete', (event: AgentEvent) => {
+  console.log('Agent execution completed');
+});
+agent.on('agent.error', (event: AgentEvent) => {
+  console.error('Agent error:', event);
+});
+
+await agent.run$('Hello! How can I help you today?');
+console.log('Agent execution completed');
 {{/if}}

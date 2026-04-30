@@ -9,9 +9,6 @@
  * 运行方式: npx tsx examples/07-workflow.ts
  */
 
-import { Observable, of, firstValueFrom } from 'rxjs';
-import { tap, filter, catchError } from 'rxjs/operators';
-
 // ============================================================
 // 导入核心类型
 // ============================================================
@@ -74,7 +71,7 @@ class MockWorkflowLLMAdapter implements LLMAdapter {
     if (content.includes('搜索')) {
       return {
         content: JSON.stringify({
-          results: ['结果1: Agent架构设计', '结果2: Workflow编排模式', '结果3: RxJS最佳实践'],
+          results: ['结果1: Agent架构设计', '结果2: Workflow编排模式', '结果3: 最佳实践'],
           total: 3,
         }),
         finishReason: 'stop',
@@ -86,7 +83,7 @@ class MockWorkflowLLMAdapter implements LLMAdapter {
       return {
         content: JSON.stringify({
           summary: '分析完成',
-          keyPoints: ['RxJS事件流', '类型安全', '可中断恢复'],
+          keyPoints: ['事件流', '类型安全', '可中断恢复'],
           confidence: 0.95,
         }),
         finishReason: 'stop',
@@ -110,11 +107,11 @@ class MockWorkflowLLMAdapter implements LLMAdapter {
     };
   }
 
-  stream(_messages: Message[], _options?: unknown): Observable<{ text?: string; finishReason?: string }> {
-    return of({
+  async *stream(_messages: Message[], _options?: unknown): AsyncGenerator<{ text?: string; finishReason?: string }> {
+    yield {
       text: '流式响应',
       finishReason: 'stop',
-    });
+    };
   }
 }
 
@@ -137,6 +134,40 @@ function createMockAgentContext(): AgentContext {
     .withMemory(new InMemoryStore())
     .withPauseController(new DefaultPauseController())
     .build();
+}
+
+// ============================================================
+// 辅助函数：通过事件监听收集流程事件
+// ============================================================
+
+/**
+ * 监听 workflow 事件并打印日志，返回收集的事件数组
+ */
+async function runPipelineAndCollect(
+  pipeline: SequentialPipeline | ParallelPipeline,
+  input: unknown,
+  label: string
+): Promise<AgentEvent[]> {
+  const events: AgentEvent[] = [];
+  
+  // 使用 onAny 监听所有事件
+  const unsub = pipeline.onAny((event) => {
+    events.push(event);
+    // 手动检查是否为 workflow 事件
+    if (event.type.startsWith('workflow.')) {
+      console.log(`[${label}] ${event.type}`);
+      if (event.type === 'workflow.step.start' && 'stepId' in event) {
+        console.log(`  开始步骤: ${event.stepId}`);
+      }
+      if (event.type === 'workflow.step.end' && 'stepId' in event && 'result' in event) {
+        console.log(`  完成步骤: ${event.stepId}, 结果: ${event.result}`);
+      }
+    }
+  });
+
+  await pipeline.run(input);
+  unsub();
+  return events;
 }
 
 // ============================================================
@@ -182,26 +213,7 @@ async function example1_sequentialPipeline(): Promise<void> {
   // 执行管道
   console.log('\n开始执行...\n');
 
-  const events: AgentEvent[] = [];
-
-  await firstValueFrom(
-    pipeline.run('AI Agent 架构').pipe(
-      tap(event => {
-        events.push(event);
-        // 手动检查是否为 workflow 事件
-        if (event.type.startsWith('workflow.')) {
-          console.log(`[Workflow] ${event.type}`);
-          if (event.type === 'workflow.step.start' && 'stepId' in event) {
-            console.log(`  开始步骤: ${event.stepId}`);
-          }
-          if (event.type === 'workflow.step.end' && 'stepId' in event && 'result' in event) {
-            console.log(`  完成步骤: ${event.stepId}, 结果: ${event.result}`);
-          }
-        }
-      }),
-      filter(isTerminalEvent),
-    )
-  );
+  const events = await runPipelineAndCollect(pipeline, 'AI Agent 架构', 'Sequential');
 
   console.log('\n执行完成!');
   console.log(`总事件数: ${events.length}`);
@@ -267,19 +279,17 @@ async function example2_parallelPipeline(): Promise<void> {
   const startTime = Date.now();
   const workflowEvents: AgentEvent[] = [];
 
-  await firstValueFrom(
-    pipeline.run('AI Agent 研究').pipe(
-      tap(event => {
-        // 手动检查是否为 workflow 事件
-        if (event.type.startsWith('workflow.')) {
-          workflowEvents.push(event);
-          const stepInfo = 'stepId' in event ? `步骤: ${event.stepId}` : '';
-          console.log(`[Workflow] ${event.type}${stepInfo ? ` - ${stepInfo}` : ''}`);
-        }
-      }),
-      filter(event => event.type === 'workflow.complete'),
-    )
-  );
+  const unsub = pipeline.onAny((event) => {
+    // 手动检查是否为 workflow 事件
+    if (event.type.startsWith('workflow.')) {
+      workflowEvents.push(event);
+      const stepInfo = 'stepId' in event ? `步骤: ${event.stepId}` : '';
+      console.log(`[Workflow] ${event.type}${stepInfo ? ` - ${stepInfo}` : ''}`);
+    }
+  });
+
+  await pipeline.run('AI Agent 研究');
+  unsub();
 
   const duration = Date.now() - startTime;
   console.log(`\n并执行完成! 耗时: ${duration}ms`);
@@ -337,17 +347,14 @@ async function example3_conditionalSteps(): Promise<void> {
   console.log('场景 A: 小数据 (size=500)');
   const pipelineA = createSequentialPipeline(steps, ctx);
 
-  await firstValueFrom(
-    pipelineA.run({ size: 500 }).pipe(
-      tap(event => {
-        if (event.type === 'workflow.step.end') {
-          console.log(`  步骤 ${event.stepId}: ${event.result}`);
-        }
-      }),
-      filter(event => event.type === 'workflow.complete'),
-    )
-  );
+  const unsubA = pipelineA.onAny((event) => {
+    if (event.type === 'workflow.step.end') {
+      console.log(`  步骤 ${event.stepId}: ${event.result}`);
+    }
+  });
 
+  await pipelineA.run({ size: 500 });
+  unsubA();
   pipelineA.destroy();
 
   // 测试场景 2: 大数据
@@ -357,17 +364,14 @@ async function example3_conditionalSteps(): Promise<void> {
   const ctx2 = createMockAgentContext();
   const pipelineB = createSequentialPipeline(steps, ctx2);
 
-  await firstValueFrom(
-    pipelineB.run({ size: 5000 }).pipe(
-      tap(event => {
-        if (event.type === 'workflow.step.end') {
-          console.log(`  步骤 ${event.stepId}: ${event.result}`);
-        }
-      }),
-      filter(event => event.type === 'workflow.complete'),
-    )
-  );
+  const unsubB = pipelineB.onAny((event) => {
+    if (event.type === 'workflow.step.end') {
+      console.log(`  步骤 ${event.stepId}: ${event.result}`);
+    }
+  });
 
+  await pipelineB.run({ size: 5000 });
+  unsubB();
   pipelineB.destroy();
 }
 
@@ -419,32 +423,30 @@ async function example4_workflow_suspendResume(): Promise<void> {
   const events: AgentEvent[] = [];
   let workflowId = '';
 
-  await firstValueFrom(
-    workflow.run('演示任务').pipe(
-      tap(event => {
-        events.push(event);
+  const unsub = workflow.onAny((event) => {
+    events.push(event);
 
-        // 提取 workflowId
-        const id = 'workflowId' in event ? event.workflowId : undefined;
-        if (id !== undefined && workflowId === '') {
-          workflowId = id;
-        }
+    // 提取 workflowId
+    const id = 'workflowId' in event ? event.workflowId : undefined;
+    if (id !== undefined && workflowId === '') {
+      workflowId = id;
+    }
 
-        // 手动检查是否为 workflow 事件
-        if (event.type.startsWith('workflow.')) {
-          console.log(`[${event.type}]`);
-          if (event.type === 'workflow.step.start' && 'stepId' in event) {
-            const stepName = 'stepName' in event ? event.stepName : event.stepId;
-            console.log(`  步骤: ${stepName}`);
-          }
-          if (event.type === 'workflow.step.end' && 'result' in event) {
-            console.log(`  结果: ${event.result}`);
-          }
-        }
-      }),
-      filter(event => event.type === 'workflow.complete'),
-    )
-  );
+    // 手动检查是否为 workflow 事件
+    if (event.type.startsWith('workflow.')) {
+      console.log(`[${event.type}]`);
+      if (event.type === 'workflow.step.start' && 'stepId' in event) {
+        const stepName = 'stepName' in event ? event.stepName : event.stepId;
+        console.log(`  步骤: ${stepName}`);
+      }
+      if (event.type === 'workflow.step.end' && 'result' in event) {
+        console.log(`  结果: ${event.result}`);
+      }
+    }
+  });
+
+  await workflow.run('演示任务');
+  unsub();
 
   console.log(`\n工作流 ID: ${workflowId}`);
 
@@ -579,23 +581,17 @@ async function example7_errorHandling(): Promise<void> {
   const pipelineA = createSequentialPipeline(steps, ctx);
 
   try {
-    await firstValueFrom(
-      pipelineA.run('测试').pipe(
-        tap(event => {
-          if (event.type === 'workflow.error') {
-            console.log(`  [错误] 步骤: ${event.stepId}`);
-          }
-          if (event.type === 'workflow.step.end') {
-            console.log(`  [步骤结束] ${event.stepId}: ${event.result}`);
-          }
-        }),
-        catchError(err => {
-          console.log(`  捕获到错误: ${err}`);
-          return of({ type: 'done' } as AgentEvent);
-        }),
-        filter(event => event.type === 'done' || event.type === 'workflow.complete'),
-      )
-    );
+    const unsubA = pipelineA.onAny((event) => {
+      if (event.type === 'workflow.error') {
+        console.log(`  [错误] 步骤: ${event.stepId}`);
+      }
+      if (event.type === 'workflow.step.end') {
+        console.log(`  [步骤结束] ${event.stepId}: ${event.result}`);
+      }
+    });
+
+    await pipelineA.run('测试');
+    unsubA();
   } catch (error) {
     console.log(`  预期的错误: ${error}`);
   }
@@ -607,20 +603,17 @@ async function example7_errorHandling(): Promise<void> {
   const ctx2 = createMockAgentContext();
   const pipelineB = createSequentialPipeline(steps, ctx2, { continueOnFailure: true });
 
-  await firstValueFrom(
-    pipelineB.run('测试').pipe(
-      tap(event => {
-        if (event.type === 'workflow.error') {
-          console.log(`  [错误] 步骤: ${event.stepId} (继续执行)`);
-        }
-        if (event.type === 'workflow.step.end') {
-          console.log(`  [步骤结束] ${event.stepId}: ${event.result}`);
-        }
-      }),
-      filter(event => event.type === 'workflow.complete'),
-    )
-  );
+  const unsubB = pipelineB.onAny((event) => {
+    if (event.type === 'workflow.error') {
+      console.log(`  [错误] 步骤: ${event.stepId} (继续执行)`);
+    }
+    if (event.type === 'workflow.step.end') {
+      console.log(`  [步骤结束] ${event.stepId}: ${event.result}`);
+    }
+  });
 
+  await pipelineB.run('测试');
+  unsubB();
   pipelineB.destroy();
   console.log('  Pipeline 继续执行了其他步骤');
 }

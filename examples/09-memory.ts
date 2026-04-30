@@ -11,7 +11,6 @@
  */
 
 import { z } from 'zod';
-import { Observable, of } from 'rxjs';
 import {
   CompactionManager,
   createCompactionManager,
@@ -53,7 +52,7 @@ function createMockMessages(count: number): Message[] {
     { role: 'tool', content: '项目包含 src/、tests/、docs/ 三个主要目录。', toolCallId: 'tc-001' },
     // 更多对话...
     { role: 'user', content: '请详细说明 src 目录下的模块划分。' },
-    { role: 'assistant', content: 'src 目录包含以下核心模块：core（核心类型）、loop（Agent 循环）、operators（RxJS 操作符）...' },
+    { role: 'assistant', content: 'src 目录包含以下核心模块：core（核心类型）、loop（Agent 循环）、operators（操作符）...' },
   ];
 
   // 添加更多历史消息
@@ -95,10 +94,10 @@ class MockLLMAdapter implements LLMAdapter {
     };
   }
 
-  stream(messages: Message[], _options?: LLMOptions): Observable<LLMChunk> {
+  async *stream(messages: Message[], _options?: LLMOptions): AsyncGenerator<LLMChunk> {
     // 模拟流式响应
     const response = `对话历史摘要：讨论了项目架构、核心模块、代码结构等 ${messages.length} 条消息...`;
-    return of({ text: response });
+    yield { text: response };
   }
 }
 
@@ -342,9 +341,9 @@ async function example5_eventObservability(): Promise<void> {
     triggerThreshold: 0.75,
   });
 
-  // 订阅压缩事件
+  // 订阅压缩事件 (使用 callback 模式)
   const eventLog: CompactionEventPayload[] = [];
-  manager.events.subscribe({
+  const unsubscribe = manager.events.subscribe({
     next: (event) => {
       eventLog.push(event);
       console.log(`[事件] ${event.type}`);
@@ -476,7 +475,7 @@ async function example8_tokenEstimation(): Promise<void> {
     { role: 'user', content: '你好' },
     { role: 'assistant', content: '你好！有什么可以帮你的吗？' },
     { role: 'user', content: '请解释一下 AgentForge 框架' },
-    { role: 'assistant', content: 'AgentForge 是一个基于 RxJS 事件流的 Agent 框架...' },
+    { role: 'assistant', content: 'AgentForge 是一个基于事件流的 Agent 框架...' },
   ];
 
   const totalTokens = estimateTokens(messages);

@@ -1,7 +1,7 @@
 # AgentForge
 
 > **Agent 开发框架底座（Harness）** — 模型是认知决策核心，框架是工程管控基座  
-> 基于 RxJS 事件流 + Zod 类型安全，提供可观测、可中断、可恢复的智能体构建能力
+> 基于事件驱动架构 + Zod 类型安全，提供可观测、可中断、可恢复的智能体构建能力
 
 AgentForge 是一个 **Agent Harness 框架**，核心理念是：
 
@@ -15,10 +15,10 @@ Agent = LLM（认知决策核心）+ Harness（工程管控基座）
 
 ## 特性
 
-- 🔄 **RxJS 事件流** - 所有操作都是 `Observable<AgentEvent>` 的变换，天然可观测、可组合
+- 🔄 **事件驱动架构** - 所有操作通过 `AgentEventEmitter` 分发，天然可观测、可组合
 - 🛡️ **Zod 类型安全** - 运行时验证 + TypeScript 类型推断，事件结构有保障
-- ⏸️ **可中断/可恢复** - `takeUntil()`, checkpoint 机制支持暂停和恢复
-- 🔌 **插件系统** - Hook 横向切片，DI 纵向替换，异常隔离不穿透
+- ⏸️ **可中断/可恢复** - `AbortController`, checkpoint 机制支持暂停和恢复
+- 🔌 **插件系统** - Hook 横向切片（RequestHook/ToolHook/LifecycleHook），DI 纵向替换，异常隔离不穿透
 - 🧩 **工具集成** - Zod Schema 定义工具，自动生成 FunctionDefinition
 - 📡 **A2A 协议** - Agent-to-Agent 跨进程通信，支持 request/notify/broadcast
 - 📦 **Skill 系统** - SKILL.md 格式知识包，热加载支持
@@ -94,8 +94,8 @@ const agent = createAgent({
 const result = await agent.run('Hello, how can you help?');
 
 // Stream 模式
-agent.stream('Hello', {
-  onStep: (step) => console.log(`Step ${step}`),
+agent.run('Hello', {
+  onToken: (delta) => process.stdout.write(delta),
   onComplete: (output) => console.log(output),
   onError: (error) => console.error(error),
 });
@@ -121,11 +121,10 @@ const result = await agent.run('What are its benefits?');
 
 ### L3 API（高级）
 
-编程式 API，提供完整的 Observable 控制能力：
+编程式 API，提供完整的事件订阅和生命周期控制：
 
 ```typescript
 import { createAgentLoop, ContextBuilder } from 'agentforge';
-import { timeoutOnEventType, retryOnEventType, recordMetrics } from 'agentforge';
 
 const ctx = new ContextBuilder()
   .withLLMAdapter(myLLMAdapter)
@@ -134,30 +133,32 @@ const ctx = new ContextBuilder()
 
 const loop = createAgentLoop(ctx, { maxSteps: 10 });
 
-loop.run$('Hello!')
-  .pipe(
-    timeoutOnEventType('done', 30000),
-    retryOnEventType('agent.error', 3),
-    recordMetrics({ increment: (key) => {...} }),
-  )
-  .subscribe({
-    next: (event) => console.log(event.type),
-    complete: () => console.log('Done!'),
-  });
+// 订阅特定事件类型
+loop.on('llm.response', (event) => console.log('Response:', event.content));
+loop.on('tool.result', (event) => console.log('Tool result:', event.result));
+
+// 运行并获取输出
+const output = await loop.run('Hello!');
+console.log('Done:', output);
+
+// 取消执行
+loop.cancel();
 ```
 
 ## 核心概念
 
-### 事件流架构
+### 事件驱动架构
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                                                             │
-│   所有操作 = Observable<AgentEvent> 的变换                   │
+│   命令式循环 while(true) + await（非流驱动）                 │
 │                                                             │
-│   Agent Loop = expand(事件 → 下一步事件流)                   │
+│   AgentEventEmitter 提供类型安全的事件分发                   │
 │                                                             │
-│   类型安全 = Zod Schema 验证所有事件                         │
+│   Hook 切面（RequestHook/ToolHook/LifecycleHook）替代流拦截  │
+│                                                             │
+│   Zod Schema 验证所有事件                                    │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -167,27 +168,24 @@ loop.run$('Hello!')
 ```typescript
 // Layer 1: Core Agent Loop
 'agent.start' | 'agent.step' | 'agent.complete' | 'agent.error' |
-'llm.request' | 'llm.response' | 'llm.error' |
+'llm.request' | 'llm.response' | 'llm.stream.text' |
 'tool.call' | 'tool.execute' | 'tool.result' | 'tool.error' |
-'hitl.ask' | 'hitl.answer' | 'done' | 'cancel'
+'hitl.ask' | 'hitl.answer' | 'checkpoint' | 'done' | 'cancel'
 
 // Layer 2: Subsystem Lifecycle
-'subagent.start' | 'subagent.complete' |
-'mcp.connected' | 'mcp.tools_changed' |
-'workflow.start' | 'workflow.complete'
+'subagent.start' | 'subagent.complete' | 'subagent.error' |
+'mcp.connected' | 'mcp.disconnected' |
+'workflow.start' | 'workflow.complete' | 'workflow.error'
 ```
 
-### 操作符库
+### Hook 系统
 
-| 操作符 | 用途 |
-|--------|------|
-| `timeoutOnEventType` | 基于事件类型的超时 |
-| `retryOnEventType` | 基于事件类型的重试 |
-| `checkpoint` | 保存检查点 |
-| `logEvents` | 事件日志 |
-| `productionPreset` | 生产环境预设组合 |
-| `traceEvents` | 事件追踪（带时间戳和耗时） |
-| `recordMetrics` | 事件指标收集（步数/令牌/工具调用统计） |
+| Hook 类型 | 用途 |
+|-----------|------|
+| `RequestHook` | 在 LLM 调用前修改消息列表（替代 Interceptor 的事件修改能力） |
+| `ToolHook` | 在工具执行前检查权限/阻断（替代 PermissionPlugin 的 EMPTY 阻断） |
+| `LifecycleHook` | 在 Agent 生命周期关键点执行回调（session.start, step.begin, step.end 等） |
+| `eventSubscriptions` | 通过 `AgentEventEmitter.on()` 纯观察事件，不阻塞主流程 |
 
 ## 示例
 
@@ -196,7 +194,6 @@ loop.run$('Hello!')
 | 文件 | 内容 |
 |------|------|
 | [01-basic-usage.ts](./examples/01-basic-usage.ts) | L2/L3 API 基本使用 |
-| [02-operators.ts](./examples/02-operators.ts) | 操作符组合使用 |
 | [03-tools.ts](./examples/03-tools.ts) | 工具定义与注册 |
 | [04-checkpoint.ts](./examples/04-checkpoint.ts) | 检查点保存与恢复 |
 | [05-real-llm.ts](./examples/05-real-llm.ts) | **真实 LLM 示例** (AI SDK) |
@@ -227,21 +224,20 @@ npx tsx examples/05-real-llm.ts
 ```
 src/
 ├── core/           # 核心类型和接口
-│   ├── events.ts   # 50+ Zod 事件 Schema
-│   ├── state.ts    # AgentState 状态定义
+│   ├── events.ts   # AgentEventEmitter + Zod 事件 Schema
+│   ├── state.ts    # AgentLoopState 状态定义
 │   ├── checkpoint.ts # 检查点系统
+│   ├── hooks.ts    # HookRegistry（RequestHook/ToolHook/LifecycleHook）
 │   ├── interfaces.ts # DI 接口定义
 │   └── context-builder.ts # Context 构建器
 ├── loop/           # Agent 循环核心
-│   └── agent-loop.ts # expand 递归引擎
-├── operators/      # RxJS 操作符库
-│   ├── control.ts  # 控制流操作符
-│   ├── transform.ts # 变换操作符
-│   ├── notify.ts   # 通知操作符
-│   └── presets.ts  # 预设组合
+│   ├── agent-loop.ts    # 命令式 while(true) 循环引擎
+│   ├── token-budget.ts  # Token 预算管理
+│   ├── error-analyzer.ts # 错误分析与恢复
+│   └── tool-partition.ts # 工具并发安全分区
 ├── plugins/        # 插件系统
 │   ├── plugin.ts   # Plugin 接口
-│   ├── pipeline.ts # 管道构建
+│   ├── pipeline.ts # applyPlugins 入口
 │   └── manager.ts  # 生命周期管理
 ├── skill/          # Skill 系统
 │   ├── loader.ts   # SKILL.md 加载器
@@ -261,11 +257,11 @@ src/
 
 ### 铁律
 
-1. **RxJS 管好订阅与销毁** - 所有流必须 `takeUntil(destroy$)`
+1. **AgentEventEmitter 管好订阅与销毁** - 所有监听器通过返回的 unsubscribe 函数清理
 2. **Zod 统一数据契约** - 外部数据 Tier 1 强校验，内部 Tier 3 仅 TypeScript 类型
-3. **错误即事件** - 所有错误转换为 `agent.error` 事件，不使用 RxJS 错误通道
+3. **错误即事件** - 所有错误转换为 `agent.error` 事件，不通过异常传播
 4. **Hook 异常隔离** - 单插件报错不拖垮主循环
-5. **拦截器用 concatMap** - 阻塞主流程；观察器用 tap - 不阻塞
+5. **命令式循环 while(true) + await** - 非流驱动，非递归 expand
 
 ### 三层 API
 
@@ -273,7 +269,7 @@ src/
 |------|---------|------|
 | **L1: 零代码** | 非程序员 | Markdown/JSON 配置文件 |
 | **L2: 配置式** | 应用开发者 | `createAgent(config)` |
-| **L3: 编程式** | 框架开发者 | 完全控制 `Observable<AgentEvent>` |
+| **L3: 编程式** | 框架开发者 | 完全控制 AgentLoop + HookRegistry |
 
 ## 开发
 

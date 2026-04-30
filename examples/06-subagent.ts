@@ -6,14 +6,12 @@
  *
  * 核心概念:
  * - SubagentRegistry: 管理子代理的注册和执行
- * - AgentLoop: 代理执行循环的接口
- * - 事件流: subagent.start → 嵌套事件 → subagent.complete
+ * - AgentLoop: 代理执行循环的接口 (Promise + 回调事件，不再使用 Observable)
+ * - registry.run(name, input, listener, options?) → Promise<string>
+ * - agent.onAny(listener) 订阅事件
  *
  * 运行方式: npx tsx examples/06-subagent.ts
  */
-
-import { Observable, of, EMPTY, firstValueFrom, Subject } from 'rxjs';
-import { tap, filter, takeUntil, toArray, map } from 'rxjs/operators';
 
 // ============================================================
 // 导入核心类型
@@ -30,15 +28,11 @@ import {
 // 核心类型
 import {
   type AgentEvent,
-  type AgentContext,
   type LLMAdapter,
   type LLMResponse,
+  type LLMChunk,
   type Message,
   type ToolDefinition,
-  ContextBuilder,
-  InMemoryStore,
-  DefaultPauseController,
-  isTerminalEvent,
   generateId,
 } from '../src/core/index.js';
 
@@ -85,12 +79,12 @@ class MockLLMAdapter implements LLMAdapter {
     };
   }
 
-  stream(messages: Message[]): Observable<{ text?: string; finishReason?: string }> {
+  async *stream(messages: Message[]): AsyncGenerator<LLMChunk> {
     const response = this.responses[0]!;
-    return of({
+    yield {
       text: response.content,
-      finishReason: response.finishReason,
-    });
+      finishReason: response.finishReason ?? 'stop',
+    };
   }
 
   getCallCount(): number {
@@ -166,17 +160,21 @@ class MockToolRegistry implements ToolRegistry {
 }
 
 // ============================================================
-// Mock Agent Loop
+// Mock Agent Loop (Promise-based, no Observable)
 // ============================================================
 
 /**
- * 模拟的 AgentLoop 实现
+ * 模拟的 AgentLoop 实现 (Promise + 回调)
+ *
+ * 新 API:
+ * - run(input): Promise<string> — 返回最终输出
+ * - onAny(listener): () => void — 订阅所有事件，返回取消函数
+ * - on(type, listener): () => void — 订阅特定事件类型
  *
  * 用于演示子代理的基本行为
  */
 class MockAgentLoop implements AgentLoop {
-  private destroySubject = new Subject<void>();
-  readonly destroy$ = this.destroySubject.asObservable();
+  private listeners: Array<(event: AgentEvent) => void> = [];
 
   constructor(
     private name: string,
@@ -184,13 +182,32 @@ class MockAgentLoop implements AgentLoop {
     private events?: AgentEvent[]
   ) {}
 
-  run(input: string): Observable<AgentEvent> {
+  onAny(listener: (event: AgentEvent) => void): () => void {
+    this.listeners.push(listener);
+    return () => {
+      const idx = this.listeners.indexOf(listener);
+      if (idx >= 0) this.listeners.splice(idx, 1);
+    };
+  }
+
+  on(type: string, listener: (event: AgentEvent) => void): () => void {
+    const wrapped = (e: AgentEvent) => {
+      if (e.type === type) listener(e);
+    };
+    this.listeners.push(wrapped);
+    return () => {
+      const idx = this.listeners.indexOf(wrapped);
+      if (idx >= 0) this.listeners.splice(idx, 1);
+    };
+  }
+
+  async run(input: string): Promise<string> {
     const sessionId = generateId('session');
     const events = this.events ?? [
       {
         type: 'agent.start',
         timestamp: Date.now(),
-        sessionId: generateId('session'),
+        sessionId,
         input,
         agentName: this.name,
         model: { provider: 'mock', model: 'mock-model' },
@@ -204,22 +221,19 @@ class MockAgentLoop implements AgentLoop {
       } as AgentEvent,
     ];
 
-    return from(events);
+    // 通知所有监听器
+    for (const l of this.listeners) {
+      for (const event of events) {
+        l(event);
+      }
+    }
+
+    return this.response;
   }
 
   destroy(): void {
-    this.destroySubject.next();
+    // Mock 实现无需清理资源
   }
-}
-
-// Helper: 将数组转换为 Observable
-function from<T>(arr: T[]): Observable<T> {
-  return new Observable(subscriber => {
-    for (const item of arr) {
-      subscriber.next(item);
-    }
-    subscriber.complete();
-  });
 }
 
 // ============================================================
@@ -255,26 +269,22 @@ async function example1_basicSubagent(): Promise<void> {
   // 检查子代理是否存在
   console.log(`\n检查 'research-agent' 是否存在: ${registry.has('research-agent')}`);
 
-  // 运行子代理
+  // 运行子代理（新 API: registry.run(name, input, listener) → Promise<string>）
   console.log('\n运行子代理:');
   const events: AgentEvent[] = [];
 
-  await firstValueFrom(
-    registry.run('research-agent', '搜索 AI 市场趋势').pipe(
-      tap(event => {
-        events.push(event);
-        console.log(`  事件: ${event.type}`);
-      }),
-      filter(isTerminalEvent),
-      toArray()
-    )
-  );
+  const output = await registry.run('research-agent', '搜索 AI 市场趋势', (event) => {
+    events.push(event);
+    console.log(`  事件: ${event.type}`);
+  });
 
   // 找到 subagent.complete 事件
   const completeEvent = events.find(e => e.type === 'subagent.complete');
   if (completeEvent && completeEvent.type === 'subagent.complete') {
     console.log(`\n子代理输出: ${completeEvent.output}`);
   }
+
+  console.log(`\n最终输出 (Promise<string>): ${output}`);
 
   // 清理
   researchAgent.destroy();
@@ -329,38 +339,20 @@ async function example2_nestedSubagents(): Promise<void> {
   console.log('  2. summary-agent 调用 analysis-agent');
   console.log('  3. analysis-agent 调用 search-agent');
 
-  // 按顺序执行嵌套调用
+  // 按顺序执行嵌套调用（新 API: listener 回调收集事件）
   const allEvents: AgentEvent[] = [];
 
   // 步骤 1: 运行搜索代理
   console.log('\n--- 执行 search-agent ---');
-  await firstValueFrom(
-    registry.run('search-agent', '搜索 AI 市场').pipe(
-      tap(e => allEvents.push(e)),
-      filter(isTerminalEvent),
-      toArray()
-    )
-  );
+  await registry.run('search-agent', '搜索 AI 市场', (e) => allEvents.push(e));
 
   // 步骤 2: 运行分析代理
   console.log('--- 执行 analysis-agent ---');
-  await firstValueFrom(
-    registry.run('analysis-agent', '分析搜索结果').pipe(
-      tap(e => allEvents.push(e)),
-      filter(isTerminalEvent),
-      toArray()
-    )
-  );
+  await registry.run('analysis-agent', '分析搜索结果', (e) => allEvents.push(e));
 
   // 步骤 3: 运行总结代理
   console.log('--- 执行 summary-agent ---');
-  await firstValueFrom(
-    registry.run('summary-agent', '总结分析结果').pipe(
-      tap(e => allEvents.push(e)),
-      filter(isTerminalEvent),
-      toArray()
-    )
-  );
+  await registry.run('summary-agent', '总结分析结果', (e) => allEvents.push(e));
 
   // 统计事件
   const eventCounts = new Map<string, number>();
@@ -456,13 +448,9 @@ async function example3_subagentWithTools(): Promise<void> {
 
   // 运行带工具的子代理
   console.log('\n运行子代理:');
-  await firstValueFrom(
-    registry.run('tool-agent', '分析 AI 市场').pipe(
-      tap(e => console.log(`  事件: ${e.type}`)),
-      filter(isTerminalEvent),
-      toArray()
-    )
-  );
+  await registry.run('tool-agent', '分析 AI 市场', (e) => {
+    console.log(`  事件: ${e.type}`);
+  });
 
   // 清理
   toolAgent.destroy();
@@ -545,43 +533,62 @@ async function example5_errorHandling(): Promise<void> {
   console.log('尝试运行不存在的子代理:');
   const errorEvents: AgentEvent[] = [];
 
-  await firstValueFrom(
-    registry.run('non-existent-agent', '测试').pipe(
-      tap(e => {
-        errorEvents.push(e);
-        if (e.type === 'subagent.error') {
-          console.log(`  错误事件: ${e.type}`);
-          console.log(`  错误名称: ${e.error.name}`);
-          console.log(`  错误消息: ${e.error.message}`);
-        }
-      }),
-      toArray()
-    )
-  );
+  await registry.run('non-existent-agent', '测试', (e) => {
+    errorEvents.push(e);
+    if (e.type === 'subagent.error') {
+      console.log(`  错误事件: ${e.type}`);
+      console.log(`  错误名称: ${e.error.name}`);
+      console.log(`  错误消息: ${e.error.message}`);
+    }
+  });
 
-  // 创建一个会产生错误的子代理
-  const errorAgent: AgentLoop = {
-    destroy$: EMPTY,
-    run: () => {
-      return new Observable(subscriber => {
-        subscriber.next({
-          type: 'agent.start',
-          timestamp: Date.now(),
-          sessionId: generateId('session'),
-          input: 'test',
-          agentName: 'error-agent',
-          model: { provider: 'mock', model: 'mock-model' },
-        } as AgentEvent);
-        subscriber.next({
-          type: 'agent.error',
-          timestamp: Date.now(),
-          sessionId: generateId('session'),
-          error: { name: 'ExecutionError', message: '执行过程中发生错误' },
-        } as AgentEvent);
-        subscriber.complete();
-      });
-    },
-  };
+  // 创建一个会产生错误的子代理（Promise-based，不使用 Observable）
+  const errorAgent: AgentLoop = (() => {
+    const listeners: Array<(event: AgentEvent) => void> = [];
+
+    return {
+      onAny(listener) {
+        listeners.push(listener);
+        return () => {
+          const idx = listeners.indexOf(listener);
+          if (idx >= 0) listeners.splice(idx, 1);
+        };
+      },
+      on(type, listener) {
+        const wrapped = (e: AgentEvent) => {
+          if (e.type === type) listener(e);
+        };
+        listeners.push(wrapped);
+        return () => {
+          const idx = listeners.indexOf(wrapped);
+          if (idx >= 0) listeners.splice(idx, 1);
+        };
+      },
+      async run(_input: string): Promise<string> {
+        const sessionId = generateId('session');
+
+        for (const l of listeners) {
+          l({
+            type: 'agent.start',
+            timestamp: Date.now(),
+            sessionId,
+            input: _input,
+            agentName: 'error-agent',
+            model: { provider: 'mock', model: 'mock-model' },
+          } as AgentEvent);
+
+          l({
+            type: 'agent.error',
+            timestamp: Date.now(),
+            sessionId,
+            error: { name: 'ExecutionError', message: '执行过程中发生错误' },
+          } as AgentEvent);
+        }
+
+        return ''; // 错误代理不产生有效输出
+      },
+    };
+  })();
 
   registry.register({
     name: 'error-agent',
@@ -590,16 +597,11 @@ async function example5_errorHandling(): Promise<void> {
   });
 
   console.log('\n运行会出错的子代理:');
-  await firstValueFrom(
-    registry.run('error-agent', '测试错误').pipe(
-      tap(e => {
-        if (e.type === 'agent.error') {
-          console.log(`  代理错误: ${e.error.message}`);
-        }
-      }),
-      toArray()
-    )
-  );
+  await registry.run('error-agent', '测试错误', (e) => {
+    if (e.type === 'agent.error') {
+      console.log(`  代理错误: ${(e as any).error?.message ?? '未知错误'}`);
+    }
+  });
 
   // 清理
   normalAgent.destroy();

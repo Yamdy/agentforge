@@ -4,14 +4,9 @@
  * Replaces buildPluginPipeline(source, plugins) with:
  * applyPlugins(plugins, hookRegistry, emitter) — registers hooks + event subscriptions.
  *
- * Backward-compat stubs for test files still importing old RxJS pipeline functions.
- *
  * @see docs/design/24-ARCH-REFACTOR.md
  */
 
-import { Observable, of, EMPTY } from 'rxjs';
-import { mergeMap, tap } from 'rxjs/operators';
-import { firstValueFrom } from 'rxjs';
 import type { AgentEvent } from '../core/events.js';
 import type { Plugin, PluginContext, InterceptorPlugin, ObserverPlugin } from './plugin.js';
 import { HookRegistry, type RequestHook } from '../core/hooks.js';
@@ -39,16 +34,18 @@ function bridgeInterceptor(plugin: InterceptorPlugin, ctx: PluginContext): {
       name: `${plugin.name}-intercept`,
       priority: plugin.priority,
       async apply(messages, _state) {
-        const syntheticEvent: any = {
-          type: 'llm.request',
-          timestamp: Date.now(),
-          sessionId: ctx.sessionId,
-          messages,
-        };
-        const result = await Promise.resolve(plugin.intercept!(syntheticEvent, ctx));
-        if (result && typeof result === 'object' && 'messages' in result) {
-          return result.messages;
-        }
+        try {
+          const syntheticEvent: any = {
+            type: 'llm.request',
+            timestamp: Date.now(),
+            sessionId: ctx.sessionId,
+            messages,
+          };
+          const result = await Promise.resolve(plugin.intercept!(syntheticEvent, ctx));
+          if (result && typeof result === 'object' && 'messages' in result) {
+            return result.messages;
+          }
+        } catch { /* isolate */ }
         return messages;
       },
     });
@@ -174,74 +171,4 @@ export function applyPlugins(
       try { unreg(); } catch { /* isolate */ }
     }
   };
-}
-
-// ==============================
-// Backward-compat (for old tests)
-// ==============================
-
-/** @deprecated Use applyPlugins() + HookRegistry instead. */
-export function buildPluginPipeline(
-  source: Observable<AgentEvent>,
-  plugins: readonly Plugin[],
-  ctx: PluginContext
-): Observable<AgentEvent> {
-  const interceptors = (plugins as any[]).filter(
-    (p: any) => p.type === 'interceptor' && p.enabled && typeof p.intercept === 'function'
-  );
-  const observers = (plugins as any[]).filter(
-    (p: any) => p.type === 'observer' && p.enabled && typeof p.observe === 'function'
-  );
-
-  let pipeline = source;
-
-  for (const ic of interceptors) {
-    const eventTypes: string[] = ic.eventTypes || [];
-    pipeline = pipeline.pipe(
-      mergeMap(async (event: AgentEvent) => {
-        if (eventTypes.length > 0 && !eventTypes.includes(event.type)) return event;
-        try {
-          const raw = ic.intercept(event, ctx);
-          // Handle Observable return (old-style mocks) by unwrapping first value
-          const result = raw && typeof (raw as any).subscribe === 'function'
-            ? await firstValueFrom(raw as Observable<AgentEvent>)
-            : await Promise.resolve(raw);
-          return result || event;
-        } catch { return event; }
-      })
-    );
-  }
-
-  for (const ob of observers) {
-    const eventTypes: string[] = ob.eventTypes || [];
-    pipeline = pipeline.pipe(
-      tap((event: AgentEvent) => {
-        if (eventTypes.length > 0 && !eventTypes.includes(event.type)) return;
-        try {
-          const r = ob.observe(event, ctx);
-          if (r instanceof Promise) r.catch(() => {});
-        } catch { /* isolate */ }
-      })
-    );
-  }
-
-  return pipeline;
-}
-
-/** @deprecated */
-export function emptyPipeline(source: Observable<AgentEvent>): Observable<AgentEvent> {
-  return source;
-}
-
-/** @deprecated */
-export function blockingPipeline(_source: Observable<AgentEvent>): Observable<AgentEvent> {
-  return EMPTY;
-}
-
-/** @deprecated */
-export function replacePipeline(
-  _source: Observable<AgentEvent>,
-  replacement: AgentEvent
-): Observable<AgentEvent> {
-  return of(replacement);
 }

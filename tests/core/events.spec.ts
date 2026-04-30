@@ -40,9 +40,9 @@ import {
 // ============================================================
 
 describe('AgentEventTypeSchema', () => {
-  it('should have all 40+ event types', () => {
+  it('should have all event types (slimmed per §7.1/7.2)', () => {
     const types = AgentEventTypeSchema.options;
-    expect(types.length).toBeGreaterThan(40);
+    expect(types.length).toBeGreaterThan(24);
   });
 
   it('should validate core agent loop events', () => {
@@ -52,24 +52,14 @@ describe('AgentEventTypeSchema', () => {
       'agent.complete',
       'agent.error',
       'llm.request',
-      'llm.stream.start',
       'llm.stream.text',
-      'llm.stream.tool_call',
-      'llm.stream.end',
       'llm.response',
-      'llm.error',
-      'llm.output.invalid',
       'tool.call',
       'tool.execute',
-      'tool.result.delta',
       'tool.result',
       'tool.error',
-      'tool.batch',
-      'tool.batch.start',
-      'tool.batch.complete',
       'hitl.ask',
       'hitl.answer',
-      'state.change',
       'checkpoint',
       'cancel',
       'done',
@@ -89,17 +79,9 @@ describe('AgentEventTypeSchema', () => {
       'mcp.connecting',
       'mcp.connected',
       'mcp.disconnected',
-      'mcp.tools_changed',
-      'mcp.error',
       'workflow.start',
-      'workflow.step.start',
-      'workflow.step.end',
-      'workflow.suspend',
-      'workflow.resume',
       'workflow.complete',
       'workflow.error',
-      'compaction.start',
-      'compaction.complete',
     ];
 
     for (const event of subsystemEvents) {
@@ -108,7 +90,7 @@ describe('AgentEventTypeSchema', () => {
   });
 
   it('should validate cross-cutting events', () => {
-    const crossCuttingEvents = ['permission.prompt', 'permission.decision', 'context.updated'];
+    const crossCuttingEvents = ['cancel', 'decision.trace'];
 
     for (const event of crossCuttingEvents) {
       expect(AgentEventTypeSchema.safeParse(event).success).toBe(true);

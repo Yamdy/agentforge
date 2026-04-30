@@ -1,11 +1,9 @@
 /**
  * AgentForge Permission Controller
  *
- * Controls tool execution permissions using the HITL Observable pattern.
+ * Controls tool execution permissions using callback-based approval pattern.
  */
 
-import { Observable, of } from 'rxjs';
-import { map, tap } from 'rxjs/operators';
 import type { ApprovalChannel, ApprovalSource } from '../../core/approval-channel.js';
 
 // ============================================================
@@ -34,10 +32,19 @@ export interface PermissionPrompt {
 // ============================================================
 
 export interface PermissionController {
-  ask(options: PermissionAskOptions): Observable<PermissionDecision>;
-  onAsk(): Observable<PermissionPrompt>;
+  /** Request permission — returns Promise that resolves when human answers */
+  ask(options: PermissionAskOptions): Promise<PermissionDecision>;
+
+  /** Subscribe to permission prompts (for UI). Returns unsubscribe. */
+  onAsk(listener: (prompt: PermissionPrompt) => void): () => void;
+
+  /** Provide an answer */
   answer(promptId: string, decision: PermissionDecision): void;
+
+  /** Check if a permission is auto-allowed */
   isAutoAllowed(permission: string): boolean;
+
+  /** Cancel a pending permission request */
   cancel(promptId: string): void;
 }
 
@@ -54,9 +61,9 @@ export class DefaultPermissionController implements PermissionController {
     this.channel = channel;
   }
 
-  ask(options: PermissionAskOptions): Observable<PermissionDecision> {
+  ask(options: PermissionAskOptions): Promise<PermissionDecision> {
     if (this.isAutoAllowed(options.permission)) {
-      return of('allow' as PermissionDecision);
+      return Promise.resolve('allow' as PermissionDecision);
     }
 
     const ctx = options.context;
@@ -70,42 +77,42 @@ export class DefaultPermissionController implements PermissionController {
         ? ctx.approvalMessage
         : `Allow tool: ${options.permission}?`;
 
-    return this.channel
-      .ask({
-        promptId: options.promptId,
-        source: this.source,
-        question,
-        context: askCtx,
-        options: ['allow', 'deny', 'allow_always'],
-      })
-      .pipe(
-        map(response => response as PermissionDecision),
-        tap(decision => {
+    return new Promise<PermissionDecision>((resolve) => {
+      this.channel.ask(
+        {
+          promptId: options.promptId,
+          source: this.source,
+          question,
+          context: askCtx,
+          options: ['allow', 'deny', 'allow_always'],
+        },
+        (response: string) => {
+          const decision = response as PermissionDecision;
           if (decision === 'allow_always') {
             this.autoAllowSet.add(options.permission);
           }
-        })
+          resolve(decision);
+        }
       );
+    });
   }
 
   answer(promptId: string, decision: PermissionDecision): void {
     this.channel.answer(promptId, decision);
   }
 
-  onAsk(): Observable<PermissionPrompt> {
-    return this.channel.onAsk().pipe(
-      map(prompt => {
-        const result: PermissionPrompt = {
-          promptId: prompt.promptId,
-          permission: prompt.question,
-          options: ['allow', 'deny', 'allow_always'],
-        };
-        if (prompt.context !== undefined) {
-          result.context = prompt.context;
-        }
-        return result;
-      })
-    );
+  onAsk(listener: (prompt: PermissionPrompt) => void): () => void {
+    return this.channel.onAsk((raw) => {
+      const result: PermissionPrompt = {
+        promptId: raw.promptId,
+        permission: raw.question,
+        options: ['allow', 'deny', 'allow_always'],
+      };
+      if (raw.context !== undefined) {
+        result.context = raw.context;
+      }
+      listener(result);
+    });
   }
 
   isAutoAllowed(permission: string): boolean {

@@ -9,11 +9,12 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, mkdir, writeFile, rm } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { Observable, of, firstValueFrom, toArray } from 'rxjs';
 
 import { loadAgentsMd, type AgentsMdConfig, type AgentsMdResult } from '../../src/memory/agents-md.js';
 import { createMemoryPlugin } from '../../src/plugins/memory-plugin.js';
-import { buildPluginPipeline } from '../../src/plugins/pipeline.js';
+import { applyPlugins } from '../../src/plugins/pipeline.js';
+import { HookRegistry } from '../../src/core/hooks.js';
+import { AgentEventEmitter } from '../../src/core/events.js';
 import type { AgentEvent, Message } from '../../src/core/events.js';
 import type { PluginContext } from '../../src/plugins/plugin.js';
 import type { PersistentMemory, MemoryEntry, MemoryLoadResult } from '../../src/memory/index.js';
@@ -78,6 +79,22 @@ function createMockMemory(content: string): PersistentMemory {
       return `<agent_memory>\n${entries.map(e => e.content).join('\n')}\n</agent_memory>`;
     },
   };
+}
+
+async function triggerAgentStart(registry: HookRegistry): Promise<void> {
+  const lifecycles = registry.getLifecycleHooks('session.start');
+  for (const fn of lifecycles) {
+    await fn({ sessionId: 'test-session', agentName: 'test-agent' }, {});
+  }
+}
+
+async function applyRequestHooks(registry: HookRegistry, msgs: Message[]): Promise<Message[]> {
+  const hooks = registry.getRequestHooks();
+  let result = msgs;
+  for (const hook of hooks) {
+    result = await hook.apply(result, {} as any);
+  }
+  return result;
 }
 
 // ============================================================
@@ -272,25 +289,21 @@ describe('MemoryPlugin with autoDiscover', () => {
     });
 
     const ctx = createPluginContext();
-    const source$ = of(
-      createAgentStartEvent(),
-      createLLMRequestEvent([{ role: 'user', content: 'Hello' }]),
-    );
+    const registry = new HookRegistry();
+    const emitter = new AgentEventEmitter();
+    applyPlugins([plugin], registry, emitter, ctx);
 
-    const result$ = buildPluginPipeline(source$, [plugin], ctx);
-    const events = await firstValueFrom(result$.pipe(toArray()));
+    // Trigger agent.start (auto-discovers AGENTS.md)
+    await triggerAgentStart(registry);
 
-    const llmRequest = events.find(e => e.type === 'llm.request') as Extract<
-      AgentEvent,
-      { type: 'llm.request' }
-    >;
+    // Apply request hooks
+    const msgs = await applyRequestHooks(registry, [{ role: 'user', content: 'Hello' }]);
 
-    expect(llmRequest).toBeDefined();
     // Should have memory message + user message
-    expect(llmRequest.messages.length).toBeGreaterThanOrEqual(2);
+    expect(msgs.length).toBeGreaterThanOrEqual(2);
     // First message should be system memory
-    expect(llmRequest.messages[0]?.role).toBe('system');
-    expect(llmRequest.messages[0]?.content).toContain('Auto-discovered');
+    expect(msgs[0]?.role).toBe('system');
+    expect(msgs[0]?.content).toContain('Auto-discovered');
   });
 
   it('should inject auto-discovered content on llm.request', async () => {
@@ -306,21 +319,17 @@ describe('MemoryPlugin with autoDiscover', () => {
     });
 
     const ctx = createPluginContext();
-    const source$ = of(
-      createAgentStartEvent(),
-      createLLMRequestEvent([{ role: 'user', content: 'What is async?' }]),
-    );
+    const registry = new HookRegistry();
+    const emitter = new AgentEventEmitter();
+    applyPlugins([plugin], registry, emitter, ctx);
 
-    const result$ = buildPluginPipeline(source$, [plugin], ctx);
-    const events = await firstValueFrom(result$.pipe(toArray()));
+    // Trigger agent.start
+    await triggerAgentStart(registry);
 
-    const llmRequest = events.find(e => e.type === 'llm.request') as Extract<
-      AgentEvent,
-      { type: 'llm.request' }
-    >;
+    const msgs = await applyRequestHooks(registry, [{ role: 'user', content: 'What is async?' }]);
 
     // Memory message should contain auto-discovered content
-    const memoryMessage = llmRequest.messages.find(
+    const memoryMessage = msgs.find(
       m => m.role === 'system' && m.name === 'memory',
     );
     expect(memoryMessage).toBeDefined();
@@ -336,22 +345,18 @@ describe('MemoryPlugin with autoDiscover', () => {
     });
 
     const ctx = createPluginContext();
-    const source$ = of(
-      createAgentStartEvent(),
-      createLLMRequestEvent([{ role: 'user', content: 'Hello' }]),
-    );
+    const registry = new HookRegistry();
+    const emitter = new AgentEventEmitter();
+    applyPlugins([plugin], registry, emitter, ctx);
 
-    const result$ = buildPluginPipeline(source$, [plugin], ctx);
-    const events = await firstValueFrom(result$.pipe(toArray()));
+    // Trigger agent.start
+    await triggerAgentStart(registry);
 
-    const llmRequest = events.find(e => e.type === 'llm.request') as Extract<
-      AgentEvent,
-      { type: 'llm.request' }
-    >;
+    const msgs = await applyRequestHooks(registry, [{ role: 'user', content: 'Hello' }]);
 
     // Should use existing memory.load() logic
-    expect(llmRequest.messages.length).toBeGreaterThanOrEqual(2);
-    expect(llmRequest.messages[0]?.content).toContain('Existing memory content');
+    expect(msgs.length).toBeGreaterThanOrEqual(2);
+    expect(msgs[0]?.content).toContain('Existing memory content');
   });
 
   it('should use existing logic when autoDiscover is not specified (backward compat)', async () => {
@@ -363,22 +368,18 @@ describe('MemoryPlugin with autoDiscover', () => {
     });
 
     const ctx = createPluginContext();
-    const source$ = of(
-      createAgentStartEvent(),
-      createLLMRequestEvent([{ role: 'user', content: 'Hello' }]),
-    );
+    const registry = new HookRegistry();
+    const emitter = new AgentEventEmitter();
+    applyPlugins([plugin], registry, emitter, ctx);
 
-    const result$ = buildPluginPipeline(source$, [plugin], ctx);
-    const events = await firstValueFrom(result$.pipe(toArray()));
+    // Trigger agent.start
+    await triggerAgentStart(registry);
 
-    const llmRequest = events.find(e => e.type === 'llm.request') as Extract<
-      AgentEvent,
-      { type: 'llm.request' }
-    >;
+    const msgs = await applyRequestHooks(registry, [{ role: 'user', content: 'Hello' }]);
 
     // Should use existing memory.load() logic
-    expect(llmRequest.messages.length).toBeGreaterThanOrEqual(2);
-    expect(llmRequest.messages[0]?.content).toContain('Backward compat memory');
+    expect(msgs.length).toBeGreaterThanOrEqual(2);
+    expect(msgs[0]?.content).toContain('Backward compat memory');
   });
 
   it('should handle missing AGENTS.md gracefully with autoDiscover', async () => {
@@ -392,24 +393,18 @@ describe('MemoryPlugin with autoDiscover', () => {
     });
 
     const ctx = createPluginContext();
-    const source$ = of(
-      createAgentStartEvent(),
-      createLLMRequestEvent([{ role: 'user', content: 'Hello' }]),
-    );
+    const registry = new HookRegistry();
+    const emitter = new AgentEventEmitter();
+    applyPlugins([plugin], registry, emitter, ctx);
 
-    const result$ = buildPluginPipeline(source$, [plugin], ctx);
-    const events = await firstValueFrom(result$.pipe(toArray()));
+    // Trigger agent.start
+    await triggerAgentStart(registry);
 
-    // Should not crash, just no memory injection
-    const llmRequest = events.find(e => e.type === 'llm.request') as Extract<
-      AgentEvent,
-      { type: 'llm.request' }
-    >;
+    const msgs = await applyRequestHooks(registry, [{ role: 'user', content: 'Hello' }]);
 
-    expect(llmRequest).toBeDefined();
     // Only user message, no memory injection
-    expect(llmRequest.messages).toHaveLength(1);
-    expect(llmRequest.messages[0]?.role).toBe('user');
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]?.role).toBe('user');
   });
 
   it('should only load once on agent.start (not on subsequent events)', async () => {
@@ -425,23 +420,18 @@ describe('MemoryPlugin with autoDiscover', () => {
     });
 
     const ctx = createPluginContext();
-    // Two agent.start events
-    const source$ = of(
-      createAgentStartEvent(),
-      createAgentStartEvent(),
-      createLLMRequestEvent([{ role: 'user', content: 'Hello' }]),
-    );
+    const registry = new HookRegistry();
+    const emitter = new AgentEventEmitter();
+    applyPlugins([plugin], registry, emitter, ctx);
 
-    const result$ = buildPluginPipeline(source$, [plugin], ctx);
-    const events = await firstValueFrom(result$.pipe(toArray()));
+    // Trigger agent.start twice
+    await triggerAgentStart(registry);
+    await triggerAgentStart(registry);
 
-    const llmRequest = events.find(e => e.type === 'llm.request') as Extract<
-      AgentEvent,
-      { type: 'llm.request' }
-    >;
+    const msgs = await applyRequestHooks(registry, [{ role: 'user', content: 'Hello' }]);
 
     // Should still have memory injection (loaded once)
-    expect(llmRequest.messages.length).toBeGreaterThanOrEqual(2);
-    expect(llmRequest.messages[0]?.content).toContain('Load Once');
+    expect(msgs.length).toBeGreaterThanOrEqual(2);
+    expect(msgs[0]?.content).toContain('Load Once');
   });
 });

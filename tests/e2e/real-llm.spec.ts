@@ -14,12 +14,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import {
-  Observable,
-  firstValueFrom,
-  toArray,
-  Subscription,
-} from 'rxjs';
+// No rxjs imports needed - Subscription replacement inline
 import {
   createAgentLoop,
   type AgentLoopConfig,
@@ -86,13 +81,21 @@ function createTestConfig(overrides: Partial<AgentLoopConfig> = {}): AgentLoopCo
   };
 }
 
+async function runAndCollect(agent: any, input: string): Promise<any[]> {
+  const events: any[] = [];
+  const unsub = agent.onAny((e: any) => events.push(e));
+  try { await agent.run(input); } catch {}
+  unsub();
+  return events;
+}
+
 // ============================================================
 // Tests
 // ============================================================
 
 describe.skipIf(skipIfNoLLM)('E2E: Real LLM Tests', () => {
   let llm: OpenAIAdapter;
-  let subscriptions: Subscription[];
+  let subscriptions: any[];
 
   beforeEach(() => {
     llm = createLLMAdapter();
@@ -118,9 +121,7 @@ describe.skipIf(skipIfNoLLM)('E2E: Real LLM Tests', () => {
         const config = createTestConfig({ maxSteps: 1 });
 
         const agent = createAgentLoop(ctx, config);
-        const events = await firstValueFrom(
-          agent.run$('What is 2+2? Reply with just the number.').pipe(toArray()),
-        );
+        const events = await runAndCollect(agent, 'What is 2+2? Reply with just the number.');
 
         // Verify event sequence
         const types = events.map(e => e.type);
@@ -161,9 +162,7 @@ describe.skipIf(skipIfNoLLM)('E2E: Real LLM Tests', () => {
         const config = createTestConfig();
 
         const agent = createAgentLoop(ctx, config);
-        const events = await firstValueFrom(
-          agent.run$('Say nothing, just reply with an empty message if possible.').pipe(toArray()),
-        );
+        const events = await runAndCollect(agent, 'Say nothing, just reply with an empty message if possible.');
 
         // Should still complete
         const doneEvent = events.find(e => e.type === 'done');
@@ -184,9 +183,7 @@ describe.skipIf(skipIfNoLLM)('E2E: Real LLM Tests', () => {
         const config = createTestConfig({ streaming: true, maxSteps: 1 });
 
         const agent = createAgentLoop(ctx, config);
-        const events = await firstValueFrom(
-          agent.run$('Tell me a short story about a cat. Keep it brief, 2-3 sentences.').pipe(toArray()),
-        );
+        const events = await runAndCollect(agent, 'Tell me a short story about a cat. Keep it brief, 2-3 sentences.');
 
         // Verify streaming events (may vary based on API support)
         const streamStart = events.find(e => e.type === 'llm.stream.start');
@@ -240,13 +237,7 @@ describe.skipIf(skipIfNoLLM)('E2E: Real LLM Tests', () => {
         const config = createTestConfig({ streaming: true });
 
         const agent = createAgentLoop(ctx, config);
-
-        // Use a prompt that might trigger tool use
-        const eventsPromise = firstValueFrom(
-          agent.run$('What is the weather in Tokyo today?').pipe(toArray()),
-        );
-
-        const events = await eventsPromise;
+        const events = await runAndCollect(agent, 'What is the weather in Tokyo today?');
 
         // Should complete successfully
         const completeEvent = events.find(e => e.type === 'agent.complete');
@@ -292,9 +283,7 @@ describe.skipIf(skipIfNoLLM)('E2E: Real LLM Tests', () => {
         const config = createTestConfig();
 
         const agent = createAgentLoop(ctx, config);
-        const events = await firstValueFrom(
-          agent.run$('What is the current weather in Beijing? Use the get_weather tool.').pipe(toArray()),
-        );
+        const events = await runAndCollect(agent, 'What is the current weather in Beijing? Use the get_weather tool.');
 
         // Check if tool was called (LLM decides)
         const toolCallEvent = events.find(e => e.type === 'tool.call');
@@ -345,9 +334,7 @@ describe.skipIf(skipIfNoLLM)('E2E: Real LLM Tests', () => {
         const config = createTestConfig();
 
         const agent = createAgentLoop(ctx, config);
-        const events = await firstValueFrom(
-          agent.run$('Use the failing_tool to test error handling.').pipe(toArray()),
-        );
+        const events = await runAndCollect(agent, 'Use the failing_tool to test error handling.');
 
         // If tool was called, check error result
         const toolResultEvent = events.find(e => e.type === 'tool.result');
@@ -379,9 +366,7 @@ describe.skipIf(skipIfNoLLM)('E2E: Real LLM Tests', () => {
         const agent = createAgentLoop(ctx, config);
 
         // First turn: introduce name
-        const events1 = await firstValueFrom(
-          agent.run$('My name is Alice. Remember this for later.').pipe(toArray()),
-        );
+        const events1 = await runAndCollect(agent, 'My name is Alice. Remember this for later.');
 
         const complete1 = events1.find(e => e.type === 'agent.complete');
         expect(complete1).toBeDefined();
@@ -389,9 +374,7 @@ describe.skipIf(skipIfNoLLM)('E2E: Real LLM Tests', () => {
         // Second turn: ask about the name
         // Note: The agent loop doesn't automatically persist messages between runs
         // This test verifies the agent can complete a second run
-        const events2 = await firstValueFrom(
-          agent.run$('What is my name? (If you remember from the previous conversation, tell me.)').pipe(toArray()),
-        );
+        const events2 = await runAndCollect(agent, 'What is my name? (If you remember from the previous conversation, tell me.)');
 
         const complete2 = events2.find(e => e.type === 'agent.complete');
         expect(complete2).toBeDefined();
@@ -412,9 +395,7 @@ describe.skipIf(skipIfNoLLM)('E2E: Real LLM Tests', () => {
 
         // Run three sequential requests
         for (let i = 0; i < 3; i++) {
-          const events = await firstValueFrom(
-            agent.run$(`Request number ${i + 1}: What is ${i + 1} + ${i + 1}?`).pipe(toArray()),
-          );
+          const events = await runAndCollect(agent, `Request number ${i + 1}: What is ${i + 1} + ${i + 1}?`);
 
           const completeEvent = events.find(e => e.type === 'agent.complete');
           expect(completeEvent).toBeDefined();
@@ -435,9 +416,7 @@ describe.skipIf(skipIfNoLLM)('E2E: Real LLM Tests', () => {
         const config = createTestConfig();
 
         const agent = createAgentLoop(ctx, config);
-        const events = await firstValueFrom(
-          agent.run$('Hello, this is a normal request.').pipe(toArray()),
-        );
+        const events = await runAndCollect(agent, 'Hello, this is a normal request.');
 
         // Verify no RxJS error channel usage
         // All events should have valid structure
@@ -478,9 +457,7 @@ describe.skipIf(skipIfNoLLM)('E2E: Real LLM Tests', () => {
         const config = createTestConfig({ maxSteps: 2 });
 
         const agent = createAgentLoop(ctx, config);
-        const events = await firstValueFrom(
-          agent.run$('Keep using the get_info tool repeatedly.').pipe(toArray()),
-        );
+        const events = await runAndCollect(agent, 'Keep using the get_info tool repeatedly.');
 
         // Should terminate due to max steps
         const doneEvent = events.find(e => e.type === 'done');
@@ -505,9 +482,7 @@ describe.skipIf(skipIfNoLLM)('E2E: Real LLM Tests', () => {
         const config = createTestConfig({ maxSteps: 1 });
 
         const agent = createAgentLoop(ctx, config);
-        const events = await firstValueFrom(
-          agent.run$('Hello!').pipe(toArray()),
-        );
+        const events = await runAndCollect(agent, 'Hello!');
 
         const types = events.map(e => e.type);
 
@@ -544,9 +519,7 @@ describe.skipIf(skipIfNoLLM)('E2E: Real LLM Tests', () => {
         const config = createTestConfig();
 
         const agent = createAgentLoop(ctx, config);
-        const events = await firstValueFrom(
-          agent.run$('What time is it?').pipe(toArray()),
-        );
+        const events = await runAndCollect(agent, 'What time is it?');
 
         // All events should have timestamps
         const now = Date.now();

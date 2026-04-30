@@ -7,8 +7,6 @@
  * @module observability/resource-monitor
  */
 
-import { Observable, interval, map, share } from 'rxjs';
-
 /**
  * Memory metrics
  */
@@ -41,16 +39,12 @@ export interface CPUMetrics {
 export interface ResourceMetrics {
   /** Unix timestamp (ms) */
   readonly timestamp: number;
-
   /** Memory metrics */
   readonly memory: MemoryMetrics;
-
   /** CPU metrics (Node.js only) */
   readonly cpu?: CPUMetrics;
-
   /** Event loop delay (ms, Node.js only) */
   readonly eventLoopDelay?: number;
-
   /** Uptime (ms) */
   readonly uptime: number;
 }
@@ -66,16 +60,12 @@ export type ResourcePressure = 'normal' | 'warning' | 'critical';
 export interface ResourceMonitorOptions {
   /** Collection interval in milliseconds (default: 10000) */
   readonly intervalMs?: number;
-
   /** Memory warning threshold (0-1, default: 0.8) */
   readonly memoryWarningThreshold?: number;
-
   /** Memory critical threshold (0-1, default: 0.95) */
   readonly memoryCriticalThreshold?: number;
-
   /** Enable CPU monitoring (default: true) */
   readonly enableCpu?: boolean;
-
   /** Enable event loop monitoring (default: true) */
   readonly enableEventLoop?: boolean;
 }
@@ -89,8 +79,8 @@ export interface ResourceMonitorOptions {
  * ```typescript
  * const monitor = new ResourceMonitor({ intervalMs: 5000 });
  *
- * // Subscribe to metrics stream
- * monitor.metrics$.subscribe(metrics => {
+ * // Subscribe to metrics stream via callback
+ * const unsub = monitor.onMetrics(metrics => {
  *   console.log(`Memory: ${metrics.memory.heapUsed / 1024 / 1024} MB`);
  * });
  *
@@ -102,11 +92,12 @@ export interface ResourceMonitorOptions {
  * if (pressure === 'critical') {
  *   // Take action: trigger compaction, warn user, etc.
  * }
+ *
+ * // Later: unsub();
  * ```
  */
 export class ResourceMonitor {
   private readonly _options: Required<ResourceMonitorOptions>;
-  private _metrics$: Observable<ResourceMetrics> | undefined;
   private _lastCpuUsage: NodeJS.CpuUsage | undefined;
 
   constructor(options: ResourceMonitorOptions = {}) {
@@ -120,19 +111,14 @@ export class ResourceMonitor {
   }
 
   /**
-   * Resource metrics stream
-   *
-   * Emits metrics at the configured interval.
-   * Shared among all subscribers.
+   * Subscribe to resource metrics via callback.
+   * Returns an unsubscribe function.
    */
-  get metrics$(): Observable<ResourceMetrics> {
-    if (!this._metrics$) {
-      this._metrics$ = interval(this._options.intervalMs).pipe(
-        map(() => this.collect()),
-        share(),
-      );
-    }
-    return this._metrics$;
+  onMetrics(listener: (metrics: ResourceMetrics) => void): () => void {
+    const timer = setInterval(() => {
+      try { listener(this.collect()); } catch { /* isolate */ }
+    }, this._options.intervalMs);
+    return () => clearInterval(timer);
   }
 
   /**
@@ -304,8 +290,6 @@ export class ResourceMonitor {
    */
   private measureEventLoopDelay(): number {
     const start = process.hrtime.bigint();
-    // Synchronous measurement - we measure the lag since last collection
-    // This is an approximation; for accurate measurement use perf_hooks.monitorEventLoopDelay
     const end = process.hrtime.bigint();
     const elapsedNs = Number(end - start);
     return elapsedNs / 1_000_000; // Convert to ms

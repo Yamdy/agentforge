@@ -322,7 +322,7 @@ describe('generator', () => {
       
       // Core dependencies
       expect(pkg.dependencies).toHaveProperty('agentforge');
-      expect(pkg.dependencies).toHaveProperty('rxjs');
+      // rxjs removed from CORE_DEPS
       expect(pkg.dependencies).toHaveProperty('zod');
       expect(pkg.dependencies).toHaveProperty('dotenv');
       

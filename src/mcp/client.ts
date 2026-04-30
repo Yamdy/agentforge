@@ -7,8 +7,7 @@
  * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN/08-SUBSYSTEMS.md
  */
 
-import { BehaviorSubject, Observable } from 'rxjs';
-import type { MCPClient, MCPServerConfig } from '../core/interfaces.js';
+import type { MCPClient, MCPServerConfig, MCPStatus } from '../core/interfaces.js';
 import type { SerializedError } from '../core/events.js';
 import { validateMCPResponse, type MCPToolResponse } from '../contracts/mcp-contract.js';
 import type { MCPTransport } from './transport.js';
@@ -100,7 +99,8 @@ interface PendingRequest {
  * ```
  */
 export class AgentForgeMCPClient implements MCPClient {
-  private _status$ = new BehaviorSubject<import('../core/interfaces.js').MCPStatus>('disconnected');
+  private _status: MCPStatus = 'disconnected';
+  private _statusListeners = new Set<(status: MCPStatus) => void>();
   private _transport: MCPTransport | undefined;
   private _pendingRequests = new Map<JSONRPCId, PendingRequest>();
   private _requestId = 0;
@@ -122,22 +122,33 @@ export class AgentForgeMCPClient implements MCPClient {
   /**
    * Current connection status.
    */
-  status(): import('../core/interfaces.js').MCPStatus {
-    return this._status$.value;
+  status(): MCPStatus {
+    return this._status;
   }
 
   /**
-   * Observable of status changes.
+   * Subscribe to status changes. Returns unsubscribe function.
    */
-  onStatusChange(): Observable<import('../core/interfaces.js').MCPStatus> {
-    return this._status$.asObservable();
+  onStatusChange(listener: (status: MCPStatus) => void): () => void {
+    this._statusListeners.add(listener);
+    // Replay current status immediately (BehaviorSubject behavior)
+    try { listener(this._status); } catch { /* isolate */ }
+    return () => { this._statusListeners.delete(listener); };
+  }
+
+  /** Set status and notify listeners */
+  private _setStatus(status: MCPStatus): void {
+    this._status = status;
+    for (const listener of this._statusListeners) {
+      try { listener(status); } catch { /* isolate */ }
+    }
   }
 
   /**
    * Connect to an MCP server.
    */
   async connect(): Promise<void> {
-    if (this._status$.value !== 'disconnected') {
+    if (this._status !== 'disconnected') {
       throw new Error('Client already connected or connecting');
     }
 
@@ -145,7 +156,7 @@ export class AgentForgeMCPClient implements MCPClient {
       throw new Error('No configuration provided');
     }
 
-    this._status$.next('connecting');
+    this._setStatus('connecting');
     this.emitEvent({
       type: 'mcp.connecting',
       timestamp: Date.now(),
@@ -177,7 +188,7 @@ export class AgentForgeMCPClient implements MCPClient {
       // Cache tools
       this._cachedTools = await this.fetchTools();
 
-      this._status$.next('connected');
+      this._setStatus('connected');
       this.emitEvent({
         type: 'mcp.connected',
         timestamp: Date.now(),
@@ -186,7 +197,7 @@ export class AgentForgeMCPClient implements MCPClient {
         tools: this._cachedTools.map(t => t.name),
       });
     } catch (error) {
-      this._status$.next('error');
+      this._setStatus('error');
       this.emitEvent({
         type: 'mcp.error',
         timestamp: Date.now(),
@@ -216,7 +227,7 @@ export class AgentForgeMCPClient implements MCPClient {
     }
     this._pendingRequests.clear();
 
-    this._status$.next('disconnected');
+    this._setStatus('disconnected');
     this.emitEvent({
       type: 'mcp.disconnected',
       timestamp: Date.now(),
@@ -239,7 +250,7 @@ export class AgentForgeMCPClient implements MCPClient {
    * The caller decides how to handle tool errors.
    */
   async callTool(name: string, args: Record<string, unknown>): Promise<string> {
-    if (this._status$.value !== 'connected' || this._transport === undefined) {
+    if (this._status !== 'connected' || this._transport === undefined) {
       throw new Error('Client not connected');
     }
 
@@ -369,7 +380,7 @@ export class AgentForgeMCPClient implements MCPClient {
    * Handle transport error.
    */
   private handleError(error: Error): void {
-    this._status$.next('error');
+    this._setStatus('error');
     this.emitEvent({
       type: 'mcp.error',
       timestamp: Date.now(),
@@ -383,8 +394,8 @@ export class AgentForgeMCPClient implements MCPClient {
    * Handle transport close.
    */
   private handleClose(): void {
-    if (this._status$.value === 'connected') {
-      this._status$.next('disconnected');
+    if (this._status === 'connected') {
+      this._setStatus('disconnected');
       this.emitEvent({
         type: 'mcp.disconnected',
         timestamp: Date.now(),

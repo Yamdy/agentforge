@@ -1,50 +1,79 @@
 /**
  * Tests for Compiled/Async Subagent modes
+ *
+ * Uses listener-based API (registry.run returns Promise<string>).
  */
-
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Observable, of, EMPTY, Subject, toArray, firstValueFrom } from 'rxjs';
-import { take, timeout } from 'rxjs/operators';
 import type { AgentEvent } from '../../src/core/events.js';
 import { SubagentRegistry, createSubagentRegistry } from '../../src/subagent/registry.js';
-import type { SubagentConfig, AgentLoop, AsyncSubagentHandle } from '../../src/subagent/types.js';
+import type { AgentLoop } from '../../src/subagent/types.js';
 
-// Helper to create a mock agent loop
-function createMockAgentLoop(events: AgentEvent[], delay = 0): AgentLoop {
-  return {
-    run: vi.fn((input: string) => {
-      if (delay > 0) {
-        return new Observable<AgentEvent>(subscriber => {
-          const timer = setTimeout(() => {
-            events.forEach(e => subscriber.next(e));
-            subscriber.complete();
-          }, delay);
-          return () => clearTimeout(timer);
-        });
+// ============================================================
+// Helper: collect events from run
+// ============================================================
+
+async function runAndCollect(
+  registry: SubagentRegistry,
+  name: string,
+  input: string
+): Promise<AgentEvent[]> {
+  const events: AgentEvent[] = [];
+  await registry.run(name, input, (e) => events.push(e));
+  return events;
+}
+
+// ============================================================
+// Mock AgentLoop (Promise-based, matches AgentLoop interface)
+// ============================================================
+
+interface MockAgentOptions {
+  events?: AgentEvent[];
+  delay?: number;
+  error?: Error;
+}
+
+function createMockAgent(options: MockAgentOptions = {}): AgentLoop {
+  const listeners: Array<(event: AgentEvent) => void> = [];
+
+  const run = vi.fn(async (_input: string): Promise<string> => {
+    const emit = () => {
+      if (options.events) {
+        for (const event of options.events) {
+          for (const l of listeners) l(event);
+        }
       }
-      return of(...events);
+    };
+
+    if (options.error) {
+      throw options.error;
+    }
+
+    if (options.delay && options.delay > 0) {
+      await new Promise((resolve) => setTimeout(resolve, options.delay));
+    }
+
+    emit();
+
+    const completeEvent = options.events?.find((e) => e.type === 'agent.complete');
+    return (completeEvent as any)?.output ?? '';
+  });
+
+  return {
+    run,
+    onAny: vi.fn((listener: (event: AgentEvent) => void) => {
+      listeners.push(listener);
+      return () => {
+        const idx = listeners.indexOf(listener);
+        if (idx >= 0) listeners.splice(idx, 1);
+      };
     }),
-    destroy$: EMPTY,
+    on: vi.fn(() => () => {}),
   };
 }
 
-// Helper to create a mock agent loop that errors
-function createErrorAgentLoop(error: Error): AgentLoop {
-  return {
-    run: vi.fn(() => {
-      return new Observable<AgentEvent>(subscriber => {
-        subscriber.next({
-          type: 'agent.error',
-          timestamp: Date.now(),
-          sessionId: 'test',
-          error: { name: error.name, message: error.message },
-        });
-        subscriber.complete();
-      });
-    }),
-    destroy$: EMPTY,
-  };
-}
+// ============================================================
+// Tests
+// ============================================================
 
 describe('Compiled/Async Subagent', () => {
   let registry: SubagentRegistry;
@@ -56,18 +85,32 @@ describe('Compiled/Async Subagent', () => {
   describe('Compiled Mode', () => {
     it('should run compiled subagent with config', async () => {
       const mockEvents: AgentEvent[] = [
-        { type: 'agent.start', timestamp: Date.now(), sessionId: 'test', input: 'test', agentName: 'test', model: { provider: 'openai', model: 'gpt-4o' } },
-        { type: 'agent.complete', timestamp: Date.now(), sessionId: 'test', output: 'compiled result', steps: 1 },
+        {
+          type: 'agent.start',
+          timestamp: Date.now(),
+          sessionId: 'test',
+          input: 'test',
+          agentName: 'test',
+          model: { provider: 'openai', model: 'gpt-4o' },
+        },
+        {
+          type: 'agent.complete',
+          timestamp: Date.now(),
+          sessionId: 'test',
+          output: 'compiled result',
+          steps: 1,
+        },
         { type: 'done', timestamp: Date.now(), sessionId: 'test', reason: 'stop' },
       ];
 
-      const agent = createMockAgentLoop(mockEvents);
+      const agent = createMockAgent({ events: mockEvents });
 
       registry.register({
         name: 'compiled-agent',
         description: 'A compiled subagent',
         agent,
         mode: 'subagent',
+        executionMode: 'compiled',
         compiledConfig: {
           model: { provider: 'openai', model: 'gpt-4o' },
           tools: ['read_file'],
@@ -76,9 +119,7 @@ describe('Compiled/Async Subagent', () => {
         },
       });
 
-      const events = await firstValueFrom(
-        registry.run('compiled-agent', 'test input').pipe(toArray())
-      );
+      const events = await runAndCollect(registry, 'compiled-agent', 'test input');
 
       expect(events.length).toBeGreaterThan(0);
       expect(agent.run).toHaveBeenCalledWith('test input');
@@ -88,12 +129,25 @@ describe('Compiled/Async Subagent', () => {
   describe('Async Mode', () => {
     it('should return subagent.start event immediately', async () => {
       const mockEvents: AgentEvent[] = [
-        { type: 'agent.start', timestamp: Date.now(), sessionId: 'test', input: 'test', agentName: 'test', model: { provider: 'openai', model: 'gpt-4o' } },
-        { type: 'agent.complete', timestamp: Date.now(), sessionId: 'test', output: 'async result', steps: 1 },
+        {
+          type: 'agent.start',
+          timestamp: Date.now(),
+          sessionId: 'test',
+          input: 'test',
+          agentName: 'test',
+          model: { provider: 'openai', model: 'gpt-4o' },
+        },
+        {
+          type: 'agent.complete',
+          timestamp: Date.now(),
+          sessionId: 'test',
+          output: 'async result',
+          steps: 1,
+        },
         { type: 'done', timestamp: Date.now(), sessionId: 'test', reason: 'stop' },
       ];
 
-      const agent = createMockAgentLoop(mockEvents, 100); // 100ms delay
+      const agent = createMockAgent({ events: mockEvents, delay: 100 });
 
       registry.register({
         name: 'async-agent',
@@ -107,23 +161,30 @@ describe('Compiled/Async Subagent', () => {
         },
       });
 
-      const events = await firstValueFrom(
-        registry.run('async-agent', 'test input').pipe(take(1))
-      );
+      const events: AgentEvent[] = [];
+      // For async mode, run() returns immediately (doesn't await agent execution)
+      await registry.run('async-agent', 'test input', (e) => events.push(e));
 
-      // Should only get subagent.start event immediately
-      expect(events.type).toBe('subagent.start');
-      if (events.type === 'subagent.start') {
-        expect(events.subagentName).toBe('async-agent');
+      // First event should be subagent.start, emitted synchronously
+      expect(events.length).toBeGreaterThanOrEqual(1);
+      expect(events[0]!.type).toBe('subagent.start');
+      if (events[0]!.type === 'subagent.start') {
+        expect(events[0]!.subagentName).toBe('async-agent');
       }
     });
 
     it('should store handle in asyncRuns', async () => {
       const mockEvents: AgentEvent[] = [
-        { type: 'agent.complete', timestamp: Date.now(), sessionId: 'test', output: 'result', steps: 1 },
+        {
+          type: 'agent.complete',
+          timestamp: Date.now(),
+          sessionId: 'test',
+          output: 'result',
+          steps: 1,
+        },
       ];
 
-      const agent = createMockAgentLoop(mockEvents, 50);
+      const agent = createMockAgent({ events: mockEvents, delay: 50 });
 
       registry.register({
         name: 'async-agent',
@@ -133,32 +194,45 @@ describe('Compiled/Async Subagent', () => {
         asyncConfig: {},
       });
 
-      // Start async execution
-      const startEvent = await firstValueFrom(
-        registry.run('async-agent', 'input').pipe(take(1))
-      );
+      const events: AgentEvent[] = [];
+      await registry.run('async-agent', 'input', (e) => events.push(e));
 
       // Get session ID from start event
-      const sessionId = startEvent.type === 'subagent.start' ? startEvent.sessionId : '';
+      const startEvent = events[0]!;
+      const sessionId =
+        startEvent.type === 'subagent.start' ? startEvent.sessionId : '';
 
-      // Should have handle
+      // Should have handle (agent still running with 50ms delay)
       const handle = registry.getAsyncHandle(sessionId);
       expect(handle).toBeDefined();
       expect(handle?.sessionId).toBe(sessionId);
 
-      // Wait for completion
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Wait for completion (agent has 50ms delay, so 150ms is safe)
+      await new Promise((resolve) => setTimeout(resolve, 150));
     });
 
     it('should call onComplete callback', async () => {
       const mockEvents: AgentEvent[] = [
-        { type: 'agent.start', timestamp: Date.now(), sessionId: 'test', input: 'input', agentName: 'test', model: { provider: 'openai', model: 'gpt-4o' } },
-        { type: 'agent.complete', timestamp: Date.now(), sessionId: 'test', output: 'result', steps: 1 },
+        {
+          type: 'agent.start',
+          timestamp: Date.now(),
+          sessionId: 'test',
+          input: 'input',
+          agentName: 'test',
+          model: { provider: 'openai', model: 'gpt-4o' },
+        },
+        {
+          type: 'agent.complete',
+          timestamp: Date.now(),
+          sessionId: 'test',
+          output: 'result',
+          steps: 1,
+        },
         { type: 'done', timestamp: Date.now(), sessionId: 'test', reason: 'stop' },
       ];
 
       const onComplete = vi.fn();
-      const agent = createMockAgentLoop(mockEvents);
+      const agent = createMockAgent({ events: mockEvents });
 
       registry.register({
         name: 'async-agent',
@@ -168,13 +242,11 @@ describe('Compiled/Async Subagent', () => {
         asyncConfig: { onComplete },
       });
 
-      // Start async execution
-      await firstValueFrom(
-        registry.run('async-agent', 'input').pipe(take(1))
-      );
+      const events: AgentEvent[] = [];
+      await registry.run('async-agent', 'input', (e) => events.push(e));
 
-      // Wait for async completion
-      await new Promise(resolve => setTimeout(resolve, 200));
+      // Wait for async completion (agent has no delay, but .then() is microtask)
+      await new Promise((resolve) => setTimeout(resolve, 50));
 
       expect(onComplete).toHaveBeenCalled();
       const result = onComplete.mock.calls[0]![0];
@@ -183,9 +255,9 @@ describe('Compiled/Async Subagent', () => {
 
     it('should call onError callback on failure', async () => {
       const error = new Error('Test error');
-      const agent = createErrorAgentLoop(error);
-
       const onError = vi.fn();
+
+      const agent = createMockAgent({ error });
 
       registry.register({
         name: 'error-agent',
@@ -195,24 +267,28 @@ describe('Compiled/Async Subagent', () => {
         asyncConfig: { onError },
       });
 
-      // Start async execution
-      await firstValueFrom(
-        registry.run('error-agent', 'input').pipe(take(1))
-      );
+      const events: AgentEvent[] = [];
+      await registry.run('error-agent', 'input', (e) => events.push(e));
 
-      // Wait for completion
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Wait for async completion (error is synchronous reject, .then() rejection is microtask)
+      await new Promise((resolve) => setTimeout(resolve, 50));
 
-      // Note: onError might not be called because the agent emits subagent.error event
-      // but doesn't throw. The behavior depends on implementation.
+      // onError should have been called since agent.run() rejects
+      expect(onError).toHaveBeenCalled();
     });
 
     it('should support cancel', async () => {
       const mockEvents: AgentEvent[] = [
-        { type: 'agent.complete', timestamp: Date.now(), sessionId: 'test', output: 'result', steps: 1 },
+        {
+          type: 'agent.complete',
+          timestamp: Date.now(),
+          sessionId: 'test',
+          output: 'result',
+          steps: 1,
+        },
       ];
 
-      const agent = createMockAgentLoop(mockEvents, 200); // 200ms delay
+      const agent = createMockAgent({ events: mockEvents, delay: 200 });
 
       registry.register({
         name: 'async-agent',
@@ -222,18 +298,18 @@ describe('Compiled/Async Subagent', () => {
         asyncConfig: {},
       });
 
-      // Start async execution
-      const startEvent = await firstValueFrom(
-        registry.run('async-agent', 'input').pipe(take(1))
-      );
+      const events: AgentEvent[] = [];
+      await registry.run('async-agent', 'input', (e) => events.push(e));
 
-      const sessionId = startEvent.type === 'subagent.start' ? startEvent.sessionId : '';
+      const startEvent = events[0]!;
+      const sessionId =
+        startEvent.type === 'subagent.start' ? startEvent.sessionId : '';
       const handle = registry.getAsyncHandle(sessionId);
 
       // Cancel immediately
       await handle?.cancel();
 
-      // Handle should be removed
+      // Handle should be removed (getAsyncHandle auto-cleans non-running handles)
       expect(registry.getAsyncHandle(sessionId)).toBeUndefined();
     });
   });

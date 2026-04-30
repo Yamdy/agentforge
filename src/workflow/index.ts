@@ -19,8 +19,10 @@
  * }, agentContext);
  *
  * // Run workflow
- * workflow.run('AI trends').subscribe({
- *   next: (event) => console.log(event.type),
+ * const events: AgentEvent[] = [];
+ * const result = await workflow.run('AI trends', (event) => {
+ *   events.push(event);
+ *   console.log(event.type);
  * });
  * ```
  *
@@ -63,7 +65,12 @@ export { Workflow, createWorkflow } from './workflow.js';
 // Executor
 // ============================================================
 
-export { WorkflowExecutor, createPromptGenerator, createJsonPromptGenerator } from './executor.js';
+export {
+  WorkflowExecutor,
+  createPromptGenerator,
+  createJsonPromptGenerator,
+  type StepExecutionResult,
+} from './executor.js';
 
 // ============================================================
 // Pipeline
@@ -75,4 +82,5 @@ export {
   createPipeline,
   createSequentialPipeline,
   createParallelPipeline,
+  type PipelineResult,
 } from './pipeline.js';

@@ -1,6 +1,5 @@
-import { observableToSSE } from '../sse.js';
 import type { RequestContext } from '../types.js';
-import type { L1AgentConfig } from '@primo512109/agentforge';
+import type { L1AgentConfig, AgentEvent } from '@primo512109/agentforge';
 
 /**
  * POST /api/sessions — create a new session
@@ -168,9 +167,60 @@ export async function chatStream(ctx: RequestContext): Promise<Response> {
       hitlController: session.hitlController,
     });
 
-    // Run agent and stream events as SSE
-    const events$ = agent.run$(message);
-    return observableToSSE(events$, abortController.signal);
+    // Create SSE stream that runs agent and emits events in real-time
+    const stream = new ReadableStream({
+      start(controller) {
+        const cleanup = () => {
+          if (abortController.signal.aborted) return;
+          session.activeRun = null;
+        };
+        const onAbort = () => {
+          controller.close();
+          cleanup();
+        };
+        abortController.signal.addEventListener('abort', onAbort, { once: true });
+
+        // Start agent run — events flow through onEvent callback
+        agent.run(message, {
+          onEvent: (e: AgentEvent) => {
+            const data = JSON.stringify(e);
+            controller.enqueue(new TextEncoder().encode(`data: ${data}\n\n`));
+          },
+          onError: (e: AgentEvent) => {
+            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(e)}\n\n`));
+            controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
+            controller.close();
+            cleanup();
+          },
+        }).then(() => {
+          // Normal completion
+          controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
+          controller.close();
+          cleanup();
+        }).catch((err) => {
+          // Agent execution failed before any events
+          const errEvent = {
+            type: 'agent.error' as const,
+            timestamp: new Date().toISOString(),
+            error: err instanceof Error
+              ? { name: err.name, message: err.message }
+              : { name: 'UnknownError', message: String(err) },
+          };
+          controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(errEvent)}\n\n`));
+          controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
+          controller.close();
+          cleanup();
+        });
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+      },
+    });
   } catch (err) {
     // Agent creation or run failed
     session.activeRun = null;

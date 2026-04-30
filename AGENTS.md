@@ -2,8 +2,8 @@
 
 ## Project Overview
 
-Agent framework based on RxJS event stream + Zod type safety.  
-Core pattern: `Observable<AgentEvent>` stream with expand recursion.
+Agent framework based on event-driven architecture + Zod type safety.  
+Core pattern: imperative `while(true)` loop with `AgentEventEmitter`.
 
 ## Essential Commands
 
@@ -44,32 +44,31 @@ import { type AgentEvent, isTerminalEvent } from './events.js';
 
 ## Architecture Patterns
 
-### 1. Event Stream + Expand Recursion
+### 1. Imperative Loop + AgentEventEmitter
 ```
-run() → Observable<AgentEvent>
-   └── expand(step)        // Recursive step processing
-       └── step(event) → Observable<StepContext>
-           └── handlers return events + state
+run() → Promise<string>
+   └── while(true) loop     // Imperative step processing
+       └── await llm.chat() → await tools.execute() → checkpoint
+           └── AgentEventEmitter.emit() for observability
 ```
 
-**Key**: `StepContext = { event, state }` - state is passed through, never mutated.
+**Key**: `AgentLoopState` is mutable, passed by reference through the loop.
 
-### 2. Errors-as-Events (Never RxJS throws)
+### 2. Errors-as-Events (Never throw through event channel)
 ```typescript
 // LLM/tool errors become events:
-catchError(error => from([
-  { event: { type: 'agent.error', error: serializeError(error) } },
-  { event: { type: 'done', reason: 'error' } },
-]))
+catch (error) {
+  emitter.emit({ type: 'agent.error', error: serializeError(error) });
+  emitter.emit({ type: 'done', reason: 'error' });
+}
 ```
 
-### 3. Async RxJS Pattern (CRITICAL - Avoids Event Loss)
+### 3. Hook System (Replaces RxJS operators)
 ```typescript
-// WRONG: Direct Promise in expand causes duplication
-expand(() => promise)
-
-// CORRECT: Wrap Promise properly
-from(promise).pipe(mergeMap(arr => from(arr)))
+// RequestHook — modify LLM messages before chat
+// ToolHook — check permissions before tool execution
+// LifecycleHook — callbacks at key lifecycle points
+// eventSubscriptions — observe via AgentEventEmitter.on()
 ```
 
 ### 4. Terminal Events Return EMPTY
@@ -91,7 +90,8 @@ if (isTerminalEvent(event)) return EMPTY; // 'done', 'agent.error', 'cancel'
 | `src/core/interfaces.ts` | DI interfaces (LLMAdapter, ToolRegistry, HITLController, etc.) |
 | `src/loop/agent-loop.ts` | Core agent loop (~1080 lines, expand recursion) |
 | `src/contracts/` | Tier 1 validation with graceful degradation |
-| `src/operators/` | Custom RxJS operators (filterEventType, takeUntilTerminal, etc.) |
+| `src/core/hooks.ts` | HookRegistry (RequestHook/ToolHook/LifecycleHook) |
+| `src/core/state.ts` | AgentLoopState (imperative loop state) |
 | `src/core/state-machine.ts` | 6-state lifecycle (pending→running→paused/completed/error/cancelled) |
 | `src/l1/` | **L1 API** - Zero-code config layer (JSON/JSONC → Agent) |
 | `src/token-counter.ts` | **Token counting** - js-tiktoken BPE + CJK heuristic fallback |
@@ -135,7 +135,7 @@ hitl.ask → Observable subscription (NEVER-blocking until answer arrives)
 hitl.answer → EMPTY (pure observability)
 ```
 
-**Note**: HITL uses Observable-based async pattern. The `hitl.ask` case subscribes to `ctx.hitl.ask()` which pauses the expand recursion. External UI calls `answer()` to resume.
+**Note**: HITL uses callback-based async pattern. The loop awaits `ctx.hitl.ask()` which returns a Promise. External UI calls `answer()` to resolve.
 
 ## State Machine
 
@@ -163,10 +163,10 @@ completed/cancelled/error → [] (terminal, irreversible)
 1. **Array access**: Use `arr[0]!` or `arr[0] ?? default` (noUncheckedIndexedAccess)
 2. **Optional fields**: `foo?: string` means omit or string, NOT `string | undefined`
 3. **Checkpoint saves**: Fire-and-forget, never blocks event flow
-4. **HITL**: Uses Observable-based async pattern. `ctx.hitl.ask()` returns `Observable<string>` that pauses the expand recursion until answer arrives. UI subscribes to `onAsk()` and calls `answer()` when human responds. Uses `observeOn(asyncScheduler)` to avoid synchronous deadlocks.
-5. **RxJS imports**: Split `'rxjs'` (Observable, of, from, EMPTY, Subject, NEVER, asyncScheduler) and `'rxjs/operators'` (expand, map, observeOn, etc.)
-6. **Errors-as-events**: ALL errors must become `agent.error` + `done` events. Never use `subscriber.error()` or RxJS error channel. Even re-entry guard uses this pattern.
-7. **Pause**: Uses `onResume()` Observable — functionally equivalent to `NEVER` + external resume signal, avoids memory leaks (no bufferToggle).
+4. **HITL**: Uses callback-based async pattern. `ctx.hitl.ask()` returns Promise. UI subscribes to `onAsk()` and calls `answer()` when human responds.
+5. **AgentEventEmitter**: 50-line implementation replacing rxjs. `on()`/`onAny()`/`emit()`. All imports use `.js` extension (verbatimModuleSyntax).
+6. **Errors-as-events**: ALL errors must become `agent.error` + `done` events. Never use throw/exceptions for expected errors. Even re-entry guard uses this pattern.
+7. **Pause**: Uses Promise-based `onResume()` — returns cleanup function, avoids memory leaks.
 
 ## Documentation
 
@@ -187,7 +187,7 @@ Requires Node.js >= 18.0.0
 
 ### Completed Previously
 
-- **HITL Observable Pattern**: Now uses `Observable<string>` with `observeOn(asyncScheduler)` to enable true stream-based pause/resume. UI subscribes to `onAsk()`, answers via `answer()`.
+- **Event-Driven Architecture**: Command imperative loop with `AgentEventEmitter` instead of RxJS expand recursion.
 - **Husky + lint-staged**: Pre-commit hooks for code quality (see Git Hooks section).
 
 ## Git Hooks

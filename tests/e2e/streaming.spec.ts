@@ -17,19 +17,67 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import {
-  Observable,
-  of,
-  from,
-  Subject,
-  firstValueFrom,
-  toArray,
-  takeUntil,
-  take,
-} from 'rxjs';
+// No rxjs imports - using local Subscribable helpers
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { streamText, generateText, tool } from 'ai';
 import { z } from 'zod';
+
+// ============================================================
+// Lightweight Subscribable factories (rx replacement)
+// ============================================================
+
+interface Subscribable<T> {
+  subscribe(observer: { next(v: T): void; error?(e: unknown): void; complete?(): void }): { unsubscribe(): void };
+}
+
+function createSubscribable<T>(fn: (observer: { next(v: T): void; error(e: unknown): void; complete(): void }) => void | (() => void)): Subscribable<T> {
+  let cleanup: (() => void) | void;
+  let subscribed = false;
+  return {
+    subscribe(observer) {
+      if (subscribed) return { unsubscribe() {} };
+      subscribed = true;
+      try {
+        cleanup = fn({ next: v => observer.next(v), error: e => observer.error?.(e), complete: () => observer.complete?.() });
+      } catch (e) {
+        observer.error?.(e);
+      }
+      return { unsubscribe() { cleanup?.(); } };
+    }
+  };
+}
+
+function createSubject<T>() {
+  let subscribers: Array<{ next(v: T): void; error?(e: unknown): void; complete?(): void }> = [];
+  let closed = false;
+  return {
+    subscribe(observer: { next(v: T): void; error?(e: unknown): void; complete?(): void }) {
+      if (closed) { observer.complete?.(); return { unsubscribe() {} }; }
+      subscribers.push(observer);
+      return { unsubscribe() { subscribers = subscribers.filter(s => s !== observer); } };
+    },
+    next(v: T) { for (const s of subscribers) s.next(v); },
+    error(e: unknown) { for (const s of subscribers) s.error?.(e); subscribers = []; closed = true; },
+    complete() { for (const s of subscribers) s.complete?.(); subscribers = []; closed = true; },
+    get observed() { return subscribers.length > 0; },
+  };
+}
+
+/** Collect all events from a subscribable until completion or cancel signal */
+async function collectUntil<T>(src: Subscribable<T>, cancel$?: { subscribe: (obs: any) => any }): Promise<T[]> {
+  return new Promise((resolve) => {
+    const events: T[] = [];
+    let cancelUnsub: (() => void) | undefined;
+    const sub = src.subscribe({
+      next: (v: T) => events.push(v),
+      error: () => sub?.unsubscribe() || resolve(events),
+      complete: () => { cancelUnsub?.(); resolve(events); },
+    });
+    if (cancel$) {
+      cancelUnsub = cancel$.subscribe({ next: () => { sub?.unsubscribe(); resolve(events); } });
+    }
+  });
+}
 
 import {
   createAgentLoop,
@@ -316,6 +364,14 @@ function createTestConfig(overrides: Partial<AgentLoopConfig> = {}): AgentLoopCo
   };
 }
 
+async function runAndCollect(agent: any, input: string): Promise<any[]> {
+  const events: any[] = [];
+  const unsub = agent.onAny((e: any) => events.push(e));
+  try { await agent.run(input); } catch {}
+  unsub();
+  return events;
+}
+
 // ============================================================
 // E2E Tests
 // ============================================================
@@ -381,9 +437,7 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(
-        agent.run$('Say hello in exactly 5 words.').pipe(toArray())
-      );
+      const events = await runAndCollect(agent, 'Say hello in exactly 5 words.');
 
       const streamTextEvents = events.filter(e => e.type === 'llm.stream.text');
       expect(streamTextEvents.length).toBeGreaterThanOrEqual(3);
@@ -401,9 +455,7 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(
-        agent.run$('Say hi.').pipe(toArray())
-      );
+      const events = await runAndCollect(agent, 'Say hi.');
 
       const types = events.map(e => e.type);
       const startIdx = types.indexOf('llm.stream.start');
@@ -419,9 +471,7 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(
-        agent.run$('Say bye.').pipe(toArray())
-      );
+      const events = await runAndCollect(agent, 'Say bye.');
 
       const types = events.map(e => e.type);
       const lastTextIdx = types.lastIndexOf('llm.stream.text');
@@ -436,9 +486,7 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(
-        agent.run$('Count from 1 to 5, each number on a new line.').pipe(toArray())
-      );
+      const events = await runAndCollect(agent, 'Count from 1 to 5, each number on a new line.');
 
       const streamTextEvents = events.filter(e => e.type === 'llm.stream.text');
       const assembledContent = streamTextEvents
@@ -463,9 +511,7 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(
-        agent.run$('What is the weather in Beijing?').pipe(toArray())
-      );
+      const events = await runAndCollect(agent, 'What is the weather in Beijing?');
 
       const toolCallEvents = events.filter(e => e.type === 'llm.stream.tool_call');
 
@@ -485,9 +531,7 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(
-        agent.run$('Calculate 25 * 4 + 10').pipe(toArray())
-      );
+      const events = await runAndCollect(agent, 'Calculate 25 * 4 + 10');
 
       // If LLM makes tool call, verify tool.result is present
       const toolResultEvent = events.find(e => e.type === 'tool.result');
@@ -506,9 +550,7 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
       const config = createTestConfig({ maxSteps: 3 });
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(
-        agent.run$('Get weather for Shanghai and tell me if it is good for outdoor activities.').pipe(toArray())
-      );
+      const events = await runAndCollect(agent, 'Get weather for Shanghai and tell me if it is good for outdoor activities.');
 
       const toolExecuteEvents = events.filter(e => e.type === 'tool.execute');
       const toolResultEvents = events.filter(e => e.type === 'tool.result');
@@ -531,14 +573,9 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
-      const cancel$ = new Subject<void>();
+      const cancel$ = createSubject<void>();
 
-      const eventsPromise = firstValueFrom(
-        agent.run$('Write a long story about a cat.').pipe(
-          takeUntil(cancel$),
-          toArray()
-        )
-      );
+      const eventsPromise = collectUntil(agent.run$('Write a long story about a cat.'), cancel$);
 
       // Cancel after 500ms
       setTimeout(() => cancel$.next(), 500);
@@ -562,20 +599,17 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
       const agent = createAgentLoop(ctx, config);
 
       // First subscription - cancelled
-      const cancel$ = new Subject<void>();
-      const firstRun$ = agent.run$('Say hello.').pipe(takeUntil(cancel$));
+      const cancel$ = createSubject<void>();
 
       // Start and immediately cancel
       setTimeout(() => cancel$.next(), 100);
-      await firstValueFrom(firstRun$.pipe(toArray())).catch(() => {});
+      await collectUntil(agent.run$('Say hello.'), cancel$).catch(() => {});
 
       // Wait a bit for cleanup
       await new Promise(resolve => setTimeout(resolve, 200));
 
       // Second subscription should work
-      const events = await firstValueFrom(
-        agent.run$('Say goodbye.').pipe(toArray())
-      );
+      const events = await runAndCollect(agent, 'Say goodbye.');
 
       expect(events.find(e => e.type === 'agent.complete')).toBeDefined();
     }, 30000);
@@ -591,9 +625,7 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(
-        agent.run$('Say "test".').pipe(toArray())
-      );
+      const events = await runAndCollect(agent, 'Say "test".');
 
       const types = events.map(e => e.type);
 
@@ -615,9 +647,7 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(
-        agent.run$('Count from 1 to 3.').pipe(toArray())
-      );
+      const events = await runAndCollect(agent, 'Count from 1 to 3.');
 
       const streamEvents = events.filter(e =>
         e.type.startsWith('llm.stream.')
@@ -636,9 +666,7 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(
-        agent.run$('Hello.').pipe(toArray())
-      );
+      const events = await runAndCollect(agent, 'Hello.');
 
       const types = events.map(e => e.type);
       const stepIdx = types.indexOf('agent.step');
@@ -658,21 +686,20 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
         name: 'error-llm',
         provider: 'test',
         chat: async () => ({ content: 'test', finishReason: 'stop' }),
-        stream: () => new Observable(subscriber => {
-          subscriber.next({ text: 'Starting...' });
-          setTimeout(() => {
-            subscriber.error(new Error('Connection lost'));
-          }, 50);
-        }),
+          stream: () => createSubscribable<LLMChunk>(observer => {
+            observer.next({ text: 'Starting...' });
+            const t = setTimeout(() => {
+              observer.error(new Error('Connection lost'));
+            }, 50);
+            return () => clearTimeout(t);
+          }),
       };
 
       const ctx = createTestContext(errorLlm, toolRegistry);
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(
-        agent.run$('Hello.').pipe(toArray())
-      );
+      const events = await runAndCollect(agent, 'Hello.');
 
       // Should have some text before error
       expect(events.find(e => e.type === 'llm.stream.text')).toBeDefined();
@@ -693,8 +720,8 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
         name: 'timeout-llm',
         provider: 'test',
         chat: async () => ({ content: 'test', finishReason: 'stop' }),
-        stream: () => new Observable(subscriber => {
-          subscriber.next({ text: 'Starting...' });
+        stream: () => createSubscribable<LLMChunk>(observer => {
+          observer.next({ text: 'Starting...' });
           // Never completes - simulates timeout
           // The test timeout will catch this
         }),
@@ -706,16 +733,10 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
       const agent = createAgentLoop(ctx, config);
 
       // Use a timeout to ensure test doesn't hang
-      const eventsPromise = firstValueFrom(
-        agent.run$('Hello.').pipe(
-          takeUntil(
-            new Observable<void>(sub => {
-              setTimeout(() => { sub.next(); sub.complete(); }, 2000);
-            })
-          ),
-          toArray()
-        )
-      );
+      const timeoutCancel$ = createSubject<void>();
+      setTimeout(() => { timeoutCancel$.next(); }, 2000);
+      
+      const eventsPromise = collectUntil(agent.run$('Hello.'), timeoutCancel$);
 
       const events = await eventsPromise;
 
@@ -728,9 +749,9 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
         name: 'empty-llm',
         provider: 'test',
         chat: async () => ({ content: '', finishReason: 'stop' }),
-        stream: () => new Observable(subscriber => {
+        stream: () => createSubscribable<LLMChunk>(observer => {
           // Immediately complete with no chunks
-          subscriber.complete();
+          observer.complete();
         }),
       };
 
@@ -738,9 +759,7 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(
-        agent.run$('Hello.').pipe(toArray())
-      );
+      const events = await runAndCollect(agent, 'Hello.');
 
       // Should still have start and end events
       expect(events.find(e => e.type === 'llm.stream.start')).toBeDefined();
@@ -759,9 +778,7 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(
-        agent.run$('Tell me a short joke.').pipe(toArray())
-      );
+      const events = await runAndCollect(agent, 'Tell me a short joke.');
 
       const types = events.map(e => e.type);
 
@@ -783,9 +800,7 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
-      const events = await firstValueFrom(
-        agent.run$('Hi.').pipe(toArray())
-      );
+      const events = await runAndCollect(agent, 'Hi.');
 
       const responseEvent = events.find(e => e.type === 'llm.response');
       expect(responseEvent).toBeDefined();

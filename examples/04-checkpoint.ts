@@ -10,8 +10,6 @@
  * 3. Recovery continues from checkpoint boundary
  */
 
-import { Observable, of, from, EMPTY } from 'rxjs';
-import { tap, map, takeUntil, toArray } from 'rxjs/operators';
 import {
   type AgentEvent,
   type Checkpoint,
@@ -23,7 +21,6 @@ import {
   createRecoveryCheckpoint,
   getRecoveryInfo,
 } from '../src/core/index.js';
-import { checkpoint } from '../src/operators/index.js';
 
 // ============================================================
 // InMemoryCheckpointStorage Implementation
@@ -99,7 +96,7 @@ class InMemoryCheckpointStorage implements CheckpointStorage {
  *
  * 展示如何创建检查点存储，并在事件流中使用。
  */
-function example1_basicCheckpoint(): void {
+async function example1_basicCheckpoint(): Promise<void> {
   console.log('\n=== 示例 1: 基础检查点配置 ===\n');
 
   // 创建内存检查点存储
@@ -131,54 +128,57 @@ function example1_basicCheckpoint(): void {
     tokens: { prompt: 0, completion: 0 },
   };
 
-  const stateProvider = (): AgentState => currentState;
+  // 遍历事件流并保存检查点
+  for (const event of mockEvents) {
+    console.log(`[事件] ${event.type}`);
 
-  // 创建带检查点的事件流
-  from(mockEvents).pipe(
     // 在特定事件时保存检查点
-    checkpoint(
-      storage,
-      sessionId,
-      // 只在 LLM 响应和工具结果时保存检查点
-      (event) => event.type === 'llm.response' || event.type === 'tool.result',
-      // 状态提供者 - 捕获当前状态
-      stateProvider
-    ),
+    if (event.type === 'llm.response' || event.type === 'tool.result') {
+      // 构建检查点数据
+      const checkpoint: Checkpoint = {
+        id: `cp-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        sessionId,
+        timestamp: Date.now(),
+        position: event.type === 'llm.response' ? 'after_llm' : 'after_tool',
+        state: { ...currentState },
+        pendingA2A: [],
+        executedTools: [],
+        recoveryMetadata: {},
+        compactionHistory: [],
+      };
+      await storage.save(checkpoint);
+    }
+
     // 更新模拟状态
-    tap((event) => {
-      if (event.type === 'llm.response') {
-        currentState = {
-          ...currentState,
-          messages: [...currentState.messages, { role: 'assistant', content: event.content }],
-          step: currentState.step + 1,
-        };
-      }
-      if (event.type === 'tool.result') {
-        currentState = {
-          ...currentState,
-          messages: [
-            ...currentState.messages,
-            { role: 'tool', content: event.result, toolCallId: event.toolCallId },
-          ],
-        };
-      }
-    }),
-    takeUntil(from(mockEvents).pipe(
-      map(e => e.type === 'done')
-    ))
-  ).subscribe({
-    next: (event) => console.log(`[事件] ${event.type}`),
-    complete: async () => {
-      console.log('\n流完成，检查已保存的检查点...');
-      const saved = await storage.list(sessionId);
-      console.log(`共保存 ${saved.length} 个检查点:`);
-      saved.forEach(cp => {
-        console.log(`  - ID: ${cp.id}`);
-        console.log(`    位置: ${cp.position}`);
-        console.log(`    时间: ${new Date(cp.timestamp).toISOString()}`);
-        console.log(`    步数: ${cp.state.step}`);
-      });
-    },
+    if (event.type === 'llm.response') {
+      currentState = {
+        ...currentState,
+        messages: [...currentState.messages, { role: 'assistant', content: event.content }],
+        step: currentState.step + 1,
+      };
+    }
+    if (event.type === 'tool.result') {
+      currentState = {
+        ...currentState,
+        messages: [
+          ...currentState.messages,
+          { role: 'tool', content: event.result, toolCallId: event.toolCallId },
+        ],
+      };
+    }
+
+    // 遇到 done 事件则停止
+    if (event.type === 'done') break;
+  }
+
+  console.log('\n事件处理完成，检查已保存的检查点...');
+  const saved = await storage.list(sessionId);
+  console.log(`共保存 ${saved.length} 个检查点:`);
+  saved.forEach(cp => {
+    console.log(`  - ID: ${cp.id}`);
+    console.log(`    位置: ${cp.position}`);
+    console.log(`    时间: ${new Date(cp.timestamp).toISOString()}`);
+    console.log(`    步数: ${cp.state.step}`);
   });
 }
 
@@ -362,7 +362,7 @@ async function main(): Promise<void> {
   console.log('AgentForge 检查点和恢复示例');
   console.log('========================================');
 
-  example1_basicCheckpoint();
+  await example1_basicCheckpoint();
   example2_serialization();
   await example3_recovery();
   example4_positions();

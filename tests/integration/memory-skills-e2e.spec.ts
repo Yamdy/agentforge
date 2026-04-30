@@ -10,7 +10,7 @@ import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { writeFile, mkdir, rm } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { of, type Observable } from 'rxjs';
+// No rxjs imports needed
 import type { AgentEvent } from '../../src/core/index.js';
 
 // ============================================================
@@ -19,10 +19,10 @@ import type { AgentEvent } from '../../src/core/index.js';
 
 vi.mock('../../src/loop/index.js', () => ({
   createAgentLoop: () => ({
-    run: (_input: string) =>
-      of({ type: 'done', reason: 'completed', timestamp: Date.now(), sessionId: 'test' } as AgentEvent),
+    run: async (_input: string) =>
+      ({ type: 'done', reason: 'completed', timestamp: Date.now(), sessionId: 'test' } as AgentEvent),
     getCurrentState: () => null,
-    destroy$: of(void 0),
+    destroy$: { subscribe: (obs: any) => { obs.next(); obs.complete(); return { unsubscribe() {} }; } },
   }),
 }));
 
@@ -31,7 +31,7 @@ vi.mock('../../src/adapters/index.js', () => ({
     name: 'mock',
     provider: 'mock',
     chat: async () => ({ content: 'ok', finishReason: 'stop' }),
-    stream: () => of({ type: 'text', delta: 'ok' }),
+    stream: async function* () { yield { type: 'text', delta: 'ok' } as any; },
   }),
   parseModelSpec: (spec: string) => {
     const parts = spec.split('/');
@@ -40,11 +40,11 @@ vi.mock('../../src/adapters/index.js', () => ({
 }));
 
 vi.mock('../../src/operators/index.js', () => ({
-  debugPreset: () => (source: Observable<AgentEvent>) => source,
-  testPreset: () => (source: Observable<AgentEvent>) => source,
-  productionPreset: () => (source: Observable<AgentEvent>) => source,
-  timeoutOnEventType: () => (source: Observable<AgentEvent>) => source,
-  retryOnEventType: () => (source: Observable<AgentEvent>) => source,
+  debugPreset: () => (source: any) => source,
+  testPreset: () => (source: any) => source,
+  productionPreset: () => (source: any) => source,
+  timeoutOnEventType: () => (source: any) => source,
+  retryOnEventType: () => (source: any) => source,
 }));
 
 // Import AFTER mocks

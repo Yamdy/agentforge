@@ -1,5 +1,8 @@
 import type { AgentEvent } from '@primo512109/agentforge';
-import { Observable } from 'rxjs';
+
+interface Subscribable<T> {
+  subscribe(observer: { next(v: T): void; error?(e: unknown): void; complete?(): void }): { unsubscribe(): void };
+}
 
 const encoder = new TextEncoder();
 
@@ -20,7 +23,7 @@ const encoder = new TextEncoder();
  * which are mutually exclusive with this error handler.
  */
 export function observableToSSE(
-  events$: Observable<AgentEvent>,
+  events$: Subscribable<AgentEvent>,
   signal?: AbortSignal,
 ): Response {
   const stream = new ReadableStream({

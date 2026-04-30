@@ -6,7 +6,6 @@
  * 运行方式: npx tsx examples/10-observability.ts
  */
 
-import { Observable, from, interval, of, Subscription, take, map, tap, toArray, finalize, takeUntil } from 'rxjs';
 import { ResourceMonitor, type ResourceMetrics, type ResourcePressure } from '../src/observability/index.js';
 import type { AgentEvent } from '../src/core/events.js';
 
@@ -17,9 +16,9 @@ import type { AgentEvent } from '../src/core/events.js';
 const sessionId = 'monitor-session-001';
 const baseTimestamp = Date.now();
 
-/** 创建模拟 Agent 事件流 */
-function createMockAgentEventStream(): Observable<AgentEvent> {
-  const events: AgentEvent[] = [
+/** 创建模拟 Agent 事件流 (返回数组) */
+function createMockAgentEvents(): AgentEvent[] {
+  return [
     {
       type: 'agent.start',
       timestamp: baseTimestamp,
@@ -65,8 +64,6 @@ function createMockAgentEventStream(): Observable<AgentEvent> {
       reason: 'stop',
     },
   ];
-
-  return from(events);
 }
 
 // ============================================================
@@ -141,85 +138,65 @@ function example2_memoryPressureDetection(): void {
 }
 
 // ============================================================
-// 示例 3: 持续监控流
+// 示例 3: 持续监控 (callback 模式)
 // ============================================================
 
 function example3_continuousMonitoring(): void {
-  console.log('\n=== 示例 3: 持续监控流 ===\n');
+  console.log('\n=== 示例 3: 持续监控 (callback 模式) ===\n');
 
   const monitor = new ResourceMonitor({
     intervalMs: 200, // 每 200ms 采集一次
   });
 
-  // 订阅指标流，只取前 5 个
-  const subscription = monitor.metrics$
-    .pipe(take(5))
-    .subscribe({
-      next: (metrics: ResourceMetrics) => {
-        const pressure = monitor.getPressure(metrics);
-        const usage = (monitor.getMemoryUsage(metrics) * 100).toFixed(1);
-        console.log(`[${new Date(metrics.timestamp).toLocaleTimeString()}] 内存: ${usage}% | 压力: ${pressure}`);
-      },
-      complete: () => {
-        console.log('监控流完成（已采集 5 次样本）');
-      },
-    });
+  let sampleCount = 0;
+  const maxSamples = 5;
 
-  // 注意：由于 interval 是异步的，这个示例在 main() 中需要等待
+  // 使用 setInterval 进行持续监控
+  const intervalId = setInterval(() => {
+    sampleCount++;
+    const metrics = monitor.collect();
+    const pressure = monitor.getPressure(metrics);
+    const usage = (monitor.getMemoryUsage(metrics) * 100).toFixed(1);
+    console.log(`[${new Date(metrics.timestamp).toLocaleTimeString()}] 内存: ${usage}% | 压力: ${pressure}`);
+
+    if (sampleCount >= maxSamples) {
+      clearInterval(intervalId);
+      console.log('监控完成（已采集 5 次样本）');
+    }
+  }, 200);
 }
 
 // ============================================================
 // 示例 4: 与 Agent 事件流集成
 // ============================================================
 
-/**
- * 创建一个带资源监控的操作符
- */
-function withResourceMonitoring(
-  monitor: ResourceMonitor
-): (source: Observable<AgentEvent>) => Observable<{ event: AgentEvent; metrics: ResourceMetrics }> {
-  return (source: Observable<AgentEvent>) => {
-    return new Observable(subscriber => {
-      return source.subscribe({
-        next: (event: AgentEvent) => {
-          const metrics = monitor.collect();
-          subscriber.next({ event, metrics });
-        },
-        error: err => subscriber.error(err),
-        complete: () => subscriber.complete(),
-      });
-    });
-  };
-}
-
 function example4_agentIntegration(): void {
   console.log('\n=== 示例 4: 与 Agent 事件流集成 ===\n');
 
   const monitor = new ResourceMonitor();
+  const events = createMockAgentEvents();
+  const results: Array<{ event: AgentEvent; metrics: ResourceMetrics }> = [];
 
-  createMockAgentEventStream()
-    .pipe(
-      withResourceMonitoring(monitor),
-      toArray()
-    )
-    .subscribe({
-      next: (results: Array<{ event: AgentEvent; metrics: ResourceMetrics }>) => {
-        console.log(`处理了 ${results.length} 个事件及其资源指标`);
+  // 遍历事件并收集指标
+  for (const event of events) {
+    const metrics = monitor.collect();
+    results.push({ event, metrics });
+  }
 
-        // 分析资源使用趋势
-        const memoryUsages = results.map(r => r.metrics.memory.heapUsed);
-        const minMem = Math.min(...memoryUsages);
-        const maxMem = Math.max(...memoryUsages);
+  console.log(`处理了 ${results.length} 个事件及其资源指标`);
 
-        console.log(`内存使用范围: ${(minMem / 1024 / 1024).toFixed(2)} MB - ${(maxMem / 1024 / 1024).toFixed(2)} MB`);
+  // 分析资源使用趋势
+  const memoryUsages = results.map(r => r.metrics.memory.heapUsed);
+  const minMem = Math.min(...memoryUsages);
+  const maxMem = Math.max(...memoryUsages);
 
-        // 打印每个事件的压力状态
-        results.forEach((r, i) => {
-          const pressure = monitor.getPressure(r.metrics);
-          console.log(`  事件 ${i + 1}: ${r.event.type} -> 压力: ${pressure}`);
-        });
-      },
-    });
+  console.log(`内存使用范围: ${(minMem / 1024 / 1024).toFixed(2)} MB - ${(maxMem / 1024 / 1024).toFixed(2)} MB`);
+
+  // 打印每个事件的压力状态
+  results.forEach((r, i) => {
+    const pressure = monitor.getPressure(r.metrics);
+    console.log(`  事件 ${i + 1}: ${r.event.type} -> 压力: ${pressure}`);
+  });
 }
 
 // ============================================================
@@ -455,12 +432,12 @@ interface Alert {
 }
 
 /**
- * 资源预警系统
+ * 资源预警系统 (使用 setInterval 替代 Observable)
  */
 class ResourceAlertSystem {
   private readonly monitor: ResourceMonitor;
   private readonly alerts: Alert[] = [];
-  private subscription: Subscription | undefined;
+  private intervalId: ReturnType<typeof setInterval> | undefined;
 
   constructor(
     options: {
@@ -476,30 +453,31 @@ class ResourceAlertSystem {
 
   /** 启动监控 */
   start(intervalMs: number = 1000): void {
-    this.subscription = this.monitor.metrics$.subscribe({
-      next: (metrics: ResourceMetrics) => {
-        const pressure = this.monitor.getPressure(metrics);
+    this.intervalId = setInterval(() => {
+      const metrics = this.monitor.collect();
+      const pressure = this.monitor.getPressure(metrics);
 
-        if (pressure !== 'normal') {
-          const alert: Alert = {
-            timestamp: metrics.timestamp,
-            pressure,
-            message: pressure === 'warning'
-              ? '内存使用接近阈值'
-              : '内存压力过高！',
-            metrics,
-          };
-          this.alerts.push(alert);
-          this.onAlert?.(alert);
-        }
-      },
-    });
+      if (pressure !== 'normal') {
+        const alert: Alert = {
+          timestamp: metrics.timestamp,
+          pressure,
+          message: pressure === 'warning'
+            ? '内存使用接近阈值'
+            : '内存压力过高！',
+          metrics,
+        };
+        this.alerts.push(alert);
+        this.onAlert?.(alert);
+      }
+    }, intervalMs);
   }
 
   /** 停止监控 */
   stop(): void {
-    this.subscription?.unsubscribe();
-    this.subscription = undefined;
+    if (this.intervalId !== undefined) {
+      clearInterval(this.intervalId);
+      this.intervalId = undefined;
+    }
   }
 
   /** 获取所有告警 */

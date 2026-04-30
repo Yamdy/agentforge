@@ -23,7 +23,6 @@
   },
   "dependencies": {
     "@primo512109/agentforge": "workspace:*",
-    "rxjs": "^7.0.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {

@@ -7,15 +7,6 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
-  Observable,
-  of,
-  from,
-  Subject,
-  EMPTY,
-  firstValueFrom,
-  toArray,
-} from 'rxjs';
-import {
   SubagentRegistry,
   createSubagentRegistry,
 } from '../../src/subagent/index.js';
@@ -26,6 +17,21 @@ import type {
 import type { AgentEvent } from '../../src/core/events.js';
 
 // ============================================================
+// Helper: collect events from async run
+// ============================================================
+
+async function runAndCollect(
+  registry: SubagentRegistry,
+  name: string,
+  input: string,
+  options?: { sessionMessages?: Array<{ role: string; content: string; name?: string }> }
+): Promise<AgentEvent[]> {
+  const events: AgentEvent[] = [];
+  await registry.run(name, input, (e) => events.push(e), options as any);
+  return events;
+}
+
+// ============================================================
 // Mock AgentLoop
 // ============================================================
 
@@ -33,40 +39,48 @@ interface MockAgentBehavior {
   events?: AgentEvent[];
   error?: Error;
   delay?: number;
+  output?: string;
 }
 
 class MockAgentLoop implements AgentLoop {
   private behavior: MockAgentBehavior = {};
   private runCallCount = 0;
   private runInputs: string[] = [];
-  readonly destroy$: Observable<void> = EMPTY;
+  private listeners: Array<(event: AgentEvent) => void> = [];
 
   setBehavior(behavior: MockAgentBehavior): void {
     this.behavior = behavior;
   }
 
-  run(input: string): Observable<AgentEvent> {
+  async run(input: string): Promise<string> {
     this.runCallCount++;
     this.runInputs.push(input);
 
     if (this.behavior.error) {
-      return new Observable(subscriber => {
-        subscriber.error(this.behavior.error);
-      });
+      throw this.behavior.error;
     }
 
     if (this.behavior.events) {
-      return from(this.behavior.events);
+      for (const event of this.behavior.events) {
+        for (const l of this.listeners) {
+          try { l(event); } catch { /* isolate */ }
+        }
+      }
     }
 
-    // Default: emit a simple agent.complete event
-    return of({
-      type: 'agent.complete',
-      timestamp: Date.now(),
-      sessionId: 'mock-session',
-      output: `Mock output for: ${input}`,
-      steps: 1,
-    } as AgentEvent);
+    return this.behavior.output ?? 'mock output';
+  }
+
+  on(_type: string, _listener: (event: AgentEvent) => void): () => void {
+    return () => {};
+  }
+
+  onAny(listener: (event: AgentEvent) => void): () => void {
+    this.listeners.push(listener);
+    return () => {
+      const idx = this.listeners.indexOf(listener);
+      if (idx >= 0) this.listeners.splice(idx, 1);
+    };
   }
 
   getCallCount(): number {
@@ -78,21 +92,22 @@ class MockAgentLoop implements AgentLoop {
   }
 
   reset(): void {
-    this.behavior = {};
     this.runCallCount = 0;
     this.runInputs = [];
   }
 }
 
+import type { AgentMode } from '../../src/core/interfaces.js';
+
 // ============================================================
-// Test Helper: Create Mock SubagentConfig
+// Helper: create mock subagent config
 // ============================================================
 
 function createMockSubagentConfig(
   name: string,
   options?: {
     description?: string;
-    mode?: 'primary' | 'subagent' | 'all';
+    mode?: AgentMode;
     agent?: AgentLoop;
   }
 ): SubagentConfig {
@@ -138,9 +153,7 @@ describe('SubagentRegistry', () => {
       expect(registry.has('research-agent')).toBe(true);
     });
 
-    it('should allow overwriting on duplicate registration (with warning)', () => {
-      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
+    it('should allow overwriting on duplicate registration (silent overwrite)', () => {
       const config1 = createMockSubagentConfig('research-agent', {
         description: 'Original description',
         agent: mockAgent,
@@ -155,18 +168,12 @@ describe('SubagentRegistry', () => {
       registry.register(config1);
       expect(registry.has('research-agent')).toBe(true);
 
-      // Register same name again - should overwrite with warning
+      // Register same name again — silently overwrites (Map.set behavior)
       registry.register(config2);
-
-      expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('research-agent')
-      );
 
       // Should have the updated config
       const info = registry.get('research-agent');
       expect(info?.description).toBe('Updated description');
-
-      warnSpy.mockRestore();
     });
 
     it('should register subagent with mode', () => {
@@ -353,9 +360,7 @@ describe('SubagentRegistry', () => {
         agent: mockAgent,
       }));
 
-      const events = await firstValueFrom(
-        registry.run('worker-agent', 'Do something').pipe(toArray())
-      );
+      const events = await runAndCollect(registry, 'worker-agent', 'Do something');
 
       // Should emit subagent.start and subagent.complete
       expect(events.find(e => e.type === 'subagent.start')).toBeDefined();
@@ -367,9 +372,7 @@ describe('SubagentRegistry', () => {
     });
 
     it('should emit subagent.error for unregistered subagent', async () => {
-      const events = await firstValueFrom(
-        registry.run('non-existent-agent', 'Do something').pipe(toArray())
-      );
+      const events = await runAndCollect(registry, 'non-existent-agent', 'Do something');
 
       const errorEvent = events.find(e => e.type === 'subagent.error');
       expect(errorEvent).toBeDefined();
@@ -384,9 +387,7 @@ describe('SubagentRegistry', () => {
         agent: mockAgent,
       }));
 
-      const events = await firstValueFrom(
-        registry.run('starter-agent', 'Test input').pipe(toArray())
-      );
+      const events = await runAndCollect(registry, 'starter-agent', 'Test input');
 
       const startEvent = events.find(e => e.type === 'subagent.start');
       expect(startEvent).toBeDefined();
@@ -401,6 +402,7 @@ describe('SubagentRegistry', () => {
 
     it('should emit subagent.complete event with output', async () => {
       mockAgent.setBehavior({
+        output: 'Final result',
         events: [
           {
             type: 'agent.complete',
@@ -416,9 +418,7 @@ describe('SubagentRegistry', () => {
         agent: mockAgent,
       }));
 
-      const events = await firstValueFrom(
-        registry.run('completer-agent', 'Calculate').pipe(toArray())
-      );
+      const events = await runAndCollect(registry, 'completer-agent', 'Calculate');
 
       const completeEvent = events.find(e => e.type === 'subagent.complete');
       expect(completeEvent).toBeDefined();
@@ -438,9 +438,7 @@ describe('SubagentRegistry', () => {
         agent: mockAgent,
       }));
 
-      const events = await firstValueFrom(
-        registry.run('failing-agent', 'Fail task').pipe(toArray())
-      );
+      const events = await runAndCollect(registry, 'failing-agent', 'Fail task');
 
       const errorEvent = events.find(e => e.type === 'subagent.error');
       expect(errorEvent).toBeDefined();
@@ -451,6 +449,7 @@ describe('SubagentRegistry', () => {
 
     it('should emit subagent.error when subagent emits subagent.error event', async () => {
       mockAgent.setBehavior({
+        output: '',
         events: [
           {
             type: 'subagent.error',
@@ -468,9 +467,7 @@ describe('SubagentRegistry', () => {
         agent: mockAgent,
       }));
 
-      const events = await firstValueFrom(
-        registry.run('error-agent', 'Error task').pipe(toArray())
-      );
+      const events = await runAndCollect(registry, 'error-agent', 'Error task');
 
       const errorEvent = events.find(e => e.type === 'subagent.error');
       expect(errorEvent).toBeDefined();
@@ -500,16 +497,13 @@ describe('SubagentRegistry', () => {
         agent: mockAgent,
       }));
 
-      const events = await firstValueFrom(
-        registry.run('nested-agent', 'Nested test').pipe(toArray())
-      );
+      const events = await runAndCollect(registry, 'nested-agent', 'Nested test');
 
       // Find nested agent.step event (not subagent.start)
       const stepEvent = events.find(e => e.type === 'agent.step');
       expect(stepEvent).toBeDefined();
-      if (stepEvent?.type === 'agent.step') {
-        expect(stepEvent.parentSessionId).toBeDefined();
-      }
+      // parentSessionId is added by registry via runtime spread, access via any
+      expect((stepEvent as any).parentSessionId).toBeDefined();
     });
 
     it('should emit events in correct order: start -> nested -> complete', async () => {
@@ -536,9 +530,7 @@ describe('SubagentRegistry', () => {
         agent: mockAgent,
       }));
 
-      const events = await firstValueFrom(
-        registry.run('ordered-agent', 'Order test').pipe(toArray())
-      );
+      const events = await runAndCollect(registry, 'ordered-agent', 'Order test');
 
       const types = events.map(e => e.type);
 
@@ -566,9 +558,7 @@ describe('SubagentRegistry', () => {
         agent: mockAgent,
       }));
 
-      const events = await firstValueFrom(
-        registry.run('no-complete-agent', 'Fail').pipe(toArray())
-      );
+      const events = await runAndCollect(registry, 'no-complete-agent', 'Fail');
 
       // Should have start and error, but NOT complete
       expect(events.find(e => e.type === 'subagent.start')).toBeDefined();
@@ -585,9 +575,7 @@ describe('SubagentRegistry', () => {
         { role: 'user' as const, content: 'Previous message', name: 'parent-session' },
       ];
 
-      const events = await firstValueFrom(
-        registry.run('session-agent', 'New input', { sessionMessages }).pipe(toArray())
-      );
+      const events = await runAndCollect(registry, 'session-agent', 'New input', { sessionMessages });
 
       const startEvent = events.find(e => e.type === 'subagent.start');
       expect(startEvent).toBeDefined();
@@ -655,41 +643,22 @@ describe('SubagentRegistry', () => {
   });
 
   // ========================================
-  // destroy$ - Lifecycle Management
+  // basic execution - Callback-based run
   // ========================================
-  describe('destroy$', () => {
-    it('should stop subagent execution when destroy$ emits', async () => {
-      const destroySubject = new Subject<void>();
-      const registryWithDestroy = new SubagentRegistry(destroySubject);
-
-      // Agent that emits slowly
-      const slowAgent = new MockAgentLoop();
-      slowAgent.setBehavior({
-        events: [
-          { type: 'agent.step', timestamp: Date.now(), sessionId: 'slow', step: 1, maxSteps: 5 },
-          { type: 'agent.complete', timestamp: Date.now(), sessionId: 'slow', output: 'Done', steps: 1 },
-        ],
+  describe('basic execution', () => {
+    it('should execute subagent and return output via callback', async () => {
+      mockAgent.setBehavior({
+        output: 'test output',
       });
 
-      registryWithDestroy.register(createMockSubagentConfig('slow-agent', {
-        agent: slowAgent,
-      }));
+      registry.register(createMockSubagentConfig('basic-agent', { agent: mockAgent }));
 
-      // Start collecting events
-      const eventsPromise = firstValueFrom(
-        registryWithDestroy.run('slow-agent', 'Slow task').pipe(toArray())
-      );
+      const events = await runAndCollect(registry, 'basic-agent', 'Simple task');
 
-      // Emit destroy signal immediately
-      destroySubject.next();
-
-      const events = await eventsPromise;
-
-      // May have partial events or just start
-      // The key is that it should complete without hanging
-      expect(events.length).toBeGreaterThanOrEqual(0);
-
-      destroySubject.complete();
+      expect(events.find(e => e.type === 'subagent.start')).toBeDefined();
+      expect(events.find(e => e.type === 'subagent.complete')).toBeDefined();
+      expect(mockAgent.getCallCount()).toBe(1);
+      expect(mockAgent.getInputs()).toContain('Simple task');
     });
   });
 
@@ -703,16 +672,12 @@ describe('SubagentRegistry', () => {
       }));
 
       // First run
-      const events1 = await firstValueFrom(
-        registry.run('reusable-agent', 'First task').pipe(toArray())
-      );
+      const events1 = await runAndCollect(registry, 'reusable-agent', 'First task');
       expect(events1.find(e => e.type === 'subagent.complete')).toBeDefined();
 
       // Second run
       mockAgent.reset();
-      const events2 = await firstValueFrom(
-        registry.run('reusable-agent', 'Second task').pipe(toArray())
-      );
+      const events2 = await runAndCollect(registry, 'reusable-agent', 'Second task');
       expect(events2.find(e => e.type === 'subagent.complete')).toBeDefined();
     });
 
@@ -725,8 +690,8 @@ describe('SubagentRegistry', () => {
 
       // Run both concurrently
       const [events1, events2] = await Promise.all([
-        firstValueFrom(registry.run('concurrent-1', 'Task 1').pipe(toArray())),
-        firstValueFrom(registry.run('concurrent-2', 'Task 2').pipe(toArray())),
+        runAndCollect(registry, 'concurrent-1', 'Task 1'),
+        runAndCollect(registry, 'concurrent-2', 'Task 2'),
       ]);
 
       // Both should complete
@@ -749,9 +714,7 @@ describe('SubagentRegistry', () => {
         agent: mockAgent,
       }));
 
-      const events = await firstValueFrom(
-        registry.run('complex-agent', 'Complex task').pipe(toArray())
-      );
+      const events = await runAndCollect(registry, 'complex-agent', 'Complex task');
 
       // Should have all nested events plus start/complete
       expect(events.find(e => e.type === 'subagent.start')).toBeDefined();

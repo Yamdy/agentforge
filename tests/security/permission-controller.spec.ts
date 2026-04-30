@@ -21,77 +21,63 @@ describe('DefaultPermissionController', () => {
   });
 
   describe('ask()', () => {
-    it('should return "allow" immediately for auto-allowed permissions', () => {
-      controller.ask({ promptId: 'p1', permission: 'tool:read' }).subscribe({
-        next: decision => {
-          expect(decision).toBe('allow');
-        },
-      });
-      // No need to answer - auto-allowed
+    it('should return "allow" immediately for auto-allowed permissions', async () => {
+      // Pre-seed auto-allow via allow_always answer
+      controller.ask({ promptId: 'p0', permission: 'tool:read' });
+      controller.answer('p0', 'allow_always');
+
+      // Now tool:read is auto-allowed
+      const decision = await controller.ask({ promptId: 'p1', permission: 'tool:read' });
+      expect(decision).toBe('allow');
     });
 
     it('should emit prompt to onAsk() for non-auto-allowed permissions', () => {
       let receivedPrompt: any = null;
-      controller.onAsk().subscribe({
-        next: prompt => {
-          receivedPrompt = prompt;
-        },
+      controller.onAsk(prompt => {
+        receivedPrompt = prompt;
       });
 
-      controller.ask({ promptId: 'p1', permission: 'tool:write' }).subscribe();
+      controller.ask({ promptId: 'p1', permission: 'tool:write' });
 
       expect(receivedPrompt).not.toBeNull();
       expect(receivedPrompt.promptId).toBe('p1');
-      // Note: permission field in PermissionPrompt is the question text, not the original permission
       expect(receivedPrompt.permission).toBe('Allow tool: tool:write?');
       expect(receivedPrompt.options).toEqual(['allow', 'deny', 'allow_always']);
     });
 
-    it('should resolve when answer is provided', () => {
-      let receivedDecision: PermissionDecision | null = null;
-      controller.ask({ promptId: 'p1', permission: 'tool:write' }).subscribe({
-        next: decision => {
-          receivedDecision = decision;
-        },
-      });
-
+    it('should resolve when answer is provided', async () => {
+      const promise = controller.ask({ promptId: 'p1', permission: 'tool:write' });
       controller.answer('p1', 'allow');
-      expect(receivedDecision).toBe('allow');
+      const decision = await promise;
+      expect(decision).toBe('allow');
     });
 
     it('should use custom approval message from context', () => {
       let receivedPrompt: any = null;
-      controller.onAsk().subscribe({
-        next: prompt => {
-          receivedPrompt = prompt;
-        },
+      controller.onAsk(prompt => {
+        receivedPrompt = prompt;
       });
 
       controller.ask({
         promptId: 'p1',
         permission: 'tool:dangerous',
         context: { approvalMessage: 'This is dangerous!' },
-      }).subscribe();
+      });
 
       // permission field in PermissionPrompt maps to question text
       expect(receivedPrompt.permission).toBe('This is dangerous!');
     });
 
-    it('should auto-allow future requests after "allow_always"', () => {
+    it('should auto-allow future requests after "allow_always"', async () => {
       let callCount = 0;
-      controller.onAsk().subscribe({ next: () => callCount++ });
+      controller.onAsk(() => callCount++);
 
       // First request - needs approval
-      controller.ask({ promptId: 'p1', permission: 'tool:read' }).subscribe();
+      controller.ask({ promptId: 'p1', permission: 'tool:read' });
       controller.answer('p1', 'allow_always');
 
       // Second request - should be auto-allowed
-      let secondDecision: PermissionDecision | null = null;
-      controller.ask({ promptId: 'p2', permission: 'tool:read' }).subscribe({
-        next: decision => {
-          secondDecision = decision;
-        },
-      });
+      const secondDecision = await controller.ask({ promptId: 'p2', permission: 'tool:read' });
 
       expect(secondDecision).toBe('allow');
       expect(callCount).toBe(1); // Only one prompt emitted
@@ -104,7 +90,7 @@ describe('DefaultPermissionController', () => {
     });
 
     it('should return true after "allow_always"', () => {
-      controller.ask({ promptId: 'p1', permission: 'tool:read' }).subscribe();
+      controller.ask({ promptId: 'p1', permission: 'tool:read' });
       controller.answer('p1', 'allow_always');
 
       expect(controller.isAutoAllowed('tool:read')).toBe(true);
@@ -113,7 +99,7 @@ describe('DefaultPermissionController', () => {
 
   describe('clearAutoAllow()', () => {
     it('should clear all auto-allowed permissions', () => {
-      controller.ask({ promptId: 'p1', permission: 'tool:read' }).subscribe();
+      controller.ask({ promptId: 'p1', permission: 'tool:read' });
       controller.answer('p1', 'allow_always');
 
       expect(controller.isAutoAllowed('tool:read')).toBe(true);

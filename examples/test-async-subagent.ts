@@ -1,58 +1,90 @@
 /**
  * 真实示例：测试 Compiled/Async 子代理
  *
+ * 新 API: registry.run(name, input, listener, options?) → Promise<string>
+ * AgentLoop: run(input): Promise<string>, onAny(listener), on(type, listener)
+ *
  * 运行方式：npx tsx examples/test-async-subagent.ts
  */
 
 import { SubagentRegistry, createSubagentRegistry } from '../src/subagent/registry.js';
 import type { AgentLoop, AsyncSubagentHandle } from '../src/subagent/types.js';
-import { Observable, of, EMPTY, delay } from 'rxjs';
 import type { AgentEvent } from '../src/core/events.js';
 
 console.log('✅ SubagentRegistry 导入成功');
 
-// 创建一个模拟的 Agent Loop
+// ============================================================
+// 创建一个模拟的 Agent Loop（Promise-based，不使用 Observable）
+// ============================================================
+
 function createMockAgentLoop(name: string, delayMs: number = 100): AgentLoop {
+  const listeners: Array<(event: AgentEvent) => void> = [];
+
   return {
-    run: (input: string) => {
+    onAny(listener: (event: AgentEvent) => void): () => void {
+      listeners.push(listener);
+      return () => {
+        const idx = listeners.indexOf(listener);
+        if (idx >= 0) listeners.splice(idx, 1);
+      };
+    },
+
+    on(type: string, listener: (event: AgentEvent) => void): () => void {
+      const wrapped = (e: AgentEvent) => {
+        if (e.type === type) listener(e);
+      };
+      listeners.push(wrapped);
+      return () => {
+        const idx = listeners.indexOf(wrapped);
+        if (idx >= 0) listeners.splice(idx, 1);
+      };
+    },
+
+    async run(input: string): Promise<string> {
       console.log(`  [${name}] 开始执行，输入: ${input}`);
 
-      return new Observable<AgentEvent>(subscriber => {
-        // 模拟延迟执行
-        setTimeout(() => {
-          subscriber.next({
-            type: 'agent.start',
-            timestamp: Date.now(),
-            sessionId: `session-${name}`,
-            input,
-            agentName: name,
-            model: { provider: 'openai', model: 'gpt-4o' },
-          });
+      // 模拟延迟执行（使用 setTimeout Promise 替代 rxjs delay）
+      await new Promise(resolve => setTimeout(resolve, delayMs));
 
-          subscriber.next({
-            type: 'agent.complete',
-            timestamp: Date.now(),
-            sessionId: `session-${name}`,
-            output: `${name} 完成了任务: ${input}`,
-            steps: 1,
-          });
+      const sessionId = `session-${name}`;
+      const output = `${name} 完成了任务: ${input}`;
 
-          subscriber.next({
-            type: 'done',
-            timestamp: Date.now(),
-            sessionId: `session-${name}`,
-            reason: 'stop',
-          });
+      // 通知所有监听器
+      for (const l of listeners) {
+        l({
+          type: 'agent.start',
+          timestamp: Date.now(),
+          sessionId,
+          input,
+          agentName: name,
+          model: { provider: 'openai', model: 'gpt-4o' },
+        } as AgentEvent);
 
-          subscriber.complete();
-        }, delayMs);
-      });
+        l({
+          type: 'agent.complete',
+          timestamp: Date.now(),
+          sessionId,
+          output,
+          steps: 1,
+        } as AgentEvent);
+
+        l({
+          type: 'done',
+          timestamp: Date.now(),
+          sessionId,
+          reason: 'stop',
+        } as AgentEvent);
+      }
+
+      return output;
     },
-    destroy$: EMPTY,
   };
 }
 
+// ============================================================
 // 测试 1: 同步模式
+// ============================================================
+
 async function testSyncMode() {
   console.log('\n📝 测试 1: 同步模式');
 
@@ -67,18 +99,12 @@ async function testSyncMode() {
 
   const events: AgentEvent[] = [];
 
-  await new Promise<void>(resolve => {
-    registry.run('sync-agent', '测试同步任务').subscribe({
-      next: event => {
-        events.push(event);
-        console.log(`  收到事件: ${event.type}`);
-      },
-      complete: () => {
-        console.log('  流完成');
-        resolve();
-      },
-    });
+  await registry.run('sync-agent', '测试同步任务', (event) => {
+    events.push(event);
+    console.log(`  收到事件: ${event.type}`);
   });
+
+  console.log('  执行完成');
 
   if (events.length > 0) {
     console.log('✅ 同步模式测试成功，共收到', events.length, '个事件');
@@ -87,7 +113,10 @@ async function testSyncMode() {
   }
 }
 
+// ============================================================
 // 测试 2: Async 模式
+// ============================================================
+
 async function testAsyncMode() {
   console.log('\n📝 测试 2: Async 模式');
 
@@ -100,7 +129,7 @@ async function testAsyncMode() {
     mode: 'subagent',
     executionMode: 'async',
     asyncConfig: {
-      onComplete: result => {
+      onComplete: (result) => {
         console.log('  [回调] 任务完成:', result.status);
       },
     },
@@ -108,41 +137,39 @@ async function testAsyncMode() {
 
   const events: AgentEvent[] = [];
 
-  await new Promise<void>(resolve => {
-    registry.run('async-agent', '测试异步任务').subscribe({
-      next: event => {
-        events.push(event);
-        console.log(`  收到事件: ${event.type}`);
+  // Async 模式: registry.run() 立即返回（只发出 subagent.start 事件）
+  await registry.run('async-agent', '测试异步任务', (event) => {
+    events.push(event);
+    console.log(`  收到事件: ${event.type}`);
 
-        if (event.type === 'subagent.start') {
-          console.log('  子代理启动，Session ID:', event.sessionId);
+    if (event.type === 'subagent.start') {
+      console.log('  子代理启动，Session ID:', event.sessionId);
 
-          // 获取句柄
-          const handle = registry.getAsyncHandle(event.sessionId);
-          if (handle) {
-            console.log('  获取到句柄，Session ID:', handle.sessionId);
-          }
-        }
-      },
-      complete: () => {
-        console.log('  流完成（只收到 subagent.start 事件）');
-        resolve();
-      },
-    });
+      // 获取句柄
+      const handle = registry.getAsyncHandle(event.sessionId);
+      if (handle) {
+        console.log('  获取到句柄，Session ID:', handle.sessionId);
+      }
+    }
   });
+
+  console.log('  执行完成（只收到 subagent.start 事件）');
 
   // 等待异步任务完成
   console.log('  等待异步任务完成...');
   await new Promise(resolve => setTimeout(resolve, 300));
 
-  if (events.length === 1 && events[0]?.type === 'subagent.start') {
+  if (events.length >= 1 && events[0]?.type === 'subagent.start') {
     console.log('✅ Async 模式测试成功，立即返回 subagent.start 事件');
   } else {
     console.error('❌ Async 模式测试失败');
   }
 }
 
+// ============================================================
 // 测试 3: Async 模式取消
+// ============================================================
+
 async function testAsyncCancel() {
   console.log('\n📝 测试 3: Async 模式取消');
 
@@ -163,16 +190,11 @@ async function testAsyncCancel() {
 
   let sessionId = '';
 
-  await new Promise<void>(resolve => {
-    registry.run('cancel-agent', '测试取消任务').subscribe({
-      next: event => {
-        if (event.type === 'subagent.start') {
-          sessionId = event.sessionId;
-          console.log('  子代理启动，Session ID:', sessionId);
-        }
-      },
-      complete: () => resolve(),
-    });
+  await registry.run('cancel-agent', '测试取消任务', (event) => {
+    if (event.type === 'subagent.start') {
+      sessionId = event.sessionId;
+      console.log('  子代理启动，Session ID:', sessionId);
+    }
   });
 
   // 立即取消
@@ -193,7 +215,10 @@ async function testAsyncCancel() {
   }
 }
 
+// ============================================================
 // 测试 4: Compiled 模式
+// ============================================================
+
 async function testCompiledMode() {
   console.log('\n📝 测试 4: Compiled 模式');
 
@@ -215,18 +240,12 @@ async function testCompiledMode() {
 
   const events: AgentEvent[] = [];
 
-  await new Promise<void>(resolve => {
-    registry.run('compiled-agent', '测试编译任务').subscribe({
-      next: event => {
-        events.push(event);
-        console.log(`  收到事件: ${event.type}`);
-      },
-      complete: () => {
-        console.log('  流完成');
-        resolve();
-      },
-    });
+  await registry.run('compiled-agent', '测试编译任务', (event) => {
+    events.push(event);
+    console.log(`  收到事件: ${event.type}`);
   });
+
+  console.log('  执行完成');
 
   if (events.length > 0) {
     console.log('✅ Compiled 模式测试成功，共收到', events.length, '个事件');
@@ -235,27 +254,24 @@ async function testCompiledMode() {
   }
 }
 
+// ============================================================
 // 测试 5: 错误处理
+// ============================================================
+
 async function testErrorHandling() {
   console.log('\n📝 测试 5: 错误处理');
 
   const registry = createSubagentRegistry();
 
-  // 注册一个不存在的子代理
+  // 运行一个不存在的子代理
   const events: AgentEvent[] = [];
 
-  await new Promise<void>(resolve => {
-    registry.run('non-existent-agent', '测试错误').subscribe({
-      next: event => {
-        events.push(event);
-        console.log(`  收到事件: ${event.type}`);
-      },
-      complete: () => {
-        console.log('  流完成');
-        resolve();
-      },
-    });
+  await registry.run('non-existent-agent', '测试错误', (event) => {
+    events.push(event);
+    console.log(`  收到事件: ${event.type}`);
   });
+
+  console.log('  执行完成');
 
   if (events.length > 0 && events[0]?.type === 'subagent.error') {
     console.log('✅ 错误处理测试成功');
@@ -264,7 +280,10 @@ async function testErrorHandling() {
   }
 }
 
+// ============================================================
 // 运行所有测试
+// ============================================================
+
 async function runAllTests() {
   try {
     await testSyncMode();

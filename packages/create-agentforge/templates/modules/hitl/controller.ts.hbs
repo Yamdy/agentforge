@@ -4,7 +4,6 @@
  */
 
 import type { HITLController, HITLAskOptions } from 'agentforge';
-import { Observable } from 'rxjs';
 import * as readline from 'node:readline';
 
 /**
@@ -25,10 +24,10 @@ export class DefaultHITLController implements HITLController {
   }
   
   /**
-   * Ask for human approval
+   * Ask for human approval — returns Promise that resolves with answer
    */
-  ask(options: HITLAskOptions): Observable<string> {
-    return new Observable(subscriber => {
+  ask(options: HITLAskOptions): Promise<string> {
+    return new Promise((resolve) => {
       const rl = this.getReadline();
       
       console.log('\n\x1b[33m[HITL] Approval Required\x1b[0m');
@@ -48,15 +47,12 @@ export class DefaultHITLController implements HITLController {
         const trimmed = answer.trim().toLowerCase();
         
         if (trimmed === 'y' || trimmed === 'yes') {
-          subscriber.next('approved');
+          resolve('approved');
         } else if (trimmed === 'n' || trimmed === 'no') {
-          subscriber.next('rejected');
+          resolve('rejected');
         } else {
-          // Custom response
-          subscriber.next(answer.trim());
+          resolve(answer.trim());
         }
-        
-        subscriber.complete();
       });
     });
   }

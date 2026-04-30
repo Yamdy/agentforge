@@ -6,21 +6,41 @@
  *
  * SequentialPipeline:
  * - Executes steps in order, passing output from one step to next
- * - Uses concatMap for sequential execution
+ * - Uses sequential async calls
  *
  * ParallelPipeline:
  * - Executes all steps simultaneously with same input
- * - Uses mergeMap for concurrent execution
+ * - Uses Promise.all with concurrency limiting
  * - Results merged when all complete
  *
  * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN/08-SUBSYSTEMS.md
+ * @see docs/design/25-DE-RXJS.md
  */
 
-import { Observable, of, from, Subject } from 'rxjs';
-import { concatMap, mergeMap, takeUntil, catchError, tap } from 'rxjs/operators';
 import { type AgentEvent, type AgentContext, serializeError, generateId } from '../core/index.js';
 import { WorkflowExecutor } from './executor.js';
 import { type WorkflowStep, type PipelineConfig } from './types.js';
+
+// ============================================================
+// Pipeline Result
+// ============================================================
+
+/**
+ * Result from a pipeline execution
+ */
+export interface PipelineResult {
+  /** Whether all steps completed successfully (or with continueOnFailure) */
+  success: boolean;
+  /** Step outputs by step ID */
+  outputs: Record<string, unknown>;
+  /** Error if pipeline failed */
+  error?: {
+    name: string;
+    message: string;
+    stack?: string;
+    stepId?: string;
+  };
+}
 
 // ============================================================
 // Sequential Pipeline
@@ -38,12 +58,14 @@ import { type WorkflowStep, type PipelineConfig } from './types.js';
  * const pipeline = new SequentialPipeline([
  *   { id: 'step1', prompt: (input) => `Analyze: ${input}` },
  *   { id: 'step2', prompt: (input) => `Summarize: ${input}` },
- * ]);
+ * ], agentContext);
  *
- * pipeline.run('AI trends', agentContext).subscribe({
- *   next: (event) => console.log(event.type),
- *   complete: () => console.log('Pipeline completed'),
+ * const events: AgentEvent[] = [];
+ * const result = await pipeline.run('AI trends', (event) => {
+ *   events.push(event);
+ *   console.log(event.type);
  * });
+ * console.log('Pipeline completed:', result.success);
  * ```
  */
 export class SequentialPipeline {
@@ -51,7 +73,7 @@ export class SequentialPipeline {
   private executor: WorkflowExecutor;
   private agentContext: AgentContext;
   private continueOnFailure: boolean;
-  private destroy$ = new Subject<void>();
+  private destroyed = false;
 
   constructor(
     steps: WorkflowStep[],
@@ -71,28 +93,36 @@ export class SequentialPipeline {
    * to the next step in the chain.
    *
    * @param input - Initial pipeline input
-   * @returns Observable of workflow and agent events
+   * @param listener - Callback for each event emitted during execution
+   * @returns Promise resolving to PipelineResult
    */
-  run(input: unknown): Observable<AgentEvent> {
+  async run(
+    input: unknown,
+    listener: (event: AgentEvent) => void
+  ): Promise<PipelineResult> {
     const workflowId = `pipeline-${generateId()}`;
     const sessionId = this.agentContext.sessionId;
-
-    // Track current step index and accumulated output
-    let currentInput = input;
     const stepOutputs = new Map<string, unknown>();
 
-    // Create workflow start event
-    const startEvent: AgentEvent = {
+    // Emit workflow.start event
+    listener({
       type: 'workflow.start',
       timestamp: Date.now(),
       sessionId,
       workflowId,
       workflowName: 'SequentialPipeline',
-    };
+    });
 
-    // Execute steps sequentially
-    const steps$ = from(this.steps).pipe(
-      concatMap((step, index) => {
+    let currentInput = input;
+    let error: { name: string; message: string; stack?: string; stepId?: string } | undefined;
+    let allSucceeded = true;
+
+    try {
+      for (let index = 0; index < this.steps.length; index++) {
+        if (this.destroyed) break;
+
+        const step = this.steps[index]!;
+
         // Get previous step output if available
         if (index > 0) {
           const prevStep = this.steps[index - 1];
@@ -106,7 +136,7 @@ export class SequentialPipeline {
 
         // Check skip condition
         if (step.skip && step.skip(currentInput)) {
-          return of<AgentEvent>({
+          listener({
             type: 'workflow.step.end',
             timestamp: Date.now(),
             sessionId,
@@ -114,75 +144,126 @@ export class SequentialPipeline {
             stepId: step.id,
             result: 'skipped',
           });
+          continue;
         }
 
         // Execute step
-        return this.executor.executeStep(step, currentInput, workflowId).pipe(
-          tap(event => {
-            // Capture output for next step
-            if (event.type === 'agent.complete') {
-              const output = event.output;
-              stepOutputs.set(step.id, output);
+        try {
+          const stepResult = await this.executor.executeStep(
+            step,
+            currentInput,
+            workflowId,
+            event => {
+              // Capture output for next step
+              if (event.type === 'agent.complete') {
+                const output = (event as any).output;
+                stepOutputs.set(step.id, output);
+              }
+              // Forward all events to caller
+              listener(event);
             }
-          }),
-          catchError(error => {
-            const errorEvent: AgentEvent = {
+          );
+
+          if (stepResult.result === 'failure') {
+            allSucceeded = false;
+            if (!this.continueOnFailure) {
+              if (stepResult.error) {
+                const e: { name: string; message: string; stack?: string; stepId?: string } = {
+                  name: stepResult.error.name,
+                  message: stepResult.error.message,
+                  stepId: step.id,
+                };
+                if (stepResult.error.stack !== undefined) e.stack = stepResult.error.stack;
+                error = e;
+              } else {
+                error = { name: 'StepError', message: `Step ${step.id} failed`, stepId: step.id };
+              }
+
+              // Emit workflow.error
+              listener({
+                type: 'workflow.error',
+                timestamp: Date.now(),
+                sessionId,
+                workflowId,
+                error: serializeError(error),
+                stepId: step.id,
+              });
+              break;
+            }
+            // Continue on failure — emit error event but keep going
+            listener({
+              type: 'workflow.error',
+              timestamp: Date.now(),
+              sessionId,
+              workflowId,
+              error: stepResult.error ?? serializeError(new Error(`Step ${step.id} failed`)),
+              stepId: step.id,
+            });
+          }
+
+          // Update currentInput for next step
+          const output = stepOutputs.get(step.id);
+          if (output !== undefined) {
+            currentInput = output;
+          }
+        } catch (err) {
+          allSucceeded = false;
+          if (!this.continueOnFailure) {
+            error = {
+              name: (err as Error).name,
+              message: (err as Error).message,
+              stepId: step.id,
+            };
+
+            listener({
               type: 'workflow.error',
               timestamp: Date.now(),
               sessionId,
               workflowId,
               error: serializeError(error),
               stepId: step.id,
-            };
-            if (!this.continueOnFailure) {
-              // Rethrow to stop pipeline
-              throw error;
-            }
-            return of(errorEvent);
-          })
-        );
-      }),
-      takeUntil(this.destroy$)
-    );
+            });
+            break;
+          }
+        }
+      }
+    } catch (err) {
+      error = {
+        name: (err as Error).name,
+        message: (err as Error).message,
+      };
+    }
 
-    return new Observable<AgentEvent>(subscriber => {
-      subscriber.next(startEvent);
-
-      const subscription = steps$.subscribe({
-        next: event => subscriber.next(event),
-        error: error => {
-          subscriber.error(error);
-        },
-        complete: () => {
-          const completeEvent: AgentEvent = {
-            type: 'workflow.complete',
-            timestamp: Date.now(),
-            sessionId,
-            workflowId,
-            result: Object.fromEntries(stepOutputs),
-          };
-          subscriber.next(completeEvent);
-          subscriber.complete();
-        },
-      });
-
-      return () => subscription.unsubscribe();
+    // Emit workflow.complete
+    const outputs = Object.fromEntries(stepOutputs);
+    listener({
+      type: 'workflow.complete',
+      timestamp: Date.now(),
+      sessionId,
+      workflowId,
+      result: outputs,
     });
+
+    const result: PipelineResult = {
+      success: allSucceeded || this.continueOnFailure,
+      outputs,
+    };
+    if (error !== undefined) result.error = error;
+    return result;
   }
 
   /**
    * Stop pipeline execution
    */
   stop(): void {
-    this.destroy$.next();
+    this.destroyed = true;
   }
 
   /**
    * Clean up resources
    */
   destroy(): void {
-    this.destroy$.next();
-    this.destroy$.complete();
+    this.destroyed = true;
   }
 }
 
@@ -205,8 +286,9 @@ export class SequentialPipeline {
  *   { id: 'analyze', prompt: () => 'Analyze Y' },
  * ], agentContext, { maxConcurrency: 2 });
  *
- * pipeline.run('input', agentContext).subscribe({
- *   next: (event) => console.log(event.type),
+ * const events: AgentEvent[] = [];
+ * const result = await pipeline.run('input', (event) => {
+ *   events.push(event);
  * });
  * ```
  */
@@ -216,7 +298,7 @@ export class ParallelPipeline {
   private agentContext: AgentContext;
   private maxConcurrency: number;
   private continueOnFailure: boolean;
-  private destroy$ = new Subject<void>();
+  private destroyed = false;
 
   constructor(
     steps: WorkflowStep[],
@@ -237,104 +319,190 @@ export class ParallelPipeline {
    * Results are merged when all complete.
    *
    * @param input - Input passed to all steps
-   * @returns Observable of workflow and agent events
+   * @param listener - Callback for each event emitted during execution
+   * @returns Promise resolving to PipelineResult
    */
-  run(input: unknown): Observable<AgentEvent> {
+  async run(
+    input: unknown,
+    listener: (event: AgentEvent) => void
+  ): Promise<PipelineResult> {
     const workflowId = `pipeline-${generateId()}`;
     const sessionId = this.agentContext.sessionId;
 
-    // Create workflow start event
-    const startEvent: AgentEvent = {
+    // Emit workflow.start event
+    listener({
       type: 'workflow.start',
       timestamp: Date.now(),
       sessionId,
       workflowId,
       workflowName: 'ParallelPipeline',
-    };
+    });
 
     // Track step outputs
     const stepOutputs = new Map<string, unknown>();
+    let allSucceeded = true;
+    let firstError:
+      | { name: string; message: string; stack?: string; stepId?: string }
+      | undefined;
 
-    // Execute all steps in parallel with concurrency limit
-    const steps$ = from(this.steps).pipe(
-      mergeMap(step => {
-        // Check skip condition
-        if (step.skip && step.skip(input)) {
-          return of<AgentEvent>({
-            type: 'workflow.step.end',
-            timestamp: Date.now(),
-            sessionId,
-            workflowId,
-            stepId: step.id,
-            result: 'skipped',
-          });
-        }
+    /**
+     * Execute a single step (used in parallel with concurrency limiting)
+     */
+    const executeOneStep = async (step: WorkflowStep): Promise<void> => {
+      if (this.destroyed) return;
 
-        return this.executor.executeStep(step, input, workflowId).pipe(
-          tap(event => {
+      // Check skip condition
+      if (step.skip && step.skip(input)) {
+        listener({
+          type: 'workflow.step.end',
+          timestamp: Date.now(),
+          sessionId,
+          workflowId,
+          stepId: step.id,
+          result: 'skipped',
+        });
+        return;
+      }
+
+      try {
+        const stepResult = await this.executor.executeStep(
+          step,
+          input,
+          workflowId,
+          event => {
+            // Capture output
             if (event.type === 'agent.complete') {
-              const output = event.output;
+              const output = (event as any).output;
               stepOutputs.set(step.id, output);
             }
-          }),
-          catchError(error => {
-            const errorEvent: AgentEvent = {
-              type: 'workflow.error',
-              timestamp: Date.now(),
-              sessionId,
-              workflowId,
-              error: serializeError(error),
-              stepId: step.id,
-            };
-            if (!this.continueOnFailure) {
-              throw error;
-            }
-            return of(errorEvent);
-          })
+            // Forward all events to caller
+            listener(event);
+          }
         );
-      }, this.maxConcurrency),
-      takeUntil(this.destroy$)
-    );
 
-    return new Observable<AgentEvent>(subscriber => {
-      subscriber.next(startEvent);
+        if (stepResult.result === 'failure') {
+          allSucceeded = false;
+          if (!firstError) {
+            if (stepResult.error) {
+              const fe: { name: string; message: string; stack?: string; stepId?: string } = {
+                name: stepResult.error.name,
+                message: stepResult.error.message,
+                stepId: step.id,
+              };
+              if (stepResult.error.stack !== undefined) fe.stack = stepResult.error.stack;
+              firstError = fe;
+            } else {
+              firstError = { name: 'StepError', message: `Step ${step.id} failed`, stepId: step.id };
+            }
+          }
 
-      const subscription = steps$.subscribe({
-        next: event => subscriber.next(event),
-        error: error => {
-          subscriber.error(error);
-        },
-        complete: () => {
-          const completeEvent: AgentEvent = {
-            type: 'workflow.complete',
+          if (!this.continueOnFailure) {
+            throw new Error(`Step ${step.id} failed`);
+          }
+
+          // Emit error event but continue
+          listener({
+            type: 'workflow.error',
             timestamp: Date.now(),
             sessionId,
             workflowId,
-            result: Object.fromEntries(stepOutputs),
+            error: stepResult.error ?? serializeError(new Error(`Step ${step.id} failed`)),
+            stepId: step.id,
+          });
+        }
+      } catch (err) {
+        allSucceeded = false;
+        if (!firstError) {
+          firstError = {
+            name: (err as Error).name,
+            message: (err as Error).message,
+            stepId: step.id,
           };
-          subscriber.next(completeEvent);
-          subscriber.complete();
-        },
-      });
+        }
 
-      return () => subscription.unsubscribe();
+        if (!this.continueOnFailure) {
+          throw err;
+        }
+
+        listener({
+          type: 'workflow.error',
+          timestamp: Date.now(),
+          sessionId,
+          workflowId,
+          error: serializeError(err),
+          stepId: step.id,
+        });
+      }
+    };
+
+    // Execute steps with concurrency limiting
+    try {
+      const tasks = this.steps.map(step => () => executeOneStep(step));
+      await runWithConcurrencyLimit(tasks, this.maxConcurrency);
+    } catch {
+      // Errors already handled in executeOneStep
+      // (only re-thrown for !continueOnFailure)
+    }
+
+    // Emit workflow.complete
+    const outputs = Object.fromEntries(stepOutputs);
+    listener({
+      type: 'workflow.complete',
+      timestamp: Date.now(),
+      sessionId,
+      workflowId,
+      result: outputs,
     });
+
+    const parResult: PipelineResult = {
+      success: allSucceeded || this.continueOnFailure,
+      outputs,
+    };
+    if (firstError !== undefined) parResult.error = firstError;
+    return parResult;
   }
 
   /**
    * Stop pipeline execution
    */
   stop(): void {
-    this.destroy$.next();
+    this.destroyed = true;
   }
 
   /**
    * Clean up resources
    */
   destroy(): void {
-    this.destroy$.next();
-    this.destroy$.complete();
+    this.destroyed = true;
   }
+}
+
+// ============================================================
+// Concurrency Limiter
+// ============================================================
+
+/**
+ * Run async tasks with a concurrency limit
+ */
+async function runWithConcurrencyLimit(
+  tasks: Array<() => Promise<void>>,
+  maxConcurrency: number
+): Promise<void> {
+  const executing: Promise<void>[] = [];
+
+  for (const task of tasks) {
+    const p = task().then(() => {
+      const idx = executing.indexOf(p);
+      if (idx !== -1) executing.splice(idx, 1);
+    });
+    executing.push(p);
+
+    if (executing.length >= maxConcurrency) {
+      await Promise.race(executing);
+    }
+  }
+
+  await Promise.all(executing);
 }
 
 // ============================================================

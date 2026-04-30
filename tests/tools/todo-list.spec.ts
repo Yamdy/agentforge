@@ -6,10 +6,8 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { of, firstValueFrom, toArray } from 'rxjs';
 import type { AgentEvent, Message } from '../../src/core/events.js';
 import type { InterceptorPlugin, PluginContext } from '../../src/plugins/plugin.js';
-import { buildPluginPipeline } from '../../src/plugins/pipeline.js';
 import {
   createTodoListTool,
   createTodoListPlugin,
@@ -44,6 +42,31 @@ function createAgentStepEvent(): AgentEvent {
     step: 1,
     maxSteps: 10,
   };
+}
+
+// ============================================================
+// Plugin Test Helper
+// ============================================================
+
+/**
+ * Run an InterceptorPlugin against events and collect the results.
+ * Replaces the old buildPluginPipeline + firstValueFrom(toArray()) RxJS pattern.
+ */
+async function runPluginIntercept(
+  plugin: InterceptorPlugin,
+  ctx: PluginContext,
+  ...events: AgentEvent[]
+): Promise<AgentEvent[]> {
+  const results: AgentEvent[] = [];
+  for (const event of events) {
+    try {
+      const result = await Promise.resolve(plugin.intercept(event, ctx));
+      results.push(result || event);
+    } catch {
+      results.push(event);
+    }
+  }
+  return results;
 }
 
 // ============================================================
@@ -312,14 +335,13 @@ describe('TodoListPlugin', () => {
     };
 
     const plugin = createTodoListPlugin(state);
-    const source$ = of(
+    const events = await runPluginIntercept(
+      plugin,
+      ctx,
       createLLMRequestEvent([{ role: 'user', content: 'What should I do next?' }]),
     );
 
-    const result$ = buildPluginPipeline(source$, [plugin], ctx);
-    const events = await firstValueFrom(result$.pipe(toArray()));
-
-    const llmRequest = events.find(e => e.type === 'llm.request') as Extract<AgentEvent, { type: 'llm.request' }>;
+    const llmRequest = events[0]! as Extract<AgentEvent, { type: 'llm.request' }>;
 
     expect(llmRequest).toBeDefined();
     expect(llmRequest.messages.length).toBeGreaterThan(1);
@@ -336,14 +358,13 @@ describe('TodoListPlugin', () => {
     const state: TodoListState = { items: [] };
     const plugin = createTodoListPlugin(state);
 
-    const source$ = of(
+    const events = await runPluginIntercept(
+      plugin,
+      ctx,
       createLLMRequestEvent([{ role: 'user', content: 'Hello' }]),
     );
 
-    const result$ = buildPluginPipeline(source$, [plugin], ctx);
-    const events = await firstValueFrom(result$.pipe(toArray()));
-
-    const llmRequest = events.find(e => e.type === 'llm.request') as Extract<AgentEvent, { type: 'llm.request' }>;
+    const llmRequest = events[0]! as Extract<AgentEvent, { type: 'llm.request' }>;
 
     // No injection when empty
     expect(llmRequest.messages).toHaveLength(1);
@@ -365,9 +386,7 @@ describe('TodoListPlugin', () => {
     };
     const plugin = createTodoListPlugin(state);
 
-    const source$ = of(createAgentStepEvent());
-    const result$ = buildPluginPipeline(source$, [plugin], ctx);
-    const events = await firstValueFrom(result$.pipe(toArray()));
+    const events = await runPluginIntercept(plugin, ctx, createAgentStepEvent());
 
     expect(events).toHaveLength(1);
     expect(events[0]?.type).toBe('agent.step');
@@ -388,14 +407,13 @@ describe('TodoListPlugin', () => {
     };
     const plugin = createTodoListPlugin(state);
 
-    const source$ = of(
+    const events = await runPluginIntercept(
+      plugin,
+      ctx,
       createLLMRequestEvent([{ role: 'user', content: 'Status?' }]),
     );
 
-    const result$ = buildPluginPipeline(source$, [plugin], ctx);
-    const events = await firstValueFrom(result$.pipe(toArray()));
-
-    const llmRequest = events.find(e => e.type === 'llm.request') as Extract<AgentEvent, { type: 'llm.request' }>;
+    const llmRequest = events[0]! as Extract<AgentEvent, { type: 'llm.request' }>;
     const systemMessage = llmRequest.messages[0]!;
 
     expect(systemMessage.content).toContain('Completed');
@@ -435,14 +453,13 @@ describe('TodoListPlugin', () => {
     };
     const plugin = createTodoListPlugin(state);
 
-    const source$ = of(
+    const events = await runPluginIntercept(
+      plugin,
+      ctx,
       createLLMRequestEvent([{ role: 'user', content: 'What next?' }]),
     );
 
-    const result$ = buildPluginPipeline(source$, [plugin], ctx);
-    const events = await firstValueFrom(result$.pipe(toArray()));
-
-    const llmRequest = events.find(e => e.type === 'llm.request') as Extract<AgentEvent, { type: 'llm.request' }>;
+    const llmRequest = events[0]! as Extract<AgentEvent, { type: 'llm.request' }>;
     const content = llmRequest.messages[0]!.content;
 
     expect(content).toContain('In Progress');
@@ -463,14 +480,13 @@ describe('TodoListPlugin', () => {
     };
     const plugin = createTodoListPlugin(state);
 
-    const source$ = of(
+    const events = await runPluginIntercept(
+      plugin,
+      ctx,
       createLLMRequestEvent([{ role: 'user', content: 'Status' }]),
     );
 
-    const result$ = buildPluginPipeline(source$, [plugin], ctx);
-    const events = await firstValueFrom(result$.pipe(toArray()));
-
-    const llmRequest = events.find(e => e.type === 'llm.request') as Extract<AgentEvent, { type: 'llm.request' }>;
+    const llmRequest = events[0]! as Extract<AgentEvent, { type: 'llm.request' }>;
     const content = llmRequest.messages[0]!.content;
 
     // Should show last 3 completed items
@@ -500,14 +516,13 @@ describe('TodoList Tool + Plugin Integration', () => {
 
     // Plugin should see the todo
     const ctx = createPluginContext();
-    const source$ = of(
+    const events = await runPluginIntercept(
+      plugin,
+      ctx,
       createLLMRequestEvent([{ role: 'user', content: 'What should I do?' }]),
     );
 
-    const result$ = buildPluginPipeline(source$, [plugin], ctx);
-    const events = await firstValueFrom(result$.pipe(toArray()));
-
-    const llmRequest = events.find(e => e.type === 'llm.request') as Extract<AgentEvent, { type: 'llm.request' }>;
+    const llmRequest = events[0]! as Extract<AgentEvent, { type: 'llm.request' }>;
     const systemMessage = llmRequest.messages[0]!;
 
     expect(systemMessage.content).toContain('Integration task');

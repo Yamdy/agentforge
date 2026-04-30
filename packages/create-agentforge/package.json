@@ -36,7 +36,6 @@
     "cli",
     "agent",
     "ai",
-    "rxjs",
     "zod"
   ],
   "license": "MIT"

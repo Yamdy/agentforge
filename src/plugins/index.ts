@@ -27,7 +27,7 @@ export {
 // Pipeline Builder (new imperative API)
 // ============================================================
 
-export { applyPlugins, buildPluginPipeline, emptyPipeline, blockingPipeline, replacePipeline } from './pipeline.js';
+export { applyPlugins } from './pipeline.js';
 
 // ============================================================
 // Plugin Manager

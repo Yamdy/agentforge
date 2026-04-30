@@ -22,35 +22,68 @@ import {
   TransportParseError,
 } from '../../src/a2a/index.js';
 import type { A2ATransport, A2ATransportOptions } from '../../src/a2a/index.js';
-import { Subject, of } from 'rxjs';
-import type { Observable } from 'rxjs';
+import type { Subscribable } from '../../src/a2a/transport.js';
 
 // ============================================================
 // Mock Transport for Factory Tests
 // ============================================================
 
 function createMockTransport(options: A2ATransportOptions): A2ATransport {
-  const statusSubject = new Subject<string>();
-  const messagesSubject = new Subject<import('../../src/a2a/index.js').A2AMessage>();
+  let _status: import('../../src/a2a/index.js').TransportStatus = 'disconnected';
+  const statusListeners = new Set<(s: import('../../src/a2a/index.js').TransportStatus) => void>();
+  const messageListeners = new Set<(m: import('../../src/a2a/index.js').A2AMessage) => void>();
 
   return {
     name: 'mock',
     agentId: options.agentId,
     status: 'disconnected' as const,
-    status$: statusSubject.asObservable() as Observable<import('../../src/a2a/index.js').TransportStatus>,
-    messages$: messagesSubject.asObservable(),
+    status$: {
+      subscribe(observer: {
+        next?: (v: import('../../src/a2a/index.js').TransportStatus) => void;
+        error?: (e: unknown) => void;
+        complete?: () => void;
+      }): { unsubscribe(): void } {
+        const next = observer.next ?? (() => {});
+        next(_status); // replay
+        const listener = (s: import('../../src/a2a/index.js').TransportStatus) => next(s);
+        statusListeners.add(listener);
+        return {
+          unsubscribe() {
+            statusListeners.delete(listener);
+          },
+        };
+      },
+    } as Subscribable<import('../../src/a2a/index.js').TransportStatus>,
+    messages$: {
+      subscribe(observer: {
+        next?: (v: import('../../src/a2a/index.js').A2AMessage) => void;
+        error?: (e: unknown) => void;
+        complete?: () => void;
+      }): { unsubscribe(): void } {
+        const next = observer.next ?? (() => {});
+        const listener = (m: import('../../src/a2a/index.js').A2AMessage) => next(m);
+        messageListeners.add(listener);
+        return {
+          unsubscribe() {
+            messageListeners.delete(listener);
+          },
+        };
+      },
+    } as Subscribable<import('../../src/a2a/index.js').A2AMessage>,
     connect: async () => {
-      // no-op
+      _status = 'connected';
+      for (const l of statusListeners) l('connected');
     },
     disconnect: async () => {
-      // no-op
+      _status = 'disconnected';
+      for (const l of statusListeners) l('disconnected');
     },
     send: async () => {
       // no-op
     },
     destroy: () => {
-      statusSubject.complete();
-      messagesSubject.complete();
+      statusListeners.clear();
+      messageListeners.clear();
     },
   };
 }

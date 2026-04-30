@@ -7,7 +7,7 @@
  * Design principles:
  * - Errors are isolated (never crash the watcher)
  * - Debounce prevents rapid file change storms
- * - Observable-based API for event stream integration
+ * - Callback-based API for event subscription
  *
  * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN/08-SUBSYSTEMS.md
  */
@@ -15,8 +15,6 @@
 import { watch, type FSWatcher } from 'fs';
 import { readdir, stat } from 'fs/promises';
 import { join, resolve } from 'path';
-import { Subject, Observable } from 'rxjs';
-import { debounceTime, takeUntil, filter } from 'rxjs/operators';
 import type { SkillInfo } from './types.js';
 import { loadSkill, type SkillLoaderConfig } from './loader.js';
 import type { SkillReloadHook } from './hooks.js';
@@ -36,16 +34,12 @@ export type SkillReloadEventType = 'added' | 'changed' | 'removed';
 export interface SkillReloadEvent {
   /** Event type */
   type: SkillReloadEventType;
-
   /** Skill file path that triggered the event */
   filePath: string;
-
   /** Skill name (if successfully loaded) */
   skillName?: string;
-
   /** Loaded skill info (for added/changed events) */
   skill?: SkillInfo;
-
   /** Error info (if reload failed) */
   error?: string;
 }
@@ -65,22 +59,16 @@ export type WatcherStatus = 'idle' | 'watching' | 'stopped' | 'error';
 export interface SkillWatcherConfig {
   /** Directories to watch */
   directories: string[];
-
   /** Skill file name to watch (default: SKILL.md) */
   skillFileName?: string;
-
   /** Debounce time in milliseconds (default: 300) */
   debounceMs?: number;
-
   /** Enable recursive watching */
   recursive?: boolean;
-
   /** Loader configuration */
   loaderConfig?: SkillLoaderConfig;
-
   /** Hooks for reload lifecycle */
   hooks?: SkillReloadHook[];
-
   /** Enable debug logging */
   debug?: boolean;
 }
@@ -101,7 +89,7 @@ const DEFAULT_WATCHER_CONFIG: Required<Omit<SkillWatcherConfig, 'directories' | 
  *
  * Uses Node.js native fs.watch API with:
  * - Debounce to prevent rapid re-reloads
- * - Event-based API via Observable
+ * - Callback-based API
  * - Hook system for customization
  *
  * @example
@@ -111,7 +99,7 @@ const DEFAULT_WATCHER_CONFIG: Required<Omit<SkillWatcherConfig, 'directories' | 
  *   onReload: (event) => console.log('Reloaded:', event.skillName),
  * });
  *
- * const subscription = watcher.events$.subscribe((event) => {
+ * const unsub = watcher.onReload((event) => {
  *   console.log(`${event.type}: ${event.filePath}`);
  * });
  *
@@ -119,7 +107,7 @@ const DEFAULT_WATCHER_CONFIG: Required<Omit<SkillWatcherConfig, 'directories' | 
  *
  * // Later...
  * watcher.stop();
- * subscription.unsubscribe();
+ * unsub();
  * ```
  */
 export class SkillWatcher {
@@ -131,14 +119,11 @@ export class SkillWatcher {
 
   private watchers: Map<string, FSWatcher> = new Map();
   private status: WatcherStatus = 'idle';
-  private reloadSubject = new Subject<SkillReloadEvent>();
-  /** Internal stop signal (accessible for extension) */
-  protected stopSubject = new Subject<void>();
+  private reloadListeners = new Set<(event: SkillReloadEvent) => void>();
+  private stopped = false;
+  private debounceTimer: NodeJS.Timeout | null = null;
   private debounceTimers: Map<string, NodeJS.Timeout> = new Map();
   private knownSkills: Map<string, SkillInfo> = new Map();
-
-  /** Observable of reload events */
-  readonly events$: Observable<SkillReloadEvent>;
 
   constructor(config: SkillWatcherConfig) {
     this.config = {
@@ -147,13 +132,14 @@ export class SkillWatcher {
       loaderConfig: config.loaderConfig ?? {},
       hooks: config.hooks ?? [],
     };
+  }
 
-    // Create debounced event stream
-    this.events$ = this.reloadSubject.asObservable().pipe(
-      debounceTime(this.config.debounceMs),
-      takeUntil(this.stopSubject.asObservable()),
-      filter(() => this.status === 'watching')
-    );
+  /**
+   * Subscribe to reload events. Returns unsubscribe function.
+   */
+  onReload(listener: (event: SkillReloadEvent) => void): () => void {
+    this.reloadListeners.add(listener);
+    return () => { this.reloadListeners.delete(listener); };
   }
 
   /**
@@ -179,6 +165,7 @@ export class SkillWatcher {
     }
 
     this.status = 'watching';
+    this.stopped = false;
 
     for (const dir of this.config.directories) {
       await this.watchDirectory(dir);
@@ -195,8 +182,15 @@ export class SkillWatcher {
    */
   stop(): void {
     this.status = 'stopped';
+    this.stopped = true;
 
-    // Clear debounce timers
+    // Clear debounce timer
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer);
+      this.debounceTimer = null;
+    }
+
+    // Clear per-file debounce timers
     for (const timer of Array.from(this.debounceTimers.values())) {
       clearTimeout(timer);
     }
@@ -215,73 +209,44 @@ export class SkillWatcher {
       }
     }
     this.watchers.clear();
-
-    // Signal stop
-    this.stopSubject.next();
   }
 
   /**
    * Watch a single directory
    */
   private async watchDirectory(dir: string): Promise<void> {
-    const absoluteDir = resolve(dir);
-
     try {
-      // Check if directory exists
-      const dirStat = await stat(absoluteDir);
-      if (!dirStat.isDirectory()) {
-        if (this.config.debug) {
-          console.warn(`[SkillWatcher] Not a directory: ${absoluteDir}`);
+      const resolved = resolve(dir);
+      const watcher = watch(resolved, { recursive: this.config.recursive });
+      this.watchers.set(resolved, watcher);
+
+      watcher.on('change', (_eventType, filename) => {
+        if (filename && filename.toString().endsWith(this.config.skillFileName)) {
+          this.handleFileChange(join(resolved, filename.toString()));
         }
-        return;
-      }
-
-      // Initial scan to discover existing skills
-      await this.scanDirectory(absoluteDir);
-
-      // Watch the directory
-      const watcher = watch(
-        absoluteDir,
-        { recursive: this.config.recursive },
-        (eventType, filename) => {
-          this.handleFileEvent(absoluteDir, eventType, filename);
-        }
-      );
-
-      watcher.on('error', (error) => {
-        this.handleWatchError(absoluteDir, error);
       });
 
-      this.watchers.set(absoluteDir, watcher);
-
-      if (this.config.debug) {
-        // eslint-disable-next-line no-console
-        console.log(`[SkillWatcher] Watching ${absoluteDir}`);
-      }
+      // Initial scan
+      await this.scanDirectory(resolved);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
       if (this.config.debug) {
-        console.warn(`[SkillWatcher] Failed to watch ${absoluteDir}: ${message}`);
+        console.error(`[SkillWatcher] Failed to watch ${dir}:`, error);
       }
     }
   }
 
   /**
-   * Scan directory for existing skills
+   * Scan directory for skill files
    */
   private async scanDirectory(dir: string): Promise<void> {
     try {
       const entries = await readdir(dir, { withFileTypes: true });
-
       for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
-        if (entry.name.startsWith('.')) continue;
-
-        const skillPath = join(dir, entry.name, this.config.skillFileName);
-        const result = await loadSkill(skillPath, this.config.loaderConfig);
-
-        if (result.success) {
-          this.knownSkills.set(skillPath, result.skill);
+        const fullPath = join(dir, entry.name);
+        if (entry.isDirectory() && this.config.recursive) {
+          await this.scanDirectory(fullPath);
+        } else if (entry.isFile() && entry.name === this.config.skillFileName) {
+          await this.loadAndAddSkill(fullPath);
         }
       }
     } catch {
@@ -290,196 +255,66 @@ export class SkillWatcher {
   }
 
   /**
-   * Handle file system event
+   * Handle file change event
    */
-  private handleFileEvent(watchDir: string, eventType: string, filename: string | null): void {
-    if (!filename) return;
+  private async handleFileChange(filePath: string): Promise<void> {
+    // Debounce per-file
+    const existing = this.debounceTimers.get(filePath);
+    if (existing) clearTimeout(existing);
 
-    // Only process skill files
-    if (!filename.endsWith(this.config.skillFileName)) {
-      // Check if it's a directory change that might contain skill files
-      if (eventType === 'rename') {
-        const fullPath = join(watchDir, filename);
-        void this.checkAndWatchDirectory(fullPath);
-      }
-      return;
-    }
-
-    const filePath = join(watchDir, filename);
-
-    // Debounce file changes
-    this.debounceReload(filePath, eventType);
-  }
-
-  /**
-   * Check if path is a directory and watch it
-   */
-  private async checkAndWatchDirectory(path: string): Promise<void> {
-    try {
-      const pathStat = await stat(path);
-      if (pathStat.isDirectory() && !this.watchers.has(path)) {
-        await this.watchDirectory(path);
-      }
-    } catch {
-      // Path doesn't exist or not accessible
-    }
-  }
-
-  /**
-   * Debounce reload to prevent rapid-fire events
-   */
-  private debounceReload(filePath: string, _eventType: string): void {
-    // Clear existing timer
-    const existingTimer = this.debounceTimers.get(filePath);
-    if (existingTimer) {
-      clearTimeout(existingTimer);
-    }
-
-    // Set new timer
-    const timer = setTimeout(() => {
+    this.debounceTimers.set(filePath, setTimeout(async () => {
       this.debounceTimers.delete(filePath);
-      void this.processReload(filePath);
-    }, this.config.debounceMs);
-
-    this.debounceTimers.set(filePath, timer);
-  }
-
-  /**
-   * Process a file reload
-   */
-  private async processReload(filePath: string): Promise<void> {
-    if (this.status !== 'watching') return;
-
-    try {
-      // Check if file was removed
       try {
         await stat(filePath);
-      } catch {
-        // File doesn't exist - removal event
-        const previousSkill = this.knownSkills.get(filePath);
-        this.knownSkills.delete(filePath);
-
-        const event: SkillReloadEvent = {
-          type: 'removed',
-          filePath,
-        };
-
-        if (previousSkill) {
-          event.skillName = previousSkill.frontmatter.name;
+        // File exists — added or changed
+        const result = await loadSkill(filePath, this.config.loaderConfig);
+        if (result.success) {
+          const name = result.skill.frontmatter.name ?? filePath;
+          this.knownSkills.set(name, result.skill);
+          this.emitReload({ type: 'changed', filePath, skillName: name, skill: result.skill });
+        } else {
+          this.emitReload({ type: 'added', filePath });
         }
-
-        await this.executeBeforeReloadHooks(event);
-        this.reloadSubject.next(event);
-        await this.executeAfterReloadHooks(event);
-        return;
+      } catch {
+        // File removed
+        if (this.knownSkills.has(filePath)) {
+          this.knownSkills.delete(filePath);
+        }
+        this.emitReload({ type: 'removed', filePath });
       }
+    }, 100)); // Per-file debounce
+  }
 
-      // Load the skill
+  /**
+   * Load and add a skill
+   */
+  private async loadAndAddSkill(filePath: string): Promise<void> {
+    try {
       const result = await loadSkill(filePath, this.config.loaderConfig);
-
       if (result.success) {
-        const previousSkill = this.knownSkills.get(filePath);
-        const eventType: SkillReloadEventType = previousSkill ? 'changed' : 'added';
-
-        const event: SkillReloadEvent = {
-          type: eventType,
-          filePath,
-          skillName: result.skill.frontmatter.name,
-          skill: result.skill,
-        };
-
-        this.knownSkills.set(filePath, result.skill);
-
-        await this.executeBeforeReloadHooks(event);
-        this.reloadSubject.next(event);
-        await this.executeAfterReloadHooks(event);
-
-        if (this.config.debug) {
-          // eslint-disable-next-line no-console
-          console.log(`[SkillWatcher] ${eventType}: ${result.skill.frontmatter.name} (${filePath})`);
-        }
-      } else {
-        // Load failed - result is narrowed to error case
-        const event: SkillReloadEvent = {
-          type: 'changed',
-          filePath,
-          error: result.error,
-        };
-
-        await this.executeBeforeReloadHooks(event);
-        this.reloadSubject.next(event);
-        await this.executeAfterReloadHooks(event);
-
-        if (this.config.debug) {
-          console.warn(`[SkillWatcher] Failed to reload ${filePath}: ${result.error}`);
-        }
+        const name = result.skill.frontmatter.name ?? filePath;
+        this.knownSkills.set(name, result.skill);
       }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-
-      const event: SkillReloadEvent = {
-        type: 'changed',
-        filePath,
-        error: `Reload error: ${message}`,
-      };
-
-      await this.executeBeforeReloadHooks(event);
-      this.reloadSubject.next(event);
-      await this.executeAfterReloadHooks(event);
-
-      if (this.config.debug) {
-        console.error(`[SkillWatcher] Error processing ${filePath}:`, message);
-      }
+    } catch {
+      // Ignore load errors during scan
     }
   }
 
   /**
-   * Execute before reload hooks
+   * Emit a reload event with global debounce
    */
-  private async executeBeforeReloadHooks(event: SkillReloadEvent): Promise<void> {
-    for (const hook of this.config.hooks) {
-      if (!hook.beforeReload) continue;
+  private emitReload(event: SkillReloadEvent): void {
+    if (this.stopped || this.status !== 'watching') return;
 
-      try {
-        await hook.beforeReload(event);
-      } catch {
-        // Ignore hook errors
+    // Global debounce: reset timer on each event, fire after debounceMs
+    if (this.debounceTimer) clearTimeout(this.debounceTimer);
+    this.debounceTimer = setTimeout(() => {
+      this.debounceTimer = null;
+      if (this.stopped || this.status !== 'watching') return;
+      for (const listener of this.reloadListeners) {
+        try { listener(event); } catch { /* isolate */ }
       }
-    }
-  }
-
-  /**
-   * Execute after reload hooks
-   */
-  private async executeAfterReloadHooks(event: SkillReloadEvent): Promise<void> {
-    for (const hook of this.config.hooks) {
-      if (!hook.afterReload) continue;
-
-      try {
-        await hook.afterReload(event);
-      } catch {
-        // Ignore hook errors
-      }
-    }
-  }
-
-  /**
-   * Handle watch error
-   */
-  private handleWatchError(watchDir: string, error: Error): void {
-    this.status = 'error';
-
-    const event: SkillReloadEvent = {
-      type: 'changed',
-      filePath: watchDir,
-      error: `Watch error: ${error.message}`,
-    };
-
-    this.reloadSubject.next(event);
-
-    if (this.config.debug) {
-      console.error(`[SkillWatcher] Watch error on ${watchDir}:`, error.message);
-    }
+    }, this.config.debounceMs);
   }
 }
 
@@ -489,10 +324,6 @@ export class SkillWatcher {
 
 /**
  * Create a skill watcher for a single directory
- *
- * @param directory - Directory to watch
- * @param options - Watcher options
- * @returns SkillWatcher instance
  */
 export function createSkillWatcher(
   directory: string,
@@ -505,39 +336,24 @@ export function createSkillWatcher(
 }
 
 /**
- * Watch skills and get an Observable of events
- *
- * @param directories - Directories to watch
- * @param options - Watcher options
- * @returns Observable of reload events
+ * Watch skills with a callback listener. Returns { watcher, unsub }.
+ * Auto-starts watching.
  */
 export function watchSkills(
   directories: string[],
+  listener: (event: SkillReloadEvent) => void,
   options: Omit<SkillWatcherConfig, 'directories'> = {}
-): Observable<SkillReloadEvent> & { watcher: SkillWatcher } {
+): { watcher: SkillWatcher; unsub: () => void } {
   const watcher = new SkillWatcher({
     ...options,
     directories,
   });
 
-  // Create a stop observable from the watcher's public interface
-  const stop$ = new Subject<void>();
+  const unsub = watcher.onReload(listener);
 
-  const originalStop = watcher.stop.bind(watcher);
-  watcher.stop = (): void => {
-    originalStop();
-    stop$.next();
-    stop$.complete();
-  };
-
-  const observable = watcher.events$.pipe(
-    takeUntil(stop$)
-  );
-
-  // Auto-start
   watcher.start().catch(() => {
     // Ignore start errors
   });
 
-  return Object.assign(observable, { watcher });
+  return { watcher, unsub };
 }

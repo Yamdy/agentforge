@@ -35,7 +35,6 @@
 
 import { generateText, streamText, tool } from 'ai';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import { Observable } from 'rxjs';
 import { z } from 'zod';
 
 // ============================================================
@@ -87,7 +86,7 @@ const model = provider(MODEL_NAME);
  * 
  * 注意: AgentForge 的 LLMAdapter 接口定义:
  * - chat(messages, options?) → Promise<LLMResponse>
- * - stream(messages, options?) → Observable<LLMChunk>
+ * - stream(messages, options?) → AsyncIterable<LLMChunk>
  */
 class AISDKAdapter implements LLMAdapter {
   readonly name = 'ai-sdk-adapter';
@@ -283,61 +282,47 @@ class AISDKAdapter implements LLMAdapter {
   }
 
   /**
-   * 流式调用 - stream 方法
+   * 流式调用 - stream 方法 (AsyncGenerator 模式)
    * 
-   * AgentForge 接口: stream(messages: Message[], options?: LLMOptions): Observable<LLMChunk>
-   * 
-   * 注意: 返回类型是 Observable<LLMChunk>，不是 AsyncGenerator
+   * AgentForge 接口: stream(messages: Message[], options?: LLMOptions): AsyncIterable<LLMChunk>
    * 
    * 使用 fullStream 以确保文本和工具调用块的正确顺序
    */
-  stream(messages: Message[], options?: LLMOptions): Observable<LLMChunk> {
-    return new Observable<LLMChunk>((subscriber) => {
-      const run = async () => {
-        try {
-          // 转换工具定义
-          const tools = this.convertTools(options?.tools as FunctionDefinition[] | undefined);
-          
-          // 使用 fullStream 以获得所有块类型（包括文本和工具调用）
-          const { fullStream } = await streamText({
-            model,
-            messages: this.convertMessages(messages),
-            temperature: options?.temperature ?? 0.7,
-            ...(tools ? { tools } : {}),
-          });
-
-          // 从 fullStream 迭代，保持正确的块顺序
-          for await (const chunk of fullStream) {
-            if (chunk.type === 'text-delta') {
-              // 文本块 - AI SDK uses 'text' property for text-delta chunks
-              const textDelta = (chunk as { text?: string }).text;
-              if (textDelta) {
-                subscriber.next({ text: textDelta });
-              }
-            } else if (chunk.type === 'tool-call') {
-              // 工具调用块 - AI SDK uses 'input' property for args
-              const toolCallChunk = chunk as {
-                toolCallId: string;
-                toolName: string;
-                input?: unknown;
-              };
-              subscriber.next({
-                toolCallId: toolCallChunk.toolCallId,
-                toolName: toolCallChunk.toolName,
-                argsDelta: JSON.stringify(toolCallChunk.input ?? {}),
-              });
-            }
-            // 其他块类型（如 tool-call-delta）可以按需处理
-          }
-
-          subscriber.complete();
-        } catch (error) {
-          subscriber.error(error);
-        }
-      };
-
-      run();
+  async *stream(messages: Message[], options?: LLMOptions): AsyncGenerator<LLMChunk> {
+    // 转换工具定义
+    const tools = this.convertTools(options?.tools as FunctionDefinition[] | undefined);
+    
+    // 使用 fullStream 以获得所有块类型（包括文本和工具调用）
+    const { fullStream } = streamText({
+      model,
+      messages: this.convertMessages(messages),
+      temperature: options?.temperature ?? 0.7,
+      ...(tools ? { tools } : {}),
     });
+
+    // 从 fullStream 迭代，保持正确的块顺序
+    for await (const chunk of fullStream) {
+      if (chunk.type === 'text-delta') {
+        // 文本块 - AI SDK uses 'text' property for text-delta chunks
+        const textDelta = (chunk as { text?: string }).text;
+        if (textDelta) {
+          yield { text: textDelta };
+        }
+      } else if (chunk.type === 'tool-call') {
+        // 工具调用块 - AI SDK uses 'input' property for args
+        const toolCallChunk = chunk as {
+          toolCallId: string;
+          toolName: string;
+          input?: unknown;
+        };
+        yield {
+          toolCallId: toolCallChunk.toolCallId,
+          toolName: toolCallChunk.toolName,
+          argsDelta: JSON.stringify(toolCallChunk.input ?? {}),
+        };
+      }
+      // 其他块类型（如 tool-call-delta）可以按需处理
+    }
   }
 }
 

@@ -4,8 +4,6 @@
 
 import { createOpenAI } from '@ai-sdk/openai';
 import type { LLMAdapter, LLMResponse, LLMChunk } from 'agentforge';
-import { from } from 'rxjs';
-import { map } from 'rxjs/operators';
 
 // Initialize OpenAI client
 const openai = createOpenAI({
@@ -45,19 +43,19 @@ export const adapter: LLMAdapter = {
   /**
    * Stream response chunks
    */
-  stream(prompt: string) {
-    return from(model.doStream({
+  async *stream(prompt: string) {
+    const stream = model.doStream({
       inputFormat: 'prompt',
       mode: { type: 'regular' },
       prompt: prompt,
-    })).pipe(
-      map((streamResult): LLMChunk => {
-        const chunk = streamResult.stream;
-        return {
-          delta: chunk.text ?? '',
-          done: false,
-        };
-      }),
-    );
+    });
+    for await (const result of stream) {
+      const chunk = (result as any).stream;
+      yield {
+        delta: chunk?.text ?? '',
+        done: false,
+      } as LLMChunk;
+    }
+    yield { delta: '', done: true } as LLMChunk;
   },
 };

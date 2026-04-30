@@ -13,7 +13,7 @@ import { createAgent } from '../../src/api/create-agent.js';
 import type { AgentConfig } from '../../src/api/types.js';
 import { NoopTracer, ConsoleTracer, NoopMetrics, ConsoleMetrics } from '../../src/core/defaults.js';
 import type { LLMAdapter, LLMResponse, Message } from '../../src/core/interfaces.js';
-import { of } from 'rxjs';
+
 
 // ============================================================
 // Mock LLM Adapter

@@ -1,17 +1,13 @@
 /**
  * AgentForge Permission Guard
  *
- * Provides the security check function that intercepts tool.call events
- * before execution.
+ * Provides the security check function for tool execution permission.
  *
  * @see design/17-SECURITY.md Section 4.1
  */
 
-import { Observable, from } from 'rxjs';
-import { mergeMap, observeOn, catchError } from 'rxjs/operators';
-import { asyncScheduler } from 'rxjs';
-import type { AgentEvent } from '../../core/events.js';
 import { serializeError, generateId } from '../../core/events.js';
+import type { AgentEvent } from '../../core/events.js';
 import type { ToolDefinition } from '../../core/interfaces.js';
 import type { PermissionController, PermissionDecision } from './permission-controller.js';
 import {
@@ -31,7 +27,8 @@ export type PermissionGuardResult =
       type: 'ask';
       toolName: string;
       promptId: string;
-      request$: Observable<PermissionGuardResult>;
+      /** Promise that resolves when user answers */
+      answerPromise: Promise<PermissionGuardResult>;
     };
 
 export interface PermissionGuardContext {
@@ -92,7 +89,7 @@ export function createPermissionPromptEvent(
     promptId,
     permission,
     context,
-  };
+  } as AgentEvent;
 }
 
 export function createPermissionDecisionEvent(
@@ -106,17 +103,21 @@ export function createPermissionDecisionEvent(
     sessionId,
     promptId,
     decision,
-  };
+  } as AgentEvent;
 }
 
-export function handlePermissionAsk(
+/**
+ * Handle permission check for a tool call.
+ * Returns a Promise of event+state pairs.
+ */
+export async function handlePermissionAsk(
   toolCall: { id: string; name: string; args: Record<string, unknown> },
   tool: ToolDefinition,
   sessionId: string,
   step: number,
   permissionController: PermissionController,
-  onAllow: () => Observable<{ event: AgentEvent; state: unknown }>
-): Observable<{ event: AgentEvent; state: unknown }> {
+  onAllow: () => Promise<{ event: AgentEvent; state: unknown }>
+): Promise<Array<{ event: AgentEvent; state: unknown }>> {
   const promptId = `perm-${generateId()}`;
 
   const askContext: Record<string, unknown> = {};
@@ -127,60 +128,53 @@ export function handlePermissionAsk(
     askContext.approvalMessage = tool.approvalMessage;
   }
 
-  return permissionController
-    .ask({
+  try {
+    const decision = await permissionController.ask({
       promptId,
       permission: toolCall.name,
       context: askContext,
       toolName: toolCall.name,
       toolArgs: toolCall.args,
-    })
-    .pipe(
-      observeOn(asyncScheduler),
-      mergeMap((decision: PermissionDecision) => {
-        const decisionEvent = createPermissionDecisionEvent(promptId, decision, sessionId);
+    });
 
-        if (decision === 'allow' || decision === 'allow_always') {
-          return onAllow().pipe(
-            mergeMap(result => {
-              return from([{ event: decisionEvent, state: result.state }, result] as Array<{
-                event: AgentEvent;
-                state: unknown;
-              }>);
-            })
-          );
-        }
+    const decisionEvent = createPermissionDecisionEvent(promptId, decision, sessionId);
 
-        const denialEvents = createPermissionDeniedEvents(
-          toolCall.name,
-          sessionId,
-          step,
-          tool.approvalMessage ?? `Permission denied for tool: ${toolCall.name}`
-        );
+    if (decision === 'allow' || decision === 'allow_always') {
+      const result = await onAllow();
+      return [
+        { event: decisionEvent, state: result.state },
+        result,
+      ];
+    }
 
-        return from([
-          { event: decisionEvent, state: undefined },
-          ...denialEvents.map(event => ({ event, state: undefined })),
-        ] as Array<{ event: AgentEvent; state: unknown }>);
-      }),
-      catchError(error => {
-        const errorEvent: AgentEvent = {
-          type: 'agent.error',
-          timestamp: Date.now(),
-          sessionId,
-          error: serializeError(error),
-          step,
-        };
-        const doneEvent: AgentEvent = {
-          type: 'done',
-          timestamp: Date.now(),
-          sessionId,
-          reason: 'error',
-        };
-        return from([
-          { event: errorEvent, state: undefined },
-          { event: doneEvent, state: undefined },
-        ] as Array<{ event: AgentEvent; state: unknown }>);
-      })
+    const denialEvents = createPermissionDeniedEvents(
+      toolCall.name,
+      sessionId,
+      step,
+      tool.approvalMessage ?? `Permission denied for tool: ${toolCall.name}`
     );
+
+    return [
+      { event: decisionEvent, state: undefined },
+      ...denialEvents.map(event => ({ event, state: undefined })),
+    ];
+  } catch (error) {
+    const errorEvent: AgentEvent = {
+      type: 'agent.error',
+      timestamp: Date.now(),
+      sessionId,
+      error: serializeError(error),
+      step,
+    } as AgentEvent;
+    const doneEvent: AgentEvent = {
+      type: 'done',
+      timestamp: Date.now(),
+      sessionId,
+      reason: 'error',
+    } as AgentEvent;
+    return [
+      { event: errorEvent, state: undefined },
+      { event: doneEvent, state: undefined },
+    ];
+  }
 }

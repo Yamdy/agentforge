@@ -3,11 +3,11 @@
  *
  * Tests for the workflow orchestration engine.
  * Validates Workflow, WorkflowExecutor, SequentialPipeline, and ParallelPipeline.
+ *
+ * Converted from RxJS-based to callback-based API per docs/design/25-DE-RXJS.md.
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { Observable, of, from, Subject, firstValueFrom, toArray } from 'rxjs';
-import { filter, take, tap, map } from 'rxjs/operators';
 import {
   Workflow,
   createWorkflow,
@@ -32,10 +32,8 @@ import {
   InMemoryStore,
   DefaultPauseController,
   SimpleSchemaRegistry,
-  generateId,
   serializeError,
 } from '../../src/core/index.js';
-import { AgentLoop, type AgentLoopOptions } from '../../src/api/agent-loop.js';
 
 // ============================================================
 // Mock LLM Adapter
@@ -193,6 +191,17 @@ function createTestWorkflowConfig(): WorkflowConfig {
   };
 }
 
+/**
+ * Helper: run a workflow/pipeline that uses a listener and collect all events
+ */
+async function collectEvents(
+  runner: (listener: (event: AgentEvent) => void) => Promise<unknown>
+): Promise<AgentEvent[]> {
+  const events: AgentEvent[] = [];
+  await runner(event => { events.push(event); });
+  return events;
+}
+
 // ============================================================
 // Tests
 // ============================================================
@@ -236,7 +245,9 @@ describe('Workflow Subsystem', () => {
       const config = createTestWorkflowConfig();
       const workflow = new Workflow(config, ctx);
 
-      const events = await firstValueFrom(workflow.run('test input').pipe(toArray()));
+      const events = await collectEvents(listener =>
+        workflow.run('test input', listener)
+      );
 
       const types = events.map(e => e.type);
       expect(types).toContain('workflow.start');
@@ -260,7 +271,9 @@ describe('Workflow Subsystem', () => {
       const config = createTestWorkflowConfig();
       const workflow = new Workflow(config, ctx);
 
-      const events = await firstValueFrom(workflow.run('test input').pipe(toArray()));
+      const events = await collectEvents(listener =>
+        workflow.run('test input', listener)
+      );
 
       const types = events.map(e => e.type);
 
@@ -299,7 +312,7 @@ describe('Workflow Subsystem', () => {
       };
 
       const workflow = new Workflow(config, ctx);
-      await firstValueFrom(workflow.run('initial').pipe(toArray()));
+      await collectEvents(listener => workflow.run('initial', listener));
 
       // Verify prompts were called
       expect(stepResults.length).toBe(2);
@@ -369,8 +382,8 @@ describe('Workflow Subsystem', () => {
         prompt: input => `Process: ${input}`,
       };
 
-      const events = await firstValueFrom(
-        executor.executeStep(step, 'test input', 'wf-123').pipe(toArray())
+      const events = await collectEvents(listener =>
+        executor.executeStep(step, 'test input', 'wf-123', listener)
       );
 
       const types = events.map(e => e.type);
@@ -387,8 +400,8 @@ describe('Workflow Subsystem', () => {
         prompt: () => 'Test prompt',
       };
 
-      const events = await firstValueFrom(
-        executor.executeStep(step, 'input', 'wf-test-id').pipe(toArray())
+      const events = await collectEvents(listener =>
+        executor.executeStep(step, 'input', 'wf-test-id', listener)
       );
 
       // Check workflow.step.start has workflowId
@@ -451,7 +464,9 @@ describe('Workflow Subsystem', () => {
       ];
 
       const pipeline = new SequentialPipeline(steps, ctx);
-      const events = await firstValueFrom(pipeline.run('input').pipe(toArray()));
+      const events = await collectEvents(listener =>
+        pipeline.run('input', listener)
+      );
 
       const types = events.map(e => e.type);
       expect(types).toContain('workflow.start');
@@ -474,14 +489,12 @@ describe('Workflow Subsystem', () => {
 
       const pipeline = new SequentialPipeline(steps, ctx, { continueOnFailure: false });
 
-      try {
-        await firstValueFrom(pipeline.run('input').pipe(toArray()));
-        // Should throw
-        expect(true).toBe(false);
-      } catch {
-        // Expected
-        expect(true).toBe(true);
-      }
+      const events = await collectEvents(listener =>
+        pipeline.run('input', listener)
+      );
+
+      // Should emit workflow.error event when step fails
+      expect(events.some(e => e.type === 'workflow.error')).toBe(true);
     });
 
     it('should continue on step failure (continueOnFailure=true)', async () => {
@@ -493,7 +506,9 @@ describe('Workflow Subsystem', () => {
       ];
 
       const pipeline = new SequentialPipeline(steps, ctx, { continueOnFailure: true });
-      const events = await firstValueFrom(pipeline.run('input').pipe(toArray()));
+      const events = await collectEvents(listener =>
+        pipeline.run('input', listener)
+      );
 
       // Should complete even if configured to continue on failure
       expect(events.some(e => e.type === 'workflow.complete')).toBe(true);
@@ -542,7 +557,9 @@ describe('Workflow Subsystem', () => {
       ];
 
       const pipeline = new ParallelPipeline(steps, ctx, { maxConcurrency: 2 });
-      const events = await firstValueFrom(pipeline.run('input').pipe(toArray()));
+      const events = await collectEvents(listener =>
+        pipeline.run('input', listener)
+      );
 
       const types = events.map(e => e.type);
       expect(types).toContain('workflow.start');
@@ -570,7 +587,7 @@ describe('Workflow Subsystem', () => {
       ];
 
       const pipeline = new ParallelPipeline(steps, ctx, { maxConcurrency: 2 });
-      await firstValueFrom(pipeline.run('input').pipe(toArray()));
+      await collectEvents(listener => pipeline.run('input', listener));
 
       // Max concurrent should be at most 2
       expect(maxConcurrent).toBeLessThanOrEqual(2);
@@ -665,7 +682,9 @@ describe('Workflow Subsystem', () => {
       };
 
       const workflow = new Workflow(config, ctx);
-      const events = await firstValueFrom(workflow.run('input').pipe(toArray()));
+      const events = await collectEvents(listener =>
+        workflow.run('input', listener)
+      );
 
       // Should have skipped step
       const skippedEvent = events.find(
@@ -684,7 +703,9 @@ describe('Workflow Subsystem', () => {
       };
 
       const workflow = new Workflow(config, ctx);
-      const events = await firstValueFrom(workflow.run('input').pipe(toArray()));
+      const events = await collectEvents(listener =>
+        workflow.run('input', listener)
+      );
 
       expect(events.some(e => e.type === 'workflow.start')).toBe(true);
       expect(events.some(e => e.type === 'workflow.complete')).toBe(true);

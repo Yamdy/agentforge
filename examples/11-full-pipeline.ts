@@ -9,9 +9,6 @@
  * 运行方式: npx tsx examples/11-full-pipeline.ts
  */
 
-import { Observable, of, firstValueFrom, toArray } from 'rxjs';
-import { tap } from 'rxjs/operators';
-
 // ============================================================
 // 1. 核心导入
 // ============================================================
@@ -50,21 +47,6 @@ import {
 import { AgentContextBuilder } from '../src/api/context-builder.js';
 
 import type { LLMAdapter } from '../src/core/interfaces.js';
-
-// RxJS 操作符
-import {
-  logEvents,
-  traceEvents,
-  recordMetrics,
-  checkpoint,
-  collectMetrics,
-  type AgentMetrics,
-  type Logger,
-  createPreset,
-  filterEventType,
-  filterEventTypePrefix,
-  takeUntilTerminal,
-} from '../src/operators/index.js';
 
 // 插件系统
 import {
@@ -167,12 +149,12 @@ class SmartMockLLM implements LLMAdapter {
     };
   }
 
-  stream(messages: Message[], _options?: LLMOptions): Observable<LLMChunk> {
+  async *stream(messages: Message[], _options?: LLMOptions): AsyncGenerator<LLMChunk> {
     // 流式模式：一次性返回完整内容
-    return of({
+    yield {
       text: '这是流式响应的模拟内容。',
       finishReason: 'stop',
-    });
+    };
   }
 }
 
@@ -380,7 +362,65 @@ class ConsoleTracer implements Tracer {
 }
 
 // ============================================================
-// 8. 场景 A: L2 API — 配置驱动，5 行代码跑起 Agent
+// 8. 辅助：事件统计收集器
+// ============================================================
+
+interface AgentRunStats {
+  totalEvents: number;
+  llmCalls: number;
+  toolExecutions: number;
+  promptTokens: number;
+  completionTokens: number;
+  durationMs: number;
+  events: AgentEvent[];
+}
+
+function createRunStatsCollector(): {
+  events: AgentEvent[];
+  handler: (event: AgentEvent) => void;
+  getStats: (startTime: number) => AgentRunStats;
+} {
+  const events: AgentEvent[] = [];
+  
+  const handler = (event: AgentEvent) => {
+    events.push(event);
+  };
+
+  const getStats = (startTime: number): AgentRunStats => {
+    let llmCalls = 0;
+    let toolExecutions = 0;
+    let promptTokens = 0;
+    let completionTokens = 0;
+
+    for (const event of events) {
+      if (event.type === 'llm.response') {
+        llmCalls++;
+        if (event.usage) {
+          promptTokens += event.usage.promptTokens;
+          completionTokens += event.usage.completionTokens;
+        }
+      }
+      if (event.type === 'tool.result') {
+        toolExecutions++;
+      }
+    }
+
+    return {
+      totalEvents: events.length,
+      llmCalls,
+      toolExecutions,
+      promptTokens,
+      completionTokens,
+      durationMs: Date.now() - startTime,
+      events,
+    };
+  };
+
+  return { events, handler, getStats };
+}
+
+// ============================================================
+// 9. 场景 A: L2 API — 配置驱动，5 行代码跑起 Agent
 // ============================================================
 
 async function scenarioA_createAgent(): Promise<void> {
@@ -424,12 +464,12 @@ async function scenarioA_createAgent(): Promise<void> {
 }
 
 // ============================================================
-// 9. 场景 B: L3 API — ContextBuilder + 操作符管线 + 插件
+// 10. 场景 B: L3 API — ContextBuilder + 事件监听 + 插件
 // ============================================================
 
 async function scenarioB_fullPipeline(): Promise<void> {
   console.log('\n' + '═'.repeat(60));
-  console.log('  场景 B: L3 API — 全管线 (操作符 + 插件 + 检查点 + 指标)');
+  console.log('  场景 B: L3 API — 全管线 (事件监听 + 插件 + 检查点 + 指标)');
   console.log('═'.repeat(60) + '\n');
 
   const llm = new SmartMockLLM();
@@ -464,50 +504,69 @@ async function scenarioB_fullPipeline(): Promise<void> {
     checkpoint: { enabled: true, interval: 'llm_response' },
   });
 
-  // 组装自定义操作符管线
-  console.log('🔧 组装操作符管线: logEvents → traceEvents → recordMetrics → collectMetrics\n');
+  // 事件统计收集器
+  const collector = createRunStatsCollector();
 
-  const collectedMetrics: AgentMetrics[] = [];
-  const customLogger: Logger = {
-    debug: (msg: string, data?: unknown) => console.log(`  📋 ${msg}`, data ? '' : ''),
-    info: (msg: string, _data?: unknown) => console.log(`  ℹ️  ${msg}`),
-    warn: (msg: string, _data?: unknown) => console.log(`  ⚠️  ${msg}`),
-    error: (msg: string, _data?: unknown) => console.log(`  ❌ ${msg}`),
-  };
+  // 监听所有事件
+  const unsub = loop.onAny((event) => {
+    // 收集事件
+    collector.handler(event);
+
+    // 日志输出
+    const prefix = `[${event.type}]`;
+    
+    switch (event.type) {
+      case 'agent.start':
+        console.log(`  📋 ${prefix} sessionId=${event.sessionId}`);
+        break;
+      case 'llm.request':
+        console.log(`  ℹ️  ${prefix}`);
+        break;
+      case 'llm.response':
+        console.log(`  💬 ${prefix} content=${event.content?.substring(0, 60)}...`);
+        break;
+      case 'tool.call':
+        console.log(`  🔧 ${prefix} ${event.toolName}`);
+        break;
+      case 'tool.result':
+        console.log(`  ✅ ${prefix} ${event.toolName}`);
+        break;
+      case 'agent.complete':
+        console.log(`  🏁 ${prefix} output=${event.output?.substring(0, 60)}...`);
+        break;
+    }
+
+    // 指标记录
+    if (event.type === 'llm.response' && event.usage) {
+      metrics.increment('llm.calls');
+      metrics.increment('llm.prompt_tokens', event.usage.promptTokens);
+      metrics.increment('llm.completion_tokens', event.usage.completionTokens);
+      metrics.histogram('llm.response_tokens', event.usage.completionTokens);
+    }
+    if (event.type === 'tool.result') {
+      metrics.increment('tool.executions');
+    }
+  });
 
   // 运行 Agent
   console.log('🚀 开始运行 Agent...\n');
+  const startTime = Date.now();
 
-  const result$ = loop.run('帮我查一下北京天气，然后计算 25 乘以 4 加 13').pipe(
-    // 1) 日志操作符
-    logEvents(customLogger),
-    // 2) 追踪操作符
-    traceEvents(tracer),
-    // 3) 指标收集操作符
-    recordMetrics(metrics),
-    // 4) 聚合指标
-    collectMetrics((m: AgentMetrics) => collectedMetrics.push(m)),
-    // 5) 仅保留关键事件的日志
-    filterEventTypePrefix('agent.'),
-    takeUntilTerminal()
-  );
+  await loop.run('帮我查一下北京天气，然后计算 25 乘以 4 加 13');
+  unsub();
 
-  const events = await firstValueFrom(result$.pipe(toArray()));
+  const stats = collector.getStats(startTime);
 
   console.log('\n' + '─'.repeat(40));
-  console.log(`📊 事件统计: 收到 ${events.length} 个 agent.* 事件`);
+  console.log(`📊 事件统计: 收到 ${stats.totalEvents} 个事件`);
 
-  // 输出最终指标
-  if (collectedMetrics.length > 0) {
-    const finalMetrics = collectedMetrics[collectedMetrics.length - 1]!;
-    console.log(`   总事件: ${finalMetrics.totalEvents}`);
-    console.log(`   LLM 调用: ${finalMetrics.llmCalls}`);
-    console.log(`   工具执行: ${finalMetrics.toolExecutions}`);
-    console.log(
-      `   Token: prompt=${finalMetrics.promptTokens}, completion=${finalMetrics.completionTokens}`
-    );
-    console.log(`   耗时: ${finalMetrics.durationMs}ms`);
-  }
+  console.log(`   总事件: ${stats.totalEvents}`);
+  console.log(`   LLM 调用: ${stats.llmCalls}`);
+  console.log(`   工具执行: ${stats.toolExecutions}`);
+  console.log(
+    `   Token: prompt=${stats.promptTokens}, completion=${stats.completionTokens}`
+  );
+  console.log(`   耗时: ${stats.durationMs}ms`);
 
   console.log(metrics.report());
 
@@ -516,7 +575,7 @@ async function scenarioB_fullPipeline(): Promise<void> {
 }
 
 // ============================================================
-// 10. 场景 C: 插件系统 + 记忆压缩
+// 11. 场景 C: 插件系统 + 记忆压缩
 // ============================================================
 
 async function scenarioC_pluginsAndCompaction(): Promise<void> {
@@ -583,7 +642,7 @@ async function scenarioC_pluginsAndCompaction(): Promise<void> {
 }
 
 // ============================================================
-// 11. 场景 D: 检查点保存与恢复模拟
+// 12. 场景 D: 检查点保存与恢复模拟
 // ============================================================
 
 async function scenarioD_checkpointRecovery(): Promise<void> {
@@ -649,12 +708,12 @@ async function scenarioD_checkpointRecovery(): Promise<void> {
 }
 
 // ============================================================
-// 12. 场景 E: 操作符预设 & 自定义管线
+// 13. 场景 E: 预设配置 & 自定义事件处理
 // ============================================================
 
 async function scenarioE_operatorPresets(): Promise<void> {
   console.log('\n' + '═'.repeat(60));
-  console.log('  场景 E: 操作符预设 + 自定义管线组合');
+  console.log('  场景 E: 预设配置 + 自定义事件处理');
   console.log('═'.repeat(60) + '\n');
 
   const llm = new SmartMockLLM();
@@ -676,7 +735,6 @@ async function scenarioE_operatorPresets(): Promise<void> {
 
   // 方式 2: Test Preset — 收集所有事件用于断言
   console.log('🔧 方式 2: Test Preset (事件收集)');
-  const collectedEvents: AgentEvent[] = [];
 
   const testAgent = createAgent({
     name: 'test-agent',
@@ -687,39 +745,44 @@ async function scenarioE_operatorPresets(): Promise<void> {
     preset: 'test',
   });
 
-  // 用 run$ + testPreset 手动收集事件
-  // (这里简化演示 — preset='test' 在 createAgent 中配置)
+  // preset='test' 在 createAgent 中配置事件收集
   const testResult = await testAgent.run('测试消息');
   console.log(`   结果: ${testResult.substring(0, 60)}...\n`);
 
-  // 方式 3: 自定义管线 — 用 createPreset 组合操作符
-  console.log('🔧 方式 3: 自定义 Preset (createPreset)');
-  const customLogger: Logger = {
-    debug: (msg: string, data?: unknown) => console.log(`[custom] ${msg}`, data ?? ''),
-    info: (msg: string, data?: unknown) => console.info(`[custom] ${msg}`, data ?? ''),
-    warn: (msg: string, data?: unknown) => console.warn(`[custom] ${msg}`, data ?? ''),
-    error: (msg: string, data?: unknown) => console.error(`[custom] ${msg}`, data ?? ''),
-  };
-  const myPreset = createPreset([logEvents(customLogger), recordMetrics(customMetrics)]);
-  console.log('   自定义管线: logEvents → recordMetrics');
-
-  // 用自定义管线跑一个 Agent
+  // 方式 3: 自定义事件处理 — 使用 onAny 实现类似操作符的效果
+  console.log('🔧 方式 3: 自定义事件处理 (onAny)');
   const customAgent = createAgent({
     name: 'custom-preset-agent',
     model: { provider: 'mock', model: 'mock-v1' },
     maxSteps: 3,
     llmAdapter: llm,
     tools: [calculatorTool],
-    operators: [myPreset],
+  });
+
+  // 通过 onAny 实现自定义日志 + 指标收集
+  const unsub = customAgent.onAny((event) => {
+    // 自定义日志
+    console.log(`  [custom] ${event.type}`);
+
+    // 自定义指标收集
+    if (event.type === 'llm.response' && event.usage) {
+      customMetrics.increment('custom.llm.calls');
+      customMetrics.increment('custom.llm.prompt_tokens', event.usage.promptTokens);
+      customMetrics.increment('custom.llm.completion_tokens', event.usage.completionTokens);
+    }
+    if (event.type === 'tool.call') {
+      customMetrics.increment('custom.tool.calls');
+    }
   });
 
   const customResult = await customAgent.run('帮我计算');
+  unsub();
   console.log(`   结果: ${customResult.substring(0, 60)}`);
   console.log(customMetrics.report());
 }
 
 // ============================================================
-// 13. 场景 F: 资源监控与运行时保护
+// 14. 场景 F: 资源监控与运行时保护
 // ============================================================
 
 async function scenarioF_resourceMonitoring(): Promise<void> {
@@ -765,7 +828,7 @@ async function scenarioF_resourceMonitoring(): Promise<void> {
 }
 
 // ============================================================
-// 14. 主入口
+// 15. 主入口
 // ============================================================
 
 async function main(): Promise<void> {
@@ -773,10 +836,10 @@ async function main(): Promise<void> {
   console.log('║          AgentForge 端到端全流程示例                       ║');
   console.log('║                                                            ║');
   console.log('║  场景 A: L2 API — 5 行代码创建 Agent                      ║');
-  console.log('║  场景 B: L3 API — 全管线 (操作符 + 插件 + 检查点 + 指标)   ║');
+  console.log('║  场景 B: L3 API — 全管线 (事件监听 + 插件 + 检查点 + 指标)  ║');
   console.log('║  场景 C: 插件系统 + 记忆压缩                               ║');
   console.log('║  场景 D: 检查点保存 → 序列化 → 恢复                        ║');
-  console.log('║  场景 E: 操作符预设 + 自定义管线组合                        ║');
+  console.log('║  场景 E: 预设配置 + 自定义事件处理                          ║');
   console.log('║  场景 F: 资源监控与运行时保护                               ║');
   console.log('╚════════════════════════════════════════════════════════════╝');
 

@@ -1,6 +1,66 @@
 import { describe, it, expect } from 'vitest';
-import { Observable, of, Subject } from 'rxjs';
+// No rxjs imports - using Subscribable interface from sse.ts
 import { observableToSSE, parseSSEStream } from '../src/sse.js';
+
+// ============================================================
+// Lightweight Subscribable factories (rx replacement)
+// ============================================================
+
+interface Subscribable<T> {
+  subscribe(observer: { next(v: T): void; error?(e: unknown): void; complete?(): void }): { unsubscribe(): void };
+}
+
+/** Emit an array of values then complete */
+function fromValues<T>(values: T[]): Subscribable<T> {
+  return {
+    subscribe(observer) {
+      let cancelled = false;
+      // Use Promise.resolve to yield to microtask queue (letting subscribe return)
+      Promise.resolve().then(() => {
+        if (cancelled) return;
+        for (const v of values) {
+          if (cancelled) break;
+          observer.next(v);
+        }
+        if (!cancelled) observer.complete?.();
+      });
+      return { unsubscribe() { cancelled = true; } };
+    }
+  };
+}
+
+/** Emit a single value then complete */
+function ofValue<T>(value: T): Subscribable<T> {
+  return fromValues([value]);
+}
+
+/** Error-only observable */
+function errorObservable<T>(error: unknown): Subscribable<T> {
+  return {
+    subscribe(observer) {
+      Promise.resolve().then(() => { observer.error?.(error); });
+      return { unsubscribe() {} };
+    }
+  };
+}
+
+/** Simple Subject replacement: emits values to subscribers */
+function createSubject<T>() {
+  let subscribers: Array<{ next(v: T): void; error?(e: unknown): void; complete?(): void }> = [];
+  let closed = false;
+  return {
+    subscribe(observer: { next(v: T): void; error?(e: unknown): void; complete?(): void }) {
+      if (closed) { observer.complete?.(); return { unsubscribe() {} }; }
+      subscribers.push(observer);
+      return { unsubscribe() { subscribers = subscribers.filter(s => s !== observer); } };
+    },
+    next(v: T) { for (const s of subscribers) s.next(v); },
+    error(e: unknown) { for (const s of subscribers) s.error?.(e); subscribers = []; closed = true; },
+    complete() { for (const s of subscribers) s.complete?.(); subscribers = []; closed = true; },
+    get observed() { return subscribers.length > 0; },
+    asObservable() { return { subscribe: (obs: any) => this.subscribe(obs) }; }
+  };
+}
 
 describe('observableToSSE', () => {
   it('should convert a single event to SSE format', async () => {
@@ -13,7 +73,7 @@ describe('observableToSSE', () => {
       model: { provider: 'openai' as const, model: 'gpt-4o' },
     };
 
-    const events$ = of(event);
+    const events$ = ofValue(event);
     const response = observableToSSE(events$);
 
     expect(response.headers.get('Content-Type')).toBe('text/event-stream');
@@ -42,7 +102,7 @@ describe('observableToSSE', () => {
       },
     ];
 
-    const response = observableToSSE(of(events[0]!, events[1]!));
+    const response = observableToSSE(fromValues([events[0]!, events[1]!]));
     const text = await response.text();
 
     expect(text).toContain('"type":"agent.step"');
@@ -51,9 +111,7 @@ describe('observableToSSE', () => {
   });
 
   it('should handle Observable errors', async () => {
-    const error$ = new Observable<never>((subscriber) => {
-      subscriber.error(new Error('LLM failed'));
-    });
+    const error$ = errorObservable(new Error('LLM failed'));
 
     const response = observableToSSE(error$);
     const text = await response.text();
@@ -65,7 +123,7 @@ describe('observableToSSE', () => {
 
   it('should unsubscribe on AbortSignal', async () => {
     const controller = new AbortController();
-    const subject = new Subject<object>();
+    const subject = createSubject<object>();
 
     const response = observableToSSE(subject.asObservable(), controller.signal);
 
@@ -99,7 +157,7 @@ describe('observableToSSE', () => {
     // Track listener count before
     const initialListenerCount = getAbortListenerCount(controller.signal);
 
-    observableToSSE(of(event), controller.signal);
+    observableToSSE(ofValue(event), controller.signal);
 
     // After completion, listener should be cleaned up
     // Wait for microtask queue to flush

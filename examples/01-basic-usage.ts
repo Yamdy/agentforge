@@ -3,13 +3,10 @@
  *
  * 本示例展示如何使用 AgentForge 的两种 API：
  * - L2 API (createAgent): 配置驱动的声明式 API，适合大多数开发者
- * - L3 API (createAgentLoop): 编程式 API，提供完整的 Observable 控制能力
+ * - L3 API (createAgentLoop): 编程式 API，提供完整的事件控制能力
  *
  * 运行方式: npx tsx examples/01-basic-usage.ts
  */
-
-import { Observable, of, firstValueFrom, toArray } from 'rxjs';
-import { tap, filter } from 'rxjs/operators';
 
 // ============================================================
 // 导入核心类型
@@ -91,14 +88,14 @@ class MockLLMAdapter implements LLMAdapter {
   }
 
   /**
-   * 流式聊天完成
+   * 流式聊天完成 (AsyncGenerator 模式)
    */
-  stream(messages: Message[]): Observable<{ text?: string; finishReason?: string }> {
+  async *stream(messages: Message[]): AsyncGenerator<{ text?: string; finishReason?: string }> {
     const response = this.responses[0]!;
-    return of({
+    yield {
       text: response.content,
       finishReason: response.finishReason,
-    });
+    };
   }
 
   /**
@@ -258,16 +255,23 @@ async function example_L2_createAgent(): Promise<void> {
   // 等待完成
   await subscription.result;
 
-  // 方式 C: Observable 模式 - 完全控制
-  console.log('\n--- 方式 C: Observable 模式 ---');
-  const events = await firstValueFrom(
-    agent.run$('给我一个简单的问候').pipe(
-      tap(event => console.log(`[${event.type}]`)),
-      filter(isTerminalEvent),
-      toArray(),
-    )
-  );
-  console.log('终端事件数量:', events.length);
+  // 方式 C: 事件监听模式 - 通过 on() 完全控制
+  console.log('\n--- 方式 C: 事件监听模式 ---');
+  const terminalEvents: AgentEvent[] = [];
+
+  // 监听所有事件
+  const unsub = agent.onAny((event) => {
+    console.log(`[${event.type}]`);
+    // 收集终端事件
+    if (isTerminalEvent(event)) {
+      terminalEvents.push(event);
+    }
+  });
+
+  await agent.run('给我一个简单的问候');
+  unsub();
+  
+  console.log('终端事件数量:', terminalEvents.length);
 }
 
 // ============================================================
@@ -318,35 +322,34 @@ async function example_L3_createAgentLoop(): Promise<void> {
   console.log('\n--- 订阅事件流 ---');
   const allEvents: AgentEvent[] = [];
 
-  await firstValueFrom(
-    loop.run('你好，请使用 echo 工具说一句问候语').pipe(
-      tap(event => {
-        allEvents.push(event);
-        console.log(`事件: ${event.type}`);
+  // 使用 onAny 监听所有事件
+  const unsub = loop.onAny((event) => {
+    allEvents.push(event);
+    console.log(`事件: ${event.type}`);
 
-        // 根据事件类型打印详细信息
-        switch (event.type) {
-          case 'agent.start':
-            console.log(`  - 会话ID: ${event.sessionId}`);
-            break;
-          case 'llm.response':
-            console.log(`  - 内容: ${event.content?.substring(0, 50)}...`);
-            break;
-          case 'tool.call':
-            console.log(`  - 工具: ${event.toolName}`);
-            break;
-          case 'tool.result':
-            console.log(`  - 结果: ${event.result?.substring(0, 50)}...`);
-            break;
-          case 'agent.complete':
-            console.log(`  - 输出: ${event.output?.substring(0, 50)}...`);
-            break;
-        }
-      }),
-      filter(isTerminalEvent),
-      toArray(),
-    )
-  );
+    // 根据事件类型打印详细信息
+    switch (event.type) {
+      case 'agent.start':
+        console.log(`  - 会话ID: ${event.sessionId}`);
+        break;
+      case 'llm.response':
+        console.log(`  - 内容: ${event.content?.substring(0, 50)}...`);
+        break;
+      case 'tool.call':
+        console.log(`  - 工具: ${event.toolName}`);
+        break;
+      case 'tool.result':
+        console.log(`  - 结果: ${event.result?.substring(0, 50)}...`);
+        break;
+      case 'agent.complete':
+        console.log(`  - 输出: ${event.output?.substring(0, 50)}...`);
+        break;
+    }
+  });
+
+  // 运行 (等待终端事件)
+  await loop.run('你好，请使用 echo 工具说一句问候语');
+  unsub();
 
   console.log('\n事件统计:');
   const eventCounts = new Map<string, number>();
@@ -391,17 +394,18 @@ async function example_event_stream_patterns(): Promise<void> {
   await agent.run('测试事件监听');
   unsubscribe();
 
-  // 模式 2: 链式操作符
-  console.log('\n--- 模式 2: 链式操作符 ---');
-  const result = await firstValueFrom(
-    agent.run$('使用 echo 工具').pipe(
-      // 只保留工具相关事件
-      filter(event => event.type.startsWith('tool.')),
-      // 收集所有事件
-      toArray(),
-    )
-  );
-  console.log('工具事件数量:', result.length);
+  // 模式 2: 通过 onAny 收集特定类型事件
+  console.log('\n--- 模式 2: 收集工具事件 ---');
+  const toolEvents: AgentEvent[] = [];
+  const unsub2 = agent.onAny((event) => {
+    if (event.type.startsWith('tool.')) {
+      toolEvents.push(event);
+    }
+  });
+
+  await agent.run('使用 echo 工具');
+  unsub2();
+  console.log('工具事件数量:', toolEvents.length);
 
   // 模式 3: 超时和错误处理
   console.log('\n--- 模式 3: 错误处理 ---');

@@ -157,7 +157,7 @@ describe('integration', () => {
       const config: PromptsConfig = { ...DEFAULT_CONFIG, projectName: 'test', llm: 'openai' };
       const deps = computeDependencies(config);
       expect(deps).toHaveProperty('agentforge');
-      expect(deps).toHaveProperty('rxjs');
+      // rxjs removed from CORE_DEPS
       expect(deps).toHaveProperty('zod');
       expect(deps).toHaveProperty('@ai-sdk/openai');
       expect(deps).toHaveProperty('ai');

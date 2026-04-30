@@ -1,19 +1,14 @@
 /**
- * Operator pipeline for {{config.agentName}}.
- * Composes RxJS operators for advanced event stream processing.
+ * Hook-based pipeline for {{config.agentName}}.
+ * Uses AgentForge Hook system for event processing.
  */
 
 import type { AgentEvent } from 'agentforge';
 import {
-  filterEventType,
-  takeUntilTerminal,
-  logEvents,
-  collectMetrics,
-  timeoutOnEventType,
-  retryOnEventType,
+  applyPlugins,
+  HookRegistry,
+  AgentEventEmitter,
 } from 'agentforge';
-import type { OperatorFunction } from 'rxjs';
-import { tap } from 'rxjs/operators';
 
 export interface PipelineOptions {
   /** Enable console logging */
