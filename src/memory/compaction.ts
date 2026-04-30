@@ -8,7 +8,6 @@
  */
 
 import { z } from 'zod';
-import { Subject, Observable } from 'rxjs';
 import type { Message } from '../core/events.js';
 import type { LLMAdapter } from '../core/interfaces.js';
 import {
@@ -113,7 +112,7 @@ export type CompactionEventPayload = {
 export class CompactionManager {
   private config: CompactionConfig;
   private llmAdapter: LLMAdapter | undefined;
-  private eventSubject: Subject<CompactionEventPayload>;
+  private eventListeners: Array<(payload: CompactionEventPayload) => void> = [];
 
   /**
    * Create compaction manager
@@ -127,7 +126,6 @@ export class CompactionManager {
       ...config,
     });
     this.llmAdapter = llmAdapter;
-    this.eventSubject = new Subject<CompactionEventPayload>();
   }
 
   /**
@@ -155,10 +153,14 @@ export class CompactionManager {
   }
 
   /**
-   * Observable of compaction events
+   * Subscribe to compaction events. Returns unsubscribe function.
    */
-  get events(): Observable<CompactionEventPayload> {
-    return this.eventSubject.asObservable();
+  on(handler: (payload: CompactionEventPayload) => void): () => void {
+    this.eventListeners.push(handler);
+    return () => {
+      const idx = this.eventListeners.indexOf(handler);
+      if (idx >= 0) this.eventListeners.splice(idx, 1);
+    };
   }
 
   /**
@@ -255,13 +257,15 @@ export class CompactionManager {
    * Emit compaction.start event
    */
   private emitStartEvent(context: CompactionContext): void {
-    this.eventSubject.next({
-      type: 'compaction.start',
-      timestamp: Date.now(),
-      sessionId: context.sessionId,
-      strategy: this.config.strategy,
-      tokensBefore: context.currentTokenEstimate,
-    });
+    for (const fn of this.eventListeners) {
+      try { fn({
+        type: 'compaction.start',
+        timestamp: Date.now(),
+        sessionId: context.sessionId,
+        strategy: this.config.strategy,
+        tokensBefore: context.currentTokenEstimate,
+      }); } catch { /* isolate */ }
+    }
   }
 
   /**
@@ -280,7 +284,9 @@ export class CompactionManager {
     if (result.summarizedCount !== undefined) {
       eventPayload.summarizedMessages = result.summarizedCount;
     }
-    this.eventSubject.next(eventPayload);
+    for (const fn of this.eventListeners) {
+      try { fn(eventPayload); } catch { /* isolate */ }
+    }
   }
 
   /**
