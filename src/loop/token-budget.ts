@@ -60,8 +60,9 @@ export function checkTokenBudget(
   const deltaTokens = totalTokens - tracker.lastGlobalTurnTokens;
   tracker.lastGlobalTurnTokens = totalTokens;
 
-  // If first continuation, set initial delta
+  // If first check, stop if no progress (no prior continuation context)
   if (tracker.continuationCount === 0) {
+    if (deltaTokens === 0) return 'stop';
     tracker.lastDeltaTokens = deltaTokens;
   } else {
     // Diminishing returns: each continuation requires at least

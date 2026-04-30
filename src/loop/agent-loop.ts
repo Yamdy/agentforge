@@ -772,7 +772,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         const unreg = emitter.onAny(event => subscriber.next(event));
         run(input).then(
           () => { subscriber.complete(); unreg(); },
-          err => { subscriber.error(err); unreg(); }
+          _err => { subscriber.complete(); unreg(); } // errors-as-events: already emitted
         );
       });
     },
