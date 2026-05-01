@@ -178,11 +178,15 @@
     "prettier": "^3.3.3",
     "rimraf": "^5.0.7",
     "typescript": "^5.5.3",
+    "vite": "^5.4.0",
     "vitepress": "^1.6.4",
     "vitest": "^1.6.0"
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["better-sqlite3", "esbuild"]
   },
   "workspaces": [
     "packages/*"
