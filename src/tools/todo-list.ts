@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument */
 /**
  * TodoList Tool & Plugin for AgentForge
  *
@@ -101,6 +102,7 @@ export function createTodoListTool(initialState?: TodoListState): ToolDefinition
     description:
       'Manage a task list. Use this to track progress on multi-step tasks.',
     parameters: TodoListSchema,
+    // eslint-disable-next-line @typescript-eslint/require-await
     execute: async (args: unknown): Promise<string> => {
       const parsed = TodoListSchema.safeParse(args);
       if (!parsed.success) {

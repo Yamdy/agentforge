@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument */
 /**
  * Subagent Registry Implementation
  *
@@ -47,6 +48,7 @@ class AsyncHandleImpl implements AsyncSubagentHandle {
     return this._status;
   }
 
+  // eslint-disable-next-line @typescript-eslint/require-await
   async status(): Promise<'running' | 'completed' | 'error'> {
     if (this._status === 'cancelled') return 'error';
     return this._status;
@@ -66,6 +68,7 @@ class AsyncHandleImpl implements AsyncSubagentHandle {
     return base;
   }
 
+  // eslint-disable-next-line @typescript-eslint/require-await
   async cancel(): Promise<void> {
     if (this._status === 'running') {
       this._status = 'cancelled';

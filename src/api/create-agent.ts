@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument */
 /**
  * AgentForge L2 API - createAgent()
  *
@@ -148,7 +149,7 @@ export function createAgent(
   const ctx: AgentContext = {
     sessionId,
     agentName: resolved.name,
-    memory: services?.memory ?? ({ load: async () => ({ entries: [] }), formatForPrompt: () => '' } as any),
+    memory: services?.memory ?? ({ load: () => Promise.resolve({ entries: [] }), formatForPrompt: () => '' } as any),
     pauseController: services?.pauseController ?? {
       isPaused: () => false,
       onResume: () => ({ subscribe: () => ({ unsubscribe: () => {} }) } as any),

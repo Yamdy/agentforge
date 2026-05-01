@@ -170,13 +170,13 @@ export function validatePlugin(raw: unknown): z.infer<typeof PluginSchema> {
 // ============================================================
 
 /** @deprecated — all plugins now use lifecycle hooks, not intercept/observe */
-export function isInterceptorPlugin(plugin: any): plugin is InterceptorPlugin {
-  return (plugin).type === 'interceptor';
+export function isInterceptorPlugin(plugin: unknown): plugin is InterceptorPlugin {
+  return (plugin as { type?: string }).type === 'interceptor';
 }
 
 /** @deprecated — all plugins now use lifecycle hooks, not intercept/observe */
-export function isObserverPlugin(plugin: any): plugin is ObserverPlugin {
-  return (plugin).type === 'observer';
+export function isObserverPlugin(plugin: unknown): plugin is ObserverPlugin {
+  return (plugin as { type?: string }).type === 'observer';
 }
 
 // ============================================================

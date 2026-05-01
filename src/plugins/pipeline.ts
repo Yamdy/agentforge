@@ -94,11 +94,9 @@ function bridgeObserver(plugin: ObserverPlugin, ctx: PluginContext, emitter: Age
   const eventTypes = plugin.eventTypes;
   const filterSet = eventTypes.length > 0 ? new Set(eventTypes) : null;
 
-  const unreg = emitter.onAny(async (event: AgentEvent) => {
+  const unreg = emitter.onAny((event: AgentEvent) => {
     if (filterSet && !filterSet.has(event.type)) return;
-    try {
-      await Promise.resolve().then(() => plugin.observe!(event, ctx));
-    } catch { /* isolate */ }
+    void Promise.resolve().then(() => plugin.observe!(event, ctx)).catch(() => { /* isolate */ });
   });
   unregs.push(unreg);
   return unregs;
@@ -150,8 +148,8 @@ export function applyPlugins(
 
     if (plugin.eventSubscriptions) {
       for (const sub of plugin.eventSubscriptions) {
-        unregisters.push(emitter.on(sub.event as AgentEvent['type'], async (event) => {
-          try { await Promise.resolve().then(() => sub.handler(event)); } catch { /* isolate */ }
+        unregisters.push(emitter.on(sub.event, (event) => {
+          void Promise.resolve().then(() => sub.handler(event)).catch(() => { /* isolate */ });
         }));
       }
     }

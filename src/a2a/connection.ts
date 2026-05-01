@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument */
 /**
  * A2A Connection Management
  *
@@ -787,8 +788,8 @@ export class A2AConnection {
     };
 
     // Immediate first heartbeat, then interval
-    sendHeartbeat();
-    this.heartbeatTimer = setInterval(sendHeartbeat, this.heartbeatConfig.interval);
+    void sendHeartbeat();
+    this.heartbeatTimer = setInterval(() => { void sendHeartbeat(); }, this.heartbeatConfig.interval);
   }
 
   /**

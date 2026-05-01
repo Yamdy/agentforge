@@ -23,7 +23,7 @@ import path from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import type { Plugin, PluginContext } from './plugin.js';
 import { HookRegistry } from '../core/hooks.js';
-import type { AgentEventEmitter, AgentEvent } from '../core/events.js';
+import type { AgentEventEmitter } from '../core/events.js';
 
 // ============================================================
 // Types
@@ -596,7 +596,7 @@ export class PluginLoader {
         }
         if (plugin.eventSubscriptions) {
           for (const sub of plugin.eventSubscriptions) {
-            emitter.on(sub.event as AgentEvent['type'], (event) => {
+            emitter.on(sub.event, (event) => {
               void Promise.resolve(sub.handler(event)).catch(() => { /* isolate */ });
             });
           }

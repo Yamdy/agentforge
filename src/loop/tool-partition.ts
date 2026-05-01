@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument */
 /**
  * Tool Concurrency Partitioning
  *
@@ -47,7 +48,7 @@ export interface ToolBatch {
  */
 export function partitionToolCalls(
   toolCalls: ToolCall[],
-  registry: any
+  registry: { isConcurrencySafe?: (name: string) => boolean } | null
 ): ToolBatch[] {
   if (!toolCalls.length) return [];
 

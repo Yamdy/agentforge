@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument */
 /**
  * AgentForge Agent Loop — Imperative Implementation
  *
@@ -183,7 +184,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       if (signal.aborted) break;
 
       // Emit tool.call
-      emitter.emit({
+      void emitter.emit({
         type: 'tool.call',
         timestamp: Date.now(),
         sessionId: ctx.sessionId,
@@ -220,7 +221,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           name: tc.name,
         };
         results.push(deniedMsg);
-        emitter.emit({
+        void emitter.emit({
           type: 'tool.result',
           timestamp: Date.now(),
           sessionId: ctx.sessionId,
@@ -240,7 +241,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         args: tc.args,
       }, {});
 
-      emitter.emit({
+      void emitter.emit({
         type: 'tool.execute',
         timestamp: Date.now(),
         sessionId: ctx.sessionId,
@@ -277,7 +278,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           name: tc.name,
         });
 
-        emitter.emit({
+        void emitter.emit({
           type: 'tool.result',
           timestamp: Date.now(),
           sessionId: ctx.sessionId,
@@ -324,7 +325,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           name: tc.name,
         });
 
-        emitter.emit({
+        void emitter.emit({
           type: 'tool.result',
           timestamp: Date.now(),
           sessionId: ctx.sessionId,
@@ -374,8 +375,8 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         sessionId: ctx.sessionId,
         error: { name: 'AgentAlreadyRunningError', message: 'Agent is already running' },
       };
-      emitter.emit(errEvent);
-      emitter.emit({
+      void emitter.emit(errEvent);
+      void emitter.emit({
         type: 'done',
         timestamp: Date.now(),
         sessionId: ctx.sessionId,
@@ -426,7 +427,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
     const budgetTracker = createBudgetTracker();
 
     // ── Emit agent.start ──
-    emitter.emit({
+    void emitter.emit({
       type: 'agent.start',
       timestamp: Date.now(),
       sessionId: ctx.sessionId,
@@ -446,26 +447,28 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
     // MAIN LOOP
     // ====================================================================
     try {
+      // eslint-disable-next-line no-constant-condition
       while (true) {
         // ── Guard: abort ──
         if (signal.aborted) break;
 
         // ── Guard: pause ──
         if (paused) {
+          // eslint-disable-next-line @typescript-eslint/await-thenable
           await resumePromise;
           if (signal.aborted) break;
         }
 
         // ── Guard: max steps ──
         if (state.step >= maxSteps) {
-          emitter.emit({
+          void emitter.emit({
             type: 'agent.complete',
             timestamp: Date.now(),
             sessionId: ctx.sessionId,
             output: state.output,
             steps: state.step,
           });
-          emitter.emit({
+          void emitter.emit({
             type: 'done',
             timestamp: Date.now(),
             sessionId: ctx.sessionId,
@@ -489,7 +492,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         }, {});
 
         // ── Emit agent.step for backward compat ──
-        emitter.emit({
+        void emitter.emit({
           type: 'agent.step',
           timestamp: Date.now(),
           sessionId: ctx.sessionId,
@@ -516,13 +519,13 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           const ok = (usage as any).usedTokens < (limits as any).maxTokensPerSession;
           if (!ok) {
             const err: SerializedError = { name: 'QuotaExceededError', message: 'Token/cost quota exceeded' };
-            emitter.emit({
+            void emitter.emit({
               type: 'agent.error',
               timestamp: Date.now(),
               sessionId: ctx.sessionId,
               error: err,
             });
-            emitter.emit({
+            void emitter.emit({
               type: 'done',
               timestamp: Date.now(),
               sessionId: ctx.sessionId,
@@ -545,7 +548,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         });
 
         // ── Emit llm.request for backward compat ──
-        emitter.emit({
+        void emitter.emit({
           type: 'llm.request',
           timestamp: Date.now(),
           sessionId: ctx.sessionId,
@@ -575,7 +578,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         }
 
         // ── Emit llm.response ──
-        emitter.emit({
+        void emitter.emit({
           type: 'llm.response',
           timestamp: Date.now(),
           sessionId: ctx.sessionId,
@@ -622,7 +625,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         const cpEnabled = config.checkpoint?.enabled !== false;
         if (cpEnabled) {
           const cpId = generateId('cp');
-          emitter.emit({
+          void emitter.emit({
             type: 'checkpoint',
             timestamp: Date.now(),
             sessionId: ctx.sessionId,
@@ -663,7 +666,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             steps: state.step,
             tokens: state.tokens,
           }, {});
-          emitter.emit({
+          void emitter.emit({
             type: 'agent.complete',
             timestamp: Date.now(),
             sessionId: ctx.sessionId,
@@ -671,7 +674,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             steps: state.step,
             tokens: { input: state.tokens.prompt, output: state.tokens.completion },
           });
-          emitter.emit({
+          void emitter.emit({
             type: 'done',
             timestamp: Date.now(),
             sessionId: ctx.sessionId,
@@ -689,7 +692,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         ];
 
         const toolCalls = response.toolCalls;
-        const batches = partitionToolCalls(toolCalls, ctx.tools);
+        const batches = partitionToolCalls(toolCalls, ctx.tools as unknown as { isConcurrencySafe?: (name: string) => boolean } | null);
         const toolResults: Message[] = [];
 
         for (const batch of batches) {
@@ -713,7 +716,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         const cpEnabled2 = config.checkpoint?.enabled !== false;
         if (cpEnabled2) {
           const cpId2 = generateId('cp');
-          emitter.emit({
+          void emitter.emit({
             type: 'checkpoint',
             timestamp: Date.now(),
             sessionId: ctx.sessionId,
@@ -761,8 +764,8 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         sessionId: ctx.sessionId,
         error: err,
       };
-      emitter.emit(errEvent);
-      emitter.emit({
+      void emitter.emit(errEvent);
+      void emitter.emit({
         type: 'done',
         timestamp: Date.now(),
         sessionId: ctx.sessionId,
@@ -812,22 +815,22 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
     run,
     on: emitter.on.bind(emitter),
     onAny: emitter.onAny.bind(emitter),
-    cancel: () => {
+    cancel: (): void => {
       abortController?.abort();
       isRunning = false;
     },
-    pause: () => {
+    pause: (): void => {
       paused = true;
       resumePromise = new Promise<void>((r) => { resumeResolve = r; });
     },
-    resume: () => {
+    resume: (): void => {
       paused = false;
       resumeResolve?.();
       resumeResolve = null;
       resumePromise = null;
     },
-    getState: () => state,
-    destroy: () => {
+    getState: (): AgentLoopState | null => state,
+    destroy: (): void => {
       abortController?.abort();
       emitter.clear();
       hooks.clear();

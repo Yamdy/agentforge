@@ -222,7 +222,7 @@ export class SkillWatcher {
 
       watcher.on('change', (_eventType, filename) => {
         if (filename && filename.toString().endsWith(this.config.skillFileName)) {
-          this.handleFileChange(join(resolved, filename.toString()));
+          void this.handleFileChange(join(resolved, filename.toString()));
         }
       });
 
@@ -257,15 +257,16 @@ export class SkillWatcher {
   /**
    * Handle file change event
    */
-  private async handleFileChange(filePath: string): Promise<void> {
+  private handleFileChange(filePath: string): void {
     // Debounce per-file
     const existing = this.debounceTimers.get(filePath);
     if (existing) clearTimeout(existing);
 
-    this.debounceTimers.set(filePath, setTimeout(async () => {
-      this.debounceTimers.delete(filePath);
-      try {
-        await stat(filePath);
+    this.debounceTimers.set(filePath, setTimeout(() => {
+      void (async () => {
+        this.debounceTimers.delete(filePath);
+        try {
+          await stat(filePath);
         // File exists — added or changed
         const result = await loadSkill(filePath, this.config.loaderConfig);
         if (result.success) {
@@ -282,6 +283,7 @@ export class SkillWatcher {
         }
         this.emitReload({ type: 'removed', filePath });
       }
+      })();
     }, 100)); // Per-file debounce
   }
 

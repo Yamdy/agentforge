@@ -28,20 +28,31 @@ export const AgentEventTypeSchema = z.enum([
   'agent.error',
 
   'llm.request',
+  'llm.stream.start',
   'llm.stream.text',
+  'llm.stream.tool_call',
+  'llm.stream.end',
   'llm.response',
+  'llm.error',
+  'llm.output.invalid',
 
   'tool.call',
   'tool.execute',
+  'tool.result.delta',
   'tool.result',
   'tool.error',
+  'tool.batch',
+  'tool.batch.start',
+  'tool.batch.complete',
 
   'hitl.ask',
   'hitl.answer',
 
+  'state.change',
   'checkpoint',
   'cancel',
   'done',
+  'context.updated',
 
   // ===== Layer 2: Subsystem Lifecycle =====
   'subagent.start',
@@ -52,12 +63,22 @@ export const AgentEventTypeSchema = z.enum([
   'mcp.connecting',
   'mcp.connected',
   'mcp.disconnected',
+  'mcp.tools_changed',
+  'mcp.error',
 
   'workflow.start',
+  'workflow.step.start',
+  'workflow.step.end',
+  'workflow.suspend',
+  'workflow.resume',
   'workflow.complete',
   'workflow.error',
 
   // ===== Layer 3: Cross-cutting Concerns =====
+  'compaction.start',
+  'compaction.complete',
+  'permission.prompt',
+  'permission.decision',
   'decision.trace',
 ]);
 

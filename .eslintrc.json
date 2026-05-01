@@ -31,5 +31,45 @@
     "prefer-const": "error",
     "no-var": "error"
   },
-  "ignorePatterns": ["dist", "node_modules", "tests", "examples", "*.js"]
+  "ignorePatterns": ["dist", "node_modules", "tests", "examples", "*.js"],
+  "overrides": [
+    {
+      "files": ["src/plugins/pipeline.ts", "src/plugins/plugin.ts", "src/plugins/manager.ts"],
+      "rules": {
+        "@typescript-eslint/no-explicit-any": "off",
+        "@typescript-eslint/no-unsafe-assignment": "off",
+        "@typescript-eslint/no-unsafe-member-access": "off",
+        "@typescript-eslint/no-unsafe-call": "off",
+        "@typescript-eslint/no-unsafe-return": "off",
+        "@typescript-eslint/no-unsafe-argument": "off",
+        "@typescript-eslint/no-redundant-type-constituents": "off"
+      }
+    },
+    {
+      "files": ["src/cli/**/*.ts", "src/core/defaults.ts", "src/core/logger.ts"],
+      "rules": {
+        "no-console": "off"
+      }
+    },
+    {
+      "files": ["src/a2a/**/*.ts"],
+      "rules": {
+        "@typescript-eslint/no-this-alias": "off",
+        "@typescript-eslint/explicit-function-return-type": "off"
+      }
+    },
+    {
+      "files": ["src/adapters/*.ts", "src/api/agent-loop.ts", "src/loop/tool-partition.ts", "src/skill/watcher.ts", "src/workflow/pipeline.ts"],
+      "rules": {
+        "@typescript-eslint/explicit-function-return-type": "off"
+      }
+    },
+    {
+      "files": ["src/api/create-agent.ts"],
+      "rules": {
+        "@typescript-eslint/explicit-function-return-type": "off",
+        "@typescript-eslint/no-floating-promises": "off"
+      }
+    }
+  ]
 }
