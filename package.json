@@ -1,6 +1,6 @@
 {
   "name": "@primo512109/agentforge",
-  "version": "0.1.3-alpha.20260429",
+  "version": "0.1.3-alpha.20260501",
   "description": "Production-ready Agent framework with MPU (Minimum Production Usable) modules - event-driven architecture + Zod type safety",
   "type": "module",
   "main": "dist/index.js",
