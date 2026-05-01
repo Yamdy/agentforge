@@ -254,9 +254,6 @@ export function createAgent(
     cancel: loop.cancel.bind(loop),
     pause: () => { loop.pause(); return Promise.resolve(); },
     resume: loop.resume.bind(loop),
-
-    /** @deprecated Observable wrapper for backward compat with tests */
-    run$: (input: string) => (loop as any).run$(input),
     getState: (): AgentLoopState | null => loop.getState(),
 
     /** @deprecated Internal context access for backward compat with tests */

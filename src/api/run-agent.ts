@@ -17,7 +17,7 @@ export interface RunAgentOptions {
 }
 
 export interface RunAgentResult {
-  run$: (input: string) => Promise<string>;
+  run: (input: string) => Promise<string>;
   on: (type: string, fn: (e: any) => void) => () => void;
   cancel: () => void;
   getState: () => string;
@@ -35,7 +35,7 @@ export function runAgent(
   });
 
   return {
-    run$: (input: string) => loop.run(input),
+    run: (input: string) => loop.run(input),
     on: loop.on.bind(loop) as any,
     cancel: loop.cancel.bind(loop),
     getState: () => loop.getState() ? 'running' : 'idle',
@@ -52,7 +52,7 @@ export function runAgentWithControl(
 }
 
 export function runAgentToCompletion(ctx: AgentContext, input: string): Promise<string> {
-  return runAgent(ctx, input).run$(input);
+  return runAgent(ctx, input).run(input);
 }
 
 export function runAgentForTools(

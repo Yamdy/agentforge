@@ -325,24 +325,6 @@ export type {
 export { createInitialLoopState } from './core/state.js';
 
 // ============================================================
-// RxJS Operators (backward-compat stubs)
-// ============================================================
-
-export {
-  filterEventType, filterEventTypePrefix,
-  takeUntilTerminal, onTerminal,
-  tapEvent, tapEvents,
-  collectMetrics, groupByStep, dedupeEventTypes,
-  transformLLMParams, transformToolArgs, compressMessages, injectSystemPrompt,
-  logEvents, traceEvents, recordMetrics, exportEvents, checkpoint,
-  retryOnEventType, timeoutOnEventType, requirePermission, maxStepsLimit, pauseOnSignal,
-  eventToString, withLatency,
-  productionPreset, debugPreset, testPreset, developmentPreset, createPreset,
-  type AgentMetrics, type LLMTransformParams, type EventWithLatency, type Logger,
-  type ProductionPresetConfig, type DebugPresetConfig, type TestPresetConfig,
-} from './operators/index.js';
-
-// ============================================================
 // Subsystems - Skill System
 // ============================================================
 

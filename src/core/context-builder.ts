@@ -29,9 +29,6 @@ import type {
 import type { QuotaController } from '../quota/quota-controller.js';
 import type { CompactionManager } from '../memory/index.js';
 import type { ApplicationServices, AgentContext } from './context.js';
-/** @deprecated Backward-compat type stub from RxJS era */
-interface _Observable<T> { subscribe(o: { next(v: T): void; error?(e: unknown): void; complete?(): void }): { unsubscribe(): void }; pipe(...ops: any[]): any }
-import type { AgentEvent } from './events.js';
 import {
   InMemoryStore,
   DefaultPauseController,
@@ -220,17 +217,6 @@ export class ContextBuilder {
   }
 
   /**
-   * Set plugin pipeline for event interception
-   *
-   * @param pipeline - Pipeline function that transforms Observable<AgentEvent>
-   * @returns this
-   */
-  withPluginPipeline(pipeline: (source: _Observable<AgentEvent>) => _Observable<AgentEvent>): this {
-    this.context.pluginPipeline = pipeline;
-    return this;
-  }
-
-  /**
    * Build the AgentContext
    *
    * Validates that required dependencies are set.
@@ -269,7 +255,6 @@ export class ContextBuilder {
     if (this.context.subagents) ctx.subagents = this.context.subagents;
     if (this.context.abortSignal) ctx.abortSignal = this.context.abortSignal;
     if (this.context.onError) ctx.onError = this.context.onError;
-    if (this.context.pluginPipeline !== undefined) ctx.pluginPipeline = this.context.pluginPipeline;
     if (this.context.promptBuilder) ctx.promptBuilder = this.context.promptBuilder;
 
     return ctx;

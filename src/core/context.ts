@@ -210,10 +210,7 @@ export interface AgentContext {
 
   // ----- Plugin Pipeline (optional) -----
   /** Plugin pipeline for event interception and observation */
-  /** @deprecated Plugin pipeline backward-compat — will be removed in v0.2 */
-  pluginPipeline?: (source: any) => any;
-
-  /** Hook registry for lifecycle/request/tool hooks (non-RxJS) */
+  /** Hook registry for lifecycle/request/tool hooks */
   hookRegistry?: HookRegistry;
 
   // ----- Control Signals -----
