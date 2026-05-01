@@ -222,51 +222,54 @@ interface PluginContext {
 }
 ```
 
-## 操作符
+## Hook 系统
 
-### 控制流操作符
+### RequestHook
 
 ```typescript
-import {
-  retryOnEventType,    // 事件类型重试
-  timeoutOnEventType,  // 事件类型超时
-  requirePermission,    // 权限检查
-  maxStepsLimit,       // 步数限制
-  pauseOnSignal,        // 信号暂停
-} from 'agentforge/operators';
+import type { RequestHook } from 'agentforge';
+
+const systemPromptHook: RequestHook = {
+  name: 'system-prompt',
+  async beforeRequest(messages, state) {
+    return [{ role: 'system', content: 'You are helpful.' }, ...messages];
+  },
+};
 ```
 
-### 变换操作符
+### ToolHook
 
 ```typescript
-import {
-  transformLLMParams,  // 变换 LLM 参数
-  transformToolArgs,   // 变换工具参数
-  compressMessages,    // 压缩消息
-  injectSystemPrompt,  // 注入系统提示
-} from 'agentforge/operators';
+import type { ToolHook } from 'agentforge';
+
+const permissionHook: ToolHook = {
+  name: 'permission-check',
+  async beforeExecute(toolCall, state) {
+    if (toolCall.name === 'delete_file') {
+      return { allowed: false, reason: 'Not permitted' };
+    }
+    return { allowed: true };
+  },
+};
 ```
 
-### 通知操作符
+### LifecycleHook
 
 ```typescript
-import {
-  logEvents,     // 记录事件
-  traceEvents,   // 追踪事件
-  recordMetrics, // 记录指标
-  checkpoint,    // 保存检查点
-} from 'agentforge/operators';
+import type { LifecycleHook } from 'agentforge';
+
+const auditHook: LifecycleHook = {
+  name: 'audit-log',
+  async onSessionStart(ctx) {
+    console.log(`Session: ${ctx.sessionId}`);
+  },
+  async onLLMResponse(ctx) {
+    console.log(`Tokens: ${ctx.response.usage?.completionTokens}`);
+  },
+};
 ```
 
-### 预设
-
-```typescript
-import {
-  productionPreset,  // 生产预设
-  debugPreset,       // 调试预设
-  testPreset,        // 测试预设
-  createPreset,      // 自定义预设
-} from 'agentforge/operators';
+### Quickstart
 ```
 
 ## 工具函数
@@ -371,9 +374,7 @@ interface LLMChunk {
 - [ToolDefinition](/api/tool-definition) - 工具定义接口
 - [Logger](/api/logger) - 结构化日志接口
 
-### 操作符
+### 扩展
 
-- [控制流操作符](/api/operators-control) - retry, timeout, pause 等控制操作符
-- [变换操作符](/api/operators-transform) - 参数变换、消息压缩等
-- [通知操作符](/api/operators-notify) - log, trace, metrics, checkpoint
-- [预设组合](/api/presets) - production, debug, test 预设
+- [Quickstart API](/api/quickstart) - 零配置快速开始
+- [createAgent](/api/create-agent) - 配置式 Agent 创建

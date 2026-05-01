@@ -2,8 +2,10 @@ import { defineConfig } from 'vitepress';
 
 export default defineConfig({
   title: 'AgentForge',
-  description: 'Production-ready Agent framework based on RxJS event stream + Zod type safety',
+  description: 'Agent 开发框架底座 — 命令式事件驱动 + Zod 类型安全',
   lang: 'zh-CN',
+  srcExclude: ['archive/**', 'analysis/**', 'plans/**', 'specs/**', 'project/**', 'design/**', 'DOCUMENTATION.md', 'benchmarks/**', '404.md'],
+  ignoreDeadLinks: true,
   // ignoreDeadLinks: true,  // 注释掉以发现潜在链接问题
   
   head: [
@@ -86,13 +88,10 @@ export default defineConfig({
           ],
         },
         {
-          text: '操作符',
+          text: 'Quickstart',
           collapsed: false,
           items: [
-            { text: '控制流操作符', link: '/api/operators-control' },
-            { text: '变换操作符', link: '/api/operators-transform' },
-            { text: '通知操作符', link: '/api/operators-notify' },
-            { text: '预设组合', link: '/api/presets' },
+            { text: 'Quickstart API', link: '/api/quickstart' },
           ],
         },
       ],

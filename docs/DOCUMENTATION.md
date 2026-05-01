@@ -19,7 +19,7 @@
 | [02-ZOD-CONTRACT.md](./design/02-ZOD-CONTRACT.md) | Zod 数据契约层、信任度分级模型 |
 | [03-DI.md](./design/03-DI.md) | 轻量依赖注入、依赖倒置、三层 Context 结构 |
 | [04-PROMPT-BUILDER.md](./design/04-PROMPT-BUILDER.md) | Prompt 构建、Zod → FunctionDefinition 转换 |
-| [05-EVENT-STREAM.md](./design/05-EVENT-STREAM.md) | 事件流底座、Observable<AgentEvent>、Agent Loop 核心模式 |
+| [05-EVENT-STREAM.md](./design/05-EVENT-STREAM.md) | 📦 已归档（RxJS Observable 模式已移除） |
 | [06-FLOW-CONSTRAINTS.md](./design/06-FLOW-CONSTRAINTS.md) | 流层陷阱与约束、生命周期管理、异步竞态 |
 | [07-PLUGIN-SYSTEM.md](./design/07-PLUGIN-SYSTEM.md) | Hook + 插件系统、拦截器 vs 观察器 |
 | [08-SUBSYSTEMS.md](./design/08-SUBSYSTEMS.md) | 子系统扩展、SubAgent/MCP/Workflow 集成 |

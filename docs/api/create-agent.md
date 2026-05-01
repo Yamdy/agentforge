@@ -284,8 +284,8 @@ interface StreamHandlers {
 
 ## 设计文档对照
 
-| 主题 | 设计文档 |
-|------|---------|
-| L1/L2/L3 API 分层设计 | [design/12-API-DESIGN.md](/design/12-API-DESIGN.md) |
-| AgentContext 3 层 DI | [design/03-DI.md](/design/03-DI.md) |
-| 特性集成（HITL/Checkpoint/Retry/Timeout） | [design/10-FEATURES.md](/design/10-FEATURES.md) |
+| 主题 | 文档 |
+|------|------|
+| Agent 创建 API | [createAgent](/api/create-agent) |
+| AgentContext 3 层 DI | [核心概念](/guide/core-concepts) |
+| Hook 系统 | [插件系统](/guide/plugins) |
