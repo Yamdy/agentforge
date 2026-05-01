@@ -131,7 +131,7 @@ export class WorkflowExecutor {
         listener(mapped);
       });
 
-      await loop.run(prompt as string);
+      await loop.run(prompt);
 
       // Emit workflow.step.end event
       listener({

@@ -151,7 +151,7 @@ export class Workflow {
             result: 'skipped',
           });
           this.executionContext = {
-            ...this.executionContext!,
+            ...this.executionContext,
             currentStepIndex: index + 1,
           };
           stepsCompleted++;
@@ -182,7 +182,7 @@ export class Workflow {
         );
 
         this.executionContext = {
-          ...this.executionContext!,
+          ...this.executionContext,
           currentStepIndex: index + 1,
         };
 
@@ -222,7 +222,7 @@ export class Workflow {
         }
 
         this.executionContext = {
-          ...this.executionContext!,
+          ...this.executionContext,
           state: this.destroyed ? 'cancelled' : 'failed',
         };
 
@@ -259,7 +259,7 @@ export class Workflow {
       }
 
       // Success — emit workflow.complete
-      this.executionContext = { ...this.executionContext!, state: 'completed' };
+      this.executionContext = { ...this.executionContext, state: 'completed' };
 
       const stepOutputs = this.executionContext.stepOutputs
         ? Object.fromEntries(this.executionContext.stepOutputs)
@@ -292,7 +292,7 @@ export class Workflow {
         error: serialized,
       });
 
-      this.executionContext = { ...this.executionContext!, state: 'failed' };
+      this.executionContext = { ...this.executionContext, state: 'failed' };
 
       listener({
         type: 'workflow.complete',

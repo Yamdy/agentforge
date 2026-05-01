@@ -26,7 +26,7 @@ function bridgeInterceptor(plugin: InterceptorPlugin, ctx: PluginContext): {
 } {
   const requestHooks: RequestHook[] = [];
   const lifecycleUnregs: Array<() => void> = [];
-  const eventTypes = plugin.eventTypes as readonly string[];
+  const eventTypes = plugin.eventTypes;
 
   // ── llm.request → RequestHook ──
   if (eventTypes.length === 0 || eventTypes.includes('llm.request')) {
@@ -64,7 +64,7 @@ function bridgeAgentStart(
   ctx: PluginContext,
   hookRegistry: HookRegistry
 ): Array<() => void> {
-  const eventTypes = plugin.eventTypes as readonly string[];
+  const eventTypes = plugin.eventTypes;
   if (eventTypes.length > 0 && !eventTypes.includes('agent.start')) return [];
 
   const unregs: Array<() => void> = [];
@@ -91,7 +91,7 @@ function bridgeAgentStart(
  */
 function bridgeObserver(plugin: ObserverPlugin, ctx: PluginContext, emitter: AgentEventEmitter): Array<() => void> {
   const unregs: Array<() => void> = [];
-  const eventTypes = plugin.eventTypes as readonly string[];
+  const eventTypes = plugin.eventTypes;
   const filterSet = eventTypes.length > 0 ? new Set(eventTypes) : null;
 
   const unreg = emitter.onAny(async (event: AgentEvent) => {

@@ -146,7 +146,7 @@ export class PluginManager {
 
     const hookRegistry = hookRegistryOrSource as HookRegistry;
     const emitter = emitterOrCtx as AgentEventEmitter;
-    const context = (ctx ?? (emitterOrCtx && !('emit' in emitterOrCtx!) ? emitterOrCtx : undefined)) as PluginContext | undefined;
+    const context = (ctx ?? (emitterOrCtx && !('emit' in emitterOrCtx) ? emitterOrCtx : undefined));
 
     if (context) {
       this.pluginContext = context;

@@ -368,8 +368,8 @@ export function toolToFunctionDef(tool: ToolDefinition): FunctionDefinition {
   if (
     params !== null &&
     typeof params === 'object' &&
-    !('_def' in (params as object)) &&
-    'type' in (params as object)
+    !('_def' in (params)) &&
+    'type' in (params)
   ) {
     // Parameters is already a JSON Schema object — use it directly
     const jsonSchema = params as {

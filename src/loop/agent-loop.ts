@@ -688,7 +688,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           { role: 'assistant', content: response.content ?? '' } as Message,
         ];
 
-        const toolCalls = response.toolCalls!;
+        const toolCalls = response.toolCalls;
         const batches = partitionToolCalls(toolCalls, ctx.tools);
         const toolResults: Message[] = [];
 
