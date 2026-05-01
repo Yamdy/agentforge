@@ -50,6 +50,8 @@ export {
   type HITLConfig,
   type SubagentConfig,
   type MCPServerConfig,
+  // Plugin Spec (dynamic loading)
+  type PluginSpec,
   // Defaults
   DEFAULT_AGENT_CONFIG,
 } from './types.js';

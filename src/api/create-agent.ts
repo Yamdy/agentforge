@@ -18,10 +18,13 @@ import {
 } from '../core/context-builder.js';
 import { ConsoleTracer, ConsoleMetrics, NoopTracer, NoopMetrics } from '../core/defaults.js';
 import { generateId } from '../core/events.js';
+import { AgentEventEmitter } from '../core/events.js';
 import { HookRegistry } from '../core/hooks.js';
 import { createAgentLoop, type AgentLoopConfig, type AgentLoop } from '../loop/agent-loop.js';
 import { createLLMAdapter, parseModelSpec } from '../adapters/index.js';
 import { createPluginManager, createPluginContext, type Plugin } from '../plugins/index.js';
+import { PluginLoader } from '../plugins/plugin-loader.js';
+import type { PluginSpec } from '../plugins/plugin-loader.js';
 import {
   createMemoryPlugin,
   createSkillsPlugin,
@@ -219,6 +222,28 @@ export function createAgent(
     manager.buildPipeline(hookRegistry, emitterAdapter);
   }
 
+  // ── Dynamic Plugin Loading (pluginSpecs: PluginSpec[]) ──
+  // Store loading promise so run() can await it before starting
+  let pluginLoadPromise: Promise<void> = Promise.resolve();
+  const specs: PluginSpec[] = [...(config.pluginSpecs ?? [])];
+  if (specs.length > 0) {
+    const pluginCtx = createPluginContext({
+      sessionId,
+      agentName: resolved.name,
+      ...(appServices.tracer ? { tracer: appServices.tracer } : {}),
+      ...(appServices.metrics ? { metrics: appServices.metrics } : {}),
+    });
+    // Use AgentEventEmitter interface directly instead of adapter cast
+    pluginLoadPromise = PluginLoader.loadAll(specs, pluginCtx, hookRegistry, {
+      on: loop.on.bind(loop),
+      onAny: loop.onAny.bind(loop),
+      emit: () => Promise.resolve(),
+      clear: () => {},
+      eventNames: () => [],
+      listenerCount: () => 0,
+    } as unknown as AgentEventEmitter).then(() => {});
+  }
+
   // ── Register plugin lifecycle hooks on loop emitter ──
   for (const plugin of allPlugins) {
     if (!plugin.enabled) continue;
@@ -240,6 +265,8 @@ export function createAgent(
   // ── Return Agent interface ──
   return {
     async run(input: string, handlers?: RunHandlers): Promise<string> {
+      // Ensure dynamic plugins are loaded before starting
+      await pluginLoadPromise;
       if (handlers) {
         if (handlers.onToken) loop.on('llm.stream.text' as any, (e: any) => handlers.onToken!(e.delta));
         if (handlers.onToolCall) loop.on('tool.call' as any, handlers.onToolCall);

@@ -275,6 +275,7 @@ export {
   type Agent,
   type StreamHandlers,
   type RunHandlers,
+  type PluginSpec,
 } from './api/index.js';
 
 // ============================================================
@@ -547,6 +548,33 @@ export {
   // New imperative
   applyPlugins,
 } from './plugins/index.js';
+
+// ============================================================
+// Plugin Loader (Dynamic Installation)
+// ============================================================
+
+/**
+ * Dynamic plugin loader for runtime npm installation.
+ *
+ * @example
+ * ```typescript
+ * import { PluginLoader, parsePluginSpec } from 'agentforge';
+ *
+ * const result = parsePluginSpec('my-plugin@^1.0');
+ * // { source: 'npm', pkg: 'my-plugin', version: '^1.0.0' }
+ *
+ * const specs = [{ source: 'my-audit-plugin@latest' }];
+ * await PluginLoader.loadAll(specs, ctx, hooks, emitter);
+ * ```
+ */
+export {
+  PluginLoader,
+  parsePluginSpec,
+  resolveEntryFromPkgFn as resolveEntryFromPkg,
+  type PluginLoadResult,
+  type PluginLoadError,
+  type ParsedSpec,
+} from './plugins/plugin-loader.js';
 
 // ============================================================
 // Subsystems - MCP (Model Context Protocol)

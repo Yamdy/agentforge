@@ -57,3 +57,17 @@ export {
   type TodoStatus,
   type TodoPriority,
 } from '../tools/todo-list.js';
+
+// ============================================================
+// Plugin Loader (dynamic installation)
+// ============================================================
+
+export {
+  PluginLoader,
+  parsePluginSpec,
+  resolveEntryFromPkgFn as resolveEntryFromPkg,
+  type PluginSpec,
+  type PluginLoadResult,
+  type PluginLoadError,
+  type ParsedSpec,
+} from './plugin-loader.js';

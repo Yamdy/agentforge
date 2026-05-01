@@ -19,6 +19,9 @@ import type {
   CheckpointStorage,
 } from '../core/index.js';
 import type { Plugin } from '../plugins/index.js';
+import type { PluginSpec } from '../plugins/plugin-loader.js';
+
+export type { PluginSpec };
 
 // ============================================================
 // Model Configuration
@@ -280,6 +283,25 @@ export interface AgentConfig {
 
   /** Plugin configurations for event interception and observation */
   plugins?: Plugin[];
+
+  /**
+   * Dynamic plugin specifiers for runtime installation from npm or local paths.
+   *
+   * Plugins specified here are dynamically installed (npm) or loaded (file)
+   * at runtime, without requiring compile-time imports.
+   *
+   * @example
+   * ```typescript
+   * const agent = createAgent({
+   *   model: 'openai/gpt-4o',
+   *   pluginSpecs: [
+   *     { source: 'agentforge-audit-plugin@^1.0' },
+   *     { source: 'file://./my-local-plugin' },
+   *   ],
+   * });
+   * ```
+   */
+  pluginSpecs?: PluginSpec[];
 
   /** Preset configuration ('production' | 'debug' | 'development' | 'test') */
   preset?: 'production' | 'debug' | 'development' | 'test';
