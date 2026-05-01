@@ -44,6 +44,7 @@ import { NoopTracer, NoopMetrics } from './defaults.js';
 import type { QuotaController } from '../quota/quota-controller.js';
 import type { CompactionManager } from '../memory/index.js';
 import type { PromptBuilder } from './interfaces.js';
+import type { QualityGate } from '../validation/quality-gate.js';
 import type {
   HealthChecker,
   MetricsCollector,
@@ -182,6 +183,9 @@ export interface AgentContext {
   // ----- Memory Management (optional) -----
   /** Compaction manager for context window management */
   compactionManager?: CompactionManager;
+
+  /** Quality gate — validates LLM output before it enters context */
+  qualityGate?: QualityGate;
 
   // ----- Quota (optional) ----
   /** Quota controller (optional). When set, enables quota checking before LLM calls. */

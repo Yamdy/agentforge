@@ -17,7 +17,7 @@
 
 import { z } from 'zod';
 import type { AgentEventType } from '../core/events.js';
-import type { RequestHook, ToolHook, HookFn, HookName } from '../core/hooks.js';
+import type { RequestHook, ToolHook, ToolProviderHook, HookFn, HookName } from '../core/hooks.js';
 import type { Tracer, Metrics } from '../core/interfaces.js';
 
 // ============================================================
@@ -61,11 +61,28 @@ export interface Plugin {
   /** Whether plugin is currently enabled */
   enabled: boolean;
 
+  /**
+   * Framework-managed cross-turn state.
+   *
+   * Persists for the session lifetime. Plugins can read/write this state
+   * across hook invocations. The framework does NOT mutate this object —
+   * plugins own their state entirely.
+   *
+   * Use cases:
+   * - SandboxPlugin: track sandbox init status across turns
+   * - PhasePlugin: remember current planning phase
+   * - CounterPlugin: count tool invocations across turns
+   */
+  state?: Record<string, unknown>;
+
   /** Request hooks — modify messages before each LLM call */
   requestHooks?: RequestHook[];
 
   /** Tool hooks — check/block tool execution before it runs */
   toolHooks?: ToolHook[];
+
+  /** ToolProvider hooks — per-call dynamic tool injection/filtering */
+  toolProviderHooks?: ToolProviderHook[];
 
   /** Lifecycle hooks — observe lifecycle cut-points */
   lifecycleHooks?: Array<{ name: HookName; fn: HookFn; priority?: number }>;

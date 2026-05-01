@@ -15,6 +15,52 @@
 
 import type { Message, ToolCall } from './events.js';
 import type { AgentLoopState } from './state.js';
+import type { FunctionDefinition } from './interfaces.js';
+
+// ============================================================================
+// RequestHook Priority Convention (Progressive Disclosure)
+// ============================================================================
+
+/**
+ * Standard priority tiers for RequestHook ordering.
+ *
+ * Progressive disclosure strategy: context is layered into the LLM
+ * request from most critical (system rules) to least critical
+ * (user extensions). Lower-numbered hooks execute first, establishing
+ * a foundation that later hooks can build upon.
+ *
+ * Usage:
+ * ```typescript
+ * const hook: RequestHook = {
+ *   name: 'my-memory-hook',
+ *   priority: RequestHookPriority.MEMORY_CONTEXT,
+ *   apply(messages, state) { ... }
+ * };
+ * ```
+ *
+ * @see DeepAgents middleware stack ordering
+ */
+export const RequestHookPriority = {
+  /** System core rules — identity, hard constraints, output format (NEVER override) */
+  SYSTEM_RULES: 10,
+
+  /** Persistent memory / AGENTS.md context */
+  MEMORY_CONTEXT: 20,
+
+  /** Skill instructions / domain knowledge */
+  SKILL_INSTRUCTIONS: 30,
+
+  /**
+   * Tool descriptions — inject tool schemas into system prompt.
+   * Runs after skills so tools can reference skill-defined concepts.
+   */
+  TOOL_DESCRIPTIONS: 40,
+
+  /** User-provided custom hooks (default priority) */
+  USER_CUSTOM: 50,
+} as const;
+
+export type RequestHookPriority = (typeof RequestHookPriority)[keyof typeof RequestHookPriority];
 
 // ============================================================================
 // Hook Name Enumeration
@@ -101,11 +147,16 @@ export interface LifecycleHookEntry {
  *
  * Hooks are applied in priority order (lower = earlier).
  * Each hook receives the output of the previous hook.
+ *
+ * @see RequestHookPriority for standard priority conventions
  */
 export interface RequestHook {
   /** Unique hook name for debugging */
   name: string;
-  /** Execution order (lower = earlier) */
+  /**
+   * Execution order (lower = earlier).
+   * Use {@link RequestHookPriority} constants for standard tiers.
+   */
   priority: number;
   /**
    * Apply the hook to the current message list.
@@ -148,6 +199,58 @@ export interface ToolHook {
 }
 
 // ============================================================================
+// ToolProvider Hook (dynamic per-call tool injection)
+// ============================================================================
+
+/**
+ * ToolProvider Hook — modifies the tool set available to the LLM on each call.
+ *
+ * Unlike {@link ToolHook} (which only blocks execution AFTER the LLM has already
+ * chosen a tool), ToolProviderHook filters/injects tools BEFORE the LLM sees them.
+ * This enables middleware-style dynamic tool management:
+ *
+ * Use cases:
+ * - SandboxPlugin: only include `execute` tool when sandbox backend is available
+ * - PhasePlugin: add `write_todos` only during planning phase
+ * - ContextPlugin: remove tools irrelevant to the current task
+ * - ProviderPlugin: exclude tools unsupported by the current model
+ *
+ * Hooks are applied in priority order (lower = earlier).
+ * Each hook receives the output of the previous hook.
+ *
+ * @example
+ * ```typescript
+ * const sandboxHook: ToolProviderHook = {
+ *   name: 'sandbox-tool-filter',
+ *   priority: 40,
+ *   async filter(tools, state) {
+ *     if (!this.sandboxAvailable) {
+ *       return tools.filter(t => t.name !== 'execute');
+ *     }
+ *     return tools;
+ *   },
+ * };
+ * ```
+ */
+export interface ToolProviderHook {
+  /** Unique hook name for debugging */
+  name: string;
+  /** Execution order (lower = earlier) */
+  priority: number;
+  /**
+   * Filter or extend the tool list for this LLM call.
+   *
+   * @param tools  - Current tool definitions (after previous hooks)
+   * @param state  - Current agent loop state (read-only reference)
+   * @returns Modified tool definitions
+   */
+  filter(
+    tools: FunctionDefinition[],
+    state: AgentLoopState,
+  ): FunctionDefinition[] | Promise<FunctionDefinition[]>;
+}
+
+// ============================================================================
 // Hook Registry
 // ============================================================================
 
@@ -177,6 +280,11 @@ export class HookRegistry {
    */
   private tools: ToolHook[] = [];
 
+  /**
+   * ToolProvider hooks (per-call tool injection/filtering), sorted by priority.
+   */
+  private toolProviders: ToolProviderHook[] = [];
+
   // ── Lifecycle Hooks ──
 
   /**
@@ -184,7 +292,7 @@ export class HookRegistry {
    *
    * @param name     - Cut-point name
    * @param fn       - Hook function
-   * @param priority - Execution order (default 50)
+   * @param priority - Execution order (default: RequestHookPriority.USER_CUSTOM = 50)
    * @returns Unregister function
    */
   on(name: HookName, fn: HookFn, priority = 50): () => void {
@@ -263,6 +371,29 @@ export class HookRegistry {
     return this.tools;
   }
 
+  // ── ToolProvider Hooks ──
+
+  /**
+   * Register a tool provider hook.
+   *
+   * @returns Unregister function
+   */
+  registerToolProvider(hook: ToolProviderHook): () => void {
+    this.toolProviders.push(hook);
+    this.toolProviders.sort((a, b) => a.priority - b.priority);
+    return () => {
+      const idx = this.toolProviders.indexOf(hook);
+      if (idx >= 0) this.toolProviders.splice(idx, 1);
+    };
+  }
+
+  /**
+   * Get all tool provider hooks, sorted by priority.
+   */
+  getToolProviderHooks(): ToolProviderHook[] {
+    return this.toolProviders;
+  }
+
   // ── Bulk Operations ──
 
   /**
@@ -272,5 +403,6 @@ export class HookRegistry {
     this.lifecycle.clear();
     this.requests = [];
     this.tools = [];
+    this.toolProviders = [];
   }
 }

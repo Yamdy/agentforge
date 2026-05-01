@@ -20,6 +20,7 @@ import {
   CompactionStrategySchema,
   CompactionResultSchema,
 } from './strategies.js';
+import { HistoryOffloadManager } from './history-offload.js';
 
 // ============================================================
 // Compaction Configuration
@@ -112,6 +113,7 @@ export type CompactionEventPayload = {
 export class CompactionManager {
   private config: CompactionConfig;
   private llmAdapter: LLMAdapter | undefined;
+  private offloadManager: HistoryOffloadManager | undefined;
   private eventListeners: Array<(payload: CompactionEventPayload) => void> = [];
 
   /**
@@ -119,13 +121,19 @@ export class CompactionManager {
    *
    * @param config - Compaction configuration (partial, uses defaults)
    * @param llmAdapter - LLM adapter for summarize strategy (optional)
+   * @param offloadManager - History offload manager for archiving removed messages (optional)
    */
-  constructor(config: Partial<CompactionConfig> = {}, llmAdapter?: LLMAdapter) {
+  constructor(
+    config: Partial<CompactionConfig> = {},
+    llmAdapter?: LLMAdapter,
+    offloadManager?: HistoryOffloadManager,
+  ) {
     this.config = CompactionConfigSchema.parse({
       ...DEFAULT_COMPACTION_CONFIG,
       ...config,
     });
     this.llmAdapter = llmAdapter;
+    this.offloadManager = offloadManager;
   }
 
   /**
@@ -206,6 +214,21 @@ export class CompactionManager {
       default:
         // Fallback to truncate-oldest for unknown strategies
         result = this.executeTruncateOldest(context);
+    }
+
+    // ── Offload removed messages for future retrieval ──
+    if (this.offloadManager && result.removedCount > 0) {
+      const resultMessages = result.messages as Message[];
+      const removed = context.messages.filter(
+        (m: Message) => !resultMessages.includes(m),
+      );
+      if (removed.length > 0) {
+        try {
+          await this.offloadManager.offload(context.sessionId, removed);
+        } catch {
+          // Offload failure is non-fatal — never crash the agent loop
+        }
+      }
     }
 
     // Validate result
@@ -335,18 +358,28 @@ export class CompactionManager {
 /**
  * Create compaction manager with default config
  */
-export function createCompactionManager(llmAdapter?: LLMAdapter): CompactionManager {
-  return new CompactionManager({}, llmAdapter);
+export function createCompactionManager(
+  llmAdapter?: LLMAdapter,
+  offloadManager?: HistoryOffloadManager,
+): CompactionManager {
+  return new CompactionManager({}, llmAdapter, offloadManager);
 }
 
 /**
  * Create compaction manager with truncate-oldest strategy
  */
-export function createTruncateCompactionManager(preserveRecent: number = 10): CompactionManager {
-  return new CompactionManager({
-    strategy: 'truncate-oldest',
-    preserveRecent,
-  });
+export function createTruncateCompactionManager(
+  preserveRecent: number = 10,
+  offloadManager?: HistoryOffloadManager,
+): CompactionManager {
+  return new CompactionManager(
+    {
+      strategy: 'truncate-oldest',
+      preserveRecent,
+    },
+    undefined,
+    offloadManager,
+  );
 }
 
 /**
@@ -355,7 +388,8 @@ export function createTruncateCompactionManager(preserveRecent: number = 10): Co
 export function createSummarizeCompactionManager(
   llmAdapter: LLMAdapter,
   preserveRecent: number = 10,
-  maxSummaryLength: number = 500
+  maxSummaryLength: number = 500,
+  offloadManager?: HistoryOffloadManager,
 ): CompactionManager {
   return new CompactionManager(
     {
@@ -363,7 +397,8 @@ export function createSummarizeCompactionManager(
       preserveRecent,
       maxSummaryLength,
     },
-    llmAdapter
+    llmAdapter,
+    offloadManager,
   );
 }
 

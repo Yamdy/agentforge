@@ -553,9 +553,15 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           model: config.model,
         } as AgentEvent);
 
+        // ── ToolProvider Hooks: per-call dynamic tool injection ──
+        let toolDefs = ctx.tools?.getFunctionDefs() ?? [];
+        for (const h of hooks.getToolProviderHooks()) {
+          toolDefs = await h.filter(toolDefs, state);
+        }
+
         let response;
         try {
-          response = await ctx.llm.chat(msgs, { signal } as any);
+          response = await ctx.llm.chat(msgs, { signal, tools: toolDefs } as any);
           state.tokens.prompt += response.usage?.promptTokens ?? 0;
           state.tokens.completion += response.usage?.completionTokens ?? 0;
         } catch (error) {
@@ -585,6 +591,21 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           response,
           usage: response.usage,
         }, {});
+
+        // ── Quality Gate: validate LLM output before acting on it ──
+        if (ctx.qualityGate && response.content) {
+          const gateResult = ctx.qualityGate.check(response.content, state);
+          if (!gateResult.passed) {
+            // Inject correction message so LLM retries with guidance
+            state.messages.push({
+              role: 'user',
+              content:
+                `[System] ${gateResult.feedback ?? 'Your last response had quality issues. Please try again with a different approach.'}`,
+            });
+            state.step++;
+            continue;
+          }
+        }
 
         // ── MPU M5: Audit LLM response ──
         ctx.auditLogger?.append({

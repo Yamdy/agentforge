@@ -415,4 +415,100 @@ describe('Factory functions', () => {
       expect(manager.needsCompaction(context)).toBe(false);
     });
   });
+
+  // ── OffloadManager Integration ──
+
+  describe('OffloadManager Integration', () => {
+    function createMockOffloadManager() {
+      return {
+        offload: vi.fn().mockResolvedValue('/path/to/file.md'),
+        load: vi.fn().mockResolvedValue(null),
+      };
+    }
+
+    it('should accept offloadManager as third constructor parameter', () => {
+      const offloadMgr = createMockOffloadManager();
+      const manager = new CompactionManager({}, undefined, offloadMgr as any);
+      expect(manager).toBeDefined();
+    });
+
+    it('should call offloadManager.offload() when messages are removed', async () => {
+      const offloadMgr = createMockOffloadManager();
+      const manager = new CompactionManager({ strategy: 'truncate-oldest', preserveRecent: 2 }, undefined, offloadMgr as any);
+      const messages = createTestMessages(10);
+      const result = await manager.compact({
+        sessionId: 'test',
+        messages,
+        currentTokenEstimate: 5000,
+        maxTokens: 2000,
+      });
+      expect(result.removedCount).toBeGreaterThan(0);
+      expect(offloadMgr.offload).toHaveBeenCalled();
+    });
+
+    it('should NOT call offload() when no messages are removed', async () => {
+      const offloadMgr = createMockOffloadManager();
+      const manager = new CompactionManager({ strategy: 'truncate-oldest', preserveRecent: 100 }, undefined, offloadMgr as any);
+      const messages = createTestMessages(5);
+      await manager.compact({
+        sessionId: 'test',
+        messages,
+        currentTokenEstimate: 1000,
+        maxTokens: 100000,
+      });
+      // preserveRecent is 100, but only 5 messages exist — should not remove any
+      expect(offloadMgr.offload).not.toHaveBeenCalled();
+    });
+
+    it('should NOT throw when offloadManager is undefined (backward compat)', async () => {
+      const manager = new CompactionManager({ strategy: 'truncate-oldest', preserveRecent: 2 });
+      const messages = createTestMessages(10);
+      await expect(
+        manager.compact({
+          sessionId: 'test',
+          messages,
+          currentTokenEstimate: 5000,
+          maxTokens: 2000,
+        })
+      ).resolves.toBeDefined();
+    });
+
+    it('should NOT throw when offloadManager.offload() fails', async () => {
+      const failingOffload = {
+        offload: vi.fn().mockRejectedValue(new Error('disk full')),
+        load: vi.fn().mockResolvedValue(null),
+      };
+      const manager = new CompactionManager({ strategy: 'truncate-oldest', preserveRecent: 2 }, undefined, failingOffload as any);
+      const messages = createTestMessages(10);
+      // Should not throw even though offload fails
+      const result = await manager.compact({
+        sessionId: 'test',
+        messages,
+        currentTokenEstimate: 5000,
+        maxTokens: 2000,
+      });
+      expect(result).toBeDefined();
+      expect(result.removedCount).toBeGreaterThan(0);
+      expect(failingOffload.offload).toHaveBeenCalled();
+    });
+
+    it('should createCompactionManager accept offloadManager', () => {
+      const offloadMgr = createMockOffloadManager();
+      const manager = createCompactionManager(undefined, offloadMgr as any);
+      expect(manager).toBeDefined();
+    });
+
+    it('should createTruncateCompactionManager accept offloadManager', () => {
+      const offloadMgr = createMockOffloadManager();
+      const manager = createTruncateCompactionManager(10, offloadMgr as any);
+      expect(manager).toBeDefined();
+    });
+
+    it('should createSummarizeCompactionManager accept offloadManager', () => {
+      const llm = createMockLLMAdapter('summary');
+      const offloadMgr = createMockOffloadManager();
+      const manager = createSummarizeCompactionManager(llm, 10, 500, offloadMgr as any);
+      expect(manager).toBeDefined();
+    });
+  });
 });

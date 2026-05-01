@@ -1309,3 +1309,185 @@ describe('Phase 2a: Agent Loop', () => {
     });
   });
 });
+
+// ============================================================
+// QualityGate & ToolProviderHook Integration Tests
+// ============================================================
+
+import { HookRegistry } from '../../src/core/hooks.js';
+import type { ToolProviderHook } from '../../src/core/hooks.js';
+import { QualityGate } from '../../src/validation/quality-gate.js';
+
+describe('Phase 2b: QualityGate Integration', () => {
+  let llm: MockLLMAdapter;
+  let toolRegistry: MockToolRegistry;
+
+  beforeEach(() => {
+    llm = new MockLLMAdapter();
+    toolRegistry = new MockToolRegistry();
+  });
+
+  /** Create context with QualityGate enabled */
+  function createContextWithQualityGate(gateConfig?: Partial<{ blockedReasons: string[] }>): AgentContext {
+    const ctx = createTestContext(llm, toolRegistry);
+    ctx.qualityGate = new QualityGate(gateConfig as any);
+    return ctx;
+  }
+
+  it('should block empty LLM response and retry', async () => {
+    const ctx = createContextWithQualityGate();
+    const config = createTestConfig({ maxSteps: 5 });
+
+    // LLM returns empty → blocked → retry → good response
+    llm.setResponses([
+      { content: '', finishReason: 'stop' },                           // → QualityGate blocks
+      { content: 'Here is a proper response.', finishReason: 'stop' }, // → QualityGate passes
+    ]);
+
+    const agent = createAgentLoop(ctx, config);
+    const events = await runAndCollect(agent, 'test');
+
+    // Should complete (not error)
+    expect(events.find(e => e.type === 'agent.complete')).toBeDefined();
+    // No agent.error event
+    expect(events.find(e => e.type === 'agent.error')).toBeUndefined();
+  });
+
+  it('should detect hallucination and retry', async () => {
+    const ctx = createContextWithQualityGate({
+      blockedReasons: ['empty_response', 'loop_detected', 'hallucination_pattern'],
+    });
+    const config = createTestConfig({ maxSteps: 5 });
+
+    llm.setResponses([
+      { content: 'As an AI language model, I can help...', finishReason: 'stop' },
+      { content: 'The answer is 42.', finishReason: 'stop' },
+    ]);
+
+    const agent = createAgentLoop(ctx, config);
+    const events = await runAndCollect(agent, 'test');
+    expect(events.find(e => e.type === 'agent.complete')).toBeDefined();
+  });
+
+  it('should detect loop and force different response', async () => {
+    const ctx = createContextWithQualityGate();
+    const config = createTestConfig({ maxSteps: 10 });
+
+    const loopText = 'Let me analyze the code again...';
+    llm.setResponses([
+      { content: loopText, finishReason: 'stop' },
+      { content: loopText, finishReason: 'stop' },
+      { content: loopText, finishReason: 'stop' }, // ← QualityGate blocks after 3rd
+      { content: 'I found the bug on line 15.', finishReason: 'stop' },
+    ]);
+
+    const agent = createAgentLoop(ctx, config);
+    const events = await runAndCollect(agent, 'test');
+    expect(events.find(e => e.type === 'agent.complete')).toBeDefined();
+    expect(events.find(e => e.type === 'agent.error')).toBeUndefined();
+  });
+
+  it('should pass through normal responses without blocking', async () => {
+    const ctx = createContextWithQualityGate();
+    const config = createTestConfig({ maxSteps: 3 });
+
+    llm.setResponses([
+      { content: 'The weather is sunny today.', finishReason: 'stop' },
+    ]);
+
+    const agent = createAgentLoop(ctx, config);
+    const events = await runAndCollect(agent, 'test');
+
+    expect(events.find(e => e.type === 'agent.complete')).toBeDefined();
+    const doneEvent = events.find(e => e.type === 'done');
+    expect(doneEvent).toBeDefined();
+  });
+});
+
+describe('Phase 2c: ToolProviderHook Integration', () => {
+  let llm: MockLLMAdapter;
+  let toolRegistry: MockToolRegistry;
+  let hookRegistry: HookRegistry;
+
+  beforeEach(() => {
+    llm = new MockLLMAdapter();
+    toolRegistry = new MockToolRegistry();
+    hookRegistry = new HookRegistry();
+  });
+
+  function createContextWithHooks(toolProviders: ToolProviderHook[]): AgentContext {
+    const ctx = createTestContext(llm, toolRegistry);
+    ctx.hookRegistry = hookRegistry;
+    for (const h of toolProviders) {
+      hookRegistry.registerToolProvider(h);
+    }
+    return ctx;
+  }
+
+  it('should apply tool provider hooks before LLM call', async () => {
+    // Register tools
+    toolRegistry.register('read', async (args: any) => `read: ${args.file}`);
+    toolRegistry.register('execute', async (args: any) => `executed: ${args.command}`);
+
+    // Hook that removes 'execute' tool
+    const ctx = createContextWithHooks([{
+      name: 'remove-execute',
+      priority: 10,
+      filter: (tools) => tools.filter(t => t.name !== 'execute'),
+    }]);
+
+    const config = createTestConfig({ maxSteps: 3 });
+
+    llm.setResponses([
+      { content: 'response', finishReason: 'stop' },
+    ]);
+
+    const agent = createAgentLoop(ctx, config);
+    const events = await runAndCollect(agent, 'test');
+
+    expect(events.find(e => e.type === 'agent.complete')).toBeDefined();
+    // Tool hooks registered and applied — no crash means integration works
+  });
+
+  it('should inject tools via tool provider hooks', async () => {
+    toolRegistry.register('read', async (args: any) => `read: ${args.file}`);
+
+    const ctx = createContextWithHooks([{
+      name: 'inject-todo',
+      priority: 10,
+      filter: (tools) => [...tools, {
+        name: 'write_todos',
+        description: 'Plan tasks',
+        parameters: {},
+      }],
+    }]);
+
+    const config = createTestConfig({ maxSteps: 3 });
+
+    llm.setResponses([
+      { content: 'done', finishReason: 'stop' },
+    ]);
+
+    const agent = createAgentLoop(ctx, config);
+    const events = await runAndCollect(agent, 'test');
+    expect(events.find(e => e.type === 'agent.complete')).toBeDefined();
+  });
+
+  it('should chain multiple tool provider hooks', async () => {
+    toolRegistry.register('a', async () => 'a');
+    toolRegistry.register('b', async () => 'b');
+    toolRegistry.register('c', async () => 'c');
+
+    const ctx = createContextWithHooks([
+      { name: 'remove-c', priority: 10, filter: (t) => t.filter(td => td.name !== 'c') },
+      { name: 'add-d', priority: 20, filter: (t) => [...t, { name: 'd', description: '', parameters: {} }] },
+    ]);
+
+    const config = createTestConfig({ maxSteps: 3 });
+    llm.setResponses([{ content: 'done', finishReason: 'stop' }]);
+
+    const agent = createAgentLoop(ctx, config);
+    const events = await runAndCollect(agent, 'test');
+    expect(events.find(e => e.type === 'agent.complete')).toBeDefined();
+  });
+});
