@@ -9,6 +9,7 @@
 
 import type { Checkpoint, AgentState, SerializedError } from '../core/index.js';
 import type { LLMUsage } from '../core/interfaces.js';
+import type { CompactionManager } from '../memory/compaction.js';
 
 // ============================================================
 // M1 - 持久化存储
@@ -199,6 +200,9 @@ export interface CircuitBreaker {
   /** 记录失败，返回是否触发熔断 */
   recordFailure(severity: ErrorSeverity): boolean;
 
+  /** 记录成功（half-open → closed 转换） */
+  recordSuccess(): boolean;
+
   /** 检查是否应该熔断 */
   shouldTrip(): boolean;
 
@@ -210,14 +214,44 @@ export interface CircuitBreaker {
 
   /** 获取失败计数 */
   getFailureCount(): number;
+
+  /** 销毁熔断器，清理定时器 */
+  destroy(): void;
+}
+
+/**
+ * 修复上下文
+ *
+ * 传递给修复策略的完整上下文信息，
+ * 包含错误详情、会话信息、LLM 适配器和压缩管理器等。
+ */
+export interface RepairContext {
+  /** 序列化错误 */
+  error: SerializedError;
+  /** 重试次数 */
+  retryCount: number;
+  /** 会话 ID */
+  sessionId: string;
+  /** LLM 适配器（可选，用于需要 LLM 调用的策略） */
+  llm?: import('../core/interfaces.js').LLMAdapter;
+  /** 压缩管理器（可选，用于上下文压缩策略） */
+  compactionManager?: CompactionManager;
+  /** 消息列表（可选，用于需要消息上下文的策略如 compaction） */
+  messages?: import('../core/events.js').Message[];
+  /** 当前 token 估算（可选，用于 compaction 策略） */
+  currentTokenEstimate?: number;
+  /** 配置选项 */
+  config?: { fallbackModel?: string; maxTokens?: number };
 }
 
 /**
  * 自动修复器接口
  */
 export interface AutoRepairer {
-  /** 尝试修复错误 */
+  /** 尝试修复错误（向后兼容） */
   attemptRepair(error: SerializedError): Promise<RepairResult>;
+  /** 尝试修复错误（使用完整上下文） */
+  attemptRepair(ctx: RepairContext): Promise<RepairResult>;
 
   /** 注册修复策略 */
   registerStrategy(errorPattern: RegExp, handler: RepairHandler): void;
@@ -238,7 +272,7 @@ export interface RepairResult {
 /**
  * 修复处理器类型
  */
-export type RepairHandler = (error: SerializedError) => Promise<boolean>;
+export type RepairHandler = (ctx: RepairContext) => Promise<boolean>;
 
 // ============================================================
 // M5 - 审计日志
@@ -561,6 +595,9 @@ export interface AlignmentResult {
 export interface GoalAlignmentChecker {
   /** 检查对齐 */
   checkAlignment(action: string, goal: string): AlignmentResult;
+
+  /** Check alignment asynchronously with two-tier approach: Jaccard fast-path + LLM for borderline */
+  checkAlignmentAsync(action: string, goal: string): Promise<AlignmentResult>;
 
   /** 设置目标 */
   setGoal(goal: string): void;

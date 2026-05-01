@@ -8,6 +8,10 @@
  */
 
 import type { GoalAlignmentChecker, AlignmentResult } from '../contracts/mpu-interfaces.js';
+import type { LLMAdapter } from '../core/interfaces.js';
+import type { LLMScorer } from '../evaluation/llm-scorer.js';
+import type { ScoringContext } from '../evaluation/types.js';
+import { createGoalAlignmentScorer } from '../evaluation/scorers/goal-alignment.js';
 
 /**
  * GoalAlignmentChecker implementation using Jaccard similarity.
@@ -19,6 +23,13 @@ import type { GoalAlignmentChecker, AlignmentResult } from '../contracts/mpu-int
  */
 export class GoalAlignmentCheckerImpl implements GoalAlignmentChecker {
   private currentGoal: string | null = null;
+  private llmScorer?: LLMScorer;
+
+  constructor(llm?: LLMAdapter) {
+    if (llm) {
+      this.llmScorer = createGoalAlignmentScorer({ judge: llm });
+    }
+  }
 
   checkAlignment(action: string, goal: string): AlignmentResult {
     const actionKeywords = extractKeywords(action);
@@ -58,6 +69,43 @@ export class GoalAlignmentCheckerImpl implements GoalAlignmentChecker {
 
   getGoal(): string | null {
     return this.currentGoal;
+  }
+
+  async checkAlignmentAsync(action: string, goal: string): Promise<AlignmentResult> {
+    // Step 1: Run Jaccard as fast pre-filter
+    const jaccardResult = this.checkAlignment(action, goal);
+
+    // Step 2: If clearly aligned (Jaccard > 0.5), return immediately
+    if (jaccardResult.confidence > 0.5) {
+      return jaccardResult;
+    }
+
+    // Step 3: If clearly misaligned (Jaccard < 0.2), return immediately
+    if (jaccardResult.confidence < 0.2) {
+      return jaccardResult;
+    }
+
+    // Step 4: Borderline case (0.2-0.5) — use LLM scorer for semantic evaluation
+    if (!this.llmScorer) {
+      return jaccardResult;
+    }
+
+    const ctx: ScoringContext = {
+      input: action,
+      output: '',
+      messages: [],
+      agentName: 'goal-alignment-checker',
+      sessionId: 'goal-check',
+      metadata: { goal },
+    };
+
+    const result = await this.llmScorer.evaluate(ctx);
+
+    return {
+      aligned: result.score >= 0.5,
+      confidence: result.score,
+      reason: result.reason,
+    };
   }
 }
 

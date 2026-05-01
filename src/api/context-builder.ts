@@ -40,7 +40,7 @@ import type {
 } from '../core/interfaces.js';
 import type { AgentContext, ApplicationServices } from '../core/context.js';
 import type { SecurityGuard } from '../security/guard.js';
-import type { ErrorClassifier, CircuitBreaker } from '../contracts/mpu-interfaces.js';
+import type { ErrorClassifier, CircuitBreaker, AutoRepairer } from '../contracts/mpu-interfaces.js';
 import type { Planner } from '../planning/types.js';
 import {
   ContextBuilder,
@@ -92,6 +92,7 @@ interface BuilderState {
   securityGuard?: SecurityGuard;
   errorClassifier?: ErrorClassifier;
   circuitBreaker?: CircuitBreaker;
+  autoRepairer?: AutoRepairer;
   planner?: Planner;
 }
 
@@ -490,6 +491,19 @@ export class AgentContextBuilder {
   }
 
   /**
+   * Set auto-repairer
+   *
+   * Enables automatic error recovery strategies.
+   *
+   * @param repairer - AutoRepairer instance
+   * @returns this
+   */
+  withAutoRepairer(repairer: AutoRepairer): this {
+    this.state.autoRepairer = repairer;
+    return this;
+  }
+
+  /**
    * Set planner
    *
    * Enables task planning and plan validation.
@@ -591,6 +605,10 @@ export class AgentContextBuilder {
     }
     if (this.state.circuitBreaker !== undefined) {
       ctx.circuitBreaker = this.state.circuitBreaker;
+    }
+
+    if (this.state.autoRepairer !== undefined) {
+      ctx.autoRepairer = this.state.autoRepairer;
     }
     if (this.state.planner !== undefined) {
       ctx.planner = this.state.planner;

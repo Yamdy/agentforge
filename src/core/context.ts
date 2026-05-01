@@ -53,6 +53,7 @@ import type {
   ResultValidator,
   ErrorClassifier,
   CircuitBreaker,
+  AutoRepairer,
 } from '../contracts/mpu-interfaces.js';
 import type { SecurityGuard } from '../security/guard.js';
 import type { Planner } from '../planning/types.js';
@@ -200,6 +201,9 @@ export interface AgentContext {
 
   /** Circuit breaker for failure threshold tracking and circuit tripping */
   circuitBreaker?: CircuitBreaker;
+
+  /** Auto-repairer for automatic error recovery strategies */
+  autoRepairer?: AutoRepairer;
 
   /** Planner for task planning and plan validation */
   planner?: Planner;
@@ -464,12 +468,14 @@ export class DefaultPauseController implements PauseController {
  * - External answer() call → callback fires → Promise resolves → loop continues
  */
 export class DefaultHITLController implements HITLController {
-  private askListeners: Array<(prompt: {
-    askId: string;
-    question: string;
-    options?: string[];
-    metadata?: Record<string, unknown>;
-  }) => void> = [];
+  private askListeners: Array<
+    (prompt: {
+      askId: string;
+      question: string;
+      options?: string[];
+      metadata?: Record<string, unknown>;
+    }) => void
+  > = [];
   private pendingAsks = new Map<string, (answer: string) => void>();
 
   /**
@@ -508,12 +514,14 @@ export class DefaultHITLController implements HITLController {
   /**
    * Subscribe to HITL prompts (for UI). Returns unsubscribe.
    */
-  onAsk(listener: (prompt: {
-    askId: string;
-    question: string;
-    options?: string[];
-    metadata?: Record<string, unknown>;
-  }) => void): () => void {
+  onAsk(
+    listener: (prompt: {
+      askId: string;
+      question: string;
+      options?: string[];
+      metadata?: Record<string, unknown>;
+    }) => void
+  ): () => void {
     this.askListeners.push(listener);
     return () => {
       const idx = this.askListeners.indexOf(listener);

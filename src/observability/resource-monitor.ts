@@ -7,6 +7,8 @@
  * @module observability/resource-monitor
  */
 
+import { monitorEventLoopDelay } from 'perf_hooks';
+
 /**
  * Memory metrics
  */
@@ -43,8 +45,14 @@ export interface ResourceMetrics {
   readonly memory: MemoryMetrics;
   /** CPU metrics (Node.js only) */
   readonly cpu?: CPUMetrics;
-  /** Event loop delay (ms, Node.js only) */
+  /** Event loop delay (ms, Node.js only) — average over sampling window */
   readonly eventLoopDelay?: number;
+  /** Event loop delay minimum (ms, Node.js only) */
+  readonly eventLoopDelayMin?: number;
+  /** Event loop delay maximum (ms, Node.js only) */
+  readonly eventLoopDelayMax?: number;
+  /** Event loop delay 99th percentile (ms, Node.js only) */
+  readonly eventLoopDelayP99?: number;
   /** Uptime (ms) */
   readonly uptime: number;
 }
@@ -99,6 +107,7 @@ export interface ResourceMonitorOptions {
 export class ResourceMonitor {
   private readonly _options: Required<ResourceMonitorOptions>;
   private _lastCpuUsage: NodeJS.CpuUsage | undefined;
+  private _eldHistogram?: ReturnType<typeof monitorEventLoopDelay>;
 
   constructor(options: ResourceMonitorOptions = {}) {
     this._options = {
@@ -108,6 +117,11 @@ export class ResourceMonitor {
       enableCpu: options.enableCpu ?? true,
       enableEventLoop: options.enableEventLoop ?? true,
     };
+
+    if (this._options.enableEventLoop) {
+      this._eldHistogram = monitorEventLoopDelay({ resolution: 20 });
+      this._eldHistogram.enable();
+    }
   }
 
   /**
@@ -116,7 +130,11 @@ export class ResourceMonitor {
    */
   onMetrics(listener: (metrics: ResourceMetrics) => void): () => void {
     const timer = setInterval(() => {
-      try { listener(this.collect()); } catch { /* isolate */ }
+      try {
+        listener(this.collect());
+      } catch {
+        /* isolate */
+      }
     }, this._options.intervalMs);
     return () => clearInterval(timer);
   }
@@ -142,56 +160,9 @@ export class ResourceMonitor {
       };
     }
 
-    // Event loop delay (Node.js)
-    const eventLoopDelay =
-      this._options.enableEventLoop && typeof process.hrtime === 'function'
-        ? this.measureEventLoopDelay()
-        : undefined;
+    // Event loop delay (Node.js) — via perf_hooks histogram
+    const eldHistogram = this._eldHistogram;
 
-    // Build object respecting exactOptionalPropertyTypes
-    if (cpu !== undefined && eventLoopDelay !== undefined) {
-      return {
-        timestamp,
-        memory: {
-          heapUsed: mem.heapUsed,
-          heapTotal: mem.heapTotal,
-          external: mem.external,
-          rss: mem.rss,
-          arrayBuffers: mem.arrayBuffers,
-        },
-        uptime,
-        cpu,
-        eventLoopDelay,
-      };
-    }
-    if (cpu !== undefined) {
-      return {
-        timestamp,
-        memory: {
-          heapUsed: mem.heapUsed,
-          heapTotal: mem.heapTotal,
-          external: mem.external,
-          rss: mem.rss,
-          arrayBuffers: mem.arrayBuffers,
-        },
-        uptime,
-        cpu,
-      };
-    }
-    if (eventLoopDelay !== undefined) {
-      return {
-        timestamp,
-        memory: {
-          heapUsed: mem.heapUsed,
-          heapTotal: mem.heapTotal,
-          external: mem.external,
-          rss: mem.rss,
-          arrayBuffers: mem.arrayBuffers,
-        },
-        uptime,
-        eventLoopDelay,
-      };
-    }
     return {
       timestamp,
       memory: {
@@ -202,6 +173,13 @@ export class ResourceMonitor {
         arrayBuffers: mem.arrayBuffers,
       },
       uptime,
+      ...(cpu !== undefined && { cpu }),
+      ...(eldHistogram && {
+        eventLoopDelay: this.measureEventLoopDelay(),
+        eventLoopDelayMin: Number(eldHistogram.min) / 1e6,
+        eventLoopDelayMax: Number(eldHistogram.max) / 1e6,
+        eventLoopDelayP99: Number(eldHistogram.percentile(99)) / 1e6,
+      }),
     };
   }
 
@@ -283,15 +261,13 @@ export class ResourceMonitor {
   // ===== Private Methods =====
 
   /**
-   * Measure event loop delay
+   * Measure event loop delay (mean over sampling window, in ms)
    *
-   * Uses a simple technique: measure how long setTimeout actually takes
-   * vs. the expected delay.
+   * Uses the perf_hooks event loop delay histogram for accurate,
+   * statistically meaningful measurements — no back-to-back hrtime snapshots.
    */
   private measureEventLoopDelay(): number {
-    const start = process.hrtime.bigint();
-    const end = process.hrtime.bigint();
-    const elapsedNs = Number(end - start);
-    return elapsedNs / 1_000_000; // Convert to ms
+    if (!this._eldHistogram) return 0;
+    return Number(this._eldHistogram.mean) / 1e6; // Convert ns → ms
   }
 }

@@ -96,7 +96,11 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
 
   async function runLifecycleHook(name: string, input: unknown, output: unknown): Promise<void> {
     for (const h of hooks.getLifecycleHooks(name as any)) {
-      try { await h(input, output); } catch { /* isolate */ }
+      try {
+        await h(input, output);
+      } catch {
+        /* isolate */
+      }
     }
   }
 
@@ -104,7 +108,10 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
   // Error Recovery
   // ============================================================
 
-  async function handleLLMError(error: unknown, signal: AbortSignal): Promise<'continue' | 'throw'> {
+  async function handleLLMError(
+    error: unknown,
+    signal: AbortSignal
+  ): Promise<'continue' | 'throw'> {
     if (signal.aborted) return 'throw';
 
     const analysis = analyzeLLMError(error as Error, config.model.model, (error as any).status);
@@ -132,23 +139,37 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           break;
 
         case 'switch_fallback_model':
-          if (config.fallbackModel && state.recovery.fallbackSwitchCount < RECOVERY_LIMITS.fallbackSwitch) {
+          if (
+            config.fallbackModel &&
+            state.recovery.fallbackSwitchCount < RECOVERY_LIMITS.fallbackSwitch
+          ) {
             state.recovery.fallbackSwitchCount++;
             config.model = config.fallbackModel;
-            await runLifecycleHook('recovery.fallback', { error: analysis.message }, { model: config.fallbackModel });
+            await runLifecycleHook(
+              'recovery.fallback',
+              { error: analysis.message },
+              { model: config.fallbackModel }
+            );
             return 'continue';
           }
           break;
 
         case 'trigger_compaction':
-          if (ctx.compactionManager && state.recovery.compactionRetryCount < RECOVERY_LIMITS.compactionRetry) {
+          if (
+            ctx.compactionManager &&
+            state.recovery.compactionRetryCount < RECOVERY_LIMITS.compactionRetry
+          ) {
             state.recovery.compactionRetryCount++;
             if (state) {
-              await runLifecycleHook('compaction.before', {
-                sessionId: ctx.sessionId,
-                messages: state.messages,
-                tokenCount: state.tokens.prompt + state.tokens.completion,
-              }, {});
+              await runLifecycleHook(
+                'compaction.before',
+                {
+                  sessionId: ctx.sessionId,
+                  messages: state.messages,
+                  tokenCount: state.tokens.prompt + state.tokens.completion,
+                },
+                {}
+              );
               const result = await ctx.compactionManager.compact({
                 sessionId: ctx.sessionId,
                 messages: state.messages,
@@ -156,10 +177,14 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
                 currentTokenEstimate: state.tokens.prompt + state.tokens.completion,
               });
               state.messages = result.messages as Message[];
-              await runLifecycleHook('compaction.after', {
-                sessionId: ctx.sessionId,
-                messages: state.messages,
-              }, {});
+              await runLifecycleHook(
+                'compaction.after',
+                {
+                  sessionId: ctx.sessionId,
+                  messages: state.messages,
+                },
+                {}
+              );
             }
             return 'continue';
           }
@@ -234,12 +259,16 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       }
 
       // ── Execute tool ──
-      await runLifecycleHook('tool.execute.before', {
-        sessionId: ctx.sessionId,
-        toolName: tc.name,
-        callId: tc.id,
-        args: tc.args,
-      }, {});
+      await runLifecycleHook(
+        'tool.execute.before',
+        {
+          sessionId: ctx.sessionId,
+          toolName: tc.name,
+          callId: tc.id,
+          args: tc.args,
+        },
+        {}
+      );
 
       void emitter.emit({
         type: 'tool.execute',
@@ -261,14 +290,21 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       });
 
       try {
-        const result = await ctx.tools.execute(tc.name, tc.args, { toolCallId: tc.id, parentSessionId: ctx.sessionId });
+        const result = await ctx.tools.execute(tc.name, tc.args, {
+          toolCallId: tc.id,
+          parentSessionId: ctx.sessionId,
+        });
 
-        await runLifecycleHook('tool.execute.after', {
-          sessionId: ctx.sessionId,
-          toolName: tc.name,
-          callId: tc.id,
-          args: tc.args,
-        }, { result });
+        await runLifecycleHook(
+          'tool.execute.after',
+          {
+            sessionId: ctx.sessionId,
+            toolName: tc.name,
+            callId: tc.id,
+            args: tc.args,
+          },
+          { result }
+        );
 
         const resultStr = typeof result === 'string' ? result : JSON.stringify(result);
         results.push({
@@ -304,19 +340,27 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           try {
             const validation = ctx.services.resultValidator.validate(tc.name, resultStr);
             if (!validation.valid) {
-              ctx.logger?.warn(`Tool result validation failed for ${tc.name}:`, { errors: validation.errors });
+              ctx.logger?.warn(`Tool result validation failed for ${tc.name}:`, {
+                errors: validation.errors,
+              });
             }
-          } catch { /* isolate */ }
+          } catch {
+            /* isolate */
+          }
         }
       } catch (err) {
         const errStr = err instanceof Error ? err.message : String(err);
 
-        await runLifecycleHook('tool.execute.error', {
-          sessionId: ctx.sessionId,
-          toolName: tc.name,
-          callId: tc.id,
-          error: err,
-        }, { retry: false });
+        await runLifecycleHook(
+          'tool.execute.error',
+          {
+            sessionId: ctx.sessionId,
+            toolName: tc.name,
+            callId: tc.id,
+            error: err,
+          },
+          { retry: false }
+        );
 
         results.push({
           role: 'tool',
@@ -354,7 +398,9 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
               stack: undefined,
             });
             ctx.circuitBreaker.recordFailure(severity);
-          } catch { /* isolate */ }
+          } catch {
+            /* isolate */
+          }
         }
       }
     }
@@ -436,12 +482,16 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       model: config.model,
     });
 
-    await runLifecycleHook('session.start', {
-      sessionId: ctx.sessionId,
-      agentName: ctx.agentName,
-      input,
-      model: config.model,
-    }, {});
+    await runLifecycleHook(
+      'session.start',
+      {
+        sessionId: ctx.sessionId,
+        agentName: ctx.agentName,
+        input,
+        model: config.model,
+      },
+      {}
+    );
 
     // ====================================================================
     // MAIN LOOP
@@ -474,22 +524,30 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             sessionId: ctx.sessionId,
             reason: 'length',
           });
-          await runLifecycleHook('session.end', {
-            sessionId: ctx.sessionId,
-            reason: 'max_steps',
-            steps: state.step,
-            tokens: state.tokens,
-          }, {});
+          await runLifecycleHook(
+            'session.end',
+            {
+              sessionId: ctx.sessionId,
+              reason: 'max_steps',
+              steps: state.step,
+              tokens: state.tokens,
+            },
+            {}
+          );
           return state.output;
         }
 
         // ── Lifecycle: step.begin ──
-        await runLifecycleHook('step.begin', {
-          sessionId: ctx.sessionId,
-          step: state.step,
-          maxSteps,
-          messageCount: state.messages.length,
-        }, {});
+        await runLifecycleHook(
+          'step.begin',
+          {
+            sessionId: ctx.sessionId,
+            step: state.step,
+            maxSteps,
+            messageCount: state.messages.length,
+          },
+          {}
+        );
 
         // ── Emit agent.step for backward compat ──
         void emitter.emit({
@@ -506,19 +564,32 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           msgs = await h.apply(msgs, state);
         }
 
-        await runLifecycleHook('llm.request.before', {
-          sessionId: ctx.sessionId,
-          messages: msgs,
-          model: config.model,
-        }, {});
+        await runLifecycleHook(
+          'llm.request.before',
+          {
+            sessionId: ctx.sessionId,
+            messages: msgs,
+            model: config.model,
+          },
+          {}
+        );
 
         // ── MPU M7: Quota check ──
         if (ctx.quota) {
-          const usage = ctx.quota.getUsage(ctx.sessionId);
+          const currentUsage = ctx.quota.getUsage(ctx.sessionId);
           const limits = ctx.quota.getLimits();
-          const ok = (usage as any).usedTokens < (limits as any).maxTokensPerSession;
+          // Use actual typed fields, NOT as any
+          const totalUsed = currentUsage.promptTokens + currentUsage.completionTokens;
+          const maxAllowed = limits.maxPromptTokens + limits.maxCompletionTokens;
+          const costOk =
+            limits.maxTotalCost === undefined ||
+            (currentUsage.totalCost ?? 0) < limits.maxTotalCost;
+          const ok = totalUsed < maxAllowed && costOk;
           if (!ok) {
-            const err: SerializedError = { name: 'QuotaExceededError', message: 'Token/cost quota exceeded' };
+            const err: SerializedError = {
+              name: 'QuotaExceededError',
+              message: 'Token/cost quota exceeded',
+            };
             void emitter.emit({
               type: 'agent.error',
               timestamp: Date.now(),
@@ -527,9 +598,9 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             });
             void emitter.emit({
               type: 'done',
+              reason: 'error',
               timestamp: Date.now(),
               sessionId: ctx.sessionId,
-              reason: 'error',
             });
             return state.output;
           }
@@ -588,12 +659,16 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           usage: response.usage,
         } as AgentEvent);
 
-        await runLifecycleHook('llm.response.after', {
-          sessionId: ctx.sessionId,
-          step: state.step,
-          response,
-          usage: response.usage,
-        }, {});
+        await runLifecycleHook(
+          'llm.response.after',
+          {
+            sessionId: ctx.sessionId,
+            step: state.step,
+            response,
+            usage: response.usage,
+          },
+          {}
+        );
 
         // ── Quality Gate: validate LLM output before acting on it ──
         if (ctx.qualityGate && response.content) {
@@ -602,13 +677,15 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             // Inject correction message so LLM retries with guidance
             state.messages.push({
               role: 'user',
-              content:
-                `[System] ${gateResult.feedback ?? 'Your last response had quality issues. Please try again with a different approach.'}`,
+              content: `[System] ${gateResult.feedback ?? 'Your last response had quality issues. Please try again with a different approach.'}`,
             });
             state.step++;
             continue;
           }
         }
+
+        // ── Circuit breaker: record success on valid LLM response ──
+        ctx.circuitBreaker?.recordSuccess();
 
         // ── MPU M5: Audit LLM response ──
         ctx.auditLogger?.append({
@@ -634,16 +711,20 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             state: state,
           } as AgentEvent);
           // Fire-and-forget: never block the loop on checkpoint save
-          ctx.checkpoint?.save({
-            checkpointId: cpId,
-            sessionId: ctx.sessionId,
-            position: 'after_llm',
-            state: state as any,
-            timestamp: Date.now(),
-          } as any).catch(() => {});
+          ctx.checkpoint
+            ?.save({
+              checkpointId: cpId,
+              sessionId: ctx.sessionId,
+              position: 'after_llm',
+              state: state as any,
+              timestamp: Date.now(),
+            } as any)
+            .catch(() => {});
         }
         if (ctx.services.costTracker && response.usage) {
-          ctx.services.costTracker.record(ctx.sessionId, config.model.model, response.usage).catch(() => {});
+          ctx.services.costTracker
+            .record(ctx.sessionId, config.model.model, response.usage)
+            .catch(() => {});
         }
 
         // ── 3. Completion check + Token Budget ──
@@ -654,18 +735,25 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             state.messages = [
               ...state.messages,
               { role: 'assistant', content: response.content },
-              { role: 'user', content: 'Continue from where you left off. Do not repeat or summarize.' },
+              {
+                role: 'user',
+                content: 'Continue from where you left off. Do not repeat or summarize.',
+              },
             ];
             state.step++;
             continue;
           }
           state.output = response.content;
-          await runLifecycleHook('session.end', {
-            sessionId: ctx.sessionId,
-            reason: 'completed',
-            steps: state.step,
-            tokens: state.tokens,
-          }, {});
+          await runLifecycleHook(
+            'session.end',
+            {
+              sessionId: ctx.sessionId,
+              reason: 'completed',
+              steps: state.step,
+              tokens: state.tokens,
+            },
+            {}
+          );
           void emitter.emit({
             type: 'agent.complete',
             timestamp: Date.now(),
@@ -692,7 +780,10 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         ];
 
         const toolCalls = response.toolCalls;
-        const batches = partitionToolCalls(toolCalls, ctx.tools as unknown as { isConcurrencySafe?: (name: string) => boolean } | null);
+        const batches = partitionToolCalls(
+          toolCalls,
+          ctx.tools as unknown as { isConcurrencySafe?: (name: string) => boolean } | null
+        );
         const toolResults: Message[] = [];
 
         for (const batch of batches) {
@@ -706,11 +797,15 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         state.messages = [...state.messages, ...toolResults];
         state.step++;
 
-        await runLifecycleHook('step.end', {
-          sessionId: ctx.sessionId,
-          step: state.step,
-          toolCallsExecuted: toolCalls.length,
-        }, {});
+        await runLifecycleHook(
+          'step.end',
+          {
+            sessionId: ctx.sessionId,
+            step: state.step,
+            toolCallsExecuted: toolCalls.length,
+          },
+          {}
+        );
 
         // ── Emit checkpoint after tool execution ──
         const cpEnabled2 = config.checkpoint?.enabled !== false;
@@ -724,22 +819,28 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             position: 'after_tool',
             state: state,
           } as AgentEvent);
-          ctx.checkpoint?.save({
-            checkpointId: cpId2,
-            sessionId: ctx.sessionId,
-            position: 'after_tool',
-            state: state as any,
-            timestamp: Date.now(),
-          } as any).catch(() => {});
+          ctx.checkpoint
+            ?.save({
+              checkpointId: cpId2,
+              sessionId: ctx.sessionId,
+              position: 'after_tool',
+              state: state as any,
+              timestamp: Date.now(),
+            } as any)
+            .catch(() => {});
         }
 
         // ── Compaction check ──
         if (shouldCompact(state.messages, state.tokens)) {
-          await runLifecycleHook('compaction.before', {
-            sessionId: ctx.sessionId,
-            messages: state.messages,
-            tokenCount: state.tokens.prompt + state.tokens.completion,
-          }, {});
+          await runLifecycleHook(
+            'compaction.before',
+            {
+              sessionId: ctx.sessionId,
+              messages: state.messages,
+              tokenCount: state.tokens.prompt + state.tokens.completion,
+            },
+            {}
+          );
           if (ctx.compactionManager) {
             const result = await ctx.compactionManager.compact({
               sessionId: ctx.sessionId,
@@ -749,10 +850,14 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             });
             state.messages = result.messages as Message[];
           }
-          await runLifecycleHook('compaction.after', {
-            sessionId: ctx.sessionId,
-            messages: state.messages,
-          }, {});
+          await runLifecycleHook(
+            'compaction.after',
+            {
+              sessionId: ctx.sessionId,
+              messages: state.messages,
+            },
+            {}
+          );
         }
       }
     } catch (error) {
@@ -783,6 +888,35 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         details: { error: err },
       });
 
+      // ── MPU M4: Auto-repairer attempt before circuit breaker ──
+      if (ctx.autoRepairer) {
+        try {
+          const repairCtx: import('../contracts/mpu-interfaces.js').RepairContext = {
+            error: err,
+            retryCount: 0,
+            sessionId: ctx.sessionId,
+            llm: ctx.llm,
+            ...(ctx.compactionManager ? { compactionManager: ctx.compactionManager } : {}),
+            messages: state?.messages ?? [],
+            currentTokenEstimate: state ? state.tokens.prompt + state.tokens.completion : 0,
+            config: {
+              ...(config.fallbackModel
+                ? {
+                    fallbackModel: `${config.fallbackModel.provider}/${config.fallbackModel.model}`,
+                  }
+                : {}),
+            },
+          };
+          const repairResult = await ctx.autoRepairer.attemptRepair(repairCtx);
+          if (repairResult.success) {
+            // Repair succeeded — don't trip circuit breaker, let loop retry
+            ctx.logger?.info('Auto-repair succeeded', { description: repairResult.description });
+          }
+        } catch {
+          /* isolate */
+        }
+      }
+
       // ── MPU M4: Circuit breaker ──
       if (ctx.errorClassifier && ctx.circuitBreaker) {
         try {
@@ -790,7 +924,9 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           if (severity === 'moderate' || severity === 'severe') {
             ctx.circuitBreaker.recordFailure(severity);
           }
-        } catch { /* isolate */ }
+        } catch {
+          /* isolate */
+        }
       }
 
       // ── Notify error handler ──
@@ -821,7 +957,9 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
     },
     pause: (): void => {
       paused = true;
-      resumePromise = new Promise<void>((r) => { resumeResolve = r; });
+      resumePromise = new Promise<void>(r => {
+        resumeResolve = r;
+      });
     },
     resume: (): void => {
       paused = false;
@@ -831,6 +969,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
     },
     getState: (): AgentLoopState | null => state,
     destroy: (): void => {
+      ctx.circuitBreaker?.destroy();
       abortController?.abort();
       emitter.clear();
       hooks.clear();
