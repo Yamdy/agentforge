@@ -378,6 +378,51 @@ export class AgentContextBuilder {
   }
 
   /**
+   * Set tracing configuration (OTel-compatible).
+   *
+   * Resolves the appropriate Tracer based on exporter type.
+   * For 'otel' exporter, lazy-loads the OTel SDK via dynamic import.
+   *
+   * @param config - Tracing configuration
+   * @returns this
+   */
+  async withTracingConfig(config: {
+    exporter: 'console' | 'otel' | 'custom' | 'none';
+    endpoint?: string;
+    serviceName?: string;
+    headers?: Record<string, string>;
+    sampler?: number;
+    customTracer?: Tracer;
+  }): Promise<this> {
+    if (config.customTracer) {
+      this.state.tracer = config.customTracer;
+    } else if (config.exporter === 'none') {
+      // Keep default NoopTracer (set by createDefaultAppServices)
+    } else if (config.exporter === 'otel' && config.endpoint) {
+      try {
+        /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call */
+        const { OTelTracer } = await import('../observability/tracers/otel-tracer.js');
+        const otelTracer = new OTelTracer();
+        const otelConfig: Record<string, unknown> = {
+          endpoint: config.endpoint,
+        };
+        if (config.serviceName !== undefined) otelConfig.serviceName = config.serviceName;
+        if (config.headers !== undefined) otelConfig.headers = config.headers;
+        if (config.sampler !== undefined) otelConfig.sampler = config.sampler;
+        await otelTracer.configure(otelConfig as any); // eslint-disable-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
+        this.state.tracer = otelTracer;
+        /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call */
+      } catch {
+        // OTel SDK failed to load — keep default NoopTracer
+      }
+    } else if (config.exporter === 'console') {
+      const { ConsoleTracer } = await import('../core/defaults.js');
+      this.state.tracer = new ConsoleTracer();
+    }
+    return this;
+  }
+
+  /**
    * Set metrics
    *
    * @param metrics - Metrics instance

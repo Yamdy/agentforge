@@ -85,6 +85,28 @@ describe('preset-service wiring', () => {
       expect(ctx.services.tracer).toBe(customTracer);
     });
 
+    it('should keep NoopTracer when exporter is none', () => {
+      const agent = createAgent(makeConfig({
+        tracing: { exporter: 'none' },
+      }));
+      const ctx = (agent as unknown as { ctx: { services: { tracer: unknown } } }).ctx;
+      expect(ctx.services.tracer).toBeInstanceOf(NoopTracer);
+    });
+
+    it('should not crash with exporter otel (async init handled by tracerInitPromise)', async () => {
+      // OTel SDK initialization is asynchronous via tracerInitPromise, awaited in agent.run().
+      // Verify createAgent() itself doesn't crash (the OTel import is fire-and-forget).
+      const agent = createAgent(makeConfig({
+        tracing: { exporter: 'otel', endpoint: 'http://localhost:4318/v1/traces' },
+      }));
+      const ctx = (agent as unknown as { ctx: { services: { tracer: unknown } } }).ctx;
+      // Tracer starts as NoopTracer (default) and is replaced when OTel SDK loads
+      // The tracerInitPromise is stored and awaited inside agent.run()
+      expect(ctx.services.tracer).toBeDefined();
+      // Agent was created successfully without crashing
+      expect(agent.ctx.agentName).toBe('test-agent');
+    });
+
     it('should wire custom metrics from MetricsConfig', () => {
       const customMetrics = new NoopMetrics(); // Use NoopMetrics as custom
       const agent = createAgent(makeConfig({

@@ -13,10 +13,7 @@
 
 import type { AgentContext, AgentLoopState } from '../core/index.js';
 import type { LLMAdapter } from '../core/interfaces.js';
-import {
-  SimpleToolRegistry,
-  createApplicationServices,
-} from '../core/context-builder.js';
+import { SimpleToolRegistry, createApplicationServices } from '../core/context-builder.js';
 import { ConsoleTracer, ConsoleMetrics, NoopTracer, NoopMetrics } from '../core/defaults.js';
 import { generateId } from '../core/events.js';
 import { AgentEventEmitter } from '../core/events.js';
@@ -94,10 +91,7 @@ function resolveConfig(raw: AgentConfig): ResolvedConfig {
 // createAgent
 // ============================================================
 
-export function createAgent(
-  config: AgentConfig,
-  services?: Partial<AgentContext>
-): AgentInterface {
+export function createAgent(config: AgentConfig, services?: Partial<AgentContext>): AgentInterface {
   const resolved = resolveConfig(config);
   const sessionId = generateId('session');
   const hookRegistry = new HookRegistry();
@@ -107,9 +101,10 @@ export function createAgent(
   if (services?.llm) {
     llm = services.llm;
   } else {
-    const modelSpec = typeof config.model === 'string'
-      ? config.model
-      : `${config.model?.provider ?? 'openai'}/${config.model?.model ?? 'gpt-4o'}`;
+    const modelSpec =
+      typeof config.model === 'string'
+        ? config.model
+        : `${config.model?.provider ?? 'openai'}/${config.model?.model ?? 'gpt-4o'}`;
     llm = createLLMAdapter(modelSpec, services as any);
   }
 
@@ -120,22 +115,11 @@ export function createAgent(
   if (!appServices.tracer) appServices.tracer = new NoopTracer();
   if (!appServices.metrics) appServices.metrics = new NoopMetrics();
 
-  // Handle tracing config
-  if (config.tracing) {
-    if (typeof config.tracing === 'object' && config.tracing.customTracer) {
-      appServices.tracer = config.tracing.customTracer;
-    } else if (config.tracing === true || (typeof config.tracing === 'object' && config.tracing.exporter !== 'custom')) {
-      appServices.tracer = new ConsoleTracer();
-    }
-  } else if (config.preset === 'development') {
-    appServices.tracer = new ConsoleTracer();
-  }
-
   // Handle metrics config
   if (config.metrics) {
     if (typeof config.metrics === 'object' && config.metrics.customMetrics) {
       appServices.metrics = config.metrics.customMetrics;
-    } else if (config.metrics === true || (typeof config.metrics === 'object')) {
+    } else if (config.metrics === true || typeof config.metrics === 'object') {
       appServices.metrics = new ConsoleMetrics();
     }
   } else if (config.preset === 'development') {
@@ -149,11 +133,15 @@ export function createAgent(
   const ctx: AgentContext = {
     sessionId,
     agentName: resolved.name,
-    memory: services?.memory ?? ({ load: () => Promise.resolve({ entries: [] }), formatForPrompt: () => '' } as any),
-    pauseController: services?.pauseController ?? {
-      isPaused: () => false,
-      onResume: () => ({ subscribe: () => ({ unsubscribe: () => {} }) } as any),
-    } as any,
+    memory:
+      services?.memory ??
+      ({ load: () => Promise.resolve({ entries: [] }), formatForPrompt: () => '' } as any),
+    pauseController:
+      services?.pauseController ??
+      ({
+        isPaused: () => false,
+        onResume: () => ({ subscribe: () => ({ unsubscribe: () => {} }) }) as any,
+      } as any),
     services: appServices,
     llm,
     tools,
@@ -226,6 +214,46 @@ export function createAgent(
   // ── Dynamic Plugin Loading (pluginSpecs: PluginSpec[]) ──
   // Store loading promise so run() can await it before starting
   let pluginLoadPromise: Promise<void> = Promise.resolve();
+  // Store OTel initialization promise for exporter='otel' path
+  let tracerInitPromise: Promise<void> = Promise.resolve();
+
+  // Handle tracing config (must happen BEFORE plugin loading since plugins use tracer)
+  if (config.tracing) {
+    if (typeof config.tracing === 'object' && config.tracing.customTracer) {
+      // exporter === 'custom'
+      appServices.tracer = config.tracing.customTracer;
+    } else if (typeof config.tracing === 'object' && config.tracing.exporter === 'none') {
+      // exporter === 'none' — explicitly disable, keep NoopTracer (already set above)
+    } else if (typeof config.tracing === 'object' && config.tracing.exporter === 'otel') {
+      // exporter === 'otel' — lazy-load OTel SDK, store promise for await in run()
+      const tracing = config.tracing;
+      /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call */
+      tracerInitPromise = import('../observability/tracers/otel-tracer.js')
+        .then(async ({ OTelTracer }) => {
+          const otelTracer = new OTelTracer();
+          const otelConfig: Record<string, unknown> = {
+            endpoint: tracing.endpoint ?? '',
+          };
+          if (tracing.serviceName !== undefined) otelConfig.serviceName = tracing.serviceName;
+          if (tracing.headers !== undefined) otelConfig.headers = tracing.headers;
+          if (tracing.sampler !== undefined) otelConfig.sampler = tracing.sampler;
+          await otelTracer.configure(otelConfig as any);
+          appServices.tracer = otelTracer;
+        })
+        .catch((_err: unknown) => {
+          // OTel SDK load failed — fall back to ConsoleTracer for visibility
+          appServices.tracer = new ConsoleTracer();
+        });
+      /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call */
+    } else if (
+      config.tracing === true ||
+      (typeof config.tracing === 'object' && config.tracing.exporter === 'console')
+    ) {
+      appServices.tracer = new ConsoleTracer();
+    }
+  } else if (config.preset === 'development') {
+    appServices.tracer = new ConsoleTracer();
+  }
   const specs: PluginSpec[] = [...(config.pluginSpecs ?? [])];
   if (specs.length > 0) {
     const pluginCtx = createPluginContext({
@@ -266,13 +294,16 @@ export function createAgent(
   // ── Return Agent interface ──
   return {
     async run(input: string, handlers?: RunHandlers): Promise<string> {
-      // Ensure dynamic plugins are loaded before starting
+      // Ensure OTel tracer is initialized (for exporter='otel') and dynamic plugins are loaded
+      await tracerInitPromise;
       await pluginLoadPromise;
       if (handlers) {
-        if (handlers.onToken) loop.on('llm.stream.text' as any, (e: any) => handlers.onToken!(e.delta));
+        if (handlers.onToken)
+          loop.on('llm.stream.text' as any, (e: any) => handlers.onToken!(e.delta)); // eslint-disable-line @typescript-eslint/no-unsafe-member-access
         if (handlers.onToolCall) loop.on('tool.call' as any, handlers.onToolCall);
         if (handlers.onToolResult) loop.on('tool.result' as any, handlers.onToolResult);
-        if (handlers.onComplete) loop.on('agent.complete' as any, (e: any) => handlers.onComplete!(e.output));
+        if (handlers.onComplete)
+          loop.on('agent.complete' as any, (e: any) => handlers.onComplete!(e.output)); // eslint-disable-line @typescript-eslint/no-unsafe-member-access
         if (handlers.onError) loop.on('agent.error' as any, handlers.onError);
         if (handlers.onEvent) loop.onAny(handlers.onEvent);
       }
@@ -280,7 +311,10 @@ export function createAgent(
     },
     on: loop.on.bind(loop),
     cancel: loop.cancel.bind(loop),
-    pause: () => { loop.pause(); return Promise.resolve(); },
+    pause: () => {
+      loop.pause();
+      return Promise.resolve();
+    },
     resume: loop.resume.bind(loop),
     getState: (): AgentLoopState | null => loop.getState(),
 

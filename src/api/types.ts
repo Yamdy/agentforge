@@ -85,11 +85,17 @@ export interface HITLConfig {
  * Tracing configuration options
  */
 export interface TracingConfig {
-  /** Exporter type */
-  exporter: 'console' | 'otel' | 'custom';
-  /** Endpoint for OTLP exporter */
+  /** Exporter type. 'none' explicitly disables tracing (equivalent to omitting tracing config) */
+  exporter: 'console' | 'otel' | 'custom' | 'none';
+  /** Endpoint for OTLP exporter (required when exporter='otel') */
   endpoint?: string;
-  /** Custom tracer implementation */
+  /** Service name for OTel resource attribution (default: 'agentforge') */
+  serviceName?: string;
+  /** Additional HTTP headers for OTLP export */
+  headers?: Record<string, string>;
+  /** Sampling ratio 0-1 (default: 1.0 = sample all) */
+  sampler?: number;
+  /** Custom tracer implementation (exporter='custom') */
   customTracer?: Tracer;
 }
 

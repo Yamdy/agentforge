@@ -257,7 +257,36 @@ export { AgentStateMachine, isValidTransition, getValidTransitions } from './cor
  * const metrics = new BridgeMetrics(collector);
  * ```
  */
-export { NoopTracer, ConsoleTracer, NoopMetrics, ConsoleMetrics, BridgeMetrics } from './core/defaults.js';
+export {
+  NoopTracer,
+  ConsoleTracer,
+  NoopMetrics,
+  ConsoleMetrics,
+  BridgeMetrics,
+} from './core/defaults.js';
+
+// ── OpenTelemetry Tracing ──
+export { OTelTracer } from './observability/tracers/otel-tracer.js';
+export type { OTelConfig } from './observability/tracers/otel-tracer.js';
+export {
+  ATTR_OPERATION,
+  ATTR_PROVIDER,
+  ATTR_REQUEST_MODEL,
+  ATTR_USAGE_INPUT_TOKENS,
+  ATTR_USAGE_OUTPUT_TOKENS,
+  ATTR_AGENT_ID,
+  ATTR_AGENT_NAME,
+  ATTR_TOOL_NAME,
+  ATTR_AGENTFORGE_RUN_ID,
+  ATTR_AGENTFORGE_STEP,
+  ATTR_AGENTFORGE_EVENT,
+  OPERATION_CHAT,
+  OPERATION_EXECUTE_TOOL,
+  OPERATION_AGENT_RUN,
+  OPERATION_AGENT_STEP,
+  extractLLMAttributes,
+  extractToolAttributes,
+} from './observability/tracers/otel-attributes.js';
 
 // ============================================================
 // API - Configuration Mode (createAgent)
@@ -288,11 +317,7 @@ export {
  * Use createAgentLoop for fine-grained control over agent execution.
  * Provides direct access to the expand-based event stream.
  */
-export {
-  type AgentLoopConfig,
-  type AgentLoop,
-  createAgentLoop,
-} from './loop/index.js';
+export { type AgentLoopConfig, type AgentLoop, createAgentLoop } from './loop/index.js';
 
 // ============================================================
 // Hooks System
@@ -317,11 +342,7 @@ export { AgentEventEmitter } from './core/events.js';
 // New State Types
 // ============================================================
 
-export type {
-  RecoveryState,
-  TokenBudgetState,
-  AgentLoopState,
-} from './core/state.js';
+export type { RecoveryState, TokenBudgetState, AgentLoopState } from './core/state.js';
 
 export { createInitialLoopState } from './core/state.js';
 
@@ -907,6 +928,55 @@ export {
   GoalAlignmentCheckerImpl,
   CompletionScorerImpl,
 } from './validation/index.js';
+
+/**
+ * Evaluation Framework — LLM-based scoring pipeline.
+ *
+ * Provides LLM-as-Judge evaluation with Builder pattern scorers,
+ * pipeline orchestrator, and batch evaluation runner.
+ *
+ * @example
+ * ```typescript
+ * import { LLMScorer, createAnswerAccuracyScorer, evaluateAgent } from 'agentforge';
+ *
+ * const scorer = createAnswerAccuracyScorer({ judge: myLLMAdapter });
+ * const result = await scorer.evaluate({
+ *   input: 'What is 2+2?',
+ *   output: '4',
+ *   messages: [],
+ *   agentName: 'math-agent',
+ *   sessionId: 's1',
+ * });
+ * ```
+ */
+export {
+  LLMScorer,
+  LLMScorerBuilder,
+  runScorerPipeline,
+  evaluateAgent,
+  createAnswerAccuracyScorer,
+  createTaskCompletionScorer,
+  createSafetyAlignmentScorer,
+} from './evaluation/index.js';
+
+export type {
+  ScoringContext,
+  ScoringResult,
+  EvaluationResult,
+  ScorerStepResults,
+  PreprocessFn,
+  AnalyzeFn,
+  ScoreFn,
+  ReasonFn,
+  LLMScorerConfig,
+  EvaluatorConfig,
+  SamplingConfig,
+  PipelineStrategy,
+  PipelineOptions,
+  TestCase,
+  EvaluateAgentOptions,
+  EvaluateAgentResult,
+} from './evaluation/index.js';
 
 // ============================================================
 // L1 API (Zero-Code Configuration)
