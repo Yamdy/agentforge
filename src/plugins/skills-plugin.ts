@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Skills Plugin for AgentForge
  *
@@ -10,7 +9,7 @@
  * @module
  */
 
-import type { InterceptorPlugin, PluginContext } from '../plugins/plugin.js';
+import type { Plugin, PluginContext } from '../plugins/plugin.js';
 import type { AgentEvent, Message } from '../core/events.js';
 import { SkillRegistry } from '../skill/loader.js';
 
@@ -40,7 +39,7 @@ export interface SkillMetadata {
  * @param sources - Skill directory paths
  * @returns InterceptorPlugin
  */
-export function createSkillsPlugin(sources: string[]): InterceptorPlugin {
+export function createSkillsPlugin(sources: string[]): Plugin {
   const registry = new SkillRegistry();
   let skills: SkillMetadata[] = [];
 
@@ -51,14 +50,20 @@ export function createSkillsPlugin(sources: string[]): InterceptorPlugin {
     eventTypes: ['agent.start', 'llm.request'],
     enabled: true,
 
-    intercept(event: AgentEvent, _ctx: PluginContext): any {
+    intercept(event: AgentEvent, _ctx: PluginContext): AgentEvent | Promise<AgentEvent> {
       if (event.type === 'agent.start') {
         return registry.discover(sources).then(discovered => {
           skills = discovered.map(s => {
-            const meta: SkillMetadata = { name: s.frontmatter.name, description: s.frontmatter.description, path: s.location };
+            const meta: SkillMetadata = {
+              name: s.frontmatter.name,
+              description: s.frontmatter.description,
+              path: s.location,
+            };
             if (s.frontmatter.license !== undefined) meta.license = s.frontmatter.license;
-            if (s.frontmatter.compatibility !== undefined) meta.compatibility = s.frontmatter.compatibility;
-            if (s.frontmatter.allowedTools !== undefined) meta.allowedTools = s.frontmatter.allowedTools;
+            if (s.frontmatter.compatibility !== undefined)
+              meta.compatibility = s.frontmatter.compatibility;
+            if (s.frontmatter.allowedTools !== undefined)
+              meta.allowedTools = s.frontmatter.allowedTools;
             return meta;
           });
           return event;
@@ -67,20 +72,25 @@ export function createSkillsPlugin(sources: string[]): InterceptorPlugin {
 
       if (event.type === 'llm.request' && skills.length > 0) {
         // Inject skill metadata (progressive disclosure)
-        const skillsList = skills.map(s => {
-          let line = `- **${s.name}**: ${s.description}`;
-          if (s.license || s.compatibility) {
-            const ann = [s.license && `License: ${s.license}`, s.compatibility && `Compatibility: ${s.compatibility}`]
-              .filter(Boolean)
-              .join(', ');
-            line += ` (${ann})`;
-          }
-          if (s.allowedTools?.length) {
-            line += `\n  -> Allowed tools: ${s.allowedTools.join(', ')}`;
-          }
-          line += `\n  -> Read \`${s.path}\` for full instructions`;
-          return line;
-        }).join('\n');
+        const skillsList = skills
+          .map(s => {
+            let line = `- **${s.name}**: ${s.description}`;
+            if (s.license || s.compatibility) {
+              const ann = [
+                s.license && `License: ${s.license}`,
+                s.compatibility && `Compatibility: ${s.compatibility}`,
+              ]
+                .filter(Boolean)
+                .join(', ');
+              line += ` (${ann})`;
+            }
+            if (s.allowedTools?.length) {
+              line += `\n  -> Allowed tools: ${s.allowedTools.join(', ')}`;
+            }
+            line += `\n  -> Read \`${s.path}\` for full instructions`;
+            return line;
+          })
+          .join('\n');
 
         const skillsMessage: Message = {
           role: 'system',

@@ -16,7 +16,7 @@
  */
 
 import { z } from 'zod';
-import type { AgentEventType } from '../core/events.js';
+import type { AgentEventType, AgentEvent } from '../core/events.js';
 import type { RequestHook, ToolHook, ToolProviderHook, HookFn, HookName } from '../core/hooks.js';
 import type { Tracer, Metrics } from '../core/interfaces.js';
 
@@ -90,8 +90,36 @@ export interface Plugin {
   /** Event subscriptions — pure observation, non-blocking */
   eventSubscriptions?: Array<{
     event: AgentEventType;
-    handler: (event: unknown) => void | Promise<void>;
+    handler: (event: AgentEvent) => void | Promise<void>;
   }>;
+
+  /**
+   * @deprecated Legacy: use requestHooks instead. Plugin type discriminator for backward compat.
+   */
+  type?: 'interceptor' | 'observer';
+
+  /**
+   * @deprecated Legacy: use requestHooks instead. Intercept function for legacy interceptor plugins.
+   */
+  intercept?: (
+    event: AgentEvent,
+    ctx: PluginContext
+  ) => AgentEvent | Promise<AgentEvent | undefined | null> | undefined | null;
+
+  /**
+   * @deprecated Legacy: use eventSubscriptions instead. Observe function for legacy observer plugins.
+   */
+  observe?: (event: AgentEvent, ctx: PluginContext) => void | Promise<void>;
+
+  /**
+   * @deprecated Legacy: use lifecycle hook priority instead.
+   */
+  priority?: number;
+
+  /**
+   * @deprecated Legacy: filter by event type via hook conditions instead.
+   */
+  eventTypes?: readonly string[];
 
   /**
    * Initialize plugin with restricted context.
@@ -113,37 +141,24 @@ export interface Plugin {
 /**
  * @deprecated Use Plugin interface directly. Interceptor pattern is replaced by RequestHook + ToolHook.
  */
-export interface InterceptorPlugin {
-  readonly name: string;
+export interface InterceptorPlugin extends Plugin {
   readonly type: 'interceptor';
   readonly priority: number;
   readonly eventTypes: readonly string[];
-  enabled: boolean;
-  init?(ctx: PluginContext): void | Promise<void>;
-  destroy?(): void;
-  intercept?: (event: any, ctx: PluginContext) => any;
-  requestHooks?: RequestHook[];
-  toolHooks?: ToolHook[];
-  lifecycleHooks?: Array<{ name: HookName; fn: HookFn; priority?: number }>;
-  eventSubscriptions?: Array<{ event: string; handler: (event: unknown) => void | Promise<void> }>;
+  intercept?: (
+    event: AgentEvent,
+    ctx: PluginContext
+  ) => AgentEvent | Promise<AgentEvent | undefined | null> | undefined | null;
 }
 
 /**
  * @deprecated Use Plugin interface directly. Observer pattern is replaced by eventSubscriptions.
  */
-export interface ObserverPlugin {
-  readonly name: string;
+export interface ObserverPlugin extends Plugin {
   readonly type: 'observer';
   readonly priority: number;
   readonly eventTypes: readonly string[];
-  enabled: boolean;
-  init?(ctx: PluginContext): void | Promise<void>;
-  destroy?(): void;
-  observe?: (event: any, ctx: PluginContext) => void | Promise<void>;
-  requestHooks?: RequestHook[];
-  toolHooks?: ToolHook[];
-  lifecycleHooks?: Array<{ name: HookName; fn: HookFn; priority?: number }>;
-  eventSubscriptions?: Array<{ event: string; handler: (event: unknown) => void | Promise<void> }>;
+  observe?: (event: AgentEvent, ctx: PluginContext) => void | Promise<void>;
 }
 
 // ============================================================

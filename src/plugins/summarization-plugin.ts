@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Summarization Plugin for AgentForge
  *
@@ -10,7 +9,7 @@
  * @module
  */
 
-import type { InterceptorPlugin, PluginContext } from '../plugins/plugin.js';
+import type { Plugin, PluginContext } from '../plugins/plugin.js';
 import type { AgentEvent } from '../core/events.js';
 import { estimateTokens, truncateOldest } from '../memory/strategies.js';
 import { HistoryOffloadManager } from '../memory/history-offload.js';
@@ -82,7 +81,7 @@ export interface SummarizationPluginConfig {
  * @param config - Summarization configuration
  * @returns InterceptorPlugin
  */
-export function createSummarizationPlugin(config: SummarizationPluginConfig): InterceptorPlugin {
+export function createSummarizationPlugin(config: SummarizationPluginConfig): Plugin {
   const offloadManager = config.offloadDir
     ? new HistoryOffloadManager({ historyDir: config.offloadDir })
     : null;
@@ -94,7 +93,7 @@ export function createSummarizationPlugin(config: SummarizationPluginConfig): In
     eventTypes: ['llm.request'],
     enabled: config.enabled ?? true,
 
-    intercept(event: AgentEvent, _ctx: PluginContext): any {
+    intercept(event: AgentEvent, _ctx: PluginContext): AgentEvent | Promise<AgentEvent> {
       if (event.type !== 'llm.request') return event;
       const tokens = estimateTokens(event.messages);
       if (!shouldCompact(tokens, config)) return event;
@@ -102,8 +101,11 @@ export function createSummarizationPlugin(config: SummarizationPluginConfig): In
       if (result.removedCount === 0) return event;
       if (offloadManager) {
         const removed = event.messages.slice(0, result.removedCount);
-        return offloadManager.offload(event.sessionId, removed).then(() => ({ ...event, messages: result.messages }));
+        return offloadManager
+          .offload(event.sessionId, removed)
+          .then(() => ({ ...event, messages: result.messages }));
       }
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       return { ...event, messages: result.messages };
     },
   };

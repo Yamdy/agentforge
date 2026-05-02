@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Memory Plugin for AgentForge
  *
@@ -14,7 +13,7 @@
  * @module
  */
 
-import type { InterceptorPlugin, PluginContext } from '../plugins/plugin.js';
+import type { Plugin, PluginContext } from '../plugins/plugin.js';
 import type { AgentEvent, Message } from '../core/events.js';
 import type { PersistentMemory } from '../memory/persistent.js';
 import type { MemoryConfig, MemoryEntry } from '../memory/types.js';
@@ -44,10 +43,7 @@ export interface MemoryPluginConfig extends MemoryConfig {
  * @param config - Memory configuration (supports autoDiscover option)
  * @returns InterceptorPlugin
  */
-export function createMemoryPlugin(
-  memory: PersistentMemory,
-  config: MemoryPluginConfig
-): InterceptorPlugin {
+export function createMemoryPlugin(memory: PersistentMemory, config: MemoryPluginConfig): Plugin {
   let entries: MemoryEntry[] = [];
   let loaded = false;
 
@@ -58,18 +54,20 @@ export function createMemoryPlugin(
     eventTypes: ['agent.start', 'llm.request'],
     enabled: config.enabled,
 
-    intercept(event: AgentEvent, _ctx: PluginContext): any {
+    intercept(event: AgentEvent, _ctx: PluginContext): AgentEvent | Promise<AgentEvent> | null {
       if (event.type === 'agent.start' && !loaded) {
         if (config.autoDiscover) {
           return loadAgentsMd(config.cwd ? { cwd: config.cwd } : {}).then(result => {
             if (result.content) {
-              entries = [{
-                id: 'agents-md-auto',
-                content: result.content,
-                sourcePath: result.paths.join(', '),
-                createdAt: Date.now(),
-                updatedAt: Date.now(),
-              }];
+              entries = [
+                {
+                  id: 'agents-md-auto',
+                  content: result.content,
+                  sourcePath: result.paths.join(', '),
+                  createdAt: Date.now(),
+                  updatedAt: Date.now(),
+                },
+              ];
             }
             loaded = true;
             return event;

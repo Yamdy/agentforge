@@ -180,19 +180,25 @@ export function applyPlugins(
     }
 
     // ── Bridge: legacy interceptor → RequestHook + agent.start lifecycle ──
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const p = plugin as any;
-    if (p.type === 'interceptor' && typeof p.intercept === 'function' && !plugin.requestHooks) {
-      const bridged = bridgeInterceptor(p as InterceptorPlugin, ctx);
+    if (
+      plugin.type === 'interceptor' &&
+      typeof plugin.intercept === 'function' &&
+      !plugin.requestHooks?.length
+    ) {
+      const bridged = bridgeInterceptor(plugin as InterceptorPlugin, ctx);
       for (const hook of bridged.requestHooks) {
         unregisters.push(hookRegistry.registerRequest(hook));
       }
-      unregisters.push(...bridgeAgentStart(p as InterceptorPlugin, ctx, hookRegistry));
+      unregisters.push(...bridgeAgentStart(plugin as InterceptorPlugin, ctx, hookRegistry));
     }
 
     // ── Bridge: legacy observer → event subscription ──
-    if (p.type === 'observer' && typeof p.observe === 'function' && !plugin.eventSubscriptions) {
-      unregisters.push(...bridgeObserver(p as ObserverPlugin, ctx, emitter));
+    if (
+      plugin.type === 'observer' &&
+      typeof plugin.observe === 'function' &&
+      !plugin.eventSubscriptions?.length
+    ) {
+      unregisters.push(...bridgeObserver(plugin as ObserverPlugin, ctx, emitter));
     }
   }
 

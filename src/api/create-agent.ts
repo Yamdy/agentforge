@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument */
 /**
  * AgentForge L2 API - createAgent()
  *
@@ -168,15 +167,15 @@ export function createAgent(config: AgentConfig, services?: Partial<AgentContext
 
   if (config.memory?.enabled && config.memory.sources.length > 0) {
     const memory = new FileBasedMemory(config.memory);
-    allPlugins.push(createMemoryPlugin(memory, config.memory) as unknown as Plugin);
+    allPlugins.push(createMemoryPlugin(memory, config.memory));
   }
 
   if (config.skills?.sources && config.skills.sources.length > 0) {
-    allPlugins.push(createSkillsPlugin(config.skills.sources) as unknown as Plugin);
+    allPlugins.push(createSkillsPlugin(config.skills.sources));
   }
 
   if (config.summarization) {
-    allPlugins.push(createSummarizationPlugin(config.summarization) as unknown as Plugin);
+    allPlugins.push(createSummarizationPlugin(config.summarization));
   }
 
   // ── Create Agent Loop (before plugins so they can register on the emitter) ──
@@ -208,13 +207,13 @@ export function createAgent(config: AgentConfig, services?: Partial<AgentContext
       manager.register(plugin);
     }
     // Adapter: loop.on/onAny → AgentEventEmitter interface
-    const emitterAdapter: any = {
-      on: loop.on.bind(loop),
+    const emitterAdapter = {
+      on: loop.on.bind(loop) as (type: string, fn: (e: unknown) => void) => () => void,
       onAny: loop.onAny.bind(loop),
       emit: () => Promise.resolve(),
       clear: () => {},
-    };
-    manager.buildPipeline(hookRegistry, emitterAdapter);
+    } as const;
+    manager.buildPipeline(hookRegistry, emitterAdapter as unknown as AgentEventEmitter);
   }
 
   // ── Dynamic Plugin Loading (pluginSpecs: PluginSpec[]) ──
