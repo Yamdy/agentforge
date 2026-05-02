@@ -37,9 +37,9 @@ export function runAgent(
 
   return {
     run: (input: string) => loop.run(input),
-    on: loop.on.bind(loop) as any,
+    on: loop.on.bind(loop) as (type: string, fn: (e: unknown) => void) => () => void,
     cancel: loop.cancel.bind(loop),
-    getState: () => loop.getState() ? 'running' : 'idle',
+    getState: () => (loop.getState() ? 'running' : 'idle'),
     destroy: loop.destroy.bind(loop),
   };
 }

@@ -105,7 +105,7 @@ export function createAgent(config: AgentConfig, services?: Partial<AgentContext
       typeof config.model === 'string'
         ? config.model
         : `${config.model?.provider ?? 'openai'}/${config.model?.model ?? 'gpt-4o'}`;
-    llm = createLLMAdapter(modelSpec, services as any);
+    llm = createLLMAdapter(modelSpec, services as unknown as Record<string, unknown>);
   }
 
   // ── Wire tracing/metrics ──
@@ -130,18 +130,24 @@ export function createAgent(config: AgentConfig, services?: Partial<AgentContext
   const tools = new SimpleToolRegistry();
 
   // ── Build AgentContext ──
+  const memoryStub: import('../core/interfaces.js').MemoryStore = {
+    add: () => {},
+    getAll: () => [],
+    getRecent: () => [],
+    clear: () => {},
+    count: () => 0,
+  };
+  const pauseStub: import('../core/interfaces.js').PauseController = {
+    pause: () => {},
+    resume: () => {},
+    isPaused: () => false,
+    onResume: () => () => {},
+  };
   const ctx: AgentContext = {
     sessionId,
     agentName: resolved.name,
-    memory:
-      services?.memory ??
-      ({ load: () => Promise.resolve({ entries: [] }), formatForPrompt: () => '' } as any),
-    pauseController:
-      services?.pauseController ??
-      ({
-        isPaused: () => false,
-        onResume: () => ({ subscribe: () => ({ unsubscribe: () => {} }) }) as any,
-      } as any),
+    memory: services?.memory ?? memoryStub,
+    pauseController: services?.pauseController ?? pauseStub,
     services: appServices,
     llm,
     tools,
@@ -158,19 +164,19 @@ export function createAgent(config: AgentConfig, services?: Partial<AgentContext
   }
 
   // ── Plugins ──
-  const allPlugins: Plugin[] = [...((config as any).plugins ?? [])];
+  const allPlugins: Plugin[] = [...(config.plugins ?? [])];
 
   if (config.memory?.enabled && config.memory.sources.length > 0) {
     const memory = new FileBasedMemory(config.memory);
-    allPlugins.push(createMemoryPlugin(memory as any, config.memory) as any);
+    allPlugins.push(createMemoryPlugin(memory, config.memory) as unknown as Plugin);
   }
 
   if (config.skills?.sources && config.skills.sources.length > 0) {
-    allPlugins.push(createSkillsPlugin(config.skills.sources) as any);
+    allPlugins.push(createSkillsPlugin(config.skills.sources) as unknown as Plugin);
   }
 
   if (config.summarization) {
-    allPlugins.push(createSummarizationPlugin(config.summarization) as any);
+    allPlugins.push(createSummarizationPlugin(config.summarization) as unknown as Plugin);
   }
 
   // ── Create Agent Loop (before plugins so they can register on the emitter) ──
@@ -231,13 +237,13 @@ export function createAgent(config: AgentConfig, services?: Partial<AgentContext
       tracerInitPromise = import('../observability/tracers/otel-tracer.js')
         .then(async ({ OTelTracer }) => {
           const otelTracer = new OTelTracer();
-          const otelConfig: Record<string, unknown> = {
+          const otelConfig: import('../observability/tracers/otel-tracer.js').OTelConfig = {
             endpoint: tracing.endpoint ?? '',
           };
           if (tracing.serviceName !== undefined) otelConfig.serviceName = tracing.serviceName;
           if (tracing.headers !== undefined) otelConfig.headers = tracing.headers;
           if (tracing.sampler !== undefined) otelConfig.sampler = tracing.sampler;
-          await otelTracer.configure(otelConfig as any);
+          await otelTracer.configure(otelConfig);
           appServices.tracer = otelTracer;
         })
         .catch((_err: unknown) => {

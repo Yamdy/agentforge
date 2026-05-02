@@ -404,13 +404,13 @@ export class AgentContextBuilder {
         /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call */
         const { OTelTracer } = await import('../observability/tracers/otel-tracer.js');
         const otelTracer = new OTelTracer();
-        const otelConfig: Record<string, unknown> = {
+        const otelConfig: import('../observability/tracers/otel-tracer.js').OTelConfig = {
           endpoint: config.endpoint,
         };
         if (config.serviceName !== undefined) otelConfig.serviceName = config.serviceName;
         if (config.headers !== undefined) otelConfig.headers = config.headers;
         if (config.sampler !== undefined) otelConfig.sampler = config.sampler;
-        await otelTracer.configure(otelConfig as any); // eslint-disable-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
+        await otelTracer.configure(otelConfig);
         this.state.tracer = otelTracer;
         /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call */
       } catch {

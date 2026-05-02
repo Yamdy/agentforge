@@ -204,7 +204,7 @@ export class SubagentRegistry implements ISubagentRegistry {
     // Subscribe to all nested agent events
     const unreg = agent.onAny((event: AgentEvent) => {
       if (event.type === 'agent.complete') {
-        finalOutput = (event as any).output ?? '';
+        finalOutput = event.output ?? '';
       }
       if (event.type === 'subagent.error') {
         hadError = true;

@@ -127,10 +127,10 @@ export class WorkflowExecutor {
       loop.onAny(event => {
         const mapped = this.mapEventWithWorkflowId(event, workflowId);
         if (mapped.type === 'agent.error') {
-          stepError = (mapped as any).error;
+          stepError = mapped.error;
         }
         if (mapped.type === 'agent.complete') {
-          stepOutput = (mapped as any).output;
+          stepOutput = mapped.output;
         }
         listener(mapped);
       });

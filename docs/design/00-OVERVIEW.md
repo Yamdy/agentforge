@@ -28,7 +28,7 @@ Agent = LLM（认知决策核心）+ Harness（工程管控基座）
 |---|------|------|---------|
 | **A1** | **命令式循环 + 事件发射器** | 核心引擎是 `while(true)` + `await`，非递归 expand，非流驱动。所有操作通过 `AgentEventEmitter` 分发，`on()` 必须返回 unsubscribe 函数。 | ✅ 已执行 |
 | **A2** | **Harness 硬管控，不可绕过** | LLM 决定做什么，Harness 确保做得好。安全校验（命令/路径/审批）必须硬编码在 loop 内，不可依赖 prompt 或 LLM 自觉。 | ⚠️ 部分接线 — `checkCommand` + `inputSanitizer` + `rateLimiter` 已接入，`permissionController`（HITL 审批流）未接入 |
-| **A3** | **Zod 分层数据契约** | Tier 1（外部 LLM/用户输入）Zod 强校验+兜底降级；Tier 2（模块边界）Schema 契约；Tier 3（内部）TypeScript 类型。`as any` 是类型契约的敌人。 | ⚠️ 部分执行 — 38 处 `as any` 待清理（9 文件，`create-agent.ts` 最多 19 处） |
+| **A3** | **Zod 分层数据契约** | Tier 1（外部 LLM/用户输入）Zod 强校验+兜底降级；Tier 2（模块边界）Schema 契约；Tier 3（内部）TypeScript 类型。`as any` 是类型契约的敌人。 | ✅ 基本执行 — 仅 1 处 `as any`（legacy interceptor bridge），其余 37 处已清零 |
 | **A4** | **DI 解耦 + 上下文闭包** | 核心 Loop 只依赖接口，禁止内部 `new` 硬编码实现。依赖通过 `AgentContext` 闭包传递，非全局单例。 | ✅ 基本执行 |
 | **A5** | **三层 API 渐进式复杂度** | L1（零代码 JSON）→ L2（`createAgent` 配置）→ L3（`ContextBuilder` 编程）。每层可用能力必须是上层超集，不可出现能力断层。 | ⚠️ 待完善 — L3 缺部分 builder 方法，L1 缺 `history` 等字段 |
 
@@ -55,7 +55,7 @@ Agent = LLM（认知决策核心）+ Harness（工程管控基座）
 
 | # | 铁律 | 说明 | 执行状态 |
 |---|------|------|---------|
-| **I1** | **类型安全零容忍** | `as any`、`@ts-ignore`、`@ts-expect-error` 视为技术债务。每个 `as any` 必须有 `eslint-disable` 注释说明原因。目标是零 `as any`。 | ⚠️ 38 处待清理（9 文件） |
+| **I1** | **类型安全零容忍** | `as any`、`@ts-ignore`、`@ts-expect-error` 视为技术债务。每个 `as any` 必须有 `eslint-disable` 注释说明原因。目标是零 `as any`。 | ✅ 基本执行 — 仅 1 处（legacy bridge，含 eslint-disable 注释） |
 | **I2** | **ESM + verbatimModuleSyntax** | 所有 import 使用 `.js` 扩展名。类型导入使用 `import type`。禁止 `require()`。项目不含 RxJS 依赖或术语。 | ✅ 已执行 |
 | **I3** | **外部输入永远不信任** | LLM 响应、用户输入、MCP 消息全部经 Zod `safeParse`，失败时降级而非崩溃。LLM 输出数值不可直接作为评分或决策依据。 | ✅ 基本执行 |
 | **I4** | **测试即文档** | 每个模块必须有测试覆盖核心路径。Mock 用于隔离外部依赖，不可 mock 被测模块自身。 | ⚠️ 部分模块零测试 |

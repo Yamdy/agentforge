@@ -101,7 +101,9 @@ export class Workflow {
     this.executionContext = { ...this.executionContext, state: 'running' };
 
     let stopped = false;
-    let stepError: { name: string; message: string; stack?: string; stepId?: string } | undefined;
+    let stepError:
+      | { name: string; message: string; stack?: string | undefined; stepId?: string }
+      | undefined;
     let stepsCompleted = 0;
 
     try {
@@ -161,7 +163,7 @@ export class Workflow {
         // Execute step via executor — forward all events to caller's listener
         // but also capture output for next step
         let capturedOutput: unknown;
-        let capturedError: { name: string; message: string; stack?: string } | undefined;
+        let capturedError: import('../core/events.js').SerializedError | undefined;
 
         const stepResult = await this.executor.executeStep(
           step,
@@ -170,11 +172,11 @@ export class Workflow {
           event => {
             // Capture output for step chaining
             if (event.type === 'agent.complete') {
-              capturedOutput = (event as any).output;
+              capturedOutput = event.output;
               this.executionContext?.stepOutputs.set(step.id, capturedOutput);
             }
             if (event.type === 'agent.error') {
-              capturedError = (event as any).error;
+              capturedError = event.error;
             }
             // Forward all events to caller
             listener(event);

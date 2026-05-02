@@ -26,8 +26,9 @@ import {
   generateId,
 } from '../core/index.js';
 import type { AgentContext, AgentLoopState } from '../core/index.js';
-import { HookRegistry } from '../core/hooks.js';
+import { HookRegistry, type HookName } from '../core/hooks.js';
 import { createInitialLoopState } from '../core/state.js';
+import type { LLMOptions } from '../core/interfaces.js';
 import { checkTokenBudget, createBudgetTracker, shouldCompact } from './token-budget.js';
 import { analyzeLLMError, RECOVERY_LIMITS, ESCALATED_MAX_OUTPUT_TOKENS } from './error-analyzer.js';
 import { partitionToolCalls } from './tool-partition.js';
@@ -103,8 +104,8 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
   // Lifecycle Hook Runner (error-isolated)
   // ============================================================
 
-  async function runLifecycleHook(name: string, input: unknown, output: unknown): Promise<void> {
-    for (const h of hooks.getLifecycleHooks(name as any)) {
+  async function runLifecycleHook(name: HookName, input: unknown, output: unknown): Promise<void> {
+    for (const h of hooks.getLifecycleHooks(name)) {
       try {
         await h(input, output);
       } catch {
@@ -123,7 +124,9 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
   ): Promise<'continue' | 'fatal'> {
     if (signal.aborted) return 'fatal';
 
-    const analysis = analyzeLLMError(error as Error, config.model.model, (error as any).status);
+    const errStatus =
+      error instanceof Error ? (error as Error & { status?: number }).status : undefined;
+    const analysis = analyzeLLMError(error as Error, config.model.model, errStatus);
 
     if (analysis.recoverable && state) {
       switch (analysis.recovery) {
@@ -842,11 +845,11 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
 
         let response;
         try {
-          const llmOpts: Record<string, unknown> = { signal, tools: toolDefs };
+          const llmOpts: LLMOptions = { signal, tools: toolDefs as LLMOptions['tools'] };
           if (recoveryState.escalatedMaxTokens) {
             llmOpts.maxTokens = recoveryState.escalatedMaxTokens;
           }
-          response = await ctx.llm.chat(msgs, llmOpts as any);
+          response = await ctx.llm.chat(msgs, llmOpts);
           state.tokens.prompt += response.usage?.promptTokens ?? 0;
           state.tokens.completion += response.usage?.completionTokens ?? 0;
 
@@ -953,14 +956,16 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             state: state,
           } as AgentEvent);
           // Fire-and-forget: never block the loop on checkpoint save
+          // Note: CheckpointSchema expects AgentState, but we store AgentLoopState.
+          // This is a known type mismatch pending checkpoint schema alignment.
           ctx.checkpoint
             ?.save({
-              checkpointId: cpId,
+              id: cpId,
               sessionId: ctx.sessionId,
               position: 'after_llm',
-              state: state as any,
+              state: state as unknown as Record<string, unknown>,
               timestamp: Date.now(),
-            } as any)
+            } as unknown as Parameters<NonNullable<typeof ctx.checkpoint.save>>[0])
             .catch(() => {});
         }
         if (ctx.services.costTracker && response.usage) {
@@ -1064,12 +1069,12 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           } as AgentEvent);
           ctx.checkpoint
             ?.save({
-              checkpointId: cpId2,
+              id: cpId2,
               sessionId: ctx.sessionId,
               position: 'after_tool',
-              state: state as any,
+              state: state as unknown as Record<string, unknown>,
               timestamp: Date.now(),
-            } as any)
+            } as unknown as Parameters<NonNullable<typeof ctx.checkpoint.save>>[0])
             .catch(() => {});
         }
 

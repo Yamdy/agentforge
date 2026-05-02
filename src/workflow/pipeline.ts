@@ -152,7 +152,7 @@ export class SequentialPipeline {
             event => {
               // Capture output for next step
               if (event.type === 'agent.complete') {
-                const output = (event as any).output;
+                const output = event.output;
                 stepOutputs.set(step.id, output);
               }
               // Forward all events to caller
@@ -359,7 +359,7 @@ export class ParallelPipeline {
         const stepResult = await this.executor.executeStep(step, input, workflowId, event => {
           // Capture output
           if (event.type === 'agent.complete') {
-            const output = (event as any).output;
+            const output = event.output;
             stepOutputs.set(step.id, output);
           }
           // Forward all events to caller

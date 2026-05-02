@@ -20,7 +20,10 @@ import { AgentEventEmitter } from '../core/events.js';
  * Create RequestHook + lifecycle hooks from a legacy InterceptorPlugin.
  * Handles both llm.request (→ RequestHook) and agent.start (→ lifecycle hook for side effects).
  */
-function bridgeInterceptor(plugin: InterceptorPlugin, ctx: PluginContext): {
+function bridgeInterceptor(
+  plugin: InterceptorPlugin,
+  ctx: PluginContext
+): {
   requestHooks: RequestHook[];
   lifecycleUnregs: Array<() => void>;
 } {
@@ -45,7 +48,9 @@ function bridgeInterceptor(plugin: InterceptorPlugin, ctx: PluginContext): {
           if (result && typeof result === 'object' && 'messages' in result) {
             return result.messages;
           }
-        } catch { /* isolate */ }
+        } catch {
+          /* isolate */
+        }
         return messages;
       },
     });
@@ -69,19 +74,25 @@ function bridgeAgentStart(
 
   const unregs: Array<() => void> = [];
   unregs.push(
-    hookRegistry.on('session.start' as any, async () => {
-      try {
-        const syntheticEvent: any = {
-          type: 'agent.start',
-          timestamp: Date.now(),
-          sessionId: ctx.sessionId,
-          agentName: ctx.agentName,
-          input: '',
-          model: { provider: '', model: '' },
-        };
-        await Promise.resolve(plugin.intercept!(syntheticEvent, ctx));
-      } catch { /* isolate */ }
-    }, plugin.priority)
+    hookRegistry.on(
+      'session.start',
+      async () => {
+        try {
+          const syntheticEvent: any = {
+            type: 'agent.start',
+            timestamp: Date.now(),
+            sessionId: ctx.sessionId,
+            agentName: ctx.agentName,
+            input: '',
+            model: { provider: '', model: '' },
+          };
+          await Promise.resolve(plugin.intercept!(syntheticEvent, ctx));
+        } catch {
+          /* isolate */
+        }
+      },
+      plugin.priority
+    )
   );
   return unregs;
 }
@@ -89,14 +100,22 @@ function bridgeAgentStart(
 /**
  * Bridge legacy ObserverPlugin to event subscriptions.
  */
-function bridgeObserver(plugin: ObserverPlugin, ctx: PluginContext, emitter: AgentEventEmitter): Array<() => void> {
+function bridgeObserver(
+  plugin: ObserverPlugin,
+  ctx: PluginContext,
+  emitter: AgentEventEmitter
+): Array<() => void> {
   const unregs: Array<() => void> = [];
   const eventTypes = plugin.eventTypes;
   const filterSet = eventTypes.length > 0 ? new Set(eventTypes) : null;
 
   const unreg = emitter.onAny((event: AgentEvent) => {
     if (filterSet && !filterSet.has(event.type)) return;
-    void Promise.resolve().then(() => plugin.observe!(event, ctx)).catch(() => { /* isolate */ });
+    void Promise.resolve()
+      .then(() => plugin.observe!(event, ctx))
+      .catch(() => {
+        /* isolate */
+      });
   });
   unregs.push(unreg);
   return unregs;
@@ -148,13 +167,20 @@ export function applyPlugins(
 
     if (plugin.eventSubscriptions) {
       for (const sub of plugin.eventSubscriptions) {
-        unregisters.push(emitter.on(sub.event, (event) => {
-          void Promise.resolve().then(() => sub.handler(event)).catch(() => { /* isolate */ });
-        }));
+        unregisters.push(
+          emitter.on(sub.event, event => {
+            void Promise.resolve()
+              .then(() => sub.handler(event))
+              .catch(() => {
+                /* isolate */
+              });
+          })
+        );
       }
     }
 
     // ── Bridge: legacy interceptor → RequestHook + agent.start lifecycle ──
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const p = plugin as any;
     if (p.type === 'interceptor' && typeof p.intercept === 'function' && !plugin.requestHooks) {
       const bridged = bridgeInterceptor(p as InterceptorPlugin, ctx);
@@ -172,7 +198,11 @@ export function applyPlugins(
 
   return () => {
     for (const unreg of unregisters) {
-      try { unreg(); } catch { /* isolate */ }
+      try {
+        unreg();
+      } catch {
+        /* isolate */
+      }
     }
   };
 }
