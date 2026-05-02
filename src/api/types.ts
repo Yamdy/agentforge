@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument */
 /**
  * AgentForge L2 API Type Definitions
  *
@@ -284,10 +283,12 @@ export interface AgentConfig {
   };
 
   // ----- Advanced -----
-  /** LLM adapter instance (overrides model config) */
+  /** @deprecated LLM adapter instance (overrides model config) */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   llmAdapter?: any;
 
-  /** Custom operators to apply */
+  /** @deprecated Custom operators to apply */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   operators?: any[];
 
   /** Plugin configurations for event interception and observation */
@@ -406,6 +407,7 @@ export interface Agent {
   run(input: string, handlers?: RunHandlers): Promise<string>;
 
   /** @deprecated wrapper for backward compat */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   run$?(input: string): any;
 
   // ----- Control -----
@@ -430,6 +432,7 @@ export interface Agent {
   getState(): AgentLoopState | null;
 
   /** @deprecated Internal context for backward compat */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ctx?: any;
 
   /** Destroy the agent and clean up resources */

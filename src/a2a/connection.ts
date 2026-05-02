@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument */
 /**
  * A2A Connection Management
  *
@@ -513,6 +512,7 @@ export class A2AConnection {
           if (!settled) {
             settled = true;
             cleanup();
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             error(err);
           }
         });

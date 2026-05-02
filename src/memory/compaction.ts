@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument */
 /**
  * AgentForge Compaction Manager
  *
@@ -222,6 +221,7 @@ export class CompactionManager {
       const removed = context.messages.filter((m: Message) => !resultMessages.includes(m));
       if (removed.length > 0) {
         try {
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
           await this.offloadManager.offload(context.sessionId, removed);
         } catch {
           // Offload failure is non-fatal — never crash the agent loop

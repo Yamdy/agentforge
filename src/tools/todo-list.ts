@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument */
 /**
  * TodoList Tool & Plugin for AgentForge
  *
@@ -71,9 +70,7 @@ const TodoListSchema = z.object({
     .optional(),
   list: z
     .object({
-      status: z
-        .enum(['pending', 'in_progress', 'completed', 'cancelled', 'all'])
-        .default('all'),
+      status: z.enum(['pending', 'in_progress', 'completed', 'cancelled', 'all']).default('all'),
     })
     .optional(),
 });
@@ -99,8 +96,7 @@ export function createTodoListTool(initialState?: TodoListState): ToolDefinition
 
   return {
     name: 'todo_list',
-    description:
-      'Manage a task list. Use this to track progress on multi-step tasks.',
+    description: 'Manage a task list. Use this to track progress on multi-step tasks.',
     parameters: TodoListSchema,
     // eslint-disable-next-line @typescript-eslint/require-await
     execute: async (args: unknown): Promise<string> => {
@@ -132,7 +128,7 @@ export function createTodoListTool(initialState?: TodoListState): ToolDefinition
           if (!update) {
             return 'Error: Missing update parameters. Provide { id, status }.';
           }
-          const item = state.items.find((i) => i.id === update.id);
+          const item = state.items.find(i => i.id === update.id);
           if (!item) return `Error: Todo ${update.id} not found`;
           item.status = update.status;
           item.updatedAt = Date.now();
@@ -142,16 +138,13 @@ export function createTodoListTool(initialState?: TodoListState): ToolDefinition
         case 'list': {
           const status = list?.status ?? 'all';
           const filtered =
-            status === 'all'
-              ? state.items
-              : state.items.filter((i) => i.status === status);
+            status === 'all' ? state.items : state.items.filter(i => i.status === status);
 
           if (filtered.length === 0) return 'No todos found';
 
           return filtered
             .map(
-              (i) =>
-                `[${i.status === 'completed' ? 'x' : ' '}] ${i.id}: ${i.content} (${i.priority})`,
+              i => `[${i.status === 'completed' ? 'x' : ' '}] ${i.id}: ${i.content} (${i.priority})`
             )
             .join('\n');
         }
@@ -178,27 +171,27 @@ export function createTodoListTool(initialState?: TodoListState): ToolDefinition
  * - Completed items (last 3, with overflow indicator)
  */
 export function formatTodoState(state: TodoListState): string {
-  const pending = state.items.filter((i) => i.status === 'pending');
-  const inProgress = state.items.filter((i) => i.status === 'in_progress');
-  const completed = state.items.filter((i) => i.status === 'completed');
+  const pending = state.items.filter(i => i.status === 'pending');
+  const inProgress = state.items.filter(i => i.status === 'in_progress');
+  const completed = state.items.filter(i => i.status === 'completed');
 
   let prompt = '# Current Task Progress\n\n';
 
   if (inProgress.length > 0) {
     prompt += '## In Progress\n';
-    inProgress.forEach((i) => (prompt += `- ${i.content}\n`));
+    inProgress.forEach(i => (prompt += `- ${i.content}\n`));
     prompt += '\n';
   }
 
   if (pending.length > 0) {
     prompt += '## Pending\n';
-    pending.forEach((i) => (prompt += `- ${i.content}\n`));
+    pending.forEach(i => (prompt += `- ${i.content}\n`));
     prompt += '\n';
   }
 
   if (completed.length > 0) {
     prompt += `## Completed (${completed.length})\n`;
-    completed.slice(-3).forEach((i) => (prompt += `- ✓ ${i.content}\n`));
+    completed.slice(-3).forEach(i => (prompt += `- ✓ ${i.content}\n`));
     if (completed.length > 3) {
       prompt += `- ... and ${completed.length - 3} more\n`;
     }
@@ -224,7 +217,7 @@ export function createTodoListPlugin(state: TodoListState): InterceptorPlugin {
     eventTypes: ['llm.request'],
     enabled: true,
 
-    intercept(event: AgentEvent, _ctx: PluginContext): any {
+    intercept(event: AgentEvent, _ctx: PluginContext): AgentEvent {
       if (event.type !== 'llm.request') return event;
       if (state.items.length === 0) return event;
 

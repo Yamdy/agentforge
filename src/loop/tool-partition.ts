@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument */
 /**
  * Tool Concurrency Partitioning
  *
@@ -58,9 +57,10 @@ export function partitionToolCalls(
 
   for (const tc of toolCalls) {
     // Check if this tool is concurrency-safe
-    const isSafe = typeof registry?.isConcurrencySafe === 'function'
-      ? registry.isConcurrencySafe(tc.name)
-      : true; // Default: safe
+    const isSafe =
+      typeof registry?.isConcurrencySafe === 'function'
+        ? registry.isConcurrencySafe(tc.name)
+        : true; // Default: safe
 
     if (currentBatch.length === 0) {
       // First call — start new batch

@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument */
 /**
  * AgentForge L3 API - Run Agent (Imperative Version)
  *
@@ -19,6 +18,7 @@ export interface RunAgentOptions {
 
 export interface RunAgentResult {
   run: (input: string) => Promise<string>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   on: (type: string, fn: (e: any) => void) => () => void;
   cancel: () => void;
   getState: () => string;
