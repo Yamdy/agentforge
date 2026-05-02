@@ -117,8 +117,8 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
   async function handleLLMError(
     error: unknown,
     signal: AbortSignal
-  ): Promise<'continue' | 'throw'> {
-    if (signal.aborted) return 'throw';
+  ): Promise<'continue' | 'fatal'> {
+    if (signal.aborted) return 'fatal';
 
     const analysis = analyzeLLMError(error as Error, config.model.model, (error as any).status);
 
@@ -199,7 +199,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       }
     }
 
-    return 'throw';
+    return 'fatal';
   }
 
   // ============================================================
@@ -536,7 +536,10 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
     if (config.history?.length) {
       messages.push(...config.history);
     }
-    messages.push({ role: 'user', content: input });
+
+    // ── MPU M6: Sanitize user input for prompt injection ──
+    const sanitizedInput = ctx.inputSanitizer ? ctx.inputSanitizer.sanitize(input) : input;
+    messages.push({ role: 'user', content: sanitizedInput });
 
     state = createInitialLoopState({
       sessionId: ctx.sessionId,
@@ -797,6 +800,28 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           details: { messages: msgs.length, model: config.model },
         });
 
+        // ── MPU M7: Rate limiter check before LLM call ──
+        if (ctx.rateLimiter) {
+          const rateLimitKey = `llm:${ctx.sessionId}`;
+          const rateLimitConfig = { maxRequests: 60, windowMs: 60_000 };
+          if (!ctx.rateLimiter.check(rateLimitKey, rateLimitConfig)) {
+            void emitter.emit({
+              type: 'agent.error',
+              timestamp: Date.now(),
+              sessionId: ctx.sessionId,
+              error: { name: 'RateLimitExceededError', message: 'LLM rate limit exceeded' },
+            });
+            void emitter.emit({
+              type: 'done',
+              timestamp: Date.now(),
+              sessionId: ctx.sessionId,
+              reason: 'error',
+            });
+            return state?.output ?? '';
+          }
+          ctx.rateLimiter.consume(rateLimitKey, rateLimitConfig);
+        }
+
         // ── Emit llm.request for backward compat ──
         void emitter.emit({
           type: 'llm.request',
@@ -836,7 +861,30 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             state.step++;
             continue;
           }
-          throw error;
+          // R1: errors-as-events, never throw — handle LLM errors inline
+          const err = serializeError(error);
+          void emitter.emit({
+            type: 'agent.error',
+            timestamp: Date.now(),
+            sessionId: ctx.sessionId,
+            error: err,
+          });
+          void emitter.emit({
+            type: 'done',
+            timestamp: Date.now(),
+            sessionId: ctx.sessionId,
+            reason: 'error',
+          });
+          ctx.auditLogger?.append({
+            sessionId: ctx.sessionId,
+            agentName: ctx.agentName,
+            eventType: 'agent.error',
+            action: 'agent.error',
+            resource: config.model.model,
+            result: 'error',
+            details: { error: err },
+          });
+          return state?.output ?? '';
         }
 
         // ── Emit llm.response ──

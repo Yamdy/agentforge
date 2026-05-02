@@ -27,7 +27,7 @@ Agent = LLM（认知决策核心）+ Harness（工程管控基座）
 | # | 铁律 | 说明 | 执行状态 |
 |---|------|------|---------|
 | **A1** | **命令式循环 + 事件发射器** | 核心引擎是 `while(true)` + `await`，非递归 expand，非流驱动。所有操作通过 `AgentEventEmitter` 分发，`on()` 必须返回 unsubscribe 函数。 | ✅ 已执行 |
-| **A2** | **Harness 硬管控，不可绕过** | LLM 决定做什么，Harness 确保做得好。安全校验（命令/路径/审批）必须硬编码在 loop 内，不可依赖 prompt 或 LLM 自觉。 | ⚠️ 部分接线 — `checkCommand` 已接入(agent-loop.ts:272)，`rateLimiter`/`inputSanitizer`/`permissionController` 未接线 |
+| **A2** | **Harness 硬管控，不可绕过** | LLM 决定做什么，Harness 确保做得好。安全校验（命令/路径/审批）必须硬编码在 loop 内，不可依赖 prompt 或 LLM 自觉。 | ⚠️ 部分接线 — `checkCommand` + `inputSanitizer` + `rateLimiter` 已接入，`permissionController`（HITL 审批流）未接入 |
 | **A3** | **Zod 分层数据契约** | Tier 1（外部 LLM/用户输入）Zod 强校验+兜底降级；Tier 2（模块边界）Schema 契约；Tier 3（内部）TypeScript 类型。`as any` 是类型契约的敌人。 | ⚠️ 部分执行 — 38 处 `as any` 待清理（9 文件，`create-agent.ts` 最多 19 处） |
 | **A4** | **DI 解耦 + 上下文闭包** | 核心 Loop 只依赖接口，禁止内部 `new` 硬编码实现。依赖通过 `AgentContext` 闭包传递，非全局单例。 | ✅ 基本执行 |
 | **A5** | **三层 API 渐进式复杂度** | L1（零代码 JSON）→ L2（`createAgent` 配置）→ L3（`ContextBuilder` 编程）。每层可用能力必须是上层超集，不可出现能力断层。 | ⚠️ 待完善 — L3 缺部分 builder 方法，L1 缺 `history` 等字段 |
@@ -40,7 +40,7 @@ Agent = LLM（认知决策核心）+ Harness（工程管控基座）
 
 | # | 铁律 | 说明 | 执行状态 |
 |---|------|------|---------|
-| **R1** | **错误即事件，不 throw** | 所有可恢复错误转化为 `agent.error` + `done` 事件。loop 内消化异常，永不 throw 到调用方。`try/catch` 包裹所有外部调用。 | 🔴 P0 — `agent-loop.ts:839` 仍在 emit 后 throw |
+| **R1** | **错误即事件，不 throw** | 所有可恢复错误转化为 `agent.error` + `done` 事件。loop 内消化异常，永不 throw 到调用方。`try/catch` 包裹所有外部调用。 | ✅ 已执行 — `agent-loop.ts:839` 的 `throw error` 已修复（2026-05-02） |
 | **R2** | **Hook 异常隔离，不击穿** | 每个 Plugin/LifecycleHook 独立 `try/catch`，单插件崩溃绝不拖垮主循环。 | ✅ 已执行 |
 | **R3** | **工具调用必经注册表** | 所有外部交互（读写文件、执行命令、网络请求）必须通过 `ToolRegistry` 以 Zod 工具形式注册。不可在 loop 内直接 `exec()` 或 `fetch()`。 | ✅ 已执行 |
 | **R4** | **主流程串行，副作用并行** | `while(true)` 内 LLM→工具→检查点 严格串行。独立工具调用可 `Promise.all` 并行。不可在串行路径中写同步阻塞。 | ✅ 已执行 |
