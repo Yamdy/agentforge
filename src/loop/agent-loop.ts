@@ -56,7 +56,10 @@ export interface AgentLoop {
   /** Run the agent loop with user input. Returns final output text. */
   run(input: string): Promise<string>;
   /** Subscribe to typed events */
-  on<E extends AgentEvent>(type: E['type'], fn: (e: E) => void): () => void;
+  on<T extends AgentEvent['type']>(
+    type: T,
+    fn: (e: Extract<AgentEvent, { type: T }>) => void
+  ): () => void;
   /** Subscribe to all events */
   onAny(fn: (e: AgentEvent) => void): () => void;
   /** Emit an external event through this loop's emitter (e.g., from subsystems) */

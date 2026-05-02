@@ -755,7 +755,10 @@ export class AgentEventEmitter {
    * Register a listener for a specific event type.
    * @returns Unregister function
    */
-  on<E extends AgentEvent>(type: E['type'], fn: (event: E) => void): () => void {
+  on<T extends AgentEvent['type']>(
+    type: T,
+    fn: (event: Extract<AgentEvent, { type: T }>) => void
+  ): () => void {
     const existing = this.typed.get(type);
     if (existing) {
       existing.add(fn as (event: unknown) => void);

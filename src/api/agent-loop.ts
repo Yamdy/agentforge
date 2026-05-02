@@ -9,12 +9,9 @@
  * @module
  */
 
-import {
-  createAgentLoop,
-  type AgentLoopConfig,
-  type AgentLoop,
-} from '../loop/agent-loop.js';
+import { createAgentLoop, type AgentLoopConfig, type AgentLoop } from '../loop/agent-loop.js';
 import type { AgentContext } from '../core/context.js';
+import type { AgentEvent } from '../core/events.js';
 
 export type { AgentLoopConfig };
 
@@ -35,11 +32,11 @@ export type AgentLoopState = 'idle' | 'running' | 'completed' | 'error' | 'cance
 
 export interface AgentLoopInstance {
   run$(input: string): Promise<string>;
-  on<E extends import('../core/events.js').AgentEvent>(
-    type: E['type'],
-    fn: (e: E) => void
+  on<T extends AgentEvent['type']>(
+    type: T,
+    fn: (e: Extract<AgentEvent, { type: T }>) => void
   ): () => void;
-  onAny(fn: (e: import('../core/events.js').AgentEvent) => void): () => void;
+  onAny(fn: (e: AgentEvent) => void): () => void;
   cancel(reason?: string): void;
   getState(): AgentLoopState;
   onDestroy(): { unsubscribe: () => void };
@@ -56,8 +53,10 @@ export function AgentLoop(ctx: AgentContext, options: AgentLoopOptions): AgentLo
     model: options.model,
     maxSteps: options.maxSteps ?? 10,
   };
-  if (options.maxLLMRepairAttempts !== undefined) loopConfig.maxLLMRepairAttempts = options.maxLLMRepairAttempts;
-  if (options.parallelToolCalls !== undefined) loopConfig.parallelToolCalls = options.parallelToolCalls;
+  if (options.maxLLMRepairAttempts !== undefined)
+    loopConfig.maxLLMRepairAttempts = options.maxLLMRepairAttempts;
+  if (options.parallelToolCalls !== undefined)
+    loopConfig.parallelToolCalls = options.parallelToolCalls;
   if (options.streaming !== undefined) loopConfig.streaming = options.streaming;
   if (options.tokenBudget !== undefined) loopConfig.tokenBudget = options.tokenBudget;
   if (options.fallbackModel !== undefined) loopConfig.fallbackModel = options.fallbackModel;

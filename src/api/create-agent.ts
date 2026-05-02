@@ -72,13 +72,13 @@ function resolveConfig(raw: AgentConfig): ResolvedConfig {
   }
 
   return {
-    name: raw.name ?? (defaults as any).name ?? 'agent',
+    name: raw.name ?? defaults.name ?? 'agent',
     model,
     llmOptions: raw.llmOptions,
-    maxSteps: raw.maxSteps ?? (defaults as any).maxSteps ?? 10,
-    maxLLMRepairAttempts: raw.maxLLMRepairAttempts ?? (defaults as any).maxLLMRepairAttempts ?? 3,
-    parallelToolCalls: raw.parallelToolCalls ?? (defaults as any).parallelToolCalls ?? true,
-    streaming: raw.streaming ?? (defaults as any).streaming ?? false,
+    maxSteps: raw.maxSteps ?? defaults.maxSteps ?? 10,
+    maxLLMRepairAttempts: raw.maxLLMRepairAttempts ?? defaults.maxLLMRepairAttempts ?? 3,
+    parallelToolCalls: raw.parallelToolCalls ?? defaults.parallelToolCalls ?? true,
+    streaming: raw.streaming ?? defaults.streaming ?? false,
     tokenBudget: raw.tokenBudget,
     fallbackModel: undefined,
     toolNames: (raw.tools ?? []).map(t => (typeof t === 'string' ? t : t.name)),
@@ -298,13 +298,11 @@ export function createAgent(config: AgentConfig, services?: Partial<AgentContext
       await tracerInitPromise;
       await pluginLoadPromise;
       if (handlers) {
-        if (handlers.onToken)
-          loop.on('llm.stream.text' as any, (e: any) => handlers.onToken!(e.delta)); // eslint-disable-line @typescript-eslint/no-unsafe-member-access
-        if (handlers.onToolCall) loop.on('tool.call' as any, handlers.onToolCall);
-        if (handlers.onToolResult) loop.on('tool.result' as any, handlers.onToolResult);
-        if (handlers.onComplete)
-          loop.on('agent.complete' as any, (e: any) => handlers.onComplete!(e.output)); // eslint-disable-line @typescript-eslint/no-unsafe-member-access
-        if (handlers.onError) loop.on('agent.error' as any, handlers.onError);
+        if (handlers.onToken) loop.on('llm.stream.text', e => handlers.onToken!(e.delta));
+        if (handlers.onToolCall) loop.on('tool.call', handlers.onToolCall);
+        if (handlers.onToolResult) loop.on('tool.result', handlers.onToolResult);
+        if (handlers.onComplete) loop.on('agent.complete', e => handlers.onComplete!(e.output));
+        if (handlers.onError) loop.on('agent.error', handlers.onError);
         if (handlers.onEvent) loop.onAny(handlers.onEvent);
       }
       return loop.run(input);
