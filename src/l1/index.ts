@@ -23,6 +23,8 @@ import { readFileSync, existsSync } from 'fs';
 import { resolve, extname } from 'path';
 import { z } from 'zod';
 import { createAgent, type Agent, type AgentConfig, type CheckpointConfig } from '../api/index.js';
+import { MessageRoleSchema } from '../core/events.js';
+import type { Message } from '../core/events.js';
 
 // ============================================================
 // L1 Configuration Schema
@@ -50,6 +52,17 @@ const ToolConfigSchema = z.object({
 });
 
 /**
+ * L1 Message schema (simplified subset of core MessageSchema)
+ *
+ * Only role and content are required for JSON configs.
+ */
+const L1MessageSchema = z.object({
+  role: MessageRoleSchema,
+  content: z.string(),
+  name: z.string().optional(),
+});
+
+/**
  * L1 Agent configuration schema
  */
 export const L1AgentConfigSchema = z.object({
@@ -63,6 +76,9 @@ export const L1AgentConfigSchema = z.object({
   maxSteps: z.number().int().positive().default(10),
   timeout: z.number().positive().optional(),
   systemPrompt: z.string().optional(),
+
+  // Multi-turn conversation history
+  history: z.array(L1MessageSchema).optional(),
 
   // Tools (list of tool names or detailed configs)
   tools: z.union([z.array(z.string()), z.array(ToolConfigSchema)]).default([]),
@@ -216,6 +232,18 @@ function toL2Config(l1Config: L1AgentConfig): AgentConfig {
   }
   if (l1Config.preset !== undefined) {
     l2Config.preset = l1Config.preset;
+  }
+
+  // History
+  if (l1Config.history !== undefined) {
+    l2Config.history = l1Config.history.map(
+      msg =>
+        ({
+          role: msg.role,
+          content: msg.content,
+          ...(msg.name !== undefined ? { name: msg.name } : {}),
+        }) satisfies Message
+    );
   }
 
   // Tools

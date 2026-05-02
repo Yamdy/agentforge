@@ -58,6 +58,7 @@ import type { SecurityGuard } from '../security/guard.js';
 import type { Planner } from '../planning/types.js';
 import type { HITLAskOptions } from './interfaces.js';
 import type { HookRegistry } from './hooks.js';
+import type { CheckpointRegistry } from './checkpoint-registry.js';
 // ============================================================
 // Application Services (Global Singleton)
 // ============================================================
@@ -219,6 +220,10 @@ export interface AgentContext {
   /** Plugin pipeline for event interception and observation */
   /** Hook registry for lifecycle/request/tool hooks */
   hookRegistry?: HookRegistry;
+
+  // ----- Checkpoint Registry (R6 iron law) -----
+  /** Declarative checkpoint registry for cross-cutting concern wiring */
+  checkpointRegistry?: CheckpointRegistry;
 
   // ----- Control Signals -----
   /** Abort signal for cancellation */

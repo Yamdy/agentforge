@@ -37,11 +37,29 @@ import type {
   ErrorHandler,
   Tracer,
   Metrics,
+  PermissionController,
+  PermissionPolicy,
+  SandboxExecutor,
+  AuditLogger,
+  RateLimiter,
+  InputSanitizer,
+  PromptBuilder,
 } from '../core/interfaces.js';
 import type { AgentContext, ApplicationServices } from '../core/context.js';
 import type { SecurityGuard } from '../security/guard.js';
-import type { ErrorClassifier, CircuitBreaker, AutoRepairer } from '../contracts/mpu-interfaces.js';
+import type {
+  ErrorClassifier,
+  CircuitBreaker,
+  AutoRepairer,
+  HealthChecker,
+} from '../contracts/mpu-interfaces.js';
 import type { Planner } from '../planning/types.js';
+import type { Logger } from '../core/logger.js';
+import type { HookRegistry } from '../core/hooks.js';
+import type { CompactionManager } from '../memory/index.js';
+import type { QuotaController } from '../quota/quota-controller.js';
+import type { QualityGate } from '../validation/quality-gate.js';
+import type { DecisionTraceStorage } from '../contracts/decision-trace-storage.js';
 import {
   ContextBuilder,
   SimpleToolRegistry,
@@ -94,6 +112,26 @@ interface BuilderState {
   circuitBreaker?: CircuitBreaker;
   autoRepairer?: AutoRepairer;
   planner?: Planner;
+  // Security & sandbox (MPU)
+  rateLimiter?: RateLimiter;
+  inputSanitizer?: InputSanitizer;
+  permissionController?: PermissionController;
+  permissionPolicy?: PermissionPolicy;
+  sandboxExecutor?: SandboxExecutor;
+  auditLogger?: AuditLogger;
+  // Memory & validation
+  compactionManager?: CompactionManager;
+  qualityGate?: QualityGate;
+  // Quota
+  quota?: QuotaController;
+  // Prompt & hooks
+  promptBuilder?: PromptBuilder;
+  hookRegistry?: HookRegistry;
+  logger?: Logger;
+  // Decision trace
+  decisionTraceStorage?: DecisionTraceStorage;
+  // Application services extras
+  healthChecker?: HealthChecker;
 }
 
 // ============================================================
@@ -517,6 +555,212 @@ export class AgentContextBuilder {
   }
 
   // ============================================================
+  // Security & Sandbox (MPU M6/M3/M5)
+  // ============================================================
+
+  /**
+   * Set rate limiter
+   *
+   * Enables request frequency control.
+   *
+   * @param limiter - RateLimiter instance
+   * @returns this
+   */
+  withRateLimiter(limiter: RateLimiter): this {
+    this.state.rateLimiter = limiter;
+    return this;
+  }
+
+  /**
+   * Set input sanitizer
+   *
+   * Enables prompt injection detection and input cleansing.
+   *
+   * @param sanitizer - InputSanitizer instance
+   * @returns this
+   */
+  withInputSanitizer(sanitizer: InputSanitizer): this {
+    this.state.inputSanitizer = sanitizer;
+    return this;
+  }
+
+  /**
+   * Set permission controller
+   *
+   * Enables human approval flow for permission decisions.
+   *
+   * @param controller - PermissionController instance
+   * @returns this
+   */
+  withPermissionController(controller: PermissionController): this {
+    this.state.permissionController = controller;
+    return this;
+  }
+
+  /**
+   * Set permission policy
+   *
+   * Enables tool execution control via permission rules.
+   *
+   * @param policy - PermissionPolicy instance
+   * @returns this
+   */
+  withPermissionPolicy(policy: PermissionPolicy): this {
+    this.state.permissionPolicy = policy;
+    return this;
+  }
+
+  /**
+   * Set sandbox executor
+   *
+   * Enables isolated tool execution in sandbox environments.
+   *
+   * @param executor - SandboxExecutor instance
+   * @returns this
+   */
+  withSandboxExecutor(executor: SandboxExecutor): this {
+    this.state.sandboxExecutor = executor;
+    return this;
+  }
+
+  /**
+   * Set audit logger
+   *
+   * Enables security event recording for audit trails.
+   *
+   * @param logger - AuditLogger instance
+   * @returns this
+   */
+  withAuditLogger(logger: AuditLogger): this {
+    this.state.auditLogger = logger;
+    return this;
+  }
+
+  // ============================================================
+  // Memory & Validation (MPU M10)
+  // ============================================================
+
+  /**
+   * Set compaction manager
+   *
+   * Enables context window management and message compaction.
+   *
+   * @param manager - CompactionManager instance
+   * @returns this
+   */
+  withCompactionManager(manager: CompactionManager): this {
+    this.state.compactionManager = manager;
+    return this;
+  }
+
+  /**
+   * Set quality gate
+   *
+   * Enables LLM output validation before it enters context.
+   *
+   * @param gate - QualityGate instance
+   * @returns this
+   */
+  withQualityGate(gate: QualityGate): this {
+    this.state.qualityGate = gate;
+    return this;
+  }
+
+  // ============================================================
+  // Quota (MPU M7)
+  // ============================================================
+
+  /**
+   * Set quota controller
+   *
+   * Enables cost and token usage monitoring with limits.
+   *
+   * @param quota - QuotaController instance
+   * @returns this
+   */
+  withQuota(quota: QuotaController): this {
+    this.state.quota = quota;
+    return this;
+  }
+
+  // ============================================================
+  // Prompt, Hooks & Logging
+  // ============================================================
+
+  /**
+   * Set prompt builder
+   *
+   * Enables custom LLM prompt construction.
+   *
+   * @param builder - PromptBuilder instance
+   * @returns this
+   */
+  withPromptBuilder(builder: PromptBuilder): this {
+    this.state.promptBuilder = builder;
+    return this;
+  }
+
+  /**
+   * Set hook registry
+   *
+   * Enables lifecycle/request/tool hook registration.
+   *
+   * @param registry - HookRegistry instance
+   * @returns this
+   */
+  withHookRegistry(registry: HookRegistry): this {
+    this.state.hookRegistry = registry;
+    return this;
+  }
+
+  /**
+   * Set logger
+   *
+   * Replaces console.* calls with structured logging.
+   *
+   * @param logger - Logger instance
+   * @returns this
+   */
+  withLogger(logger: Logger): this {
+    this.state.logger = logger;
+    return this;
+  }
+
+  // ============================================================
+  // Decision Trace
+  // ============================================================
+
+  /**
+   * Set decision trace storage
+   *
+   * Enables decision traceability for agent reasoning.
+   *
+   * @param storage - DecisionTraceStorage instance
+   * @returns this
+   */
+  withDecisionTraceStorage(storage: DecisionTraceStorage): this {
+    this.state.decisionTraceStorage = storage;
+    return this;
+  }
+
+  // ============================================================
+  // Application Services Extras
+  // ============================================================
+
+  /**
+   * Set health checker
+   *
+   * Enables component health status monitoring (ApplicationServices).
+   *
+   * @param checker - HealthChecker instance
+   * @returns this
+   */
+  withHealthChecker(checker: HealthChecker): this {
+    this.state.healthChecker = checker;
+    return this;
+  }
+
+  // ============================================================
   // Build
   // ============================================================
 
@@ -612,6 +856,60 @@ export class AgentContextBuilder {
     }
     if (this.state.planner !== undefined) {
       ctx.planner = this.state.planner;
+    }
+
+    // Security & sandbox (MPU M6/M3/M5)
+    if (this.state.rateLimiter !== undefined) {
+      ctx.rateLimiter = this.state.rateLimiter;
+    }
+    if (this.state.inputSanitizer !== undefined) {
+      ctx.inputSanitizer = this.state.inputSanitizer;
+    }
+    if (this.state.permissionController !== undefined) {
+      ctx.permissionController = this.state.permissionController;
+    }
+    if (this.state.permissionPolicy !== undefined) {
+      ctx.permissionPolicy = this.state.permissionPolicy;
+    }
+    if (this.state.sandboxExecutor !== undefined) {
+      ctx.sandboxExecutor = this.state.sandboxExecutor;
+    }
+    if (this.state.auditLogger !== undefined) {
+      ctx.auditLogger = this.state.auditLogger;
+    }
+
+    // Memory & validation (MPU M10)
+    if (this.state.compactionManager !== undefined) {
+      ctx.compactionManager = this.state.compactionManager;
+    }
+    if (this.state.qualityGate !== undefined) {
+      ctx.qualityGate = this.state.qualityGate;
+    }
+
+    // Quota (MPU M7)
+    if (this.state.quota !== undefined) {
+      ctx.quota = this.state.quota;
+    }
+
+    // Prompt, hooks & logging
+    if (this.state.promptBuilder !== undefined) {
+      ctx.promptBuilder = this.state.promptBuilder;
+    }
+    if (this.state.hookRegistry !== undefined) {
+      ctx.hookRegistry = this.state.hookRegistry;
+    }
+    if (this.state.logger !== undefined) {
+      ctx.logger = this.state.logger;
+    }
+
+    // Decision trace
+    if (this.state.decisionTraceStorage !== undefined) {
+      ctx.decisionTraceStorage = this.state.decisionTraceStorage;
+    }
+
+    // Application services extras
+    if (this.state.healthChecker !== undefined) {
+      ctx.services.healthChecker = this.state.healthChecker;
     }
 
     return ctx;

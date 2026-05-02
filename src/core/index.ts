@@ -76,15 +76,9 @@ export {
   recordCompaction as recordStateCompaction,
 } from './state.js';
 
-export type {
-  RecoveryState,
-  TokenBudgetState,
-  AgentLoopState,
-} from './state.js';
+export type { RecoveryState, TokenBudgetState, AgentLoopState } from './state.js';
 
-export {
-  createInitialLoopState,
-} from './state.js';
+export { createInitialLoopState } from './state.js';
 
 // ============================================================
 // Checkpoint
@@ -221,7 +215,13 @@ export {
 // Defaults (Tracer / Metrics implementations for DI)
 // ============================================================
 
-export { NoopTracer, ConsoleTracer, NoopMetrics, ConsoleMetrics, BridgeMetrics } from './defaults.js';
+export {
+  NoopTracer,
+  ConsoleTracer,
+  NoopMetrics,
+  ConsoleMetrics,
+  BridgeMetrics,
+} from './defaults.js';
 
 // ============================================================
 // Zod to Schema
@@ -283,3 +283,10 @@ export type {
   ApprovalChannel,
 } from './approval-channel.js';
 export { DefaultApprovalChannel } from './approval-channel.js';
+
+// ============================================================
+// Checkpoint Registry (R6 iron law)
+// ============================================================
+
+export type { LifecyclePhase, CheckpointResult, CheckpointFn } from './checkpoint-registry.js';
+export { CheckpointRegistry } from './checkpoint-registry.js';

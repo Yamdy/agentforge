@@ -8,11 +8,20 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import type { AgentEvent } from '../../src/core/index.js';
 
-// Mock the loop module — return Promise-based AgentLoop
+/**
+ * Track calls to loop.on for streaming handler verification.
+ * Reset in beforeEach via vi.clearAllMocks.
+ */
+const onCalls: Array<[string, (...args: unknown[]) => void]> = [];
+
+// Mock the loop module — return Promise-based AgentLoop with tracked on()
 vi.mock('../../src/loop/agent-loop.js', () => ({
   createAgentLoop: () => ({
     run: async (_input: string) => 'test output',
-    on: () => () => {},
+    on: (type: string, fn: (...args: unknown[]) => void) => {
+      onCalls.push([type, fn]);
+      return () => {};
+    },
     onAny: () => () => {},
     cancel: () => {},
     pause: () => {},
@@ -62,6 +71,7 @@ function makeAgentConfig(preset?: 'production' | 'debug' | 'test') {
 describe('createAgent — preset activation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    onCalls.length = 0;
   });
 
   it('applies debugPreset when preset is "debug"', async () => {
@@ -98,6 +108,77 @@ describe('createAgent — preset activation', () => {
     await agent.run('hello');
     // verify agent was created with correct name
     expect(agent.ctx.agentName).toBe('test-agent');
+  });
+
+  it('wires streaming handlers — onToken receives stream chunks via agent.run()', async () => {
+    const agent = createAgent(makeAgentConfig('production'));
+
+    let tokenReceived = '';
+    let toolCallReceived: unknown = null;
+    let completeReceived = '';
+    let errorReceived: unknown = null;
+
+    await agent.run('hello', {
+      onToken: (delta: string) => { tokenReceived += delta; },
+      onToolCall: (event: unknown) => { toolCallReceived = event; },
+      onComplete: (output: string) => { completeReceived = output; },
+      onError: (event: unknown) => { errorReceived = event; },
+    });
+
+    // Verify loop.on was called for each handler type
+    const registeredEvents = onCalls.map(c => c[0]);
+    expect(registeredEvents).toContain('llm.stream.text');
+    expect(registeredEvents).toContain('tool.call');
+    expect(registeredEvents).toContain('agent.complete');
+    expect(registeredEvents).toContain('agent.error');
+
+    // Simulate handler invocation: fire onToken callback
+    const onTokenCall = onCalls.find(c => c[0] === 'llm.stream.text');
+    expect(onTokenCall).toBeDefined();
+    onTokenCall![1]({ delta: 'Hello' });
+    onTokenCall![1]({ delta: ' World' });
+    expect(tokenReceived).toBe('Hello World');
+
+    // Simulate onComplete
+    const onCompleteCall = onCalls.find(c => c[0] === 'agent.complete');
+    expect(onCompleteCall).toBeDefined();
+    onCompleteCall![1]({ output: 'done' });
+    expect(completeReceived).toBe('done');
+  });
+
+  it('wires onToolResult and onEvent handlers via agent.run()', async () => {
+    const agent = createAgent(makeAgentConfig('production'));
+
+    let toolResultReceived: unknown = null;
+    const allEvents: string[] = [];
+
+    await agent.run('hello', {
+      onToolResult: (event: unknown) => { toolResultReceived = event; },
+      onEvent: (event: unknown) => { allEvents.push((event as { type: string }).type); },
+    });
+
+    const registeredEvents = onCalls.map(c => c[0]);
+    expect(registeredEvents).toContain('tool.result');
+
+    // Simulate onToolResult
+    const onToolResultCall = onCalls.find(c => c[0] === 'tool.result');
+    expect(onToolResultCall).toBeDefined();
+    onToolResultCall![1]({ result: 'file content' });
+    expect(toolResultReceived).toEqual({ result: 'file content' });
+  });
+
+  it('configures services based on tracing and metrics flags', async () => {
+    // Verify that tracing: true wires services (without preset)
+    const agent = createAgent({
+      name: 'svc-agent',
+      model: { provider: 'mock', model: 'mock-model' },
+      maxSteps: 1,
+      tracing: true,
+      metrics: true,
+    });
+
+    expect(agent.ctx.services.tracer).toBeDefined();
+    expect(agent.ctx.services.metrics).toBeDefined();
   });
 });
 

@@ -125,4 +125,75 @@ describe('runScorerPipeline', () => {
     expect(result.scores[1]!.scorerId).toBe('second');
     expect(result.compositeScore).toBeCloseTo(0.5);
   });
+
+  it('returns default result when scorers array is empty', async () => {
+    const result = await runScorerPipeline([], ctx);
+
+    expect(result.scores).toHaveLength(0);
+    expect(result.compositeScore).toBe(0);
+    expect(result.summary).toBe('No scorers configured.');
+    expect(result.duration).toBe(0);
+    expect(result.runId).toBe(ctx.sessionId);
+  });
+
+  it('isolates scorer failures — one failing scorer does not stop others', async () => {
+    const good = makeScorer('good', 0.8, 1.0);
+    const failing: any = {
+      config: { id: 'failing', name: 'failing', description: '', judge: {} as any, weight: 1.0 },
+      weight: 1.0,
+      evaluate: async () => ({
+        scorerId: 'failing',
+        scorerName: 'failing',
+        score: 0,
+        reason: 'evaluation error',
+        success: false,
+        error: 'LLM judge unavailable',
+      }),
+    };
+
+    const result = await runScorerPipeline([good, failing], ctx);
+
+    // The failing scorer should appear in results as a failed entry
+    expect(result.scores).toHaveLength(2);
+    const failed = result.scores.find(s => s.scorerId === 'failing');
+    expect(failed).toBeDefined();
+    expect(failed!.success).toBe(false);
+
+    // Composite score should only include the successful scorer
+    expect(result.compositeScore).toBeCloseTo(0.8);
+  });
+
+  it('returns "All scorers failed." summary when every scorer fails', async () => {
+    const makeFailing = (id: string): any => ({
+      config: { id, name: id, description: '', judge: {} as any, weight: 1.0 },
+      weight: 1.0,
+      evaluate: async () => {
+        return { scorerId: id, scorerName: id, score: 0, reason: 'error', success: false, error: 'boom' };
+      },
+    });
+
+    const result = await runScorerPipeline([makeFailing('s1'), makeFailing('s2')], ctx);
+
+    expect(result.scores).toHaveLength(2);
+    expect(result.compositeScore).toBe(0);
+    expect(result.summary).toBe('All scorers failed.');
+  });
+
+  it('correctly aggregates results when some scorers succeed and some fail', async () => {
+    const passing = makeScorer('passing', 0.9, 2.0);
+    const failing: any = {
+      config: { id: 'failing', name: 'failing', description: '', judge: {} as any, weight: 3.0 },
+      weight: 3.0,
+      evaluate: async () => ({
+        scorerId: 'failing', scorerName: 'failing', score: 0, reason: 'n/a', success: false, error: 'Judgment error',
+      }),
+    };
+
+    const result = await runScorerPipeline([passing, failing], ctx);
+
+    // Only the passing scorer contributes to composite
+    expect(result.compositeScore).toBeCloseTo(0.9);
+    expect(result.summary).toContain('passing');
+    expect(result.summary).not.toContain('failing');
+  });
 });

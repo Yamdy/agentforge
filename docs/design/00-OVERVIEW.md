@@ -30,7 +30,7 @@ Agent = LLM（认知决策核心）+ Harness（工程管控基座）
 | **A2** | **Harness 硬管控，不可绕过** | LLM 决定做什么，Harness 确保做得好。安全校验（命令/路径/审批）必须硬编码在 loop 内，不可依赖 prompt 或 LLM 自觉。 | ⚠️ 部分接线 — `checkCommand` + `inputSanitizer` + `rateLimiter` 已接入，`permissionController`（HITL 审批流）未接入 |
 | **A3** | **Zod 分层数据契约** | Tier 1（外部 LLM/用户输入）Zod 强校验+兜底降级；Tier 2（模块边界）Schema 契约；Tier 3（内部）TypeScript 类型。`as any` 是类型契约的敌人。 | ✅ 基本执行 — 仅 1 处 `as any`（legacy interceptor bridge），其余 37 处已清零 |
 | **A4** | **DI 解耦 + 上下文闭包** | 核心 Loop 只依赖接口，禁止内部 `new` 硬编码实现。依赖通过 `AgentContext` 闭包传递，非全局单例。 | ✅ 基本执行 |
-| **A5** | **三层 API 渐进式复杂度** | L1（零代码 JSON）→ L2（`createAgent` 配置）→ L3（`ContextBuilder` 编程）。每层可用能力必须是上层超集，不可出现能力断层。 | ⚠️ 待完善 — L3 缺部分 builder 方法，L1 缺 `history` 等字段 |
+| **A5** | **三层 API 渐进式复杂度** | L1（零代码 JSON）→ L2（`createAgent` 配置）→ L3（`ContextBuilder` 编程）。每层可用能力必须是上层超集，不可出现能力断层。 | ✅ 基本完善 — 所有 MPU 模块有 builder 方法，L1 支持 history |
 
 ---
 
@@ -45,7 +45,7 @@ Agent = LLM（认知决策核心）+ Harness（工程管控基座）
 | **R3** | **工具调用必经注册表** | 所有外部交互（读写文件、执行命令、网络请求）必须通过 `ToolRegistry` 以 Zod 工具形式注册。不可在 loop 内直接 `exec()` 或 `fetch()`。 | ✅ 已执行 |
 | **R4** | **主流程串行，副作用并行** | `while(true)` 内 LLM→工具→检查点 严格串行。独立工具调用可 `Promise.all` 并行。不可在串行路径中写同步阻塞。 | ✅ 已执行 |
 | **R5** | **状态外部化，可中断恢复** | 长任务状态通过 Checkpoint 持久化。暂停/恢复通过 `AbortController` + `pause/resume` Promise 模式。不可依赖内存状态存活。 | ✅ 基本执行 |
-| **R6** | **检查点声明式接线** | 所有 Harness 跨切面关注点（安全、配额、熔断、限流、压缩、审计）必须通过统一的 CheckpointRegistry 注册到生命周期阶段（pre-llm / post-llm / pre-tool / post-tool / on-error）。loop 在每个阶段自动执行已注册的所有检查点。禁止在各阶段内独立硬编码 `if (ctx.X)` 门控。未注册的模块=未接线，注册表为编译时可验证的完整清单。 | 🔮 提案中 — 2026-05-02 新增。当前 `rateLimiter`/`inputSanitizer`/`permissionController` 有接口无接线 |
+| **R6** | **检查点声明式接线** | 所有 Harness 跨切面关注点（安全、配额、熔断、限流、压缩、审计）必须通过统一的 CheckpointRegistry 注册到生命周期阶段（pre-llm / post-llm / pre-tool / post-tool / on-error）。loop 在每个阶段自动执行已注册的所有检查点。禁止在各阶段内独立硬编码 `if (ctx.X)` 门控。未注册的模块=未接线，注册表为编译时可验证的完整清单。 | 🔧 部分落地 — 核心检查点（quota/rateLimiter/qualityGate/circuitBreaker）已声明式注册，其余待迁移 |
 
 ---
 

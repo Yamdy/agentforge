@@ -27,6 +27,7 @@ import {
 import type { AgentContext, AgentLoopState } from '../core/index.js';
 import { HookRegistry, type HookName } from '../core/hooks.js';
 import { createInitialLoopState } from '../core/state.js';
+import { CheckpointRegistry } from '../core/checkpoint-registry.js';
 import type { LLMOptions } from '../core/interfaces.js';
 import { checkTokenBudget, createBudgetTracker, shouldCompact } from './token-budget.js';
 import { analyzeLLMError, RECOVERY_LIMITS, ESCALATED_MAX_OUTPUT_TOKENS } from './error-analyzer.js';
@@ -86,6 +87,65 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
   let abortController: AbortController | null = null;
   let state: AgentLoopState | null = null;
   let isRunning = false;
+
+  // ── Checkpoint Registry (R6 iron law) ──
+  const checkpointRegistry = ctx.checkpointRegistry ?? new CheckpointRegistry();
+
+  // Register MPU cross-cutting concerns as declarative checkpoints
+
+  // Pre-LLM: Quota check (MPU M7)
+  checkpointRegistry.register('pre-llm', 10, async (_ctx, _state, ...args) => {
+    if (!_ctx.quota) return { action: 'continue' };
+    const msgs = args[0] as Message[] | undefined;
+    const currentUsage = _ctx.quota.getUsage(_ctx.sessionId);
+    const estimatedPromptTokens = (msgs?.length ?? 0) * 10;
+    const allowed = await _ctx.quota.check(_ctx.sessionId, {
+      promptTokens: currentUsage.promptTokens + estimatedPromptTokens,
+      completionTokens: currentUsage.completionTokens,
+      ...(currentUsage.totalCost !== undefined ? { totalCost: currentUsage.totalCost } : {}),
+    });
+    if (!allowed) {
+      return { action: 'block', reason: 'quota_exceeded' };
+    }
+    return { action: 'continue' };
+  });
+
+  // Pre-LLM: Rate limiter check (MPU M6)
+  checkpointRegistry.register('pre-llm', 20, _ctx => {
+    if (!_ctx.rateLimiter) return { action: 'continue' };
+    const rateLimitKey = `llm:${_ctx.sessionId}`;
+    const rateLimitConfig = { maxRequests: 60, windowMs: 60_000 };
+    if (!_ctx.rateLimiter.check(rateLimitKey, rateLimitConfig)) {
+      return { action: 'block', reason: 'rate_limit_exceeded' };
+    }
+    _ctx.rateLimiter.consume(rateLimitKey, rateLimitConfig);
+    return { action: 'continue' };
+  });
+
+  // Post-LLM: Quality gate (MPU M10)
+  checkpointRegistry.register('post-llm', 10, (_ctx, _state, ...args) => {
+    const response = args[0] as
+      | { content?: string | null; toolCalls?: unknown[]; finishReason?: string; usage?: unknown }
+      | undefined;
+    if (!_ctx.qualityGate || !response?.content) return { action: 'continue' };
+    const gateResult = _ctx.qualityGate.check(response.content, _state);
+    if (!gateResult.passed) {
+      // Inject correction message so LLM retries with guidance
+      _state.messages.push({
+        role: 'user',
+        content: `[System] ${gateResult.feedback ?? 'Your last response had quality issues. Please try again with a different approach.'}`,
+      });
+      _state.step++;
+      return { action: 'block', reason: 'quality_gate_retry' };
+    }
+    return { action: 'continue' };
+  });
+
+  // Post-LLM: Circuit breaker record success (MPU M4)
+  checkpointRegistry.register('post-llm', 20, _ctx => {
+    _ctx.circuitBreaker?.recordSuccess();
+    return { action: 'continue' };
+  });
 
   // ── Pause/Resume ──
   let paused = false;
@@ -763,34 +823,33 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           }
         }
 
-        // ── MPU M7: Quota pre-check ──
-        if (ctx.quota) {
-          const currentUsage = ctx.quota.getUsage(ctx.sessionId);
-          const estimatedPromptTokens = msgs.length * 10;
-          const allowed = await ctx.quota.check(ctx.sessionId, {
-            promptTokens: currentUsage.promptTokens + estimatedPromptTokens,
-            completionTokens: currentUsage.completionTokens,
-            ...(currentUsage.totalCost !== undefined ? { totalCost: currentUsage.totalCost } : {}),
+        // ── Checkpoint Registry: pre-llm phase (R6) ──
+        const preLlmResult = await checkpointRegistry.run('pre-llm', ctx, state, msgs);
+        if (preLlmResult.action === 'block') {
+          // R1: errors-as-events
+          const errMsg =
+            preLlmResult.reason === 'quota_exceeded'
+              ? 'Token/cost quota exceeded'
+              : 'LLM rate limit exceeded';
+          void emitter.emit({
+            type: 'agent.error',
+            timestamp: Date.now(),
+            sessionId: ctx.sessionId,
+            error: {
+              name:
+                preLlmResult.reason === 'quota_exceeded'
+                  ? 'QuotaExceededError'
+                  : 'RateLimitExceededError',
+              message: errMsg,
+            },
           });
-          if (!allowed) {
-            const err: SerializedError = {
-              name: 'QuotaExceededError',
-              message: 'Token/cost quota exceeded',
-            };
-            void emitter.emit({
-              type: 'agent.error',
-              timestamp: Date.now(),
-              sessionId: ctx.sessionId,
-              error: err,
-            });
-            void emitter.emit({
-              type: 'done',
-              reason: 'error',
-              timestamp: Date.now(),
-              sessionId: ctx.sessionId,
-            });
-            return state.output;
-          }
+          void emitter.emit({
+            type: 'done',
+            reason: 'error',
+            timestamp: Date.now(),
+            sessionId: ctx.sessionId,
+          });
+          return state.output;
         }
 
         // ── 2. LLM Call ──
@@ -804,28 +863,6 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           result: 'success',
           details: { messages: msgs.length, model: config.model },
         });
-
-        // ── MPU M7: Rate limiter check before LLM call ──
-        if (ctx.rateLimiter) {
-          const rateLimitKey = `llm:${ctx.sessionId}`;
-          const rateLimitConfig = { maxRequests: 60, windowMs: 60_000 };
-          if (!ctx.rateLimiter.check(rateLimitKey, rateLimitConfig)) {
-            void emitter.emit({
-              type: 'agent.error',
-              timestamp: Date.now(),
-              sessionId: ctx.sessionId,
-              error: { name: 'RateLimitExceededError', message: 'LLM rate limit exceeded' },
-            });
-            void emitter.emit({
-              type: 'done',
-              timestamp: Date.now(),
-              sessionId: ctx.sessionId,
-              reason: 'error',
-            });
-            return state?.output ?? '';
-          }
-          ctx.rateLimiter.consume(rateLimitKey, rateLimitConfig);
-        }
 
         // ── Emit llm.request for backward compat ──
         void emitter.emit({
@@ -914,22 +951,29 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           {}
         );
 
-        // ── Quality Gate: validate LLM output before acting on it ──
-        if (ctx.qualityGate && response.content) {
-          const gateResult = ctx.qualityGate.check(response.content, state);
-          if (!gateResult.passed) {
-            // Inject correction message so LLM retries with guidance
-            state.messages.push({
-              role: 'user',
-              content: `[System] ${gateResult.feedback ?? 'Your last response had quality issues. Please try again with a different approach.'}`,
-            });
-            state.step++;
+        // ── Checkpoint Registry: post-llm phase (R6) ──
+        const postLlmResult = await checkpointRegistry.run('post-llm', ctx, state, response);
+        if (postLlmResult.action === 'block') {
+          // Quality gate failures are non-fatal — the checkpoint already
+          // injected the correction message, so just continue the loop.
+          if (postLlmResult.reason === 'quality_gate_retry') {
             continue;
           }
+          // All other post-llm blocks are fatal
+          void emitter.emit({
+            type: 'agent.error',
+            timestamp: Date.now(),
+            sessionId: ctx.sessionId,
+            error: { name: 'CheckpointBlockedError', message: postLlmResult.reason },
+          });
+          void emitter.emit({
+            type: 'done',
+            reason: 'error',
+            timestamp: Date.now(),
+            sessionId: ctx.sessionId,
+          });
+          return state.output;
         }
-
-        // ── Circuit breaker: record success on valid LLM response ──
-        ctx.circuitBreaker?.recordSuccess();
 
         // ── MPU M5: Audit LLM response ──
         ctx.auditLogger?.append({

@@ -185,4 +185,61 @@ describe('OTelTracer', () => {
     // Verify provider was shut down
     expect(mockProvider?.shutdown).toHaveBeenCalled();
   });
+
+  // ----------------------------------------------------------
+  // Test 7: configure() rejects empty endpoint
+  // ----------------------------------------------------------
+
+  it('throws when endpoint is empty string', async () => {
+    await expect(tracer.configure({ endpoint: '' })).rejects.toThrow(
+      'endpoint is required',
+    );
+    expect(tracer.isConfigured()).toBe(false);
+  });
+
+  // ----------------------------------------------------------
+  // Test 8: endSpan sets error status code
+  // ----------------------------------------------------------
+
+  it('sets error status when endSpan called with code=error', async () => {
+    await tracer.configure({ endpoint: 'https://collector.example.com/v1/traces' });
+
+    const spanId = tracer.startSpan('failing-op');
+    expect(mockSpans).toHaveLength(1);
+
+    tracer.endSpan(spanId, { code: 'error' });
+
+    const span = mockSpans[0]!;
+    // expect setStatus was called with code=2 (SpanStatusCode.ERROR)
+    expect(span.setStatus).toHaveBeenCalledWith({ code: 2 });
+    expect(span.end).toHaveBeenCalled();
+  });
+
+  // ----------------------------------------------------------
+  // Test 9: shutdown is no-op when not configured
+  // ----------------------------------------------------------
+
+  it('shutdown no-ops gracefully when not configured', async () => {
+    expect(tracer.isConfigured()).toBe(false);
+
+    // Should not throw
+    await tracer.shutdown();
+    expect(tracer.isConfigured()).toBe(false);
+  });
+
+  // ----------------------------------------------------------
+  // Test 10: addEvent propagates attributes to span
+  // ----------------------------------------------------------
+
+  it('addEvent delivers attributes to span', async () => {
+    await tracer.configure({ endpoint: 'https://collector.example.com/v1/traces' });
+
+    const spanId = tracer.startSpan('eventful-op');
+    const attrs = { retryCount: 3, source: 'retry-handler' };
+
+    tracer.addEvent(spanId, 'retry-attempt', attrs);
+
+    const span = mockSpans[0]!;
+    expect(span.addEvent).toHaveBeenCalledWith('retry-attempt', attrs);
+  });
 });
