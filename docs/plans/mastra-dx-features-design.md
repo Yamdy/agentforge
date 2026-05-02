@@ -330,18 +330,22 @@ export function createAgentForgeServer(config: ServerConfig): Hono {
         start(controller) {
           const encoder = new TextEncoder();
           
-          agent.run(message).subscribe({
-            next: (event: AgentEvent) => {
+          agent.run(message, {
+            onToken: (delta: string) => {
+              const data = `data: ${JSON.stringify({ type: 'llm.stream.text', delta })}\n\n`;
+              controller.enqueue(encoder.encode(data));
+            },
+            onEvent: (event: AgentEvent) => {
               const data = `data: ${JSON.stringify(event)}\n\n`;
               controller.enqueue(encoder.encode(data));
             },
-            error: (error) => {
-              const data = `data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`;
-              controller.enqueue(encoder.encode(data));
+            onComplete: (output: string) => {
+              controller.enqueue(encoder.encode('data: [DONE]\n\n'));
               controller.close();
             },
-            complete: () => {
-              controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+            onError: (error: Error) => {
+              const data = `data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`;
+              controller.enqueue(encoder.encode(data));
               controller.close();
             },
           });
@@ -1136,8 +1140,6 @@ export class PrometheusMetricsCollector implements Metrics {
 ```typescript
 // src/observability/agent-tracer.ts
 
-import type { Observable } from 'rxjs';
-import { tap } from 'rxjs/operators';
 import type { AgentEvent } from '../core/events.js';
 import type { Tracer } from '../core/interfaces.js';
 
@@ -1145,90 +1147,69 @@ import type { Tracer } from '../core/interfaces.js';
  * Agent 事件追踪器
  * 
  * 将 Agent 事件转换为 OTel spans
+ * 使用 LifecycleHook + eventSubscriptions 替代旧的 RxJS 操作符
  */
 export function createAgentTracer(tracer: Tracer) {
-  return function traceAgentEvents(source: Observable<AgentEvent>): Observable<AgentEvent> {
-    let currentSpanId: string | null = null;
-    let stepSpanId: string | null = null;
-    
-    return source.pipe(
-      tap({
-        next: (event) => {
-          switch (event.type) {
-            case 'agent.start':
-              currentSpanId = tracer.startSpan('agent.run', {
-                attributes: {
-                  'agent.name': event.agentName,
-                  'agent.model': event.model.model,
-                },
-              });
-              break;
-              
-            case 'agent.step':
-              if (currentSpanId) {
-                stepSpanId = tracer.startSpan('agent.step', {
-                  attributes: {
-                    'step.number': event.step,
-                    'step.max': event.maxSteps,
-                  },
-                  parent: currentSpanId,
-                });
-              }
-              break;
-              
-            case 'llm.request':
-              if (stepSpanId) {
-                tracer.addEvent(stepSpanId, 'llm.request', {
-                  'messages.count': event.messages.length,
-                });
-              }
-              break;
-              
-            case 'llm.response':
-              if (stepSpanId) {
-                tracer.addEvent(stepSpanId, 'llm.response', {
-                  'finish.reason': event.finishReason,
-                  'usage.prompt': event.usage?.promptTokens,
-                  'usage.completion': event.usage?.completionTokens,
-                });
-              }
-              break;
-              
-            case 'tool.call':
-              if (stepSpanId) {
-                tracer.addEvent(stepSpanId, 'tool.call', {
-                  'tool.name': event.toolName,
-                });
-              }
-              break;
-              
-            case 'tool.result':
-              if (stepSpanId) {
-                tracer.addEvent(stepSpanId, 'tool.result', {
-                  'tool.name': event.toolName,
-                  'tool.isError': event.isError,
-                });
-              }
-              break;
-              
-            case 'agent.complete':
-              if (currentSpanId) {
-                tracer.endSpan(currentSpanId, { code: 'ok' });
-                currentSpanId = null;
-              }
-              break;
-              
-            case 'agent.error':
-              if (currentSpanId) {
-                tracer.recordException(currentSpanId, new Error(event.error.message));
-                tracer.endSpan(currentSpanId, { code: 'error' });
-                currentSpanId = null;
-              }
-              break;
-          }
-        },
-      }),
-    );
+  return {
+    hooks: {
+      onEvent(event: AgentEvent): void {
+        switch (event.type) {
+          case 'agent.start':
+            tracer.startSpan('agent.run', {
+              attributes: {
+                'agent.name': event.agentName,
+                'agent.model': event.model.model,
+              },
+            });
+            break;
+            
+          case 'agent.step':
+            tracer.startSpan('agent.step', {
+              attributes: {
+                'step.number': event.step,
+                'step.max': event.maxSteps,
+              },
+            });
+            break;
+            
+          case 'llm.request':
+            tracer.addEvent('llm.request', {
+              'messages.count': event.messages.length,
+            });
+            break;
+            
+          case 'llm.response':
+            tracer.addEvent('llm.response', {
+              'finish.reason': event.finishReason,
+              'usage.prompt': event.usage?.promptTokens,
+              'usage.completion': event.usage?.completionTokens,
+            });
+            break;
+            
+          case 'tool.call':
+            tracer.addEvent('tool.call', {
+              'tool.name': event.toolName,
+            });
+            break;
+            
+          case 'tool.result':
+            tracer.addEvent('tool.result', {
+              'tool.name': event.toolName,
+              'tool.isError': event.isError,
+            });
+            break;
+            
+          case 'agent.complete':
+            tracer.endSpan();
+            break;
+            
+          case 'agent.error':
+            tracer.recordException(new Error(event.error.message));
+            tracer.endSpan();
+            break;
+        }
+      },
+    },
   };
 }
 ```
@@ -1253,12 +1234,8 @@ const agent = createAgent({
 });
 
 // 运行 Agent
-agent.run('Hello').pipe(
-  createAgentTracer(tracer),
-).subscribe({
-  next: (event) => console.log(event),
-  complete: () => console.log('Done'),
-});
+const result = await agent.run('Hello');
+// Events are traced via lifecyle hooks configured in the agent config
 ```
 
 ### 5.6 文件清单

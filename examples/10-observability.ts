@@ -6,7 +6,11 @@
  * 运行方式: npx tsx examples/10-observability.ts
  */
 
-import { ResourceMonitor, type ResourceMetrics, type ResourcePressure } from '../src/observability/index.js';
+import {
+  ResourceMonitor,
+  type ResourceMetrics,
+  type ResourcePressure,
+} from '../src/observability/index.js';
 import type { AgentEvent } from '../src/core/events.js';
 
 // ============================================================
@@ -157,7 +161,9 @@ function example3_continuousMonitoring(): void {
     const metrics = monitor.collect();
     const pressure = monitor.getPressure(metrics);
     const usage = (monitor.getMemoryUsage(metrics) * 100).toFixed(1);
-    console.log(`[${new Date(metrics.timestamp).toLocaleTimeString()}] 内存: ${usage}% | 压力: ${pressure}`);
+    console.log(
+      `[${new Date(metrics.timestamp).toLocaleTimeString()}] 内存: ${usage}% | 压力: ${pressure}`
+    );
 
     if (sampleCount >= maxSamples) {
       clearInterval(intervalId);
@@ -190,7 +196,9 @@ function example4_agentIntegration(): void {
   const minMem = Math.min(...memoryUsages);
   const maxMem = Math.max(...memoryUsages);
 
-  console.log(`内存使用范围: ${(minMem / 1024 / 1024).toFixed(2)} MB - ${(maxMem / 1024 / 1024).toFixed(2)} MB`);
+  console.log(
+    `内存使用范围: ${(minMem / 1024 / 1024).toFixed(2)} MB - ${(maxMem / 1024 / 1024).toFixed(2)} MB`
+  );
 
   // 打印每个事件的压力状态
   results.forEach((r, i) => {
@@ -294,7 +302,9 @@ class PerformanceProfiler {
     const avgDuration = totalDuration / this.records.length;
 
     console.log('-'.repeat(60));
-    console.log(`总计: ${this.records.length} 个操作, 总耗时: ${totalDuration}ms, 平均: ${avgDuration.toFixed(2)}ms`);
+    console.log(
+      `总计: ${this.records.length} 个操作, 总耗时: ${totalDuration}ms, 平均: ${avgDuration.toFixed(2)}ms`
+    );
   }
 }
 
@@ -355,9 +365,7 @@ function aggregateMetrics(
   const memoryValues = metricsList.map(m => m.memory.heapUsed);
 
   // 计算 CPU 指标（如果可用）
-  const cpuValues = metricsList
-    .map(m => m.cpu?.user)
-    .filter((v): v is number => v !== undefined);
+  const cpuValues = metricsList.map(m => m.cpu?.user).filter((v): v is number => v !== undefined);
 
   // 计算压力分布
   const pressureDistribution: Record<ResourcePressure, number> = {
@@ -373,15 +381,12 @@ function aggregateMetrics(
 
   return {
     samples: metricsList.length,
-    avgMemoryMB: (memoryValues.reduce((a, b) => a + b, 0) / memoryValues.length) / 1024 / 1024,
+    avgMemoryMB: memoryValues.reduce((a, b) => a + b, 0) / memoryValues.length / 1024 / 1024,
     maxMemoryMB: Math.max(...memoryValues) / 1024 / 1024,
     minMemoryMB: Math.min(...memoryValues) / 1024 / 1024,
-    avgCpuUserMs: cpuValues.length > 0
-      ? (cpuValues.reduce((a, b) => a + b, 0) / cpuValues.length) / 1000
-      : 0,
-    totalCpuUserMs: cpuValues.length > 0
-      ? cpuValues.reduce((a, b) => a + b, 0) / 1000
-      : 0,
+    avgCpuUserMs:
+      cpuValues.length > 0 ? cpuValues.reduce((a, b) => a + b, 0) / cpuValues.length / 1000 : 0,
+    totalCpuUserMs: cpuValues.length > 0 ? cpuValues.reduce((a, b) => a + b, 0) / 1000 : 0,
     pressureDistribution,
   };
 }
@@ -432,19 +437,14 @@ interface Alert {
 }
 
 /**
- * 资源预警系统 (使用 setInterval 替代 Observable)
+ * 资源预警系统 (使用 setInterval)
  */
 class ResourceAlertSystem {
   private readonly monitor: ResourceMonitor;
   private readonly alerts: Alert[] = [];
   private intervalId: ReturnType<typeof setInterval> | undefined;
 
-  constructor(
-    options: {
-      monitor: ResourceMonitor;
-      onAlert?: (alert: Alert) => void;
-    }
-  ) {
+  constructor(options: { monitor: ResourceMonitor; onAlert?: (alert: Alert) => void }) {
     this.monitor = options.monitor;
     this.onAlert = options.onAlert;
   }
@@ -461,9 +461,7 @@ class ResourceAlertSystem {
         const alert: Alert = {
           timestamp: metrics.timestamp,
           pressure,
-          message: pressure === 'warning'
-            ? '内存使用接近阈值'
-            : '内存压力过高！',
+          message: pressure === 'warning' ? '内存使用接近阈值' : '内存压力过高！',
           metrics,
         };
         this.alerts.push(alert);
@@ -498,8 +496,13 @@ function example7_alertSystem(): void {
   const alertSystem = new ResourceAlertSystem({
     monitor,
     onAlert: (alert: Alert) => {
-      const usage = (alert.metrics.memory.heapUsed / alert.metrics.memory.heapTotal * 100).toFixed(1);
-      console.log(`[${new Date(alert.timestamp).toLocaleTimeString()}] 🚨 ${alert.pressure.toUpperCase()}: ${alert.message} (${usage}%)`);
+      const usage = (
+        (alert.metrics.memory.heapUsed / alert.metrics.memory.heapTotal) *
+        100
+      ).toFixed(1);
+      console.log(
+        `[${new Date(alert.timestamp).toLocaleTimeString()}] 🚨 ${alert.pressure.toUpperCase()}: ${alert.message} (${usage}%)`
+      );
     },
   });
 

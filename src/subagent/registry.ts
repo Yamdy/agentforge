@@ -6,7 +6,7 @@
  * Implements the SubagentRegistry interface from interfaces.ts.
  *
  * Design: run() takes a listener callback and returns Promise<string>.
- * Uses agent.onAny() for event subscription (no Observable dependency).
+ * Uses agent.onAny() for event subscription.
  *
  * @module agentforge/subagent
  */
@@ -39,7 +39,7 @@ class AsyncHandleImpl implements AsyncSubagentHandle {
 
   constructor(sessionId: string) {
     this.sessionId = sessionId;
-    this._done = new Promise<void>((resolve) => {
+    this._done = new Promise<void>(resolve => {
       this._resolve = resolve;
     });
   }
@@ -119,7 +119,7 @@ export class SubagentRegistry implements ISubagentRegistry {
   }
 
   list(): SubagentInfo[] {
-    return Array.from(this.subagents.values()).map((entry) => {
+    return Array.from(this.subagents.values()).map(entry => {
       const info: SubagentInfo = {
         name: entry.config.name,
         mode: entry.config.mode ?? 'subagent',
@@ -339,10 +339,7 @@ export class SubagentRegistry implements ISubagentRegistry {
       (error: unknown) => {
         unreg();
         const err = serializeError(error);
-        handle.setError(
-          error instanceof Error ? error : new Error(String(error)),
-          events
-        );
+        handle.setError(error instanceof Error ? error : new Error(String(error)), events);
         // Emit subagent.error
         listener({
           type: 'subagent.error',
@@ -389,11 +386,14 @@ export class SubagentRegistry implements ISubagentRegistry {
   cancelAsyncRun(id: string): void {
     const handle = this.asyncRuns.get(id);
     if (handle) {
-      handle.cancel().then(() => {
-        this.asyncRuns.delete(id);
-      }).catch(() => {
-        this.asyncRuns.delete(id);
-      });
+      handle
+        .cancel()
+        .then(() => {
+          this.asyncRuns.delete(id);
+        })
+        .catch(() => {
+          this.asyncRuns.delete(id);
+        });
     }
   }
 

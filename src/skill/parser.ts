@@ -15,7 +15,6 @@
  * ...
  * ```
  *
- * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN/08-SUBSYSTEMS.md
  */
 
 import type { SkillFrontmatter } from './types.js';
@@ -57,9 +56,7 @@ export interface ParseError {
 /**
  * Result of parse operation (never throws)
  */
-export type ParseResult<T> =
-  | { success: true; data: T }
-  | { success: false; error: ParseError };
+export type ParseResult<T> = { success: true; data: T } | { success: false; error: ParseError };
 
 // ============================================================
 // YAML Frontmatter Parser
@@ -130,7 +127,7 @@ function parseYamlFrontmatter(yaml: string): Record<string, unknown> {
 
       // Check if value was quoted (to preserve type)
       const wasQuoted = /^["']/.test(value);
-      
+
       // Remove quotes if present
       value = value.replace(/^["']|["']$/g, '');
 
@@ -207,7 +204,7 @@ export function parseSkillFile(content: string): ParseResult<ParsedSkillFile> {
   // Search for closing --- marker
   const searchStart = firstNewlineIndex + 1;
   const patterns = ['\n---\n', '\n---\r\n', '\n---'];
-  
+
   for (const pattern of patterns) {
     const idx = content.indexOf(pattern, searchStart);
     if (idx !== -1) {
@@ -240,13 +237,15 @@ export function parseSkillFile(content: string): ParseResult<ParsedSkillFile> {
   if (!parseResult.success) {
     const firstError = parseResult.error.errors[0];
     const errorMessage = `Invalid frontmatter: ${firstError?.message ?? 'Unknown error'}`;
-    const errorLine = firstError?.path[0] ? findLineWithKey(rawFrontmatter, String(firstError.path[0])) : undefined;
-    
+    const errorLine = firstError?.path[0]
+      ? findLineWithKey(rawFrontmatter, String(firstError.path[0]))
+      : undefined;
+
     const error: ParseError = { message: errorMessage };
     if (errorLine !== undefined) {
       error.line = errorLine;
     }
-    
+
     return {
       success: false,
       error,

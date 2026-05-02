@@ -10,12 +10,14 @@
  * - Each step internally calls executor.executeStep() with listener forwarding
  * - Events bubble up to the caller's listener
  *
- * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN/08-SUBSYSTEMS.md
- * @see docs/design/25-DE-RXJS.md
  */
 
 import { type AgentEvent, type AgentContext, generateId, serializeError } from '../core/index.js';
-import { type WorkflowConfig, type WorkflowExecutionContext, type WorkflowResult } from './types.js';
+import {
+  type WorkflowConfig,
+  type WorkflowExecutionContext,
+  type WorkflowResult,
+} from './types.js';
 import { WorkflowExecutor } from './executor.js';
 
 // ============================================================
@@ -73,10 +75,7 @@ export class Workflow {
    * @param listener - Callback for each event emitted during execution
    * @returns Promise resolving to WorkflowResult
    */
-  async run(
-    input: unknown,
-    listener: (event: AgentEvent) => void
-  ): Promise<WorkflowResult> {
+  async run(input: unknown, listener: (event: AgentEvent) => void): Promise<WorkflowResult> {
     const startTime = Date.now();
     const workflowId = `wf-${generateId()}`;
     const sessionId = this.agentContext.sessionId;

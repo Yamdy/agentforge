@@ -7,7 +7,6 @@
  * - Manual assembly (programming mode)
  * - Testing (mock injection)
  *
- * @see docs/RXJS-EVENT-STREAM-DESIGN.md - 轻量依赖注入 section
  */
 
 import type {

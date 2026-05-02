@@ -4,7 +4,7 @@
  * Implements the MCPClient interface from core/interfaces.ts.
  * Follows MCP specification 2025-11-25.
  *
- * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN/08-SUBSYSTEMS.md
+ *
  */
 
 import type { MCPClient, MCPServerConfig, MCPStatus } from '../core/interfaces.js';
@@ -131,16 +131,26 @@ export class AgentForgeMCPClient implements MCPClient {
    */
   onStatusChange(listener: (status: MCPStatus) => void): () => void {
     this._statusListeners.add(listener);
-    // Replay current status immediately (BehaviorSubject behavior)
-    try { listener(this._status); } catch { /* isolate */ }
-    return () => { this._statusListeners.delete(listener); };
+    // Replay current status immediately
+    try {
+      listener(this._status);
+    } catch {
+      /* isolate */
+    }
+    return () => {
+      this._statusListeners.delete(listener);
+    };
   }
 
   /** Set status and notify listeners */
   private _setStatus(status: MCPStatus): void {
     this._status = status;
     for (const listener of this._statusListeners) {
-      try { listener(status); } catch { /* isolate */ }
+      try {
+        listener(status);
+      } catch {
+        /* isolate */
+      }
     }
   }
 

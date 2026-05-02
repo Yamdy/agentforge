@@ -5,7 +5,6 @@
  * MCP servers are external processes - their responses are UNTRUSTED.
  * Never throws - always returns a usable MCPToolResponse.
  *
- * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN.md - Tier 1: External Untrusted Data
  */
 
 import { z } from 'zod';

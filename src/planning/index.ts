@@ -29,4 +29,5 @@ export type {
 // ============================================================
 
 export { PlannerImpl } from './planner.js';
+export { LLMPlanner } from './llm-planner.js';
 export { PlanExecutorImpl } from './plan-executor.js';

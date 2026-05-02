@@ -146,24 +146,23 @@ const restored = deserializeCheckpoint(json);
 状态通过 `StepContext` 在事件处理中传递：
 
 ```typescript
-// 内部实现模式
+// 内部实现模式（命令式 while(true) 循环）
 interface StepContext {
   event: AgentEvent;
   state: AgentState;
 }
 
-// expand 递归中状态传递
-source$.pipe(
-  expand(({ event, state }) => {
-    // 处理事件，生成新状态
-    const newState = processEvent(event, state);
-    
-    // 返回新的事件流和状态
-    return getNextEvents(newState).pipe(
-      map(event => ({ event, state: newState }))
-    );
-  })
-);
+// while(true) 循环中状态传递
+let state = initialState;
+while (true) {
+  const { event, newState } = await processStep(state);
+  state = newState;
+
+  if (isTerminalEvent(event)) {
+    break;
+  }
+}
+return state.output;
 ```
 
 ## 上下文管理

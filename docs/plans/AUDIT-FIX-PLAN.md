@@ -217,7 +217,7 @@ npx vitest run tests/contracts/
 1. **添加 `llm.request` 事件发出**
    ```typescript
    // 修改 handleAgentStart()
-   function handleAgentStart(state, event): Observable<StepContext> {
+    function handleAgentStart(state, event): Promise<StepContext> {
      const requestEvent: AgentEvent = {
        type: 'llm.request',
        timestamp: Date.now(),
@@ -241,7 +241,7 @@ npx vitest run tests/contracts/
    case 'llm.request':
      return handleLLMRequest(state, event);
    
-   function handleLLMRequest(state, event): Observable<StepContext> {
+    function handleLLMRequest(state, event): Promise<StepContext> {
      // 使用 streaming 或非 streaming
      if (config.streaming) {
        return callLLMStreaming(state);
@@ -276,7 +276,7 @@ npx vitest run tests/contracts/
    case 'tool.call':
      return handleToolCall(state, event);
    
-   function handleToolCall(state, event): Observable<StepContext> {
+    function handleToolCall(state, event): Promise<StepContext> {
      const tc = { id: event.toolCallId, name: event.toolName, args: event.args };
      return executeSingleTool(tc, state);
    }
@@ -339,7 +339,7 @@ src/
      private state$ = new BehaviorSubject<AgentStateEnum>('pending');
      
      get state(): AgentStateEnum { return this._state; }
-     get stateChanges(): Observable<AgentStateEnum> { return this.state$.asObservable(); }
+      get stateChanges(): EventEmitter { return this.stateEmitter; }
      
      transition(to: AgentStateEnum): boolean {
        if (!VALID_TRANSITIONS[this._state].includes(to)) {
@@ -428,13 +428,13 @@ npx vitest run tests/core/state-machine.spec.ts
 3. **实现恢复入口**
    ```typescript
    // 添加到 AgentLoop 接口
-   export interface AgentLoop {
-     run(input: string): Observable<AgentEvent>;
-     resume(checkpoint: Checkpoint): Observable<AgentEvent>;
-     destroy$: Observable<void>;
-   }
-   
-   function resume(checkpoint: Checkpoint): Observable<AgentEvent> {
+    export interface AgentLoop {
+      run(input: string): Promise<string>;
+      resume(checkpoint: Checkpoint): Promise<string>;
+      emitter: AgentEventEmitter;
+    }
+    
+    async function resume(checkpoint: Checkpoint): Promise<string> {
      // 从 checkpoint.state 恢复执行
      const state = checkpoint.state;
      // 根据 position 决定恢复点
@@ -458,11 +458,11 @@ npx vitest run tests/loop/checkpoint.spec.ts
 
 ---
 
-### P1-3: 重构 HITL 为 Observable 模式
+### P1-3: 重构 HITL 为异步回调模式
 
-**问题**：当前 HITL 使用 `await ctx.hitl.ask()` 阻塞 Observable 流，违反 Reactive 设计原则。
+**问题**：当前 HITL 使用 `await ctx.hitl.ask()` 阻塞事件循环，违反异步设计原则。
 
-**影响**：阻塞 RxJS 事件流，可能影响其他订阅者。
+**影响**：阻塞事件流，可能影响其他操作。
 
 **解决方案**：
 
@@ -472,14 +472,15 @@ npx vitest run tests/loop/checkpoint.spec.ts
 
 1. **修改 HITL 控制器接口实现**
    ```typescript
-   // 在 agent-loop.ts 中
-   const hitlAsk$ = new Subject<{ askId: string; question: string }>();
-   const hitlAnswer$ = new Subject<{ askId: string; answer: string }>();
-   
-   // 注册到 ctx.hitl
-   if (ctx.hitl) {
-     ctx.hitl.onAsk().subscribe(hitlAsk$);
-   }
+    // 在 agent-loop.ts 中
+    const hitlCallbacks = new Map<string, (answer: string) => void>();
+    
+    // 注册到 ctx.hitl
+    if (ctx.hitl) {
+      ctx.hitl.onAsk((askId, question) => {
+        // 存储回调
+      });
+    }
    ```
 
 2. **修改 executeSingleTool() 中的 HITL 处理**
@@ -488,22 +489,16 @@ npx vitest run tests/loop/checkpoint.spec.ts
      const question = result.slice('HITL_REQUIRED:'.length).trim();
      const askId = `ask-${generateId()}`;
      
-     // 发出 ask 事件，然后等待 answer (非阻塞)
-     const askEvent: AgentEvent = { type: 'hitl.ask', ... };
-     
-     return concat(
-       of({ event: askEvent, state }),
-       // 使用 Subject 等待 answer，而非 await
-       hitlAnswer$.pipe(
-         filter(a => a.askId === askId),
-         take(1),
-         map(answer => ({ event: { type: 'hitl.answer', ... }, state })),
-       ),
-     );
-   }
-   ```
-
-3. **提供外部注入 answer 的方法**
+      // 等待 answer callback resolve
+      return await new Promise<string>(resolve => {
+        hitlCallbacks.set(askId, answer => {
+          resolve(answer);
+        });
+      });
+    }
+    ```
+    
+    3. **提供外部注入 answer 的方法**
    ```typescript
    // AgentLoop 接口添加
    answerHITL(askId: string, answer: string): void;
@@ -541,41 +536,44 @@ npx vitest run tests/loop/hitl.spec.ts
    // 在 createAgentLoop() 中
    let isRunning = false;
    
-   function run(input: string): Observable<AgentEvent> {
-     // 重入检查
-     if (isRunning) {
-       return throwError(() => new Error('Agent is already running'));
-     }
-     isRunning = true;
-     
-     // ... 现有逻辑
-     
-     return of({ event: startEvent, state: initialState }).pipe(
-       // ... 现有管道
-       finalize(() => {
-         isRunning = false;
-       }),
-     );
-   }
+    async function run(input: string): Promise<string> {
+      // 重入检查
+      if (isRunning) {
+        throw new Error('Agent is already running');
+      }
+      isRunning = true;
+      
+      try {
+        // ... 现有逻辑
+        const result = await loop(input, emitter);
+        return result;
+      } finally {
+        isRunning = false;
+      }
+    }
    ```
 
-2. **或使用 exhaustMap 模式 (设计文档推荐)**
-   ```typescript
-   // 提供 AgentRunner 类
-   export class AgentRunner {
-     private triggers$ = new Subject<string>();
-     
-     constructor(private agent: AgentLoop) {
-       this.triggers$.pipe(
-         exhaustMap(input => agent.run(input)),
-       ).subscribe();
-     }
-     
-     run(input: string): void {
-       this.triggers$.next(input);
-     }
-   }
-   ```
+  2. **使用串行执行器模式**
+    ```typescript
+    // 提供 AgentRunner 类
+    export class AgentRunner {
+      private isRunning = false;
+      
+      constructor(private agent: AgentLoop) {}
+      
+      async run(input: string): Promise<string> {
+        if (this.isRunning) {
+          throw new Error('Agent is already running. Ignoring new request.');
+        }
+        this.isRunning = true;
+        try {
+          return await this.agent.run(input);
+        } finally {
+          this.isRunning = false;
+        }
+      }
+    }
+    ```
 
 **验证方法**：
 ```bash

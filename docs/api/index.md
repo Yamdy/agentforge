@@ -30,7 +30,7 @@ const agent = createAgent({
 });
 
 // 返回
-agent.run(input: string): Observable<AgentEvent>;
+agent.run(input: string): Promise<string>;
 agent.destroy(): void;
 ```
 
@@ -100,7 +100,7 @@ interface LLMAdapter {
   stream(
     messages: Message[], 
     options?: LLMOptions
-  ): Observable<LLMChunk>;
+  ): AsyncGenerator<LLMChunk>;
 
   formatTools?(tools: FunctionDefinition[]): unknown;
   normalizeMessages?(messages: Message[]): unknown[];
@@ -167,10 +167,10 @@ interface HITLController {
     askId: string;
     question: string;
     options?: string[];
-  }): Observable<string>;
+  }): Promise<string>;
 
   answer(askId: string, answer: string): void;
-  onAsk(): Observable<AskRequest>;
+  onAsk(callback: (request: AskRequest) => void): () => void;
 }
 ```
 
@@ -187,7 +187,7 @@ interface InterceptorPlugin extends Plugin {
   intercept(
     event: AgentEvent, 
     ctx: PluginContext
-  ): Observable<AgentEvent>;
+  ): { continue: boolean; event?: AgentEvent };
 }
 ```
 

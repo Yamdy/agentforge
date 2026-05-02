@@ -4,7 +4,6 @@
  * Abstract transport layer for MCP communication.
  * Implementations: StdioTransport, StreamableHTTPTransport.
  *
- * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN/08-SUBSYSTEMS.md
  */
 
 import type { JSONRPCMessage } from './types.js';

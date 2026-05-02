@@ -11,11 +11,11 @@
 │                    两种扩展机制，两种方向                          │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
-│  横向：Hook / 插件 = RxJS 操作符                                 │
+│  横向：Hook / 插件 = 事件处理器                                  │
 │  ┌─────────────────────────────────────────────────────────┐   │
-│  │ 观察事件流、变换事件流、但不替换底层能力                      │   │
+│  │ 观察事件循环、变换事件、但不替换底层能力                      │   │
 │  │ 例子：日志、审计、限流、打点、加密                            │   │
-│  │ 实现：tap / concatMap / mergeMap 操作符                    │   │
+│  │ 实现：RequestHook / ToolHook / LifecycleHook               │   │
 │  └─────────────────────────────────────────────────────────┘   │
 │                                                                  │
 │  纵向：DI 抽象 = 接口实现替换                                    │
@@ -36,12 +36,12 @@
 
 ## 2. 拦截器 vs 观察器
 
-传统框架把「串行钩子 / 并行钩子」混在同一接口，靠配置区分。我们的架构用**两种本质不同的角色**，对应不同的 RxJS 操作符：
+传统框架把「串行钩子 / 并行钩子」混在同一接口，靠配置区分。我们的架构用**两种本质不同的角色**，对应不同的 Hook 类型：
 
-| 角色 | RxJS 操作符 | 阻塞主流程？ | 可修改事件？ | 异常处理 |
-|------|-----------|------------|-----------|---------|
-| **拦截器 (Interceptor)** | `concatMap` | ✅ 必须等结果 | ✅ 可修改/替换/阻断 | 降级透传原事件 |
-| **观察器 (Observer)** | `tap` | ❌ 不阻塞 | ❌ 只读 | 仅记录，绝不阻断 |
+| 角色 | 机制 | 阻塞主流程？ | 可修改事件？ | 异常处理 |
+|------|------|------------|-----------|---------|
+| **拦截器 (Interceptor)** | `await () => Promise<AgentEvent>` | ✅ 必须等结果 | ✅ 可修改/替换/阻断 | 降级透传原事件 |
+| **观察器 (Observer)** | `void | Promise<void>` | ❌ 不阻塞 | ❌ 只读 | 仅记录，绝不阻断 |
 
 ```typescript
 // ❌ 传统思维：两种钩子用同一个接口，靠配置区分串行/并行
@@ -50,9 +50,9 @@ interface Hook {
   handler: (event: AgentEvent) => Promise<void>;
 }
 
-// ✅ 我们的架构：两种本质不同的东西，不同操作符，不需要配置区分
+// ✅ 我们的架构：两种本质不同的东西，不同 Hook 类型，不需要配置区分
 // 拦截器：在管道内，可修改事件，阻塞主流程
-type Interceptor = (event: AgentEvent, ctx: PluginContext) => Observable<AgentEvent>;
+type Interceptor = (event: AgentEvent, ctx: PluginContext) => Promise<AgentEvent>;
 
 // 观察器：在管道旁，只读，不阻塞主流程
 type Observer = (event: AgentEvent, ctx: PluginContext) => void | Promise<void>;
@@ -129,9 +129,9 @@ export interface InterceptorPlugin extends Plugin {
    * - 可修改事件（返回新事件）
    * - 可阻断流程（返回 EMPTY）
    * - 可替换为其他事件（返回不同类型事件）
-   * - 必须返回 Observable<AgentEvent>
+   * - 必须返回 Promise<AgentEvent>
    */
-  intercept(event: AgentEvent, ctx: PluginContext): Observable<AgentEvent>;
+  intercept(event: AgentEvent, ctx: PluginContext): Promise<AgentEvent>;
 }
 
 // ========== 观察器插件 ==========
@@ -174,14 +174,15 @@ export function validatePlugin(raw: unknown): Plugin {
 
 ```typescript
 // 拦截器异常：降级透传原事件
-interceptor.intercept(event, ctx).pipe(
-  catchError((err) => {
-    // 记录错误
-    ctx.tracer?.recordException('plugin-error', err);
-    ctx.metrics?.increment('plugin.error', 1, { plugin: interceptor.name });
-    // 降级：透传原事件，主流程不中断
-    return of(event);
-  }),
+try {
+  return await interceptor.intercept(event, ctx);
+} catch (err) {
+  // 记录错误
+  ctx.tracer?.recordException('plugin-error', err);
+  ctx.metrics?.increment('plugin.error', 1, { plugin: interceptor.name });
+  // 降级：透传原事件，主流程不中断
+  return event;
+}
 )
 
 // 观察器异常：仅记录，绝不阻断
@@ -197,15 +198,15 @@ try {
 ### 4.2 拦截器执行顺序
 
 ```
-事件流方向 →
+事件循环方向 →
                                  拦截器管道
 ┌──────────────────────────────────────────────────────────────────┐
 │                                                                   │
 │  event ──→ [权限校验 P=10] ──→ [限流 P=20] ──→ [记忆加载 P=30] │
-│              concatMap            concatMap         concatMap     │
+│              await              await              await          │
 │                                                                   │
 │          拦截器按 priority 升序排列                                  │
-│          每个 concatMap 必须完成才进入下一个                         │
+│          每个 await 必须完成才进入下一个                              │
 │          任何一个返回 EMPTY = 阻断流程                               │
 │                                                                   │
 └──────────────────────────────────────────────────────────────────┘
@@ -213,34 +214,27 @@ try {
                                     ▼
 ┌──────────────────────────────────────────────────────────────────┐
 │  event ──→ [日志 P=10] ──→ [打点 P=20] ──→ [审计 P=30]          │
-│              tap              tap             tap                 │
+│              fire-and-forget  fire-and-forget  fire-and-forget    │
 │                                                                   │
 │          观察器按 priority 升序排列                                  │
-│          每个 tap 不阻塞，异常被吞                                    │
+│          每个 fire-and-forget 不阻塞，异常被吞                        │
 │                                                                   │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
 ### 4.3 异步观察器背压控制
 
-观察器如果太慢（如远程日志服务），会积累背压，需要限制并发 + 降级：
+观察器如果太慢（如远程日志服务），需要使用 fire-and-forget 模式避免阻塞主流程：
 
 ```typescript
-// ❌ 无限制：慢速观察器可能 OOM
-tap((event) => this.remoteLogger.log(event))
-
 // ✅ 限制并发 + 降级
-// 异步观察器用 mergeMap 而非 tap，控制并发数
-mergeMap(
-  (event) => from(this.remoteLogger.log(event)).pipe(
-    catchError((err) => {
-      // 远程日志失败：降级到本地日志，不阻断
-      console.error('Remote logger failed, falling back', err);
-      return EMPTY;
-    }),
-  ),
-  1,  // 最多 1 个在飞
-),
+// 异步观察器用 fire-and-forget，控制并发数
+(async () => {
+  await this.remoteLogger.log(event);
+})().catch((err) => {
+  // 远程日志失败：降级到本地日志，不阻断
+  console.error('Remote logger failed, falling back', err);
+});
 ```
 
 ---
@@ -251,10 +245,10 @@ mergeMap(
 // src/plugins/pipeline.ts
 
 export function buildPluginPipeline(
-  source: Observable<AgentEvent>,
+  events: AgentEvent[],
   plugins: Plugin[],
   ctx: PluginContext,
-): Observable<AgentEvent> {
+): Promise<AgentEvent> {
   
   // 分类 + 排序
   const interceptors = plugins
@@ -265,62 +259,43 @@ export function buildPluginPipeline(
     .filter((p): p is ObserverPlugin => p.type === 'observer' && p.enabled)
     .sort((a, b) => a.priority - b.priority);
   
-  // === 拦截器在前（管道内，concatMap 串行） ===
-  let pipeline = source;
+  // === 拦截器在前（串行 await） ===
+  let event = source;
   for (const interceptor of interceptors) {
-    pipeline = pipeline.pipe(
-      // 事件类型过滤
-      interceptor.eventTypes.length > 0
-        ? concatMap((event) => {
-            if (!interceptor.eventTypes.includes(event.type)) {
-              return of(event);  // 不匹配，直接透传
-            }
-            return interceptor.intercept(event, ctx).pipe(
-              // 异常隔离
-              catchError((err) => {
-                ctx.tracer?.recordException('plugin-error', err);
-                ctx.metrics?.increment('plugin.error', 1, { plugin: interceptor.name });
-                return of(event);  // 降级：透传原事件
-              }),
-            );
-          })
-        : concatMap((event) =>
-            interceptor.intercept(event, ctx).pipe(
-              catchError((err) => {
-                ctx.tracer?.recordException('plugin-error', err);
-                ctx.metrics?.increment('plugin.error', 1, { plugin: interceptor.name });
-                return of(event);
-              }),
-            ),
-          ),
-    );
+    // 事件类型过滤
+    if (interceptor.eventTypes.length > 0 && !interceptor.eventTypes.includes(event.type)) {
+      continue;  // 不匹配，直接透传
+    }
+    try {
+      event = await interceptor.intercept(event, ctx);
+    } catch (err) {
+      // 异常隔离：降级透传原事件
+      ctx.tracer?.recordException('plugin-error', err);
+      ctx.metrics?.increment('plugin.error', 1, { plugin: interceptor.name });
+    }
   }
-  
-  // === 观察器在后（管道旁，tap 不阻塞） ===
+
+  // === 观察器在后（fire-and-forget，不阻塞） ===
   for (const observer of observers) {
-    pipeline = pipeline.pipe(
-      tap((event) => {
-        // 事件类型过滤
-        if (observer.eventTypes.length > 0 && !observer.eventTypes.includes(event.type)) return;
-        try {
-          const result = observer.observe(event, ctx);
-          // 如果是 Promise，不等待（观察器不应阻塞主流程）
-          if (result instanceof Promise) {
-            result.catch((err) => {
-              ctx.tracer?.recordException('plugin-error', err);
-              ctx.metrics?.increment('plugin.error', 1, { plugin: observer.name });
-            });
-          }
-        } catch (err) {
-          // 观察器异常：仅记录，绝不阻断
-          ctx.tracer?.recordException('plugin-error', err as Error);
+    // 事件类型过滤
+    if (observer.eventTypes.length > 0 && !observer.eventTypes.includes(event.type)) continue;
+    try {
+      const result = observer.observe(event, ctx);
+      // 如果是 Promise，不等待（观察器不应阻塞主流程）
+      if (result instanceof Promise) {
+        result.catch((err) => {
+          ctx.tracer?.recordException('plugin-error', err);
           ctx.metrics?.increment('plugin.error', 1, { plugin: observer.name });
-        }
-      }),
-    );
+        });
+      }
+    } catch (err) {
+      // 观察器异常：仅记录，绝不阻断
+      ctx.tracer?.recordException('plugin-error', err as Error);
+      ctx.metrics?.increment('plugin.error', 1, { plugin: observer.name });
+    }
   }
-  
-  return pipeline;
+
+  return event;
 }
 ```
 
@@ -330,7 +305,7 @@ export function buildPluginPipeline(
 
 ### 6.1 注册/卸载/启用/禁用
 
-RxJS 管道一旦构建就不可变，不能动态摘除操作符。启用/禁用需要**条件操作符**模式：
+管道一旦构建就不可变，不能动态摘除 Hook。启用/禁用需要**条件分支**模式：
 
 ```typescript
 // src/plugins/plugin-manager.ts
@@ -379,7 +354,7 @@ export class PluginManager {
   }
   
   /** 构建管道（每次插件状态变化后需调用） */
-  buildPipeline(source: Observable<AgentEvent>, ctx: PluginContext): Observable<AgentEvent> {
+  buildPipeline(source: AgentEvent, ctx: PluginContext): Promise<AgentEvent> {
     this.pluginContext = ctx;
     return buildPluginPipeline(source, this.getActivePlugins(), ctx);
   }
@@ -388,36 +363,31 @@ export class PluginManager {
 
 ### 6.2 动态管道重建（可选高级模式）
 
-需要频繁启用/禁用插件的场景，用 `switchMap` 动态重建管道：
+需要频繁启用/禁用插件的场景，在事件处理循环中每次检查插件状态：
 
 ```typescript
 // src/plugins/dynamic-pipeline.ts
 
 export class DynamicPluginPipeline {
-  private plugins$ = new BehaviorSubject<Plugin[]>([]);
-  
-  /** 插件列表变化时自动重建管道 */
-  connect(
-    source: Observable<AgentEvent>,
+  private plugins: Plugin[] = [];
+
+  /** 处理事件——每次自动使用当前启用的插件 */
+  async process(
+    source: AgentEvent,
     ctx: PluginContext,
-  ): Observable<AgentEvent> {
-    return this.plugins$.pipe(
-      // 每次插件列表变化，重建管道
-      switchMap((plugins) => {
-        const active = plugins.filter((p) => p.enabled);
-        return buildPluginPipeline(source, active, ctx);
-      }),
-    );
+  ): Promise<AgentEvent> {
+    const active = this.plugins.filter((p) => p.enabled);
+    return buildPluginPipeline(source, active, ctx);
   }
-  
-  /** 更新插件列表（触发重建） */
+
+  /** 更新插件列表 */
   updatePlugins(plugins: Plugin[]): void {
-    this.plugins$.next(plugins);
+    this.plugins = plugins;
   }
 }
 ```
 
-> ⚠️ 注意：`switchMap` 重建会取消当前管道中的订阅。如果 Agent 正在执行 LLM 调用，中途重建会导致流中断。**生产环境建议使用静态管道**，只在 Agent 空闲时切换插件配置。
+> ⚠️ 注意：如果 Agent 正在执行 LLM 调用，中途更新插件列表可能导致行为不一致。**生产环境建议在 Agent 启动时固定插件配置**，只在 Agent 空闲时切换。
 
 ---
 
@@ -497,17 +467,17 @@ export const permissionPlugin: InterceptorPlugin = {
   eventTypes: ['tool.call'],
   enabled: true,
   
-  intercept(event: AgentEvent, ctx: PluginContext): Observable<AgentEvent> {
+  intercept(event: AgentEvent, ctx: PluginContext): Promise<AgentEvent> {
     const call = event as Extract<AgentEvent, { type: 'tool.call' }>;
     
     // 危险工具列表
     const dangerousTools = ['bash', 'write', 'delete'];
     if (!dangerousTools.includes(call.toolName)) {
-      return of(event);  // 非危险工具，直接透传
+      return Promise.resolve(event);  // 非危险工具，直接透传
     }
     
     // 危险工具：发出 HITL 询问
-    return of<AgentEvent>({
+    return Promise.resolve<AgentEvent>({
       type: 'hitl.ask',
       timestamp: Date.now(),
       sessionId: ctx.sessionId,
@@ -529,20 +499,18 @@ export const rateLimitPlugin: InterceptorPlugin = {
   private lastCallTime = 0;
   private minInterval = 1000;  // 最小 1 秒间隔
   
-  intercept(event: AgentEvent, ctx: PluginContext): Observable<AgentEvent> {
+  intercept(event: AgentEvent, ctx: PluginContext): Promise<AgentEvent> {
     const now = Date.now();
     const elapsed = now - this.lastCallTime;
     
     if (elapsed < this.minInterval) {
       // 限流：延迟发出
-      return of(event).pipe(
-        delay(this.minInterval - elapsed),
-        tap(() => { this.lastCallTime = Date.now(); }),
-      );
+      await new Promise(resolve => setTimeout(resolve, this.minInterval - elapsed));
+      this.lastCallTime = Date.now();
     }
     
     this.lastCallTime = now;
-    return of(event);
+    return Promise.resolve(event);
   },
 };
 
@@ -592,14 +560,14 @@ const agent = createAgent({
 });
 
 // 编程式（L3 API）
-agent.run(input).pipe(
+agent.run(input, {
   // 框架自动装配插件管道
   // 等价于手动：
-  // concatMap(permissionIntercept),
-  // concatMap(rateLimitIntercept),
-  // tap(loggingObserver),
-  // tap(metricsObserver),
-);
+  // await permissionIntercept(event),
+  // await rateLimitIntercept(event),
+  // loggingObserver(event),
+  // metricsObserver(event),
+});
 ```
 
 ---
@@ -683,7 +651,6 @@ export interface PIIScrubberConfig {
 }
 
 // src/plugins/pii-scrubber-plugin.ts
-import { of, Observable } from 'rxjs';
 import type { InterceptorPlugin, PluginContext } from './plugin.js';
 import type { AgentEvent } from '../core/events.js';
 
@@ -696,9 +663,9 @@ export class PIIScrubberPlugin implements InterceptorPlugin {
   
   constructor(private scrubber: PIIScrubber) {}
   
-  intercept(event: AgentEvent, _ctx: PluginContext): Observable<AgentEvent> {
+  intercept(event: AgentEvent, _ctx: PluginContext): Promise<AgentEvent> {
     const scrubbed = this.scrubEvent(event);
-    return of(scrubbed);
+    return Promise.resolve(scrubbed);
   }
   
   private scrubEvent(event: AgentEvent): AgentEvent {
@@ -775,16 +742,14 @@ export interface ToolDefinition<TSchema = unknown> {
 }
 
 // src/plugins/approval-gate-plugin.ts
-import { Observable, from, of } from 'rxjs';
-import { mergeMap } from 'rxjs/operators';
 import type { InterceptorPlugin, PluginContext } from './plugin.js';
 import type { AgentEvent } from '../core/events.js';
-import type { HITLController, ToolDefinition } from '../core/interfaces.js';
+import type { ToolDefinition } from '../core/interfaces.js';
 
 export class ApprovalGatePlugin implements InterceptorPlugin {
   name = 'approval-gate';
   type = 'interceptor' as const;
-  priority = 15;  // PII脱敏后, 工具执行前
+  priority = 15;
   eventTypes = ['tool.call'];
   enabled = true;
   
@@ -793,51 +758,55 @@ export class ApprovalGatePlugin implements InterceptorPlugin {
     private getToolDef: (name: string) => ToolDefinition | undefined
   ) {}
   
-  intercept(event: AgentEvent, ctx: PluginContext): Observable<AgentEvent> {
-    if (event.type !== 'tool.call') return of(event);
+  async intercept(event: AgentEvent, ctx: PluginContext): Promise<AgentEvent> {
+    if (event.type !== 'tool.call') return event;
     
     const tool = this.getToolDef(event.toolName);
     if (!tool?.requiresApproval) {
-      return of(event);  // 无需审批, 放行
+      return event;  // 无需审批, 放行
     }
     
     // 需要审批 → 请求HITL
     const promptId = `approval-${event.toolCallId}`;
     
-    return this.hitl.ask({
+    const answer = await this.hitl.ask({
       askId: promptId,
       question: tool.approvalMessage ?? `Approve execution of tool "${event.toolName}"?`,
       toolCallId: event.toolCallId,
       toolName: event.toolName,
-    }).pipe(
-      mergeMap(answer => {
-        const approved = this.isApproved(answer);
-        
-        if (approved) {
-          return of(event);  // 放行原事件
-        }
-        
-        // 拒绝 → agent.error + done (符合错误即事件铁律)
-        return from([
-          {
-            type: 'agent.error',
-            timestamp: Date.now(),
-            sessionId: ctx.sessionId,
-            error: {
-              name: 'ApprovalDenied',
-              message: `Tool "${event.toolName}" execution denied by user`,
-            },
-          } as AgentEvent,
-          {
-            type: 'done',
-            timestamp: Date.now(),
-            sessionId: ctx.sessionId,
-            reason: 'error',
-          } as AgentEvent,
-        ]);
-      })
-    );
+    });
+
+    const approved = this.isApproved(answer);
+    
+    if (approved) {
+      return event;  // 放行原事件
+    }
+    
+    // 拒绝 → 通过 emitter 发出错误事件（符合错误即事件铁律）
+    ctx.emitter?.emit({
+      type: 'agent.error',
+      timestamp: Date.now(),
+      sessionId: ctx.sessionId,
+      error: {
+        name: 'ApprovalDenied',
+        message: `Tool "${event.toolName}" execution denied by user`,
+      },
+    } as AgentEvent);
+    ctx.emitter?.emit({
+      type: 'done',
+      timestamp: Date.now(),
+      sessionId: ctx.sessionId,
+      reason: 'error',
+    } as AgentEvent);
+    
+    return event; // 阻断流程
   }
+  
+  private isApproved(answer: string): boolean {
+    const normalized = answer.toLowerCase().trim();
+    return ['approve', 'approved', 'yes', 'y', 'ok', 'confirm'].includes(normalized);
+  }
+}
   
   private isApproved(answer: string): boolean {
     const normalized = answer.toLowerCase().trim();
@@ -961,7 +930,7 @@ export interface SandboxResult<T> {
 /** 沙箱适配器接口 */
 export interface SandboxAdapter {
   readonly name: string;
-  execute<T>(code: string, context?: Record<string, unknown>): Observable<SandboxResult<T>>;
+  execute<T>(code: string, context?: Record<string, unknown>): Promise<SandboxResult<T>>;
   dispose(): void;
 }
 
@@ -974,7 +943,7 @@ declare module '../core/context.js' {
 }
 
 // 工具执行中使用沙箱
-function executeSingleTool(tc: ToolCall, state: AgentState): Observable<StepContext> {
+async function executeSingleTool(tc: ToolCall, state: AgentState): Promise<StepContext> {
   const tool = ctx.tools.get(tc.name);
   
   // 检查是否需要沙箱执行
@@ -1017,9 +986,9 @@ export function securityPreset(options: {
 ## 11. 插件约束清单
 |------|------|---------|
 | **拦截器 vs 观察器严格区分** | 不可修改事件用观察器，可修改用拦截器 | 职责混乱，管道行为不可预测 |
-| **拦截器异常降级** | `catchError` 透传原事件 | 单插件拖垮主循环 |
+| **拦截器异常降级** | `try/catch` 透传原事件 | 单插件拖垮主循环 |
 | **观察器异常静默** | `try/catch` 记录但不抛出 | 日志/打点失败阻断 Agent |
-| **异步观察器限并发** | `mergeMap(fn, 1)` 或 fire-and-forget | 背压 OOM |
+| **异步观察器限并发** | fire-and-forget | 背压 OOM |
 | **插件上下文受限** | 不给 `llm`/`tools`/`memory` | 插件越权调用 LLM，架构边界被打破 |
 | **第三方插件 Zod 校验** | 注册时 `PluginSchema.parse()` | 恶意/错误插件破坏框架 |
 | **静态管道优先** | 避免运行时动态重建 | Agent 执行中管道重建导致流中断 |
@@ -1041,7 +1010,7 @@ export function securityPreset(options: {
 - [00-OVERVIEW.md](./00-OVERVIEW.md) - 架构总览
 - [02-ZOD-CONTRACT.md](./02-ZOD-CONTRACT.md) - Zod 数据契约层
 - [03-DI.md](./03-DI.md) - 轻量依赖注入
-- [05-EVENT-STREAM.md](./05-EVENT-STREAM.md) - 事件流底座
+- [05-EVENT-STREAM.md](./05-EVENT-STREAM.md) - 事件循环底座
 - [06-FLOW-CONSTRAINTS.md](./06-FLOW-CONSTRAINTS.md) - 流层陷阱与约束
 - [10-FEATURES.md](./10-FEATURES.md) - 特性实现
 - [11-OPERATORS.md](./11-OPERATORS.md) - 操作符库

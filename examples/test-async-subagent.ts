@@ -14,7 +14,7 @@ import type { AgentEvent } from '../src/core/events.js';
 console.log('✅ SubagentRegistry 导入成功');
 
 // ============================================================
-// 创建一个模拟的 Agent Loop（Promise-based，不使用 Observable）
+// 创建一个模拟的 Agent Loop（Promise-based）
 // ============================================================
 
 function createMockAgentLoop(name: string, delayMs: number = 100): AgentLoop {
@@ -43,7 +43,7 @@ function createMockAgentLoop(name: string, delayMs: number = 100): AgentLoop {
     async run(input: string): Promise<string> {
       console.log(`  [${name}] 开始执行，输入: ${input}`);
 
-      // 模拟延迟执行（使用 setTimeout Promise 替代 rxjs delay）
+      // 模拟延迟执行（使用 setTimeout Promise）
       await new Promise(resolve => setTimeout(resolve, delayMs));
 
       const sessionId = `session-${name}`;
@@ -99,7 +99,7 @@ async function testSyncMode() {
 
   const events: AgentEvent[] = [];
 
-  await registry.run('sync-agent', '测试同步任务', (event) => {
+  await registry.run('sync-agent', '测试同步任务', event => {
     events.push(event);
     console.log(`  收到事件: ${event.type}`);
   });
@@ -129,7 +129,7 @@ async function testAsyncMode() {
     mode: 'subagent',
     executionMode: 'async',
     asyncConfig: {
-      onComplete: (result) => {
+      onComplete: result => {
         console.log('  [回调] 任务完成:', result.status);
       },
     },
@@ -138,7 +138,7 @@ async function testAsyncMode() {
   const events: AgentEvent[] = [];
 
   // Async 模式: registry.run() 立即返回（只发出 subagent.start 事件）
-  await registry.run('async-agent', '测试异步任务', (event) => {
+  await registry.run('async-agent', '测试异步任务', event => {
     events.push(event);
     console.log(`  收到事件: ${event.type}`);
 
@@ -190,7 +190,7 @@ async function testAsyncCancel() {
 
   let sessionId = '';
 
-  await registry.run('cancel-agent', '测试取消任务', (event) => {
+  await registry.run('cancel-agent', '测试取消任务', event => {
     if (event.type === 'subagent.start') {
       sessionId = event.sessionId;
       console.log('  子代理启动，Session ID:', sessionId);
@@ -240,7 +240,7 @@ async function testCompiledMode() {
 
   const events: AgentEvent[] = [];
 
-  await registry.run('compiled-agent', '测试编译任务', (event) => {
+  await registry.run('compiled-agent', '测试编译任务', event => {
     events.push(event);
     console.log(`  收到事件: ${event.type}`);
   });
@@ -266,7 +266,7 @@ async function testErrorHandling() {
   // 运行一个不存在的子代理
   const events: AgentEvent[] = [];
 
-  await registry.run('non-existent-agent', '测试错误', (event) => {
+  await registry.run('non-existent-agent', '测试错误', event => {
     events.push(event);
     console.log(`  收到事件: ${event.type}`);
   });

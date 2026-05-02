@@ -5,9 +5,8 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-// No rxjs imports needed - using local helpers
 
-/** Minimal Observable-like for buildPipeline old API compatibility */
+/** Minimal event source for buildPipeline old API compatibility */
 function ofValue<T>(value: T) {
   return {
     pipe: () => ofValue(value),

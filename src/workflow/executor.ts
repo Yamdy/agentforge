@@ -10,11 +10,14 @@
  * - Calls loop.onAny() to capture agent events and forward them
  * - Returns step execution result (success/failure + output/error)
  *
- * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN/08-SUBSYSTEMS.md
- * @see docs/design/25-DE-RXJS.md
  */
 
-import { type AgentEvent, type AgentContext, type SerializedError, serializeError } from '../core/index.js';
+import {
+  type AgentEvent,
+  type AgentContext,
+  type SerializedError,
+  serializeError,
+} from '../core/index.js';
 import { createAgentLoop } from '../loop/agent-loop.js';
 import { type WorkflowStep, type WorkflowStepResult } from './types.js';
 

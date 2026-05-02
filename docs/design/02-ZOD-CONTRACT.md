@@ -220,7 +220,7 @@ Context 中各接口的方法签名即为契约，TypeScript 编译时保证：
 // 接口 = 编译时契约
 interface LLMAdapter {
   chat(messages: Message[], options?: LLMOptions): Promise<LLMResponse>;
-  stream(messages: Message[], options?: LLMOptions): Observable<LLMChunk>;
+  stream(messages: Message[], options?: LLMOptions): AsyncGenerator<LLMChunk>;
 }
 
 // 实现方必须满足签名，否则编译失败
@@ -332,7 +332,7 @@ export function loadCheckpoint(raw: unknown): Checkpoint {
 
 ---
 
-## 7. 校验在事件流中的位置
+## 7. 校验在事件循环中的位置
 
 ```
 外部数据输入
@@ -345,7 +345,7 @@ export function loadCheckpoint(raw: unknown): Checkpoint {
      │
      └─ 用户输入 ──→ validateUserInput() ───→ HITL Answer（Tier 1）
 
-事件流内部
+事件循环内部
      │
      ├─ 事件经过 → TypeScript 类型窄化（Tier 2，零开销）
      │
@@ -361,7 +361,7 @@ export function loadCheckpoint(raw: unknown): Checkpoint {
 | 约束 | 描述 |
 |------|------|
 | **兜底不崩溃** | Tier 1 校验失败必须降级，绝不 throw 到 Agent Loop 外 |
-| **校验仅在边界** | 数据进入事件流时校验一次，流内部不重复校验 |
+| **校验仅在边界** | 数据进入事件循环时校验一次，流内部不重复校验 |
 | **内部不加 Zod** | Tier 3 模块内部禁止 `z.object()` 定义，用 TypeScript 接口 |
 | **版本号仅跨进程** | 不给内部事件/状态加版本号，避免过度设计 |
 | **适配层负责校验** | LLM/MCP 适配器内部调 Tier 1 校验，返回已验证数据 |

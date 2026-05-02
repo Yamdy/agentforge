@@ -13,13 +13,13 @@
 | 文档 | 描述 |
 |------|------|
 | [README.md](./design/README.md) | 设计文档索引 - 完整的文档导航 |
-| [00-OVERVIEW.md](./design/00-OVERVIEW.md) | 设计理念、核心思想、为什么是 RxJS + Zod |
+| [00-OVERVIEW.md](./design/00-OVERVIEW.md) | 设计理念、核心思想、架构设计 |
 | [harness.md](./design/harness.md) | **Agent Harness 核心概念** — E/T/C/S/L/V 六大工程要件 |
 | [01-CORE-TYPES.md](./design/01-CORE-TYPES.md) | 事件类型定义（40 种事件 Schema）、Agent 状态定义 |
 | [02-ZOD-CONTRACT.md](./design/02-ZOD-CONTRACT.md) | Zod 数据契约层、信任度分级模型 |
 | [03-DI.md](./design/03-DI.md) | 轻量依赖注入、依赖倒置、三层 Context 结构 |
 | [04-PROMPT-BUILDER.md](./design/04-PROMPT-BUILDER.md) | Prompt 构建、Zod → FunctionDefinition 转换 |
-| [05-EVENT-STREAM.md](./design/05-EVENT-STREAM.md) | 📦 已归档（RxJS Observable 模式已移除） |
+| [05-EVENT-STREAM.md](./design/05-EVENT-STREAM.md) | 📦 已归档（命令式 while(true) 循环 + AgentEventEmitter） |
 | [06-FLOW-CONSTRAINTS.md](./design/06-FLOW-CONSTRAINTS.md) | 流层陷阱与约束、生命周期管理、异步竞态 |
 | [07-PLUGIN-SYSTEM.md](./design/07-PLUGIN-SYSTEM.md) | Hook + 插件系统、拦截器 vs 观察器 |
 | [08-SUBSYSTEMS.md](./design/08-SUBSYSTEMS.md) | 子系统扩展、SubAgent/MCP/Workflow 集成 |

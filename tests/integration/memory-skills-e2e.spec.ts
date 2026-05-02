@@ -10,7 +10,6 @@ import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { writeFile, mkdir, rm } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
-// No rxjs imports needed
 import type { AgentEvent } from '../../src/core/index.js';
 
 // ============================================================
@@ -22,7 +21,7 @@ vi.mock('../../src/loop/index.js', () => ({
     run: async (_input: string) =>
       ({ type: 'done', reason: 'completed', timestamp: Date.now(), sessionId: 'test' } as AgentEvent),
     getCurrentState: () => null,
-    destroy$: { subscribe: (obs: any) => { obs.next(); obs.complete(); return { unsubscribe() {} }; } },
+    _destroy: { subscribe: (obs: any) => { obs.next(); obs.complete(); return { unsubscribe() {} }; } },
   }),
 }));
 
@@ -161,3 +160,5 @@ description: A test skill for verification
     expect(agent).toBeDefined();
   });
 });
+
+

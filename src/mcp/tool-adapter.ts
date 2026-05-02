@@ -4,7 +4,6 @@
  * Converts MCP tool definitions to AgentForge ToolDefinition format,
  * including JSON Schema to Zod conversion.
  *
- * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN/08-SUBSYSTEMS.md
  */
 
 import { z, type ZodTypeAny } from 'zod';

@@ -1,11 +1,10 @@
-# AgentForge 重构实施计划 ✅ [COMPLETED 2026-04-30]
+# AgentForge 实现参考
 
-> 阶段：6 Phase — **已完成**
-> 涉及：87 文件 → 最终架构就绪，1553 测试通过，DeepSeek E2E 验证通过
+> 本文档记录 AgentForge imperative 架构的核心实现模式，供代码审查和维护参考。
 
 ---
 
-## 实施顺序（依赖图）
+## 核心实现模式
 
 ```
 Phase 1: 基础设施（无依赖）
@@ -494,7 +493,7 @@ export interface RunHandlers {
 
 ### 文件: `src/api/create-agent.ts`（重写，~400 行）
 
-当前 997 行。移除所有 rxjs import、操作符管道构造、`Subscription` 管理。核心变为：
+当前 997 行。使用 AgentEventEmitter + 回调。核心变为：
 
 ```typescript
 export function createAgent(config: AgentConfig, services?: Partial<AgentContext>): Agent {
@@ -633,7 +632,7 @@ expect(result).toContain('response')
 
 **子系统测试** (8 files): 适配——改 `Observable.subscribe()` → callback 注册。
 
-**其他测试** (14 files): 机械适配——去掉 rxjs import，改 `pipe()` → `await`。
+**其他测试** (14 files): 适配——回调注册模式。
 
 ### 构建验证 (Day 5, 30 min)
 
@@ -664,6 +663,6 @@ npm run lint      # eslint 无错误
 | 风险 | 缓解 |
 |------|------|
 | 循环重写引入新 bug | Phase 2 完成后立即写 agent-loop 测试，不等到 Phase 6 |
-| 子系统适配遗漏 Observable | Phase 5 完成后 `grep -r "from 'rxjs'" src/` 必须返回空 |
+| 子系统适配遗漏 callback | Phase 5 完成后 `grep -r "Observable" src/` 必须返回空 |
 | 测试覆盖率下降 | 345 tests → 目标保持 ≥300 tests |
 | 回归 | 每个 Phase 后运行 `npm test`，不积累到 Phase 6 |

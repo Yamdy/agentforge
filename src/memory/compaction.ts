@@ -5,7 +5,6 @@
  * Manages context window compaction for agent memory.
  * Integrates with agent loop to emit compaction events.
  *
- * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN/14-OBSERVABILITY.md (lines 387-493)
  */
 
 import { z } from 'zod';
@@ -127,7 +126,7 @@ export class CompactionManager {
   constructor(
     config: Partial<CompactionConfig> = {},
     llmAdapter?: LLMAdapter,
-    offloadManager?: HistoryOffloadManager,
+    offloadManager?: HistoryOffloadManager
   ) {
     this.config = CompactionConfigSchema.parse({
       ...DEFAULT_COMPACTION_CONFIG,
@@ -220,9 +219,7 @@ export class CompactionManager {
     // ── Offload removed messages for future retrieval ──
     if (this.offloadManager && result.removedCount > 0) {
       const resultMessages = result.messages as Message[];
-      const removed = context.messages.filter(
-        (m: Message) => !resultMessages.includes(m),
-      );
+      const removed = context.messages.filter((m: Message) => !resultMessages.includes(m));
       if (removed.length > 0) {
         try {
           await this.offloadManager.offload(context.sessionId, removed);
@@ -274,7 +271,11 @@ export class CompactionManager {
   private executeImportanceWeighted(context: CompactionContext): CompactionResult {
     const targetTokens = Math.floor(context.maxTokens * this.config.targetTokenRatio);
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-    return importanceWeighted(context.messages as Message[], this.config.preserveRecent, targetTokens);
+    return importanceWeighted(
+      context.messages as Message[],
+      this.config.preserveRecent,
+      targetTokens
+    );
   }
 
   /**
@@ -282,13 +283,17 @@ export class CompactionManager {
    */
   private emitStartEvent(context: CompactionContext): void {
     for (const fn of this.eventListeners) {
-      try { fn({
-        type: 'compaction.start',
-        timestamp: Date.now(),
-        sessionId: context.sessionId,
-        strategy: this.config.strategy,
-        tokensBefore: context.currentTokenEstimate,
-      }); } catch { /* isolate */ }
+      try {
+        fn({
+          type: 'compaction.start',
+          timestamp: Date.now(),
+          sessionId: context.sessionId,
+          strategy: this.config.strategy,
+          tokensBefore: context.currentTokenEstimate,
+        });
+      } catch {
+        /* isolate */
+      }
     }
   }
 
@@ -309,7 +314,11 @@ export class CompactionManager {
       eventPayload.summarizedMessages = result.summarizedCount;
     }
     for (const fn of this.eventListeners) {
-      try { fn(eventPayload); } catch { /* isolate */ }
+      try {
+        fn(eventPayload);
+      } catch {
+        /* isolate */
+      }
     }
   }
 
@@ -318,11 +327,7 @@ export class CompactionManager {
    *
    * Helper method for convenience
    */
-  createContext(
-    sessionId: string,
-    messages: Message[],
-    maxTokens: number
-  ): CompactionContext {
+  createContext(sessionId: string, messages: Message[], maxTokens: number): CompactionContext {
     return CompactionContextSchema.parse({
       sessionId,
       messages,
@@ -361,7 +366,7 @@ export class CompactionManager {
  */
 export function createCompactionManager(
   llmAdapter?: LLMAdapter,
-  offloadManager?: HistoryOffloadManager,
+  offloadManager?: HistoryOffloadManager
 ): CompactionManager {
   return new CompactionManager({}, llmAdapter, offloadManager);
 }
@@ -371,7 +376,7 @@ export function createCompactionManager(
  */
 export function createTruncateCompactionManager(
   preserveRecent: number = 10,
-  offloadManager?: HistoryOffloadManager,
+  offloadManager?: HistoryOffloadManager
 ): CompactionManager {
   return new CompactionManager(
     {
@@ -379,7 +384,7 @@ export function createTruncateCompactionManager(
       preserveRecent,
     },
     undefined,
-    offloadManager,
+    offloadManager
   );
 }
 
@@ -390,7 +395,7 @@ export function createSummarizeCompactionManager(
   llmAdapter: LLMAdapter,
   preserveRecent: number = 10,
   maxSummaryLength: number = 500,
-  offloadManager?: HistoryOffloadManager,
+  offloadManager?: HistoryOffloadManager
 ): CompactionManager {
   return new CompactionManager(
     {
@@ -399,7 +404,7 @@ export function createSummarizeCompactionManager(
       maxSummaryLength,
     },
     llmAdapter,
-    offloadManager,
+    offloadManager
   );
 }
 

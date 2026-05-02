@@ -45,8 +45,8 @@ class MockLLMAdapter implements LLMAdapter {
     };
   }
 
-  stream() {
-    return new (require('rxjs').Observable)();
+  async *stream(): AsyncGenerator<{ text: string }> {
+    // No-op: mock adapter doesn't stream
   }
 }
 

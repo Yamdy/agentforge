@@ -11,13 +11,13 @@
 ### Review Amendments (incorporated into plan)
 
 1. **inputSanitizer low-confidence → observability event** — Low-confidence injection detection must emit an `agent.error` event (name: `InjectionWarning`, not fatal), not just audit log. Applied in Chunk 1 Step 7.
-2. **permissionController Observable is intentionally blocking** — Documented with comment in Chunk 2 Step 4. This blocks `expand` recursion until human answers, mirroring HITL pattern.
+2. **permissionController is intentionally blocking** — Documented with comment in Chunk 2 Step 4. This blocks agent loop recursion until human answers, mirroring HITL pattern.
 3. **planner is fire-and-forget only** — Current wiring logs the plan but does NOT write it to `AgentState`. This is explicitly scoped as "Phase 2: plan injection into state". Plan results are observable via audit log only. Documented in Chunk 3.
 4. **sandboxExecutor needs timeout + cancel protection** — Added `timeout()` + `takeUntil(destroy$)` in Chunk 2 Step 5.
 5. **errorClassifier on tool.error path** — Added in Chunk 2 Step 6 (new step).
 6. **costTracker vs quota** — `costTracker` (M7) is already wired in `handleLLMResponse` via `ctx.services.costTracker?.record()`. `quota` (also M7) is wired via `ctx.quota?.consume()`. These are two separate interfaces — `CostTracker` for recording, `QuotaController` for checking limits. No additional wiring needed.
 
-**Tech Stack:** TypeScript, RxJS, Vitest, Zod
+**Tech Stack:** TypeScript, Vitest, Zod
 
 ---
 
@@ -260,8 +260,8 @@ if (ctx.inputSanitizer) {
         message: `Low-confidence injection pattern detected: ${detection.patterns.join(', ')} (confidence: ${detection.confidence.toFixed(2)})`,
       },
     };
-    // Fire-and-forget: emit to stream but don't block
-    from([warningEvent]).pipe(takeUntil(destroy$)).subscribe();
+    // Fire-and-forget: emit to event stream but don't block
+    deps.emitter.emit(warningEvent);
   }
 }
 ```
@@ -385,7 +385,7 @@ if (ctx.permissionPolicy) {
   }
   
   if (effectivePolicy === 'ask' && ctx.permissionController) {
-    // 🔴 KEY DESIGN: This Observable BLOCKS expand recursion until human answers.
+    // 🔴 KEY DESIGN: This BLOCKS agent loop until human answers.
     // This mirrors the HITL pattern — the stream pauses, no events are lost.
     // When permissionController.ask() emits, the tool execution continues.
     const promptId = `perm-${generateId()}`;
@@ -395,8 +395,9 @@ if (ctx.permissionPolicy) {
       context: { args: tc.args },
       toolName: tc.name,
       toolArgs: tc.args,
-    }).pipe(
-      mergeMap((decision: string) => {
+    }).then((decision: string) => {
+        if (decision === 'deny') {
+          const resultEvent: AgentEvent = {
         if (decision === 'deny') {
           const resultEvent: AgentEvent = {
             type: 'tool.result',
@@ -414,9 +415,8 @@ if (ctx.permissionPolicy) {
           ctx.permissionController.isAutoAllowed(tc.name); // cache auto-allow
         }
         return executeToolDirectly(deps, tc, state);
-      }),
-      catchError(() => executeToolDirectly(deps, tc, state))
-    );
+      })
+      .catch(() => executeToolDirectly(deps, tc, state));
   }
 }
 ```
@@ -426,8 +426,7 @@ if (ctx.permissionPolicy) {
 In `src/loop/handlers/tool-execution.ts`, add imports at top:
 
 ```typescript
-import { timeout, takeUntil } from 'rxjs/operators';
-import { Subject } from 'rxjs';
+// No special imports needed — sandbox executor uses plain async/await
 ```
 
 After the securityGuard check and permission check, BEFORE direct tool execution:
@@ -442,10 +441,7 @@ if (ctx.sandboxExecutor) {
         { toolName: tc.name, args: tc.args },
         { sessionId: deps.sessionId, timeoutMs: 30000, toolRegistry: ctx.tools }
       )
-    ).pipe(
-      timeout(30000), // Prevent infinite hang on Docker/container issues
-      takeUntil(destroy$), // Allow cancellation during sandbox execution
-      mergeMap((sandboxResult) => {
+      ).then((sandboxResult) => {
         const resultEvent: AgentEvent = {
           type: 'tool.result',
           timestamp: Date.now(),
@@ -456,8 +452,8 @@ if (ctx.sandboxExecutor) {
           isError: !sandboxResult.success,
         };
         return of({ event: resultEvent, state } as StepContext);
-      }),
-      catchError((error: unknown) => {
+      })
+      .catch((error: unknown) => {
         const resultEvent: AgentEvent = {
           type: 'tool.result',
           timestamp: Date.now(),
@@ -483,14 +479,14 @@ export interface HandlerDeps {
   ctx: AgentContext;
   config: AgentLoopConfig;
   sessionId: string;
-  destroy$: Observable<void>; // Add this
+  destroySignal: AbortSignal; // Add this
 }
 ```
 
 And update `createAgentLoop` where `deps` is constructed:
 
 ```typescript
-const deps: HandlerDeps = { ctx, config, sessionId, destroy$: destroy$.asObservable() };
+const deps: HandlerDeps = { ctx, config, sessionId, destroySignal: abortController.signal };
 ```
 
 - [x] **Step 6b: Add errorClassifier on tool error path**
@@ -652,7 +648,7 @@ Expected: FAIL — `plugins` not in AgentConfig yet
 ```typescript
 describe('ContextBuilder withPluginPipeline', () => {
   it('should set pluginPipeline on AgentContext', () => {
-    const pipeline = <T>(source: Observable<T>) => source; // identity pipeline
+    const pipeline = <T>(source: AsyncGenerator<T>) => source; // identity pipeline
     const ctx = AgentContextBuilder.create()
       .withLLM(mockLLM)
       .withTools([mockTool])
@@ -682,7 +678,7 @@ In `src/core/context.ts`, add to `AgentContext` interface:
 ```typescript
 // ----- Plugin Pipeline (optional) -----
 /** Plugin pipeline for event interception and observation */
-pluginPipeline?: <T>(source: Observable<T>) => Observable<T>;
+pluginPipeline?: <T>(source: AsyncGenerator<T>) => AsyncGenerator<T>;
 ```
 
 - [x] **Step 4: Add `withPluginPipeline()` builder method**
@@ -693,10 +689,10 @@ In `src/core/context-builder.ts`:
 /**
  * Set plugin pipeline for event interception
  *
- * @param pipeline - Pipeline function that transforms Observable<AgentEvent>
+   * @param pipeline - Pipeline function that transforms AsyncGenerator<AgentEvent>
  * @returns this
  */
-withPluginPipeline(pipeline: <T>(source: Observable<T>) => Observable<T>): this {
+withPluginPipeline(pipeline: <T>(source: AsyncGenerator<T>) => AsyncGenerator<T>): this {
   this.state.pluginPipeline = pipeline;
   return this;
 }
@@ -716,8 +712,7 @@ In `src/loop/agent-loop.ts`, inside `run()` function, after the `expand(step)` p
 
 ```typescript
 // Apply plugin pipeline if configured
-let eventStream = of({ event: startEvent, state: initialState } as StepContext)
-  .pipe(expand(step), map(sctx => sctx.event), takeUntil(destroy$), ...);
+let eventStream = agentLoopEvents(ctx, config, sessionId);
 
 if (ctx.pluginPipeline) {
   eventStream = ctx.pluginPipeline(eventStream);
@@ -797,7 +792,7 @@ In `src/api/create-agent.ts`, in `AgentImpl.run$()`, after the debug/test preset
 ```typescript
 // Apply production preset if configured
 if (this.config.preset === 'production') {
-  observable = observable.pipe(productionPreset());
+  applyProductionPreset(this);
 }
 ```
 
@@ -915,11 +910,11 @@ git commit -m "feat: export previously internal MPU modules from public API"
 | `ctx.rateLimiter` | 🔴 Dead | ✅ Active | `handlers/llm.ts` pre-LLM guard | Blocking guard |
 | `ctx.inputSanitizer` | 🔴 Dead | ✅ Active | `handlers/llm.ts` pre-LLM guard | Blocking (≥0.8) + observability event (<0.8) |
 | `ctx.permissionPolicy` | 🔴 Dead | ✅ Active | `handlers/tool-execution.ts` pre-tool guard | Blocking guard |
-| `ctx.permissionController` | 🔴 Dead | ✅ Active | `handlers/tool-execution.ts` ask flow | Blocking Observable (HITL pattern) |
-| `ctx.sandboxExecutor` | 🔴 Dead | ✅ Active | `handlers/tool-execution.ts` sandbox routing | Observable with timeout+cancel |
+| `ctx.permissionController` | 🔴 Dead | ✅ Active | `handlers/tool-execution.ts` ask flow | Blocking (HITL pattern) |
+| `ctx.sandboxExecutor` | 🔴 Dead | ✅ Active | `handlers/tool-execution.ts` sandbox routing | Async with timeout+cancel |
 | `ctx.planner` | 🔴 Dead | ✅ Active (Phase 1) | `handlers/lifecycle.ts` on agent.start | Fire-and-forget + audit log |
 | `ctx.mcp` | 🔴 Dead | ⏳ Deferred | Needs architectural decision | — |
-| `pluginPipeline` | N/A | ✅ Active | `agent-loop.ts` run() + `createAgent.ts` | Observable transform |
+| `pluginPipeline` | N/A | ✅ Active | `agent-loop.ts` run() + `createAgent.ts` | AsyncGenerator transform |
 | `productionPreset` | 🔴 Dead | ✅ Active | `createAgent.ts` AgentImpl.run$() | Operator pipeline |
 | `tool.error → errorClassifier` | N/A | ✅ Active | `handlers/tool-execution.ts` tool error path | Fire-and-forget → feeds circuitBreaker |
 

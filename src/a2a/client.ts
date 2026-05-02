@@ -4,9 +4,8 @@
  *
  * Provides a simple API for cross-process agent communication.
  * Integrates with Agent Loop via callback-based subscriptions.
- * Callback-based API (de-rxjs migration).
+ * Callback-based API.
  *
- * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN/09-A2A.md
  */
 
 import { generateId } from '../core/events.js';
@@ -17,11 +16,7 @@ import {
   A2A_DEFAULT_TTL,
 } from './types.js';
 import { isMessageExpired } from './message.js';
-import {
-  type A2ATransport,
-  type TransportStatus,
-  TransportError,
-} from './transport.js';
+import { type A2ATransport, type TransportStatus, TransportError } from './transport.js';
 import type { Subscribable } from './transport.js';
 import { A2AConnection, type A2AConnectionOptions, createConnection } from './connection.js';
 
@@ -153,7 +148,7 @@ export interface A2AClientOptions {
  * Errors are emitted as events (errors-as-events pattern), never thrown
  * to the error channel.
  *
- * Callback-based API (de-rxjs migration):
+ * Callback-based API:
  * - onEvent(fn) replaces events$ observable
  * - onStatus(fn) replaces status$ observable
  * - onMessage(fn) replaces messages$ observable
@@ -172,7 +167,9 @@ export class A2AClient {
   private messageHandler?: A2AMessageHandler;
 
   /** Event listeners */
-  private readonly _eventListeners = new Set<(event: A2AClientEvent | A2AClientErrorEvent) => void>();
+  private readonly _eventListeners = new Set<
+    (event: A2AClientEvent | A2AClientErrorEvent) => void
+  >();
 
   /** Started flag */
   private _started = false;
@@ -269,7 +266,10 @@ export class A2AClient {
       this.emitEvent('a2a.client.started', {});
       this.startMessageHandling();
     } catch (error) {
-      this.emitError('START_ERROR', error instanceof Error ? error.message : 'Failed to start client');
+      this.emitError(
+        'START_ERROR',
+        error instanceof Error ? error.message : 'Failed to start client'
+      );
       throw error;
     }
   }
@@ -300,7 +300,11 @@ export class A2AClient {
 
     // Run all cleanups
     for (const cleanup of this._cleanups) {
-      try { cleanup(); } catch { /* ignore */ }
+      try {
+        cleanup();
+      } catch {
+        /* ignore */
+      }
     }
     this._cleanups = [];
 
@@ -321,11 +325,7 @@ export class A2AClient {
    *
    * Errors are emitted as events, not thrown.
    */
-  request(
-    targetId: string,
-    payload: unknown,
-    options?: RequestOptions
-  ): Subscribable<A2AMessage> {
+  request(targetId: string, payload: unknown, options?: RequestOptions): Subscribable<A2AMessage> {
     const timeoutMs = options?.timeout ?? this.defaultTimeout;
     const requestId = generateId('req');
     const self = this;
@@ -452,7 +452,7 @@ export class A2AClient {
   ): Promise<A2AMessage> {
     return new Promise((resolve, reject) => {
       const sub = this.request(targetId, payload, options).subscribe({
-        next: (response) => {
+        next: response => {
           sub.unsubscribe();
           if (response.type === 'error') {
             const errorPayload = response.payload as { code: string; message: string };
@@ -550,9 +550,7 @@ export class A2AClient {
   /**
    * Subscribe to messages matching a filter.
    */
-  subscribe(
-    filterFn: (message: A2AMessage) => boolean = () => true
-  ): A2AMessageSubscription {
+  subscribe(filterFn: (message: A2AMessage) => boolean = () => true): A2AMessageSubscription {
     const self = this;
     const cleanup = this.connection.onMessage((message: A2AMessage) => {
       if (self._stopped) return;
@@ -570,7 +568,9 @@ export class A2AClient {
   /**
    * Subscribe to requests only.
    */
-  subscribeRequests(handler: (message: A2AMessage) => Promise<A2AMessage | void>): A2AMessageSubscription {
+  subscribeRequests(
+    handler: (message: A2AMessage) => Promise<A2AMessage | void>
+  ): A2AMessageSubscription {
     const self = this;
     const cleanup = this.connection.onMessage((message: A2AMessage) => {
       if (self._stopped) return;
@@ -578,7 +578,7 @@ export class A2AClient {
 
       // Fire and forget handler (concurrent processing like mergeMap)
       handler(message)
-        .then((result) => {
+        .then(result => {
           if (result) {
             return self.connection.send(result);
           }
@@ -736,7 +736,7 @@ export function createClient(options: A2AClientOptions): A2AClient {
 /**
  * Mock transport for testing purposes.
  * This should NOT be used in production.
- * Callback-based (de-rxjs migration).
+ * Callback-based.
  */
 export class MockTransport implements A2ATransport {
   readonly name = 'mock';
@@ -805,7 +805,7 @@ export class MockTransport implements A2ATransport {
     this._status = 'connecting';
     this._notifyStatus('connecting');
     // Simulate connection delay
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await new Promise(resolve => setTimeout(resolve, 10));
     this._status = 'connected';
     this._notifyStatus('connected');
   }

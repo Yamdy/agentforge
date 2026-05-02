@@ -233,7 +233,9 @@ ${skillContext}
     console.log('─'.repeat(50));
     console.log(result.text);
     console.log('─'.repeat(50));
-    console.log(`\nToken 使用: prompt=${result.usage.promptTokens}, completion=${result.usage.completionTokens}\n`);
+    console.log(
+      `\nToken 使用: prompt=${result.usage.promptTokens}, completion=${result.usage.completionTokens}\n`
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.log(`LLM 调用失败: ${message}\n`);
@@ -445,8 +447,12 @@ async function example2_ParseSkillFile(): Promise<void> {
 
   // 检查兼容性
   console.log('检查版本兼容性:');
-  console.log(`  'agentforge >=0.1.0' vs '0.2.0': ${checkCompatibility('agentforge >=0.1.0', '0.2.0')}`);
-  console.log(`  'agentforge >=1.0.0' vs '0.1.0': ${checkCompatibility('agentforge >=1.0.0', '0.1.0')}`);
+  console.log(
+    `  'agentforge >=0.1.0' vs '0.2.0': ${checkCompatibility('agentforge >=0.1.0', '0.2.0')}`
+  );
+  console.log(
+    `  'agentforge >=1.0.0' vs '0.1.0': ${checkCompatibility('agentforge >=1.0.0', '0.1.0')}`
+  );
   console.log('\n');
 
   // 解析无效内容
@@ -529,15 +535,19 @@ async function example3_SkillRegistry(): Promise<void> {
     // 按关键词查找
     console.log('按关键词查找技能:');
     const reviewSkills = registry.findByKeywords(['review']);
-    console.log(`  关键词 'review' 匹配: ${reviewSkills.map((s) => s.frontmatter.name).join(', ')}`);
+    console.log(`  关键词 'review' 匹配: ${reviewSkills.map(s => s.frontmatter.name).join(', ')}`);
     const securitySkills = registry.findByKeywords(['security']);
-    console.log(`  关键词 'security' 匹配: ${securitySkills.map((s) => s.frontmatter.name).join(', ')}`);
+    console.log(
+      `  关键词 'security' 匹配: ${securitySkills.map(s => s.frontmatter.name).join(', ')}`
+    );
     console.log('\n');
 
     // 按触发词查找
     console.log('按触发词查找技能:');
     const triggerSkills = registry.findByTriggers(['review this code']);
-    console.log(`  触发词 'review this code' 匹配: ${triggerSkills.map((s) => s.frontmatter.name).join(', ')}`);
+    console.log(
+      `  触发词 'review this code' 匹配: ${triggerSkills.map(s => s.frontmatter.name).join(', ')}`
+    );
     console.log('\n');
 
     // 手动注册技能
@@ -624,7 +634,11 @@ async function example4_DiscoverSkills(): Promise<void> {
 
     // 在根目录放置一个（需要创建目录）
     mkdirSync(join(tempDir, 'root-skill'), { recursive: true });
-    writeFileSync(join(tempDir, 'root-skill', 'SKILL.md'), MOCK_SKILL_SIMPLE.replace('simple-helper', 'root-skill'), 'utf-8');
+    writeFileSync(
+      join(tempDir, 'root-skill', 'SKILL.md'),
+      MOCK_SKILL_SIMPLE.replace('simple-helper', 'root-skill'),
+      'utf-8'
+    );
 
     // 发现技能
     console.log('发现技能（递归搜索）:');
@@ -643,7 +657,7 @@ async function example4_DiscoverSkills(): Promise<void> {
     const filtered = await discoverSkills([tempDir], {
       nameFilter: /^code-/,
     });
-    console.log(`  匹配 /^code-/: ${filtered.map((s) => s.frontmatter.name).join(', ')}`);
+    console.log(`  匹配 /^code-/: ${filtered.map(s => s.frontmatter.name).join(', ')}`);
     console.log('\n');
 
     // 使用关键词过滤器
@@ -651,7 +665,7 @@ async function example4_DiscoverSkills(): Promise<void> {
     const keywordFiltered = await discoverSkills([tempDir], {
       keywordFilter: ['review'],
     });
-    console.log(`  包含 'review': ${keywordFiltered.map((s) => s.frontmatter.name).join(', ')}`);
+    console.log(`  包含 'review': ${keywordFiltered.map(s => s.frontmatter.name).join(', ')}`);
     console.log('\n');
 
     // 限制深度
@@ -696,10 +710,7 @@ async function example5_HotReload(): Promise<void> {
       directories: [tempDir],
       debounceMs: 100,
       debug: true,
-      hooks: [
-        createReloadLoggingHook(),
-        createCacheInvalidationHook(registry),
-      ],
+      hooks: [createReloadLoggingHook(), createCacheInvalidationHook(registry)],
     });
 
     console.log(`  监听目录: ${tempDir}`);
@@ -707,7 +718,7 @@ async function example5_HotReload(): Promise<void> {
 
     // 订阅事件
     const events: SkillReloadEvent[] = [];
-    const subscription = watcher.events$.subscribe((event) => {
+    const subscription = watcher.events$.subscribe(event => {
       events.push(event);
     });
 
@@ -716,7 +727,7 @@ async function example5_HotReload(): Promise<void> {
     console.log('Watcher 已启动\n');
 
     // 等待初始扫描完成
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await new Promise(resolve => setTimeout(resolve, 200));
 
     // 显示初始技能
     console.log('初始加载的技能:');
@@ -731,7 +742,7 @@ async function example5_HotReload(): Promise<void> {
     writeFileSync(join(skillDir, 'SKILL.md'), updatedContent, 'utf-8');
 
     // 等待事件
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await new Promise(resolve => setTimeout(resolve, 500));
 
     console.log('\n变更后的技能:');
     const knownSkills = watcher.getKnownSkills();
@@ -752,7 +763,7 @@ async function example5_HotReload(): Promise<void> {
       'utf-8'
     );
 
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await new Promise(resolve => setTimeout(resolve, 500));
 
     console.log('\n新增后的已知技能:');
     for (const [path, skill] of Array.from(watcher.getKnownSkills().entries())) {
@@ -794,7 +805,7 @@ async function example5_HotReload(): Promise<void> {
     });
 
     // 注意：这里只是演示 API，实际使用时需要保持订阅
-    console.log('  Observable 已创建，调用 watcher.stop() 可停止\n');
+    console.log('  监听器已创建，调用 watcher.stop() 可停止\n');
     watch$.watcher.stop();
   } finally {
     if (existsSync(tempDir)) {

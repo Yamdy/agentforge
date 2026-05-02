@@ -4,7 +4,6 @@
  * Handles loading SKILL.md files from filesystem and discovery.
  * All file operations return empty results on error (never throws).
  *
- * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN/08-SUBSYSTEMS.md
  */
 
 import { readdir, readFile, stat } from 'fs/promises';

@@ -2,12 +2,11 @@
  * Tests for createAgent preset activation
  *
  * Verifies that the correct services are configured based on preset name.
- * Presets no longer use RxJS operators (per 25-DE-RXJS).
+ * Presets use callback-based operator pattern.
  */
 
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import type { AgentEvent } from '../../src/core/index.js';
-// No rxjs imports needed
 
 // Mock the loop module — return Promise-based AgentLoop
 vi.mock('../../src/loop/agent-loop.js', () => ({
@@ -101,3 +100,5 @@ describe('createAgent — preset activation', () => {
     expect(agent.ctx.agentName).toBe('test-agent');
   });
 });
+
+

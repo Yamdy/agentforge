@@ -130,7 +130,7 @@ export {
 {
   "name": "agentforge",
   "version": "1.0.0",
-  "description": "Agent framework based on RxJS event stream + Zod type safety",
+  "description": "Agent framework based on event-driven architecture + Zod type safety",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -209,8 +209,7 @@ export {
   "keywords": [
     "agent",
     "llm",
-    "rxjs",
-    "zod",
+"zod",
     "ai",
     "framework"
   ],
@@ -261,12 +260,11 @@ export {
 
 ```json
 "peerDependencies": {
-  "rxjs": "^7.0.0",
   "zod": "^3.23.0"
 }
 ```
 
-注意：`rx` 和 `zod` 当前在 `dependencies` 中（不是 `peerDependencies`）。对于框架类库，有两种策略：
+注意：`zod` 当前在 `dependencies` 中（不是 `peerDependencies`）。对于框架类库，有两种策略：
 
 1. **放在 `dependencies`（当前）**：用户无需单独安装，但可能有版本冲突
 2. **放在 `peerDependencies`（建议改为）**：用户自行安装，避免版本冲突，但增加安装步骤
@@ -303,4 +301,4 @@ export {
 | 发布内容 | `npm pack --dry-run` 只包含 `dist/` + `README.md` + `LICENSE` |
 | prepublishOnly | `npm publish --dry-run` 触发 `npm run clean && npm run build` |
 | tree-shaking | import `{ createAgentLoop }` 后 bundle 中不包含未使用的 `QuotaController`、`ResourceMonitor` |
-| peerDependencies | `rxjs` 和 `zod` 正确解析 |
+| peerDependencies | `zod` 正确解析 |

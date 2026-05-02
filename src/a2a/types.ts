@@ -4,7 +4,6 @@
  * Core type definitions for cross-process agent communication.
  * Uses Zod schemas for validation at boundaries.
  *
- * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN/09-A2A.md
  */
 
 import { z } from 'zod';

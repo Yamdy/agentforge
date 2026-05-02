@@ -5,7 +5,6 @@
  * User input is UNTRUSTED external data.
  * Never throws - always returns a valid string.
  *
- * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN.md - Tier 1: External Untrusted Data
  */
 
 import { z } from 'zod';

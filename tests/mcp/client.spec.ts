@@ -6,9 +6,9 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-// No rxjs imports - inline BehaviorSubject replacement
+// Inline subject replacement for status tracking
 
-/** Minimal BehaviorSubject replacement for mock transport status tracking */
+/** Minimal subject replacement for mock transport status tracking */
 class SimpleSubject<T> {
   private listeners: Array<(v: T) => void> = [];
   constructor(public value: T) {}
@@ -623,10 +623,10 @@ describe('AgentForgeMCPClient JSON-RPC Protocol', () => {
 });
 
 // ============================================================
-// AgentForgeMCPClient Status Observable Tests
+// AgentForgeMCPClient Status Tests
 // ============================================================
 
-describe('AgentForgeMCPClient Status Observable', () => {
+describe('AgentForgeMCPClient Status', () => {
   let client: AgentForgeMCPClient;
   let events: MCPEvent[];
 

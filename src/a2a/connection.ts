@@ -4,16 +4,12 @@
  *
  * Manages a single connection with heartbeat, reconnection, and message queue.
  * Uses the transport abstraction for actual communication.
- * Callback-based API (de-rxjs migration).
+ * Callback-based API
  *
- * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN/09-A2A.md
  */
 
 import { generateId } from '../core/events.js';
-import {
-  type A2AMessage,
-  A2A_BROADCAST_TARGET,
-} from './types.js';
+import { type A2AMessage, A2A_BROADCAST_TARGET } from './types.js';
 import {
   type A2ATransport,
   type TransportStatus,
@@ -26,12 +22,7 @@ import {
   TransportError,
 } from './transport.js';
 import type { Subscribable } from './transport.js';
-import {
-  createHeartbeat,
-  createError,
-  createResponse,
-  isMessageExpired,
-} from './message.js';
+import { createHeartbeat, createError, createResponse, isMessageExpired } from './message.js';
 
 // ============================================================
 // Connection Events
@@ -142,7 +133,7 @@ export interface A2AConnectionOptions {
  * - Request-response correlation
  * - Errors as events (never throws to error channel)
  *
- * Callback-based API (de-rxjs migration):
+ * Callback-based API:
  * - onStatus(fn) replaces status$ observable
  * - onEvent(fn) replaces events$ observable
  * - onMessage(fn) replaces messages$ observable
@@ -179,7 +170,9 @@ export class A2AConnection {
   private readonly _statusListeners = new Set<(status: TransportStatus) => void>();
 
   /** Event listeners */
-  private readonly _eventListeners = new Set<(event: ConnectionEvent | ConnectionErrorEvent) => void>();
+  private readonly _eventListeners = new Set<
+    (event: ConnectionEvent | ConnectionErrorEvent) => void
+  >();
 
   /** Message listeners */
   private readonly _messageListeners = new Set<(msg: A2AMessage) => void>();
@@ -320,7 +313,11 @@ export class A2AConnection {
       // Flush queued messages
       this.flushMessageQueue();
     } catch (error) {
-      this.emitError('CONNECTION_ERROR', error instanceof Error ? error.message : 'Connection failed', true);
+      this.emitError(
+        'CONNECTION_ERROR',
+        error instanceof Error ? error.message : 'Connection failed',
+        true
+      );
 
       if (this.reconnectConfig.enabled && !this.intentionallyClosed) {
         this.scheduleReconnect();
@@ -461,14 +458,14 @@ export class A2AConnection {
           targetId,
           sentAt: Date.now(),
           timeout: timeoutMs,
-          resolve: (msg) => {
+          resolve: msg => {
             if (settled) return;
             settled = true;
             cleanup();
             next(msg);
             complete();
           },
-          reject: (err) => {
+          reject: err => {
             if (settled) return;
             settled = true;
             cleanup();
@@ -512,7 +509,7 @@ export class A2AConnection {
         };
 
         // Send request
-        self.send(request).catch((err) => {
+        self.send(request).catch(err => {
           if (!settled) {
             settled = true;
             cleanup();
@@ -569,12 +566,7 @@ export class A2AConnection {
    * Send a response to a request.
    */
   async respond(request: A2AMessage, payload: unknown): Promise<void> {
-    const response = createResponse(
-      this.agentId,
-      request.from,
-      payload,
-      request.id
-    );
+    const response = createResponse(this.agentId, request.from, payload, request.id);
 
     return this.send(response);
   }
@@ -594,12 +586,7 @@ export class A2AConnection {
       details,
     };
 
-    const errorMessage = createError(
-      this.agentId,
-      request.from,
-      request.id,
-      errorPayload
-    );
+    const errorMessage = createError(this.agentId, request.from, request.id, errorPayload);
 
     return this.send(errorMessage);
   }
@@ -655,7 +642,11 @@ export class A2AConnection {
 
           if (status === 'connected') {
             this.flushMessageQueue();
-          } else if (status === 'error' && this.reconnectConfig.enabled && !this.intentionallyClosed) {
+          } else if (
+            status === 'error' &&
+            this.reconnectConfig.enabled &&
+            !this.intentionallyClosed
+          ) {
             this.scheduleReconnect();
           }
         }
@@ -755,7 +746,7 @@ export class A2AConnection {
     this.messageQueue = [];
 
     for (const message of queue) {
-      this.send(message).catch((error) => {
+      this.send(message).catch(error => {
         this.debugLog('Failed to flush message:', message.id, error);
         // Re-queue on failure if not overflow
         if (this.messageQueue.length < this.backlogConfig.maxSize) {
@@ -789,7 +780,9 @@ export class A2AConnection {
 
     // Immediate first heartbeat, then interval
     void sendHeartbeat();
-    this.heartbeatTimer = setInterval(() => { void sendHeartbeat(); }, this.heartbeatConfig.interval);
+    this.heartbeatTimer = setInterval(() => {
+      void sendHeartbeat();
+    }, this.heartbeatConfig.interval);
   }
 
   /**
@@ -820,7 +813,8 @@ export class A2AConnection {
     this.emitEvent('connection.reconnecting', { attempt: this.reconnectAttempts + 1 });
 
     const delay = Math.min(
-      this.reconnectConfig.initialDelay * Math.pow(this.reconnectConfig.backoffMultiplier, this.reconnectAttempts),
+      this.reconnectConfig.initialDelay *
+        Math.pow(this.reconnectConfig.backoffMultiplier, this.reconnectAttempts),
       this.reconnectConfig.maxDelay
     );
 

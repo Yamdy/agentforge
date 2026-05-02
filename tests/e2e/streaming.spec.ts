@@ -17,13 +17,13 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-// No rxjs imports - using local Subscribable helpers
+// Using local Subscribable helpers for testing
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { streamText, generateText, tool } from 'ai';
 import { z } from 'zod';
 
 // ============================================================
-// Lightweight Subscribable factories (rx replacement)
+// Lightweight Subscribable factories (for testing)
 // ============================================================
 
 interface Subscribable<T> {
@@ -262,7 +262,7 @@ class RealLLMAdapter implements LLMAdapter {
 
   /**
    * Streaming chat completion
-   * Returns Observable<LLMChunk> for AgentForge streaming
+   * Returns AsyncGenerator<LLMChunk> for AgentForge streaming
    */
   async *stream(messages: Message[], options?: LLMOptions): AsyncGenerator<LLMChunk> {
     const tools = this.convertTools(options?.tools as FunctionDefinition[] | undefined);

@@ -3,7 +3,6 @@
  *
  * Agent state definition and immutable update utilities.
  *
- * @see docs/RXJS-EVENT-STREAM-DESIGN.md - Core Types section
  */
 
 import { z } from 'zod';

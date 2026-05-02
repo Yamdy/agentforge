@@ -4,7 +4,7 @@
  * Tests for the workflow orchestration engine.
  * Validates Workflow, WorkflowExecutor, SequentialPipeline, and ParallelPipeline.
  *
- * Converted from RxJS-based to callback-based API per docs/design/25-DE-RXJS.md.
+ * Uses callback-based API.
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';

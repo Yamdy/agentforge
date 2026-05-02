@@ -5,7 +5,6 @@
  * Tier 1: External untrusted data (LLM output, MCP response, user input)
  * must be validated with safeParse + fallback degradation.
  *
- * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN.md - Zod 数据契约层
  */
 
 export {

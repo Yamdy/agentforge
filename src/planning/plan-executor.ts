@@ -196,4 +196,109 @@ export class PlanExecutorImpl implements PlanExecutor {
       currentStep: this.currentStep,
     };
   }
+
+  async resume(
+    plan: ExecutionPlan,
+    toolRegistry: ToolRegistry,
+    priorResults: Map<string, StepResult>
+  ): Promise<ExecutionResult> {
+    const startTime = Date.now();
+    const stepResults = new Map(priorResults); // Start with prior results
+
+    // Initialize progress from prior results
+    this.totalSteps = plan.steps.length;
+    this.completedSteps = 0;
+    this.failedSteps = 0;
+
+    // Build step map
+    const stepMap = new Map<string, PlanStep>();
+    for (const step of plan.steps) {
+      stepMap.set(step.id, step);
+    }
+
+    // Track failed step IDs
+    const failedStepIds = new Set<string>();
+
+    // Pre-populate: steps already completed in priorResults
+    const executed = new Set<string>();
+    for (const [stepId, result] of priorResults) {
+      if (result.status === 'completed') {
+        // Mark step as completed in plan and executed set
+        const step = stepMap.get(stepId);
+        if (step) step.status = 'completed';
+        executed.add(stepId);
+        this.completedSteps++;
+      } else if (result.status === 'failed') {
+        failedStepIds.add(stepId);
+        executed.add(stepId);
+        this.failedSteps++;
+      }
+    }
+
+    // Also check plan steps already marked completed (checkpoint resume)
+    for (const step of plan.steps) {
+      if (step.status === 'completed' && !executed.has(step.id)) {
+        executed.add(step.id);
+        this.completedSteps++;
+      }
+    }
+
+    // Execute remaining steps with topological sort (same logic as execute())
+    while (executed.size < plan.steps.length) {
+      const readySteps: PlanStep[] = [];
+      for (const step of plan.steps) {
+        if (executed.has(step.id)) continue;
+        const deps = step.dependsOn ?? [];
+        const allDepsResolved = deps.every(d => executed.has(d));
+        const anyDepFailed = deps.some(d => failedStepIds.has(d));
+        if (anyDepFailed) {
+          executed.add(step.id);
+          failedStepIds.add(step.id);
+          continue;
+        }
+        if (allDepsResolved) {
+          readySteps.push(step);
+        }
+      }
+      if (readySteps.length === 0) {
+        for (const step of plan.steps) {
+          if (!executed.has(step.id)) {
+            stepResults.set(step.id, {
+              stepId: step.id,
+              status: 'failed',
+              error: 'Dependency resolution failed',
+              durationMs: 0,
+            });
+            failedStepIds.add(step.id);
+            executed.add(step.id);
+            this.failedSteps++;
+          }
+        }
+        break;
+      }
+      const promises = readySteps.map(async step => {
+        this.currentStep = step.id;
+        const result = await this.executeStep(step, toolRegistry);
+        stepResults.set(step.id, result);
+        if (result.status === 'completed') this.completedSteps++;
+        else {
+          this.failedSteps++;
+          failedStepIds.add(step.id);
+        }
+        executed.add(step.id);
+        return result;
+      });
+      await Promise.all(promises);
+    }
+
+    this.currentStep = undefined;
+    const hasFailure = failedStepIds.size > 0;
+
+    return {
+      planId: plan.id,
+      status: hasFailure ? 'failed' : 'completed',
+      stepResults,
+      durationMs: Date.now() - startTime,
+    };
+  }
 }

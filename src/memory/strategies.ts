@@ -8,7 +8,6 @@
  * - summarize: Use LLM to summarize removed messages
  * - importance-weighted: Keep messages based on importance (fallback to truncate)
  *
- * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN/14-OBSERVABILITY.md
  */
 
 import { z } from 'zod';

@@ -50,7 +50,7 @@ function createAgentStepEvent(): AgentEvent {
 
 /**
  * Run an InterceptorPlugin against events and collect the results.
- * Replaces the old buildPluginPipeline + firstValueFrom(toArray()) RxJS pattern.
+ * Replaces the old buildPluginPipeline pattern.
  */
 async function runPluginIntercept(
   plugin: InterceptorPlugin,

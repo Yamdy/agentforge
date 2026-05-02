@@ -2,19 +2,18 @@
 /**
  * AgentForge Agent Loop — Imperative Implementation
  *
- * Replaces the RxJS expand() recursion with an imperative while(true) loop.
+ * Uses an imperative while(true) loop for control flow.
  * All control flow (token budget, error recovery, tool partitioning, compaction)
  * is inline in a single closure — no event-type switch, no handler delegation.
  *
  * Design principles:
  * - while(true) + await (not expand + switch)
  * - HookRegistry for plugin cut-points (not event-stream interception)
- * - AgentEventEmitter for observability (not RxJS Observable)
+ * - AgentEventEmitter for observability
  * - AbortController for cancellation (not takeUntil)
- * - Errors-as-events for error reporting (not RxJS error channel)
+ * - Errors-as-events for error reporting
  *
  * @see docs/design/24-ARCH-REFACTOR.md
- * @see docs/design/25-DE-RXJS.md
  */
 
 import {
@@ -30,7 +29,7 @@ import type { AgentContext, AgentLoopState } from '../core/index.js';
 import { HookRegistry } from '../core/hooks.js';
 import { createInitialLoopState } from '../core/state.js';
 import { checkTokenBudget, createBudgetTracker, shouldCompact } from './token-budget.js';
-import { analyzeLLMError, RECOVERY_LIMITS } from './error-analyzer.js';
+import { analyzeLLMError, RECOVERY_LIMITS, ESCALATED_MAX_OUTPUT_TOKENS } from './error-analyzer.js';
 import { partitionToolCalls } from './tool-partition.js';
 
 // ============================================================
@@ -60,6 +59,8 @@ export interface AgentLoop {
   on<E extends AgentEvent>(type: E['type'], fn: (e: E) => void): () => void;
   /** Subscribe to all events */
   onAny(fn: (e: AgentEvent) => void): () => void;
+  /** Emit an external event through this loop's emitter (e.g., from subsystems) */
+  emit(event: AgentEvent): Promise<void>;
   /** Cancel current execution */
   cancel(): void;
   /** Pause execution (blocks the loop) */
@@ -89,6 +90,11 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
   let resumeResolve: (() => void) | null = null;
 
   // ── Streaming ──
+
+  // ── Error recovery mutable state (shared with handleLLMError) ──
+  const recoveryState = {
+    escalatedMaxTokens: undefined as number | undefined,
+  };
 
   // ============================================================
   // Lifecycle Hook Runner (error-isolated)
@@ -121,6 +127,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         case 'escalate_output_tokens':
           if (state.recovery.outputTokenEscalationCount < RECOVERY_LIMITS.outputTokenEscalation) {
             state.recovery.outputTokenEscalationCount++;
+            recoveryState.escalatedMaxTokens = ESCALATED_MAX_OUTPUT_TOKENS;
             await runLifecycleHook('recovery.escalate', { error: analysis.message }, {});
             return 'continue';
           }
@@ -173,7 +180,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
               const result = await ctx.compactionManager.compact({
                 sessionId: ctx.sessionId,
                 messages: state.messages,
-                maxTokens: 8000,
+                maxTokens: config.tokenBudget ?? 200_000,
                 currentTokenEstimate: state.tokens.prompt + state.tokens.completion,
               });
               state.messages = result.messages as Message[];
@@ -254,6 +261,77 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           toolName: tc.name,
           result: deniedMsg.content,
           isError: true,
+        });
+        continue;
+      }
+
+      // ── MPU M6: Security check before tool execution ──
+      const toolDef = ctx.tools.get(tc.name);
+
+      // Check command/path/network blocklist
+      if (toolDef && ctx.securityGuard) {
+        const cmdCheck = ctx.securityGuard.checkCommand(tc.name);
+        if (!cmdCheck.allowed) {
+          const blockedMsg: Message = {
+            role: 'tool',
+            content: `Tool "${tc.name}" blocked by security guard: ${cmdCheck.reason}`,
+            toolCallId: tc.id,
+            name: tc.name,
+          };
+          results.push(blockedMsg);
+          void emitter.emit({
+            type: 'tool.result',
+            timestamp: Date.now(),
+            sessionId: ctx.sessionId,
+            toolCallId: tc.id,
+            toolName: tc.name,
+            result: `Blocked: ${cmdCheck.reason}`,
+            isError: true,
+          });
+          // ── MPU M5: Audit blocked tool call ──
+          ctx.auditLogger?.append({
+            sessionId: ctx.sessionId,
+            agentName: ctx.agentName,
+            eventType: 'tool.call',
+            action: 'tool.call',
+            resource: tc.name,
+            result: 'denied',
+            details: { toolCallId: tc.id, reason: cmdCheck.reason },
+          });
+          continue;
+        }
+      }
+
+      // Sandbox routing
+      if (toolDef?.sandboxRequired && ctx.sandboxExecutor) {
+        void emitter.emit({
+          type: 'tool.execute',
+          timestamp: Date.now(),
+          sessionId: ctx.sessionId,
+          toolCallId: tc.id,
+          toolName: tc.name,
+        });
+        const sandboxResult = await ctx.sandboxExecutor.execute(
+          { toolName: tc.name, args: tc.args },
+          { sessionId: ctx.sessionId, signal, timeoutMs: 30000 }
+        );
+        const sbResultStr = sandboxResult.success
+          ? (sandboxResult.result ?? '')
+          : `Sandbox error: ${sandboxResult.error?.message ?? 'Unknown error'}`;
+        results.push({
+          role: 'tool',
+          content: sbResultStr,
+          toolCallId: tc.id,
+          name: tc.name,
+        });
+        void emitter.emit({
+          type: 'tool.result',
+          timestamp: Date.now(),
+          sessionId: ctx.sessionId,
+          toolCallId: tc.id,
+          toolName: tc.name,
+          result: sbResultStr,
+          isError: !sandboxResult.success,
         });
         continue;
       }
@@ -494,7 +572,91 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
     );
 
     // ====================================================================
-    // MAIN LOOP
+    // Plan-Then-Execute (LLM-driven planning, optional)
+    // ====================================================================
+    // If a planner is configured, generate a plan and execute it
+    // via PlanExecutor before falling into the ReAct loop.
+    // Falls back to existing while(true) loop if no planner or plan fails.
+    if (ctx.planner) {
+      try {
+        const toolNames = ctx.tools?.getFunctionDefs().map((f: { name: string }) => f.name) ?? [];
+        const plan = await ctx.planner.plan(input, {
+          availableTools: toolNames,
+          maxSteps: config.maxSteps ?? 10,
+        });
+
+        if (plan && plan.steps.length > 0) {
+          const validation = await ctx.planner.validate(plan, {
+            availableTools: toolNames,
+            maxSteps: config.maxSteps ?? 10,
+          });
+
+          if (validation.valid && ctx.tools) {
+            // Dynamic import PlanExecutorImpl to avoid circular deps
+            const { PlanExecutorImpl } = await import('../planning/plan-executor.js');
+            const executor = new PlanExecutorImpl();
+            let result = await executor.execute(plan, ctx.tools);
+
+            // Re-plan on failure (up to 2 retries)
+            let replanAttempts = 0;
+            const maxReplanAttempts = 2;
+            while (result.status === 'failed' && replanAttempts < maxReplanAttempts) {
+              // Find the first failed step
+              let failedStepId: string | undefined;
+              for (const [stepId, stepResult] of result.stepResults) {
+                if (stepResult.status === 'failed') {
+                  failedStepId = stepId;
+                  break;
+                }
+              }
+              if (!failedStepId) break;
+
+              replanAttempts++;
+              const newPlan = await ctx.planner.replan(
+                input,
+                { availableTools: toolNames, maxSteps: config.maxSteps ?? 10 },
+                failedStepId,
+                result.stepResults
+              );
+              result = await executor.resume(newPlan, ctx.tools, result.stepResults);
+            }
+
+            // Build final output from step results
+            const outputs: string[] = [];
+            for (const [, stepResult] of result.stepResults) {
+              if (stepResult.status === 'completed' && stepResult.output) {
+                outputs.push(stepResult.output);
+              }
+            }
+            if (outputs.length > 0) {
+              const finalOutput = outputs.join('\n');
+              void emitter.emit({
+                type: 'agent.complete',
+                timestamp: Date.now(),
+                sessionId: ctx.sessionId,
+                output: finalOutput,
+                steps: state?.step ?? 0,
+              } as AgentEvent);
+              void emitter.emit({
+                type: 'done',
+                reason: 'stop',
+                timestamp: Date.now(),
+                sessionId: ctx.sessionId,
+              });
+              return finalOutput;
+            }
+          }
+        }
+      } catch (_planningError) {
+        // Planning failed — fall through to ReAct loop
+        if (ctx.logger) {
+          ctx.logger.warn('Plan-then-execute failed, falling back to ReAct loop');
+        }
+      }
+    }
+
+    // ====================================================================
+    // MAIN LOOP (ReAct — fallback or default)
     // ====================================================================
     try {
       // eslint-disable-next-line no-constant-condition
@@ -574,18 +736,35 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           {}
         );
 
-        // ── MPU M7: Quota check ──
+        // ── MPU M8: Auto-compaction check ──
+        if (ctx.compactionManager) {
+          const needsCompact = ctx.compactionManager.needsCompaction({
+            sessionId: ctx.sessionId,
+            messages: state.messages,
+            currentTokenEstimate: state.tokens.prompt + state.tokens.completion,
+            maxTokens: config.tokenBudget ?? 200_000,
+          });
+          if (needsCompact) {
+            const result = await ctx.compactionManager.compact({
+              sessionId: ctx.sessionId,
+              messages: state.messages,
+              currentTokenEstimate: state.tokens.prompt + state.tokens.completion,
+              maxTokens: config.tokenBudget ?? 200_000,
+            });
+            state.messages = result.messages as Message[];
+          }
+        }
+
+        // ── MPU M7: Quota pre-check ──
         if (ctx.quota) {
           const currentUsage = ctx.quota.getUsage(ctx.sessionId);
-          const limits = ctx.quota.getLimits();
-          // Use actual typed fields, NOT as any
-          const totalUsed = currentUsage.promptTokens + currentUsage.completionTokens;
-          const maxAllowed = limits.maxPromptTokens + limits.maxCompletionTokens;
-          const costOk =
-            limits.maxTotalCost === undefined ||
-            (currentUsage.totalCost ?? 0) < limits.maxTotalCost;
-          const ok = totalUsed < maxAllowed && costOk;
-          if (!ok) {
+          const estimatedPromptTokens = msgs.length * 10;
+          const allowed = await ctx.quota.check(ctx.sessionId, {
+            promptTokens: currentUsage.promptTokens + estimatedPromptTokens,
+            completionTokens: currentUsage.completionTokens,
+            ...(currentUsage.totalCost !== undefined ? { totalCost: currentUsage.totalCost } : {}),
+          });
+          if (!allowed) {
             const err: SerializedError = {
               name: 'QuotaExceededError',
               message: 'Token/cost quota exceeded',
@@ -635,9 +814,21 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
 
         let response;
         try {
-          response = await ctx.llm.chat(msgs, { signal, tools: toolDefs } as any);
+          const llmOpts: Record<string, unknown> = { signal, tools: toolDefs };
+          if (recoveryState.escalatedMaxTokens) {
+            llmOpts.maxTokens = recoveryState.escalatedMaxTokens;
+          }
+          response = await ctx.llm.chat(msgs, llmOpts as any);
           state.tokens.prompt += response.usage?.promptTokens ?? 0;
           state.tokens.completion += response.usage?.completionTokens ?? 0;
+
+          // ── MPU M7: Quota consumption tracking ──
+          if (ctx.quota && response.usage) {
+            ctx.quota.consume(ctx.sessionId, {
+              promptTokens: response.usage.promptTokens ?? 0,
+              completionTokens: response.usage.completionTokens ?? 0,
+            });
+          }
         } catch (error) {
           await runLifecycleHook('llm.error', { error, messages: msgs }, {});
           const recovery = await handleLLMError(error, signal);
@@ -743,12 +934,13 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             state.step++;
             continue;
           }
+          // Budget exhausted — diminishing returns detected
           state.output = response.content;
           await runLifecycleHook(
             'session.end',
             {
               sessionId: ctx.sessionId,
-              reason: 'completed',
+              reason: 'token_budget',
               steps: state.step,
               tokens: state.tokens,
             },
@@ -758,7 +950,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             type: 'agent.complete',
             timestamp: Date.now(),
             sessionId: ctx.sessionId,
-            output: response.content,
+            output: state.output,
             steps: state.step,
             tokens: { input: state.tokens.prompt, output: state.tokens.completion },
           });
@@ -766,9 +958,9 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             type: 'done',
             timestamp: Date.now(),
             sessionId: ctx.sessionId,
-            reason: 'stop',
+            reason: 'length',
           });
-          return response.content;
+          break;
         }
 
         // ── 4. Tool Execution ──
@@ -845,7 +1037,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             const result = await ctx.compactionManager.compact({
               sessionId: ctx.sessionId,
               messages: state.messages,
-              maxTokens: 8000,
+              maxTokens: config.tokenBudget ?? 200_000,
               currentTokenEstimate: state.tokens.prompt + state.tokens.completion,
             });
             state.messages = result.messages as Message[];
@@ -934,7 +1126,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       ctx.onError?.(errorObj, errEvent, 'unknown');
       ctx.logger?.error('Agent loop unexpected error', errorObj);
 
-      throw error;
+      return state?.output ?? ''; // R1: errors-as-events, never throw
     } finally {
       isRunning = false;
       abortController = null;
@@ -951,6 +1143,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
     run,
     on: emitter.on.bind(emitter),
     onAny: emitter.onAny.bind(emitter),
+    emit: (event: AgentEvent): Promise<void> => emitter.emit(event),
     cancel: (): void => {
       abortController?.abort();
       isRunning = false;

@@ -4,10 +4,10 @@ AgentForge 插件系统提供横切关注点的扩展能力。插件可以在不
 
 ## 设计原则
 
-- **Hook = 横向切片增强**：通过操作符扩展事件流
+- **Hook = 横向切片增强**：通过 Hook 系统扩展事件处理
 - **DI = 纵向能力替换**：通过接口实现替换核心组件
-- **拦截器用 concatMap**：阻塞主流程
-- **观察器用 tap**：不阻塞主流程
+- **拦截器用 intercept() 返回值**：阻塞主流程（返回 `{ continue: false }` 阻断）
+- **观察器用 observe()**：不阻塞主流程
 - **异常隔离**：单个插件错误不影响主流程
 
 ## 插件类型
@@ -41,7 +41,6 @@ const loggingPlugin: ObserverPlugin = {
 
 ```typescript
 import type { InterceptorPlugin } from 'agentforge';
-import { of, EMPTY } from 'rxjs';
 
 const permissionPlugin: InterceptorPlugin = {
   name: 'permission',
@@ -52,16 +51,16 @@ const permissionPlugin: InterceptorPlugin = {
 
   intercept(event, ctx) {
     if (event.type !== 'tool.call') {
-      return of(event);
+      return { continue: true, event };
     }
 
     // 检查权限
     if (event.toolName === 'delete_file') {
       console.warn('Delete operation blocked');
-      return EMPTY; // 阻止事件继续传播
+      return { continue: false }; // 阻止事件继续传播
     }
 
-    return of(event); // 放行
+    return { continue: true, event }; // 放行
   },
 };
 ```
@@ -124,19 +123,13 @@ manager.clear();
 ## 构建插件管道
 
 ```typescript
-import { buildPluginPipeline } from 'agentforge';
+import { applyPlugins } from 'agentforge';
 
 // 在 Agent 循环中使用
-const source$ = agentLoop.run(input);
-
-const pipeline$ = buildPluginPipeline(
-  source$,
-  manager.getActivePlugins(),
-  pluginContext
-);
-
-pipeline$.subscribe(event => {
-  // 处理经过插件管道的事件
+const agent = createAgent({ ... });
+agent.onAny((event) => {
+  // 插件管道在事件发出前自动应用
+  // PluginManager 在循环初始化时通过 HookRegistry 注册
 });
 ```
 
@@ -186,23 +179,26 @@ const rateLimitPlugin: InterceptorPlugin = {
 
   intercept(event, ctx) {
     if (event.type !== 'llm.request') {
-      return of(event);
+      return { continue: true, event };
     }
 
     // 检查限流
     if (isRateLimited(ctx.sessionId)) {
-      return of({
-        type: 'agent.error',
-        timestamp: Date.now(),
-        sessionId: ctx.sessionId,
-        error: {
-          name: 'RateLimitError',
-          message: 'Too many requests',
+      return {
+        continue: true,
+        event: {
+          type: 'agent.error',
+          timestamp: Date.now(),
+          sessionId: ctx.sessionId,
+          error: {
+            name: 'RateLimitError',
+            message: 'Too many requests',
+          },
         },
-      });
+      };
     }
 
-    return of(event);
+    return { continue: true, event };
   },
 };
 ```
@@ -240,21 +236,21 @@ const webhookPlugin: ObserverPlugin = {
 插件按以下顺序执行：
 
 ```
-Source Stream
+Event Emitted
     ↓
-[Interceptor P=5] concatMap (优先级低先执行)
+[Interceptor P=5] intercept() (优先级低先执行)
     ↓
-[Interceptor P=10] concatMap
+[Interceptor P=10] intercept()
     ↓
-[Observer P=10] tap
+[Observer P=10] observe()
     ↓
-[Observer P=20] tap
+[Observer P=20] observe()
     ↓
-Output Stream
+Event Delivered
 ```
 
 ## 相关 API
 
 - [Plugin 接口](/api/#plugin-接口) - 插件类型定义
-- [操作符](/api/operators-control) - 事件流操作符
+- [Hook 系统](/guide/core-concepts) - 事件 Hook 机制
 - [预设](/api/presets) - 预设组合

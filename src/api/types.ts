@@ -5,7 +5,6 @@
  * Configuration-driven API types for creating agents.
  * This module provides the public-facing types for the L2 API.
  *
- * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN/12-API-DESIGN.md
  */
 
 import type {
@@ -225,6 +224,9 @@ export interface AgentConfig {
   /** Total timeout in milliseconds (default: no timeout) */
   timeout?: number;
 
+  /** Token budget cap for the entire session (default: 200000) */
+  tokenBudget?: number;
+
   /** Retry count for recoverable errors (default: 0) */
   retry?: number;
 
@@ -403,7 +405,7 @@ export interface Agent {
   /** Run the agent and return the final result */
   run(input: string, handlers?: RunHandlers): Promise<string>;
 
-  /** @deprecated Observable wrapper for backward compat */
+  /** @deprecated wrapper for backward compat */
   run$?(input: string): any;
 
   // ----- Control -----

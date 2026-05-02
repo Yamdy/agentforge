@@ -257,11 +257,13 @@ src/
 
 ### 铁律
 
-1. **AgentEventEmitter 管好订阅与销毁** - 所有监听器通过返回的 unsubscribe 函数清理
-2. **Zod 统一数据契约** - 外部数据 Tier 1 强校验，内部 Tier 3 仅 TypeScript 类型
-3. **错误即事件** - 所有错误转换为 `agent.error` 事件，不通过异常传播
-4. **Hook 异常隔离** - 单插件报错不拖垮主循环
-5. **命令式循环 while(true) + await** - 非流驱动，非递归 expand
+> 完整铁律体系（含分级和约束矩阵）见 [docs/design/00-OVERVIEW.md](./docs/design/00-OVERVIEW.md)
+
+**架构层（5 条）**: A1 命令式循环 + 事件发射器 | A2 Harness 硬管控 | A3 Zod 分层数据契约 | A4 DI 解耦 | A5 三层 API
+
+**运行时（5 条）**: R1 错误即事件不 throw | R2 Hook 异常隔离 | R3 工具必经注册表 | R4 主串行副并行 | R5 状态外部化可恢复
+
+**实现（4 条）**: I1 as any 零容忍 | I2 ESM 不含 RxJS | I3 外部输入不信任 | I4 测试即文档
 
 ### 三层 API
 

@@ -168,19 +168,24 @@ const ctx = ContextBuilder.create()
 
 ## 配额事件
 
-可以通过事件流监控配额状态：
+可以通过事件监听监控配额状态：
 
 ```typescript
-agent.run$('Hello').pipe(
-  filter(e => e.type === 'llm.request')
-).subscribe(event => {
+const agent = createAgent({
+  name: 'quota-agent',
+  model: 'openai/gpt-4o',
+});
+
+agent.on('llm.request', (event) => {
   // LLM 调用前检查配额
   const usage = quota.getUsage(event.sessionId);
   const limits = quota.getLimits();
-  
+
   const promptPercent = (usage.promptTokens / limits.maxPromptTokens) * 100;
   console.log(`Quota usage: ${promptPercent.toFixed(1)}%`);
 });
+
+const result = await agent.run('Hello');
 ```
 
 ## 最佳实践

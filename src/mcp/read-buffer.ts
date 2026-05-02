@@ -4,7 +4,6 @@
  * Line-based buffer for parsing newline-delimited JSON messages.
  * Handles partial reads and message boundaries.
  *
- * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN/08-SUBSYSTEMS.md
  */
 
 // ============================================================

@@ -215,7 +215,7 @@ export const AgentStateSchema = z.object({
 
 ### 2.4 核心集成点
 
-**关键设计原则：** 错误恢复不改变 RxJS 事件流结构。恢复逻辑通过 `expand()` 递归自然实现 — 恢复就是发射一个新事件让循环继续。
+**关键设计原则：** 错误恢复不改变 while(true) 事件循环结构。恢复逻辑通过 while 循环自然实现 — 恢复就是发射一个新事件让循环继续。
 
 #### 集成点 1: llm.response 中的 `finishReason === 'length'`
 

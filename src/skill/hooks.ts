@@ -9,7 +9,6 @@
  * - Hook errors are isolated (never crash main flow)
  * - Hooks can modify skill content before registration
  *
- * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN/08-SUBSYSTEMS.md
  */
 
 import type { SkillInfo, SkillLoadContext, SkillLoadResult } from './types.js';
@@ -36,7 +35,9 @@ export type BeforeSkillLoad = (context: SkillLoadContext) => Promise<boolean> | 
  * @param skill - Parsed skill info
  * @returns Modified skill info (or undefined to keep original)
  */
-export type AfterSkillLoad = (skill: SkillInfo) => Promise<Partial<SkillInfo> | void> | Partial<SkillInfo> | void;
+export type AfterSkillLoad = (
+  skill: SkillInfo
+) => Promise<Partial<SkillInfo> | void> | Partial<SkillInfo> | void;
 
 /**
  * On skill load error hook
@@ -113,7 +114,7 @@ export class SkillHookManager {
    * Remove a hook by name
    */
   unregister(name: string): boolean {
-    const index = this.hooks.findIndex((h) => h.name === name);
+    const index = this.hooks.findIndex(h => h.name === name);
     if (index >= 0) {
       this.hooks.splice(index, 1);
       return true;
@@ -497,7 +498,7 @@ export class SkillReloadHookManager {
    * Remove a hook by name
    */
   unregister(name: string): boolean {
-    const index = this.hooks.findIndex((h) => h.name === name);
+    const index = this.hooks.findIndex(h => h.name === name);
     if (index >= 0) {
       this.hooks.splice(index, 1);
       return true;
@@ -611,12 +612,10 @@ export function createReloadLoggingHook(): SkillReloadHook {
  *
  * Clears a skill registry cache when skills are reloaded.
  */
-export function createCacheInvalidationHook(
-  registry: {
-    remove: (name: string) => boolean;
-    register: (skill: SkillInfo) => void;
-  }
-): SkillReloadHook {
+export function createCacheInvalidationHook(registry: {
+  remove: (name: string) => boolean;
+  register: (skill: SkillInfo) => void;
+}): SkillReloadHook {
   return {
     name: 'cache-invalidation',
     priority: 200, // High priority - execute first
@@ -701,7 +700,7 @@ export function createReloadValidationHook(
       // Check keywords
       if (requiredKeywords && requiredKeywords.length > 0) {
         const skillKeywords = event.skill.frontmatter.keywords ?? [];
-        const missingKeywords = requiredKeywords.filter((k) => !skillKeywords.includes(k));
+        const missingKeywords = requiredKeywords.filter(k => !skillKeywords.includes(k));
         if (missingKeywords.length > 0) {
           const reason = `Missing keywords: ${missingKeywords.join(', ')}`;
           onInvalid?.(event, reason);

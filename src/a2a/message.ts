@@ -3,7 +3,6 @@
  *
  * Message construction, parsing, and validation utilities.
  *
- * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN/09-A2A.md
  */
 
 import { generateId } from '../core/events.js';
@@ -244,7 +243,7 @@ export function parseMessage(raw: unknown): ParseResult {
 
   return {
     success: false,
-    error: result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
+    error: result.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; '),
   };
 }
 

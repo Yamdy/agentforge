@@ -5,7 +5,6 @@
  * Workflow is a high-level abstraction above Agent, providing
  * multi-step orchestration with suspend/resume capabilities.
  *
- * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN/08-SUBSYSTEMS.md
  */
 
 import { z } from 'zod';

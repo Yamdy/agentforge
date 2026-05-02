@@ -4,7 +4,6 @@
  * Transport implementation using HTTP POST + SSE (Server-Sent Events).
  * Based on MCP specification 2025-11-25.
  *
- * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN/08-SUBSYSTEMS.md
  */
 
 import type { MCPServerConfig } from '../core/interfaces.js';

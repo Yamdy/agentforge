@@ -14,8 +14,6 @@
  * - Uses Promise.all with concurrency limiting
  * - Results merged when all complete
  *
- * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN/08-SUBSYSTEMS.md
- * @see docs/design/25-DE-RXJS.md
  */
 
 import { type AgentEvent, type AgentContext, serializeError, generateId } from '../core/index.js';
@@ -97,10 +95,7 @@ export class SequentialPipeline {
    * @param listener - Callback for each event emitted during execution
    * @returns Promise resolving to PipelineResult
    */
-  async run(
-    input: unknown,
-    listener: (event: AgentEvent) => void
-  ): Promise<PipelineResult> {
+  async run(input: unknown, listener: (event: AgentEvent) => void): Promise<PipelineResult> {
     const workflowId = `pipeline-${generateId()}`;
     const sessionId = this.agentContext.sessionId;
     const stepOutputs = new Map<string, unknown>();
@@ -323,10 +318,7 @@ export class ParallelPipeline {
    * @param listener - Callback for each event emitted during execution
    * @returns Promise resolving to PipelineResult
    */
-  async run(
-    input: unknown,
-    listener: (event: AgentEvent) => void
-  ): Promise<PipelineResult> {
+  async run(input: unknown, listener: (event: AgentEvent) => void): Promise<PipelineResult> {
     const workflowId = `pipeline-${generateId()}`;
     const sessionId = this.agentContext.sessionId;
 
@@ -342,9 +334,7 @@ export class ParallelPipeline {
     // Track step outputs
     const stepOutputs = new Map<string, unknown>();
     let allSucceeded = true;
-    let firstError:
-      | { name: string; message: string; stack?: string; stepId?: string }
-      | undefined;
+    let firstError: { name: string; message: string; stack?: string; stepId?: string } | undefined;
 
     /**
      * Execute a single step (used in parallel with concurrency limiting)
@@ -366,20 +356,15 @@ export class ParallelPipeline {
       }
 
       try {
-        const stepResult = await this.executor.executeStep(
-          step,
-          input,
-          workflowId,
-          event => {
-            // Capture output
-            if (event.type === 'agent.complete') {
-              const output = (event as any).output;
-              stepOutputs.set(step.id, output);
-            }
-            // Forward all events to caller
-            listener(event);
+        const stepResult = await this.executor.executeStep(step, input, workflowId, event => {
+          // Capture output
+          if (event.type === 'agent.complete') {
+            const output = (event as any).output;
+            stepOutputs.set(step.id, output);
           }
-        );
+          // Forward all events to caller
+          listener(event);
+        });
 
         if (stepResult.result === 'failure') {
           allSucceeded = false;
@@ -393,7 +378,11 @@ export class ParallelPipeline {
               if (stepResult.error.stack !== undefined) fe.stack = stepResult.error.stack;
               firstError = fe;
             } else {
-              firstError = { name: 'StepError', message: `Step ${step.id} failed`, stepId: step.id };
+              firstError = {
+                name: 'StepError',
+                message: `Step ${step.id} failed`,
+                stepId: step.id,
+              };
             }
           }
 

@@ -1,19 +1,18 @@
-# 移除 RxJS 全栈重构设计 ✅ [COMPLETED 2026-04-30]
+# AgentForge 架构设计 — Imperative 循环 + EventEmitter
 
-> 状态：**已完成** — RxJS 已完全移除，1553 测试全部通过，DeepSeek E2E 验证通过
-> 依赖：24-ARCH-REFACTOR.md（内核重构，已同步完成）
-
----
-
-## 1. 动机
-
-RxJS 在新架构下失去了存在价值。核心循环变为 imperative `while(true)` + `await`，Hook 切面用 `(input, output) => Promise<void>` 替代了流拦截，操作符关注点全部被 Hook 吸收。保留 RxJS 的唯一意义——多订阅者分发——被 50 行的 `AgentEventEmitter` 完全覆盖。
-
-去掉后：依赖减少 30KB gzipped，public API 从 `run$() → Observable` 简化为 `run() → Promise<string>`，插件从 concatMap/tap 管道变为 Hook 注册函数，所有因 RxJS 产生的阻抗匹配（手动 Observable 构造器、StepContext 不可变传递、40+ → ~18 事件类型）全部消失。
+> AgentForge 采用命令式 `while(true) + await` 核心循环，50 行 `AgentEventEmitter` 提供类型安全的多订阅者事件分发，Hook 切面系统（RequestHook/ToolHook/LifecycleHook）处理横切关注点。
 
 ---
 
-## 2. 影响全貌
+## 1. 架构概述
+
+AgentForge 核心循环使用 imperative `while(true)` + `await`，Hook 切面用 `(input, output) => Promise<void>` 实现，多订阅者分发通过 50 行的 `AgentEventEmitter` 完成。
+
+Public API: `run() → Promise<string>`，插件从流拦截模式变为 Hook 注册函数，事件类型精简为 ~18 种核心事件。依赖体积小，无外部流库依赖。
+
+---
+
+## 2. 代码架构
 
 ### 2.1 文件分类
 
@@ -41,19 +40,17 @@ src/ (49)
 │   ├── core/events.ts               → 事件类型精简（40+ → ~15）
 │   ├── core/state.ts                → 移除 StepContext 相关
 │   ├── core/context.ts              → 移除 StepContext
-│   ├── core/context-builder.ts      → 移除 rxjs import
-│   ├── core/interfaces.ts           → 移除 Observable 引用
-│   ├── core/approval-channel.ts     → Promise 替代 Observable
-│   ├── a2a/* (3 files)              → stream 事件 → callback
-│   ├── workflow/* (3 files)         → Observable → callback
-│   ├── subagent/registry.ts         → 移除 Observable
-│   ├── mcp/client.ts                → Observable → callback
-│   ├── adapters/* (6 files)         → stream() → async generator
-│   ├── memory/compaction.ts         → 移除 rxjs import
-│   ├── security/permission/* (2)    → Observable → callback
-│   ├── skill/watcher.ts             → Observable → callback
-│   ├── observability/resource-monitor.ts → 移除 rxjs
-│   ├── tools/todo-list.ts           → 移除 rxjs
+│   ├── core/context-builder.ts      → 使用 AgentEventEmitter
+│   ├── core/interfaces.ts           → 使用 Promise/AsyncGenerator
+│   ├── core/approval-channel.ts     → Promise 替代回调
+│   ├── workflow/* (3 files)         → callback 模式
+│   ├── subagent/registry.ts         → 使用 emitter
+│   ├── mcp/client.ts                → callback 模式
+│   ├── memory/compaction.ts         → 使用 emitter
+│   ├── security/permission/* (2)    → callback 模式
+│   ├── skill/watcher.ts             → callback 模式
+│   ├── observability/resource-monitor.ts → 使用 setInterval
+│   ├── tools/todo-list.ts           → 使用 emitter
 │   └── index.ts (1022行)            → 移除 operator 导出
 │
 tests/ (28)
@@ -69,15 +66,14 @@ examples/ (10)
 ### 2.2 Package.json 变更
 
 ```diff
-- "rxjs": "^7.0.0",           // dependencies
-- "rxjs": "^7.0.0",           // peerDependencies
+- "zod": "^3.22.0",          // runtime validation
 ```
 
 ---
 
 ## 3. 核心替换映射
 
-### 3.1 Observable → AgentEventEmitter
+### 3.1 AgentEventEmitter 实现
 
 ```typescript
 // src/core/events.ts 新增
@@ -119,26 +115,19 @@ export class AgentEventEmitter<T extends AgentEvent = AgentEvent> {
 }
 ```
 
-### 3.2 RxJS 操作符 → Hook 或原生实现
+### 3.2 Hook 系统
 
-| RxJS 操作符 | 替代 |
-|------------|------|
+| 功能 | 实现方式 |
+|------|---------|
 | `takeUntil(destroy$)` | `AbortController.signal.aborted` 检查 |
-| `catchError(handler)` | `try/catch` |
-| `retryOnEventType('agent.error', 3)` | `for (let i=0; i<3; i++)` + `continue` |
-| `timeoutOnEventType('done', 30000)` | `AbortController` + `setTimeout(30000, abort)` |
-| `filterEventType('llm.response')` | Hook `llm.response.after` |
-| `recordMetrics({ increment })` | Hook `step.end` 中调用 `metrics.increment()` |
+| `expand(step)` | `while(true) { event = await step() }` |
+| `timeout(t)` | `AbortSignal.timeout(t)` |
+| `retry(n)` | `for (let i = 0; i <= n; i++)` 循环 |
+| `catchError` | `try/catch` 块 |
 | `concatMap` (插件拦截) | Hook 注册 + `runHook()` 串行调用 |
-| `tap` (插件观察) | EventEmitter `on()` |
-| `finalize` | `try/finally` |
-| `expand` (递归) | `while(true)` |
-| `of(...events)` | `emit(event1); emit(event2)` |
-| `from(promise)` | `await promise` |
-| `EMPTY` | `return`（终止） |
-| `Subject` | `AgentEventEmitter` |
-| `firstValueFrom(stream)` | `agent.run()` 返回 Promise |
-| `Observable.subscribe()` | `emitter.on(callback)` |
+| `tap` (插件观察) | `emitter.on(type, callback)` |
+| `Subject` / `BehaviorSubject` | `AgentEventEmitter` |
+| `Observable.subscribe()` | `emitter.on(callback)` 返回 unsubscribe 函数 |
 | `Subscription.unsubscribe()` | `emitter.on()` 返回的取消函数 |
 
 ### 3.3 LLM Adapter 流式接口 → AsyncGenerator
@@ -146,37 +135,25 @@ export class AgentEventEmitter<T extends AgentEvent = AgentEvent> {
 ```typescript
 // 改前
 interface LLMAdapter {
-  stream(messages, options): Observable<LLMChunk>
-}
-
-// 改后
-interface LLMAdapter {
   stream(messages, options): AsyncGenerator<LLMChunk>
 }
 ```
 
-实现端从 `new Observable(subscriber => {...})` 变成 `async function* stream(...) { yield* ... }` — 更自然。
+实现端使用 `async function* stream(...) { yield* ... }` — 自然且直观。
 
 ---
 
-## 4. 新 API 设计
+## 4. API 设计
 
 ### 4.1 L2 API（创建 Agent）
 
 ```typescript
-// 改前
-const agent = createAgent(config)
-const events$ = agent.run$('hello')          // Observable
-const result$ = agent.stream('hello', {...})  // Subscription
-const output = await agent.suspend('hello')   // Promise<string>
-
-// 改后
 const agent = createAgent(config)
 
 // 主接口：返回 Promise<string>
 const output = await agent.run('hello')
 
-// 流式回调：实时接收事件（替代 Observable.subscribe）
+// 流式回调：实时接收事件
 agent.run('hello', {
   onToken: (delta: string) => process.stdout.write(delta),
   onToolCall: (tool: ToolCallEvent) => console.log(`Calling ${tool.name}...`),
@@ -185,7 +162,7 @@ agent.run('hello', {
   onError: (error: AgentErrorEvent) => console.error('Error:', error),
 })
 
-// 事件监听器（替代 Observable.subscribe）
+// 事件监听器
 agent.on('llm.response', (event) => auditLog.append(event))
 agent.on('tool.result', (event) => metrics.record(event))
 
@@ -582,7 +559,7 @@ mcp.error            — 合入 agent.error
 - [ ] 更新 `examples/*`（10 个文件）
 
 ### Day 4.5 — 收尾
-- [ ] 更新 `package.json`（移除 rxjs 依赖）
+- [ ] 验证 `package.json` 不含流库依赖
 - [ ] 更新文档/README
 - [ ] 全量测试通过
 - [ ] 构建通过

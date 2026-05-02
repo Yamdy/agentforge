@@ -4,9 +4,9 @@
 
 **Goal:** Make the existing `scripts/playground.html` functional by building the missing backend API — Session CRUD, SSE streaming, and config endpoint — as a new `@primo512109/agentforge-server` package with zero changes to core framework code.
 
-**Architecture:** New `packages/server/` package implements framework-agnostic HTTP handlers that call `createAgent()` + `agent.run$()` from the existing API, pipe `Observable<AgentEvent>` to SSE, and manage sessions in memory. A new `agentforge server` CLI command starts it. The existing `playground.html` connects without modification.
+**Architecture:** New `packages/server/` package implements framework-agnostic HTTP handlers that call `createAgent()` + `agent.run()` from the existing API, pipe events via `AgentEventEmitter` to SSE, and manage sessions in memory. A new `agentforge server` CLI command starts it. The existing `playground.html` connects without modification.
 
-**Tech Stack:** TypeScript, Node.js `http` module (no Express/Hono dependency for Phase 0), RxJS (observableToSSE), Vitest for tests, `@primo512109/agentforge` as workspace dependency.
+**Tech Stack:** TypeScript, Node.js `http` module (no Express/Hono dependency for Phase 0), AgentEventEmitter (eventToSSE), Vitest for tests, `@primo512109/agentforge` as workspace dependency.
 
 **Design doc:** `docs/design/studio-design.md`
 
@@ -81,7 +81,6 @@ packages/server/
   },
   "dependencies": {
     "@primo512109/agentforge": "workspace:*",
-    "rxjs": "^7.0.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {
@@ -147,7 +146,6 @@ git commit -m "feat(server): scaffold @primo512109/agentforge-server package"
 ```typescript
 // packages/server/tests/sse.spec.ts
 import { describe, it, expect, vi } from 'vitest';
-import { Observable, of, EMPTY, Subject } from 'rxjs';
 import { observableToSSE, parseSSEStream } from '../src/sse.js';
 import type { AgentEvent } from '@primo512109/agentforge';
 
@@ -162,8 +160,8 @@ describe('observableToSSE', () => {
       model: { provider: 'openai', model: 'gpt-4o' },
     } as AgentEvent;
 
-    const events$ = of(event);
-    const response = observableToSSE(events$);
+    const events = [event];
+    const response = observableToSSE(toAsyncGen(events));
 
     expect(response.headers.get('Content-Type')).toBe('text/event-stream');
     expect(response.headers.get('Cache-Control')).toBe('no-cache');
@@ -179,7 +177,7 @@ describe('observableToSSE', () => {
       { type: 'agent.complete', timestamp: new Date().toISOString(), sessionId: 's1', output: 'done' } as AgentEvent,
     ];
 
-    const response = observableToSSE(of(...events));
+    const response = observableToSSE(toAsyncGen(events));
     const text = await response.text();
 
     expect(text).toContain('"type":"agent.step"');
@@ -187,12 +185,12 @@ describe('observableToSSE', () => {
     expect(text).toContain('data: [DONE]');
   });
 
-  it('should handle Observable errors', async () => {
-    const error$ = new Observable<AgentEvent>((subscriber) => {
-      subscriber.error(new Error('LLM failed'));
-    });
+  it('should handle errors', async () => {
+    async function* errorGen(): AsyncGenerator<AgentEvent> {
+      throw new Error('LLM failed');
+    }
 
-    const response = observableToSSE(error$);
+    const response = observableToSSE(errorGen());
     const text = await response.text();
 
     expect(text).toContain('"type":"agent.error"');
@@ -201,16 +199,21 @@ describe('observableToSSE', () => {
 
   it('should unsubscribe on AbortSignal', async () => {
     const controller = new AbortController();
-    const subject = new Subject<AgentEvent>();
+    
+    // Emit one event then wait
+    async function* slowGen(): AsyncGenerator<AgentEvent> {
+      yield { type: 'agent.step', timestamp: new Date().toISOString(), sessionId: 's1', step: 1, maxSteps: 5 } as AgentEvent;
+      await new Promise(r => setTimeout(r, 1000)); // Long delay
+      yield { type: 'agent.complete', timestamp: new Date().toISOString(), sessionId: 's1', output: 'done' } as AgentEvent;
+    }
 
-    const response = observableToSSE(subject.asObservable(), controller.signal);
+    const response = observableToSSE(slowGen(), controller.signal);
 
     // Abort after a short delay
     setTimeout(() => controller.abort(), 50);
 
     // The response stream should close
     const reader = response.body!.getReader();
-    const chunks: string[] = [];
     try {
       while (true) {
         const { done } = await reader.read();
@@ -219,9 +222,6 @@ describe('observableToSSE', () => {
     } catch {
       // Stream may throw on abort
     }
-
-    // Subject should have no subscribers after abort
-    expect(subject.observed).toBe(false);
   });
 
   it('should clean up abort listener on completion', async () => {
@@ -233,10 +233,10 @@ describe('observableToSSE', () => {
     // Track listener count before
     const initialListenerCount = controller.signal.listeners('abort').length;
 
-    observableToSSE(of(...events), controller.signal);
+    const response = observableToSSE(toAsyncGen(events), controller.signal);
+    await response.text();
 
     // After completion, listener should be cleaned up
-    // Wait for microtask
     await new Promise((r) => setTimeout(r, 10));
 
     const finalListenerCount = controller.signal.listeners('abort').length;
@@ -299,74 +299,39 @@ Expected: FAIL — module not found for `../src/sse.js`
 
 ```typescript
 // packages/server/src/sse.ts
-import { Observable } from 'rxjs';
 import type { AgentEvent } from '@primo512109/agentforge';
 
 /**
- * Convert an Observable<AgentEvent> stream to an SSE Response.
+ * Convert an AsyncGenerator<AgentEvent> stream to an SSE Response.
  *
  * Handles:
  * - Normal events → `data: <JSON>\n\n`
  * - Terminal event → `data: [DONE]\n\n`
  * - Errors → `data: {"type":"agent.error",...}\n\n` + `data: [DONE]\n\n`
- * - Client disconnect (AbortSignal) → unsubscribe and close
+ * - Client disconnect (AbortSignal) → close stream
  * - Memory cleanup → remove abort listener on all exit paths
  */
-export function observableToSSE(events$: Observable<AgentEvent>, signal?: AbortSignal): Response {
-  const stream = new ReadableStream({
-    start(controller) {
-      const cleanup = () => {
-        if (signal) {
-          signal.removeEventListener('abort', onAbort);
-        }
-      };
-
-      const onAbort = () => {
-        subscription.unsubscribe();
-        try {
-          controller.close();
-        } catch {
-          // Already closed
-        }
-        cleanup();
-      };
-
-      const subscription = events$.subscribe({
-        next: (event: AgentEvent) => {
-          const data = JSON.stringify(event);
-          controller.enqueue(`data: ${data}\n\n`);
-        },
-        error: (err: unknown) => {
-          const errorEvent = {
-            type: 'agent.error',
-            timestamp: new Date().toISOString(),
-            error: err instanceof Error ? { name: err.name, message: err.message } : { name: 'UnknownError', message: String(err) },
-          };
-          controller.enqueue(`data: ${JSON.stringify(errorEvent)}\n\n`);
-          controller.enqueue('data: [DONE]\n\n');
-          controller.close();
-          cleanup();
-        },
-        complete: () => {
-          controller.enqueue('data: [DONE]\n\n');
-          controller.close();
-          cleanup();
-        },
-      });
-
-      if (signal) {
-        signal.addEventListener('abort', onAbort, { once: true });
-      }
-    },
-  });
-
-  return new Response(stream, {
-    headers: {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
-    },
-  });
+export function observableToSSE(
+  events: AsyncGenerator<AgentEvent>,
+  signal?: AbortSignal,
+): AsyncGenerator<string, void, undefined> {
+  const encoder = new TextEncoder();
+  
+  try {
+    for await (const event of events) {
+      if (signal?.aborted) break;
+      yield `data: ${JSON.stringify(event)}\n\n`;
+    }
+  } catch (err: unknown) {
+    const errorEvent = {
+      type: 'agent.error',
+      timestamp: new Date().toISOString(),
+      error: err instanceof Error ? { name: err.name, message: err.message } : { name: 'UnknownError', message: String(err) },
+    };
+    yield `data: ${JSON.stringify(errorEvent)}\n\n`;
+  } finally {
+    yield 'data: [DONE]\n\n';
+  }
 }
 
 /**

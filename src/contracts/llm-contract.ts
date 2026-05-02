@@ -4,7 +4,6 @@
  * Validates LLM responses (external untrusted data) with graceful degradation.
  * Never throws - always returns a usable LLMResponse.
  *
- * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN.md - Tier 1: External Untrusted Data
  */
 
 import { z } from 'zod';

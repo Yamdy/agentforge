@@ -9,7 +9,6 @@
  * - Debounce prevents rapid file change storms
  * - Callback-based API for event subscription
  *
- * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN/08-SUBSYSTEMS.md
  */
 
 import { watch, type FSWatcher } from 'fs';
@@ -73,7 +72,9 @@ export interface SkillWatcherConfig {
   debug?: boolean;
 }
 
-const DEFAULT_WATCHER_CONFIG: Required<Omit<SkillWatcherConfig, 'directories' | 'loaderConfig' | 'hooks'>> = {
+const DEFAULT_WATCHER_CONFIG: Required<
+  Omit<SkillWatcherConfig, 'directories' | 'loaderConfig' | 'hooks'>
+> = {
   skillFileName: 'SKILL.md',
   debounceMs: 300,
   recursive: true,
@@ -139,7 +140,9 @@ export class SkillWatcher {
    */
   onReload(listener: (event: SkillReloadEvent) => void): () => void {
     this.reloadListeners.add(listener);
-    return () => { this.reloadListeners.delete(listener); };
+    return () => {
+      this.reloadListeners.delete(listener);
+    };
   }
 
   /**
@@ -262,29 +265,32 @@ export class SkillWatcher {
     const existing = this.debounceTimers.get(filePath);
     if (existing) clearTimeout(existing);
 
-    this.debounceTimers.set(filePath, setTimeout(() => {
-      void (async () => {
-        this.debounceTimers.delete(filePath);
-        try {
-          await stat(filePath);
-        // File exists — added or changed
-        const result = await loadSkill(filePath, this.config.loaderConfig);
-        if (result.success) {
-          const name = result.skill.frontmatter.name ?? filePath;
-          this.knownSkills.set(name, result.skill);
-          this.emitReload({ type: 'changed', filePath, skillName: name, skill: result.skill });
-        } else {
-          this.emitReload({ type: 'added', filePath });
-        }
-      } catch {
-        // File removed
-        if (this.knownSkills.has(filePath)) {
-          this.knownSkills.delete(filePath);
-        }
-        this.emitReload({ type: 'removed', filePath });
-      }
-      })();
-    }, 100)); // Per-file debounce
+    this.debounceTimers.set(
+      filePath,
+      setTimeout(() => {
+        void (async () => {
+          this.debounceTimers.delete(filePath);
+          try {
+            await stat(filePath);
+            // File exists — added or changed
+            const result = await loadSkill(filePath, this.config.loaderConfig);
+            if (result.success) {
+              const name = result.skill.frontmatter.name ?? filePath;
+              this.knownSkills.set(name, result.skill);
+              this.emitReload({ type: 'changed', filePath, skillName: name, skill: result.skill });
+            } else {
+              this.emitReload({ type: 'added', filePath });
+            }
+          } catch {
+            // File removed
+            if (this.knownSkills.has(filePath)) {
+              this.knownSkills.delete(filePath);
+            }
+            this.emitReload({ type: 'removed', filePath });
+          }
+        })();
+      }, 100)
+    ); // Per-file debounce
   }
 
   /**
@@ -314,7 +320,11 @@ export class SkillWatcher {
       this.debounceTimer = null;
       if (this.stopped || this.status !== 'watching') return;
       for (const listener of this.reloadListeners) {
-        try { listener(event); } catch { /* isolate */ }
+        try {
+          listener(event);
+        } catch {
+          /* isolate */
+        }
       }
     }, this.config.debounceMs);
   }

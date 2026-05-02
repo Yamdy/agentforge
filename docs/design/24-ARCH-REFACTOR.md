@@ -1,40 +1,39 @@
-# AgentForge 内核重构设计 — Imperative 循环 + Hook 切面 ✅ [COMPLETED 2026-04-30]
+# AgentForge 内核架构设计 — Imperative 循环 + Hook 切面
 
-> 状态：**已完成** — while(true) 循环 + HookRegistry 已实现，1553 测试通过
+> AgentForge 采用命令式 `while(true) + await` 循环作为核心引擎，Hook 系统（RequestHook/ToolHook/LifecycleHook）作为横向切面，AgentEventEmitter 提供事件分发。
 > 参考：ClaudeCode `src/query.ts` 循环模式 + OpenCode `Hooks` 接口设计
-> 预估工作量：4 天（核心循环 1d + Hook 系统 1d + 事件精简 0.5d + 测试适配 1d + 三份新设计实现 0.5d）
 
 ---
 
-## 1. 问题诊断
+## 1. 架构原理
 
-当前 AgentForge 的 RxJS `expand()` 递归架构存在三个根本性阻抗：
+AgentForge 采用 imperative 控制流作为核心循环（调用 LLM → 执行工具 → 把结果喂回去），AgentEventEmitter 负责多订阅者事件分发和可观测性。
 
-| 阻抗 | 症状 | 根因 |
-|------|------|------|
-| **控制流对抗** | `switch(event.type)` 分发 40+ 事件类型，但本质是 while 循环 | `expand()` 将 imperative 控制流强行投射为 declarative 状态机 |
-| **状态传递** | `StepContext` 不可变透传，但串行工具执行需要累积状态 | 操作符无法优雅表达"先并行这批、再串行那批、中间累积状态" |
-| **过度抽象** | 错误恢复需要 300 行新类型/新事件/新 handler，ClaudeCode 只需 30 行 | 为了"统一事件流"原则，为无消费者的中间状态创建了事件类型 |
+| 原则 | 描述 |
+|------|------|
+| **控制流自然** | `switch(event.type)` 已不存在，while 循环直接表达顺序逻辑 |
+| **状态累积** | `AgentState` 在循环闭包中累积，串行工具可直接更新状态 |
+| **精简抽象** | 错误恢复在 while 循环中直接实现，无需额外的事件类型 |
 
-**核心结论**：Agent Loop 的本质是 imperative 控制流（调用 LLM → 执行工具 → 把结果喂回去）。RxJS 应该负责的是这个循环的**外壳**（可观测性、操作符组合、多订阅者分发），而不是循环本身。
+**核心结论**：Agent Loop 的本质是 imperative 控制流。AgentEventEmitter 提供可观测性外壳，Hook 提供前置/后置切面介入点。
 
 ---
 
-## 2. 新架构
+## 2. 架构
 
 ### 2.1 层次划分
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    应用层 (createAgent / run$)               │
-│                    .pipe(operators).subscribe(ui)            │
+│                    应用层 (createAgent / run)                 │
+│                    run(input, { onEvent, signal })           │
 ├─────────────────────────────────────────────────────────────┤
-│               Observable 外壳 (new Observable)               │
-│         takeUntil(destroy$) + catchError 安全网              │
+│              AgentEventEmitter (事件分发)                      │
+│         on(type, callback) + AbortController 安全网           │
 ├─────────────────────────────────────────────────────────────┤
 │                  Plugin 管道 (buildPluginPipeline)            │
-│        Interceptor: concatMap → 可修改/拦截/替换事件         │
-│        Observer: tap → 纯观察，永不阻塞                      │
+│        Interceptor: await → 可修改/拦截/替换事件              │
+│        Observer: fire-and-forget → 纯观察，永不阻塞           │
 ├─────────────────────────────────────────────────────────────┤
 │           Hook 切面系统 (Imperative, OpenCode 模式)           │
 │  在每个生命周期切割点，串行调用已注册的 hook 函数             │
@@ -47,25 +46,24 @@
 ```
 
 **关键设计决策**：
-- **内层 imperative，外层 Observable**：核心循环用 `async/await` + `while(true)`，保持控制流自然；Observable 外壳提供 `.pipe()` 组合能力
-- **Hook 在循环内，Plugin 在外壳上**：Hook 在每次 `await` 前后同步调用，能修改输入/输出；Plugin 通过 Observable 管道拦截/观察事件流
-- **RxJS 不进入核心循环**：不再有 `expand(step)`，不再有 `StepContext`，不再有 `switch(event.type)` 分发 40 种事件
+- **内层 imperative，外层 AgentEventEmitter**：核心循环用 `async/await` + `while(true)`，保持控制流自然；AgentEventEmitter 提供事件分发能力
+- **Hook 在循环内，Plugin 通过 emitter 注册**：Hook 在每次 `await` 前后同步调用，能修改输入/输出；Observer Plugin 通过 `emitter.on()` 订阅事件
+- **核心循环纯 imperative**：没有 `expand(step)`，没有 `StepContext`，没有 `switch(event.type)` 分发 40 种事件
 
 ### 2.2 核心循环伪代码
 
 ```typescript
 function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): AgentLoop {
-  function run(input: string): Observable<AgentEvent> {
-    return new Observable<AgentEvent>(subscriber => {
+  return {
+    run(input: string, options?: RunOptions): Promise<string> {
+      return new Promise(async (resolve, reject) => {
       // ===== Imperative 可变状态 =====
       let messages: Message[] = buildInitialMessages(input, config)
       let step = 0
       let tokens = { prompt: 0, completion: 0 }
       let recoveryState = createRecoveryState()
 
-      const emit = (event: AgentEvent): void => {
-        if (!subscriber.closed) subscriber.next(event)
-      }
+      const emitter = ctx.emitter;
 
       // ===== Hook 执行器 =====
       const hooks = ctx.hookRegistry // 见 §3
@@ -260,20 +258,14 @@ function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): AgentLoop 
       loop()
         .catch(error => {
           ctx.logger?.error('Agent loop crashed', error)
-          emit({ type: 'agent.error', error: serializeError(error), ... })
-          emit({ type: 'done', reason: 'error' })
+          emitter.emit({ type: 'agent.error', error: serializeError(error), ... })
+          emitter.emit({ type: 'done', reason: 'error' })
         })
-        .finally(() => subscriber.complete())
-    }).pipe(
-      takeUntil(destroy$),             // 框架清理
-      takeUntil(abortObservable$),     // 用户中断
-      // ↓ Plugin 管道（拦截器/观察器）
-      ctx.pluginPipeline ? (source) => ctx.pluginPipeline!(source) : (source) => source,
-      catchError(error => /* 全局安全网 */),
-      finalize(() => { isRunning = false })
-    )
-  }
-}
+        .finally(() => {
+          isRunning = false;
+          resolve(finalOutput);
+        })
+    });
 ```
 
 ---
@@ -592,45 +584,42 @@ if (!diminishing && pct < 0.9) {
 
 ### 23-TOOL-CONCURRENCY
 
-不再需要 `new Observable` 手动构造器。变成循环内的 imperative 分批执行（§2.2 中已内联）。
+不再需要手动构造器。变成循环内的 imperative 分批执行（§2.2 中已内联）。
 
 ---
 
 ## 6. Plugin 系统适配
 
-Plugin 系统保持现有 `InterceptorPlugin` / `ObserverPlugin` 接口不变，但工作方式从"插入 RxJS 管道"变为"注册到 HookRegistry + 订阅事件流"：
+Plugin 系统保持现有 `InterceptorPlugin` / `ObserverPlugin` 接口不变，但工作方式变为"注册到 HookRegistry + 订阅事件"：
 
 ```typescript
-// plugins/pipeline.ts — 新实现
+// plugins/pipeline.ts — 实现
 
 export function buildPluginPipeline(
-  source: Observable<AgentEvent>,
   plugins: readonly Plugin[],
   hookRegistry: HookRegistry,
-): Observable<AgentEvent> {
+  emitter: AgentEventEmitter,
+): () => void {
   // 1. 注册插件的 hook 到 HookRegistry
   for (const plugin of plugins) {
     if (plugin.type === 'interceptor') {
-      // 拦截器注册为对应的 hook
       hookRegistry.register(plugin.hookName, plugin.intercept)
     }
   }
 
-  // 2. 构建 Observable 管道（观察器仍用 tap）
+  // 2. 观察器通过 emitter 订阅
   const observers = plugins.filter(p => p.type === 'observer').filter(p => p.enabled)
-  let pipeline = source
+  const unsubs: Array<() => void> = []
   for (const obs of observers) {
-    pipeline = pipeline.pipe(
-      tap(event => {
-        try { obs.observe(event) } catch { /* 隔离 */ }
-      })
-    )
+    unsubs.push(emitter.onAny(event => {
+      try { obs.observe(event) } catch { /* 隔离 */ }
+    }))
   }
-  return pipeline
+  return () => unsubs.forEach(fn => fn())
 }
 ```
 
-**但更简单的方案**：直接废弃 Plugin 的流拦截模式，让 Plugin 实现改用 Hook 注册 + Observable 观察。Plugin 接口新增 `getHooks(): HookRegistration[]` 方法。
+Plugin 实现改用 Hook 注册 + emitter 观察。Plugin 接口新增 `getHooks(): HookRegistration[]` 方法。
 
 ---
 
@@ -656,9 +645,9 @@ export function buildPluginPipeline(
 
 | 维度 | ClaudeCode | OpenCode | AgentForge 新设计 |
 |------|-----------|----------|------------------|
-| 核心循环 | AsyncGenerator while(true) | 未暴露 | Async function while(true) in Observable |
+| 核心循环 | AsyncGenerator while(true) | 未暴露 | Async function while(true) with emitter |
 | Hook 机制 | 无（内联） | `(input, output) => Promise<void>` 16 个切面 | 同 OpenCode 模式，12 个切面 |
-| 可观测性 | React store 直读 | Effect Stream | Observable + 事件流 |
-| 操作符 | 无 | 无 | `.pipe(timeout, retry, metrics, ...)` |
+| 可观测性 | React store 直读 | Effect Stream | AgentEventEmitter + Hook |
+| 操作符 | 无 | 无 | `on(event, callback)` + AbortSignal.timeout() |
 | 类型安全 | strict: false | Effect-TS type-safe | Zod + TypeScript strict: true |
-| 插件模型 | feature flag + DCE | npm plugin + Hook | Hook + Observable interceptor/observer |
+| 插件模型 | feature flag + DCE | npm plugin + Hook | Hook + emitter observer |

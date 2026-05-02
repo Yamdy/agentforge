@@ -10,7 +10,7 @@ interface LLMAdapter {
   readonly provider: string;
 
   chat(messages: Message[], options?: LLMOptions): Promise<LLMResponse>;
-  stream(messages: Message[], options?: LLMOptions): Observable<LLMChunk>;
+  stream(messages: Message[], options?: LLMOptions): AsyncGenerator<LLMChunk>;
 
   // 可选：Provider 特定方法
   formatTools?(tools: FunctionDefinition[]): unknown;
@@ -123,7 +123,6 @@ createAnthropicAdapter('anthropic/claude-sonnet-4-5'); // Anthropic
 
 ```typescript
 import type { LLMAdapter, LLMResponse, LLMChunk, LLMOptions } from 'agentforge';
-import { Observable } from 'rxjs';
 
 class CustomLLMAdapter implements LLMAdapter {
   readonly name = 'custom';
@@ -149,23 +148,13 @@ class CustomLLMAdapter implements LLMAdapter {
     };
   }
 
-  stream(messages: Message[], options?: LLMOptions): Observable<LLMChunk> {
-    return new Observable(subscriber => {
-      // 实现流式聊天
-      const stream = yourLLMlib.stream({ messages });
+  async *stream(messages: Message[], options?: LLMOptions): AsyncGenerator<LLMChunk> {
+    // 实现流式聊天
+    const stream = yourLLMlib.stream({ messages });
 
-      stream.on('data', (chunk) => {
-        subscriber.next({ text: chunk.text });
-      });
-
-      stream.on('end', () => {
-        subscriber.complete();
-      });
-
-      stream.on('error', (error) => {
-        subscriber.error(error);
-      });
-    });
+    for await (const chunk of stream) {
+      yield { text: chunk.text };
+    }
   }
 }
 ```

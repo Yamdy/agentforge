@@ -42,7 +42,7 @@ Agent Loop 通过 ctx.tracer?.startSpan() 调用
 ```
 Agent（核心）                      AgentForge 框架
 ├── createAgent(config)            核心 API
-├── Agent.run$()                   Observable<AgentEvent>
+├── Agent.run()                    Promise<string>
 ├── AgentContext                   DI 注入点（tracer?, metrics?, quota?, ...）
 └── Plugin 系统                    InterceptorPlugin + ObserverPlugin
 
@@ -216,7 +216,7 @@ export class AgentForgeClient {
   constructor(options: { baseUrl: string; apiKey?: string }) {}
   
   async chat(sessionId: string, message: string): Promise<ApiResponse> {}
-  chatStream(sessionId: string, message: string): Observable<SseEvent> {}
+  chatStream(sessionId: string, message: string): AsyncGenerator<SseEvent> {}
   // ...
 }
 ```

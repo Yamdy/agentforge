@@ -11,7 +11,6 @@
  * - Session-level state is isolated per agent
  * - Global services are shared for efficiency
  *
- * @see docs/RXJS-EVENT-STREAM-DESIGN.md - 轻量依赖注入 section
  */
 
 import type { AgentEvent, Message } from './events.js';

@@ -4,7 +4,6 @@
  * Transport implementation using stdin/stdout for process communication.
  * Uses newline-delimited JSON format.
  *
- * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN/08-SUBSYSTEMS.md
  */
 
 import { spawn } from 'child_process';

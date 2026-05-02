@@ -3,7 +3,7 @@
  *
  * Tests A2AClient: request/notify/broadcast/respond/subscribeRequests
  * Uses vitest fake timers for timeout testing.
- * Callback-based API (de-rxjs migration).
+ * Callback-based API.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -55,7 +55,7 @@ function firstValue<T>(subscribable: Subscribable<T>): Promise<T> {
 /**
  * Controllable mock transport for testing.
  * Allows simulating messages, delays, and errors.
- * Callback-based (de-rxjs migration).
+ * Callback-based.
  */
 class TestMockTransport implements A2ATransport {
   readonly name = 'test-mock';

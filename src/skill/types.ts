@@ -10,7 +10,6 @@
  * - Contains frontmatter (YAML) + Markdown instructions
  * - Loaded and injected into Agent context
  *
- * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN/08-SUBSYSTEMS.md
  */
 
 import { z } from 'zod';
@@ -145,6 +144,8 @@ export function isSkillFrontmatter(value: unknown): value is SkillFrontmatter {
 }
 
 /** Check if a SkillLoadResult is successful */
-export function isSuccessfulLoadResult(result: SkillLoadResult): result is { success: true; skill: SkillInfo } {
+export function isSuccessfulLoadResult(
+  result: SkillLoadResult
+): result is { success: true; skill: SkillInfo } {
   return result.success === true;
 }

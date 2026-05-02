@@ -6,7 +6,7 @@
  *
  * 核心概念:
  * - SubagentRegistry: 管理子代理的注册和执行
- * - AgentLoop: 代理执行循环的接口 (Promise + 回调事件，不再使用 Observable)
+ * - AgentLoop: 代理执行循环的接口 (Promise + 回调事件)
  * - registry.run(name, input, listener, options?) → Promise<string>
  * - agent.onAny(listener) 订阅事件
  *
@@ -160,7 +160,7 @@ class MockToolRegistry implements ToolRegistry {
 }
 
 // ============================================================
-// Mock Agent Loop (Promise-based, no Observable)
+// Mock Agent Loop (Promise-based)
 // ============================================================
 
 /**
@@ -273,7 +273,7 @@ async function example1_basicSubagent(): Promise<void> {
   console.log('\n运行子代理:');
   const events: AgentEvent[] = [];
 
-  const output = await registry.run('research-agent', '搜索 AI 市场趋势', (event) => {
+  const output = await registry.run('research-agent', '搜索 AI 市场趋势', event => {
     events.push(event);
     console.log(`  事件: ${event.type}`);
   });
@@ -344,15 +344,15 @@ async function example2_nestedSubagents(): Promise<void> {
 
   // 步骤 1: 运行搜索代理
   console.log('\n--- 执行 search-agent ---');
-  await registry.run('search-agent', '搜索 AI 市场', (e) => allEvents.push(e));
+  await registry.run('search-agent', '搜索 AI 市场', e => allEvents.push(e));
 
   // 步骤 2: 运行分析代理
   console.log('--- 执行 analysis-agent ---');
-  await registry.run('analysis-agent', '分析搜索结果', (e) => allEvents.push(e));
+  await registry.run('analysis-agent', '分析搜索结果', e => allEvents.push(e));
 
   // 步骤 3: 运行总结代理
   console.log('--- 执行 summary-agent ---');
-  await registry.run('summary-agent', '总结分析结果', (e) => allEvents.push(e));
+  await registry.run('summary-agent', '总结分析结果', e => allEvents.push(e));
 
   // 统计事件
   const eventCounts = new Map<string, number>();
@@ -448,7 +448,7 @@ async function example3_subagentWithTools(): Promise<void> {
 
   // 运行带工具的子代理
   console.log('\n运行子代理:');
-  await registry.run('tool-agent', '分析 AI 市场', (e) => {
+  await registry.run('tool-agent', '分析 AI 市场', e => {
     console.log(`  事件: ${e.type}`);
   });
 
@@ -533,7 +533,7 @@ async function example5_errorHandling(): Promise<void> {
   console.log('尝试运行不存在的子代理:');
   const errorEvents: AgentEvent[] = [];
 
-  await registry.run('non-existent-agent', '测试', (e) => {
+  await registry.run('non-existent-agent', '测试', e => {
     errorEvents.push(e);
     if (e.type === 'subagent.error') {
       console.log(`  错误事件: ${e.type}`);
@@ -542,7 +542,7 @@ async function example5_errorHandling(): Promise<void> {
     }
   });
 
-  // 创建一个会产生错误的子代理（Promise-based，不使用 Observable）
+  // 创建一个会产生错误的子代理（Promise-based）
   const errorAgent: AgentLoop = (() => {
     const listeners: Array<(event: AgentEvent) => void> = [];
 
@@ -597,7 +597,7 @@ async function example5_errorHandling(): Promise<void> {
   });
 
   console.log('\n运行会出错的子代理:');
-  await registry.run('error-agent', '测试错误', (e) => {
+  await registry.run('error-agent', '测试错误', e => {
     if (e.type === 'agent.error') {
       console.log(`  代理错误: ${(e as any).error?.message ?? '未知错误'}`);
     }

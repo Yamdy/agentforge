@@ -17,6 +17,7 @@ import type {
   PlannerContext,
   PlanValidationResult,
   PlanValidationError,
+  StepResult,
 } from './types.js';
 
 // ============================================================
@@ -202,5 +203,24 @@ export class PlannerImpl implements Planner {
       valid: errors.length === 0,
       errors,
     };
+  }
+
+  // eslint-disable-next-line @typescript-eslint/require-await
+  async replan(
+    input: string,
+    context: PlannerContext,
+    _failedStepId: string,
+    completedResults: Map<string, StepResult>
+  ): Promise<ExecutionPlan> {
+    // Keyword-based planner: regenerate the full plan from scratch
+    // (no semantic understanding to do scoped replanning)
+    const plan = await this.plan(input, context);
+    // Mark already-completed steps
+    for (const step of plan.steps) {
+      if (completedResults.has(step.id)) {
+        step.status = 'completed';
+      }
+    }
+    return plan;
   }
 }

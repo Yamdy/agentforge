@@ -445,35 +445,29 @@ export function createMemoryPlugin(
     eventTypes: ['agent.start', 'llm.request'],
     enabled: config.enabled,
 
-    intercept(event: AgentEvent, _ctx: PluginContext): Observable<AgentEvent> {
+    intercept(event: AgentEvent, _ctx: PluginContext): Promise<AgentEvent> {
       if (event.type === 'agent.start' && !loaded) {
         // 自动发现 AGENTS.md
         if (config.autoDiscover) {
-          return from(loadAgentsMd({ cwd: config.cwd })).pipe(
-            map(result => {
-              if (result.content) {
-                entries = [{
-                  id: 'agents-md-auto',
-                  content: result.content,
-                  sourcePath: result.paths.join(', '),
-                  createdAt: Date.now(),
-                  updatedAt: Date.now(),
-                }];
-              }
-              loaded = true;
-              return event;
-            })
-          );
+          const result = await loadAgentsMd({ cwd: config.cwd });
+          if (result.content) {
+            entries = [{
+              id: 'agents-md-auto',
+              content: result.content,
+              sourcePath: result.paths.join(', '),
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+            }];
+          }
+          loaded = true;
+          return event;
         }
         
         // 手动配置的 sources
-        return from(memory.load(config.sources)).pipe(
-          map(result => {
-            entries = result.entries;
-            loaded = true;
-            return event;
-          })
-        );
+        const result = await memory.load(config.sources);
+        entries = result.entries;
+        loaded = true;
+        return event;
       }
 
       if (event.type === 'llm.request' && loaded && entries.length > 0) {
@@ -676,21 +670,21 @@ export class TodoListPlugin implements InterceptorPlugin {
   eventTypes = ['llm.request'];
   enabled = true;
   
-  intercept(event: AgentEvent, ctx: PluginContext): Observable<AgentEvent> {
-    if (event.type !== 'llm.request') return of(event);
+  intercept(event: AgentEvent, ctx: PluginContext): Promise<AgentEvent> {
+    if (event.type !== 'llm.request') return event;
     
     const todoState = getTodoState(ctx);
-    if (todoState.items.length === 0) return of(event);
+    if (todoState.items.length === 0) return event;
     
     const todoPrompt = formatTodoState(todoState);
     
-    return of({
+    return {
       ...event,
       messages: [
         { role: 'system', content: todoPrompt },
         ...event.messages,
       ],
-    });
+    };
   }
 }
 
@@ -829,10 +823,10 @@ export class SubagentRegistry implements ISubagentRegistry {
   /**
    * 运行子代理 (同步模式)
    */
-  run(name: string, input: string, options?: SubagentRunOptions): Observable<AgentEvent> {
+  async run(name: string, input: string, options?: SubagentRunOptions): Promise<string> {
     const entry = this.subagents.get(name);
     if (!entry) {
-      return throwError(() => new Error(`Subagent "${name}" not found`));
+      throw new Error(`Subagent "${name}" not found`);
     }
     
     switch (entry.config.mode) {
@@ -848,10 +842,10 @@ export class SubagentRegistry implements ISubagentRegistry {
   /**
    * 运行预编译子代理
    */
-  private runCompiled(entry: SubagentEntry, input: string, options?: SubagentRunOptions): Observable<AgentEvent> {
+  private async runCompiled(entry: SubagentEntry, input: string, options?: SubagentRunOptions): Promise<string> {
     const config = entry.config.compiledConfig;
     if (!config) {
-      return throwError(() => new Error(`Subagent "${entry.config.name}" missing compiledConfig`));
+      throw new Error(`Subagent "${entry.config.name}" missing compiledConfig`);
     }
     
     // 创建临时 Agent Loop
@@ -872,47 +866,12 @@ export class SubagentRegistry implements ISubagentRegistry {
    * 2. onComplete 回调必须将结果注入主 Agent 消息历史
    * 3. 主 Agent 流中只返回 subagent.start 事件，不等待子 Agent 完成
    */
-  private runAsync(entry: SubagentEntry, input: string, options?: SubagentRunOptions): Observable<AgentEvent> {
+  private async runAsync(entry: SubagentEntry, input: string, options?: SubagentRunOptions): Promise<string> {
     const sessionId = generateId();
     const events: AgentEvent[] = [];
     
-    // 启动异步执行
-    const subscription = this.runSync(entry, input, options).subscribe({
-      next: (event) => {
-        // 存储事件，供 result() 使用
-        events.push(event);
-      },
-      complete: () => {
-        const result: SubagentResult = {
-          sessionId,
-          status: 'completed',
-          events,
-        };
-        
-        // 将结果注入主 Agent 消息历史
-        this.injectResultToMainAgent(entry.config.name, result);
-        
-        // 调用 onComplete 回调
-        entry.config.asyncConfig?.onComplete?.(result);
-        
-        // 清理 asyncRuns
-        this.asyncRuns.delete(sessionId);
-      },
-      error: (error) => {
-        const result: SubagentResult = {
-          sessionId,
-          status: 'error',
-          error: error instanceof Error ? error : new Error(String(error)),
-          events,
-        };
-        
-        // 调用 onError 回调
-        entry.config.asyncConfig?.onError?.(error instanceof Error ? error : new Error(String(error)));
-        
-        // 清理 asyncRuns
-        this.asyncRuns.delete(sessionId);
-      },
-    });
+    // 启动异步执行 — 使用事件回调和 Promise
+    const resultPromise = this.runSync(entry, input, options);
     
     // 创建句柄并存储到 asyncRuns
     const handle: AsyncSubagentHandle = {
@@ -921,7 +880,6 @@ export class SubagentRegistry implements ISubagentRegistry {
         if (this.asyncRuns.has(sessionId)) {
           return 'running';
         }
-        // 检查最后的事件来确定状态
         const lastEvent = events[events.length - 1];
         if (lastEvent?.type === 'agent.error') {
           return 'error';
@@ -929,27 +887,39 @@ export class SubagentRegistry implements ISubagentRegistry {
         return 'completed';
       },
       result: async () => {
+        const output = await resultPromise;
         return {
           sessionId,
           status: 'completed',
+          output,
           events,
         };
       },
       cancel: async () => {
-        subscription.unsubscribe();
         this.asyncRuns.delete(sessionId);
       },
     };
     
     this.asyncRuns.set(sessionId, handle);
     
-    // 返回句柄事件
-    return of({
-      type: 'subagent.start',
-      timestamp: Date.now(),
-      sessionId,
-      subagentName: entry.config.name,
-    } as AgentEvent);
+    // 后台启动并注入结果
+    resultPromise.then((output: string) => {
+      const result: SubagentResult = {
+        sessionId,
+        status: 'completed',
+        output,
+        events,
+      };
+      this.injectResultToMainAgent(entry.config.name, result);
+      entry.config.asyncConfig?.onComplete?.(result);
+      this.asyncRuns.delete(sessionId);
+    }).catch((error: unknown) => {
+      entry.config.asyncConfig?.onError?.(error instanceof Error ? error : new Error(String(error)));
+      this.asyncRuns.delete(sessionId);
+    });
+    
+    // 返回空字符串 (异步模式不等待结果)
+    return '';
   }
   
   /**

@@ -8,7 +8,7 @@
 
 **Architecture:** Two-phase integration:
 1. **Phase 1 (Eager)**: In `createAgent()`, create MCP clients for each `config.mcp` entry, connect in background, discover tools via `adaptMCPTools()`, register into `ctx.tools`.
-2. **Phase 2 (Auto-refresh)**: Subscribe to `client.onStatusChange()` — when status becomes `'connected'`, re-discover and re-register tools. Subscription is cleaned up in `destroy()`.
+2. **Phase 2 (Auto-refresh)**: Register a callback via `client.onStatusChange()` — when status becomes `'connected'`, re-discover and re-register tools. Callback is cleaned up in `destroy()`.
 
 **Key Design Decisions (from Momus review):**
 - `createAgent()` stays **synchronous** — MCP connects in background. First LLM call may not see MCP tools if connection is slow. Future: `agent.waitForMCP()` Promise for callers who need immediate availability.
@@ -16,7 +16,7 @@
 - `onStatusChange()` subscriptions are **stored and cleaned up** in `destroy()`.
 - `mcp.tools_changed` pass-through in `agent-loop.ts` **unchanged** — re-registration is via `onStatusChange()`, not event stream.
 
-**Tech Stack:** TypeScript, RxJS, Vitest, Zod
+**Tech Stack:** TypeScript, Vitest, Zod
 
 ---
 
@@ -176,17 +176,16 @@ Add near the existing imports:
 ```typescript
 import { createMCPClient, adaptMCPTools } from '../mcp/index.js';
 import type { MCPClient, MCPStatus } from '../core/index.js';
-import { Subscription } from 'rxjs';
 ```
 
 Verify `MCPStatus` is re-exported from `../core/index.js`. If not, import from `'../core/interfaces.js'`.
 
-- [x] **Step 2: Add `mcpSubscriptions` field to `AgentImpl`**
+- [x] **Step 2: Add `mcpCleanupFns` field to `AgentImpl`**
 
 Add inside the `AgentImpl` class:
 
 ```typescript
-  private readonly mcpSubscriptions: Subscription[] = [];
+  private readonly mcpCleanupFns: Array<() => void> = [];
 ```
 
 - [x] **Step 3: Add MCP client creation block in `createAgent()`**
@@ -195,7 +194,7 @@ After the `// Build the context` line and after tool name resolution from global
 
 ```typescript
   // Set up MCP clients if configured (background connection, non-blocking)
-  const mcpSubscriptions: Subscription[] = [];
+  const mcpCleanupFns: Array<() => void> = [];
 
   if (config.mcp && config.mcp.length > 0) {
     const mcpClients = new Map<string, MCPClient>();
@@ -210,27 +209,22 @@ After the `// Build the context` line and after tool name resolution from global
 
         mcpClients.set(serverConfig.name, client);
 
-        // Subscribe to status changes for automatic tool re-registration on reconnect
-        const statusSub = client.onStatusChange().subscribe({
-          next: (status: MCPStatus) => {
-            if (status === 'connected') {
-              client.tools()
-                .then(mcpTools => {
-                  const adaptedTools = adaptMCPTools(mcpTools, client, serverConfig.name);
-                  for (const tool of adaptedTools) {
-                    ctx.tools.register(tool);
-                  }
-                })
-                .catch(() => {
-                  // Tool discovery failure must never crash the agent
-                });
-            }
-          },
-          error: () => {
-            // Status change subscription error — ignore
-          },
+        // Register callback for automatic tool re-registration on reconnect
+        const cleanupFn = client.onStatusChange((status: MCPStatus) => {
+          if (status === 'connected') {
+            client.tools()
+              .then(mcpTools => {
+                const adaptedTools = adaptMCPTools(mcpTools, client, serverConfig.name);
+                for (const tool of adaptedTools) {
+                  ctx.tools.register(tool);
+                }
+              })
+              .catch(() => {
+                // Tool discovery failure must never crash the agent
+              });
+          }
         });
-        mcpSubscriptions.push(statusSub);
+        mcpCleanupFns.push(cleanupFn);
 
         // Background connection and tool discovery (fire-and-forget)
         // Tools will be registered in the tool registry when ready
@@ -267,22 +261,22 @@ After the `// Build the context` line and after tool name resolution from global
 After `const agent = new AgentImpl(...)`, add:
 
 ```typescript
-  // Transfer MCP subscriptions to agent for cleanup
-  for (const sub of mcpSubscriptions) {
-    agent.mcpSubscriptions.push(sub);
+  // Transfer MCP cleanup functions to agent for cleanup
+  for (const fn of mcpCleanupFns) {
+    agent.mcpCleanupFns.push(fn);
   }
 ```
 
 - [x] **Step 5: Add MCP cleanup in `destroy()`**
 
-In `AgentImpl.destroy()`, add BEFORE the existing `this.loopDestroySubscription?.unsubscribe()`:
+In `AgentImpl.destroy()`, add BEFORE the existing cleanup:
 
 ```typescript
-    // Clean up MCP status subscriptions
-    for (const sub of this.mcpSubscriptions) {
-      sub.unsubscribe();
+    // Clean up MCP status callbacks
+    for (const fn of this.mcpCleanupFns) {
+      fn();
     }
-    this.mcpSubscriptions.length = 0;
+    this.mcpCleanupFns.length = 0;
 
     // Disconnect MCP clients
     if (this.ctx.mcpClients) {
@@ -367,14 +361,14 @@ git commit -m "feat: verify MCP exports and add integration test skeleton"
 
 The `mcp.tools_changed` pass-through in `agent-loop.ts` (lines 308-312) remains unchanged. Tool re-registration uses `client.onStatusChange()` because:
 
-1. The event stream is `Observable<AgentEvent>` — MCP events aren't in the Zod schema
+1. The event stream uses `AgentEventEmitter` — MCP events aren't in the Zod schema
 2. `onStatusChange()` is already part of the `MCPClient` interface
-3. Subscriptions are stored and properly cleaned up in `destroy()`
+3. Callbacks are stored and properly cleaned up in `destroy()`
 4. This approach requires zero changes to `agent-loop.ts`
 
-### Subscription cleanup
+### Callback cleanup
 
-Every `onStatusChange()` subscription is stored in `AgentImpl.mcpSubscriptions[]` and unsubscribed in `destroy()`. The `client.disconnect()` call is also in `destroy()`. This prevents memory leaks.
+Every `onStatusChange()` callback is stored in `AgentImpl.mcpCleanupFns[]` and unregistered in `destroy()`. The `client.disconnect()` call is also in `destroy()`. This prevents memory leaks.
 
 ### Deferred items
 

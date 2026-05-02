@@ -10,7 +10,6 @@
  * - No IoC Container: No decorators, no reflection, no container classes
  * - Context Closure: Dependencies passed through closure, not event payloads
  *
- * @see docs/RXJS-EVENT-STREAM-DESIGN.md - 轻量依赖注入 section
  */
 
 import type { Message, ToolCall, AgentEvent } from './events.js';
@@ -427,12 +426,14 @@ export interface HITLController {
   ask(options: HITLAskOptions, onAnswer: (answer: string) => void): () => void;
 
   /** Subscribe to HITL prompts (for UI). Returns unsubscribe. */
-  onAsk(listener: (prompt: {
-    askId: string;
-    question: string;
-    options?: string[];
-    metadata?: Record<string, unknown>;
-  }) => void): () => void;
+  onAsk(
+    listener: (prompt: {
+      askId: string;
+      question: string;
+      options?: string[];
+      metadata?: Record<string, unknown>;
+    }) => void
+  ): () => void;
 
   /** Provide an answer (for UI to call) */
   answer(askId: string, answer: string): void;
@@ -712,74 +713,6 @@ export interface SchemaRegistry {
 }
 
 // ============================================================
-// Planner (Execution Planning)
-// ============================================================
-
-/**
- * A single step in an execution plan.
- */
-export interface PlanStep {
-  /** Unique step identifier */
-  id: string;
-  /** Human-readable step description */
-  description: string;
-  /** Tool name to invoke (if any) */
-  toolName?: string;
-  /** Arguments for the tool (if toolName is set) */
-  toolArgs?: Record<string, unknown>;
-  /** Dependencies — step IDs that must complete before this step */
-  dependsOn?: string[];
-}
-
-/**
- * An execution plan produced by a Planner.
- */
-export interface ExecutionPlan {
-  /** Unique plan identifier */
-  id: string;
-  /** Original user input that triggered planning */
-  input: string;
-  /** Ordered list of steps to execute */
-  steps: PlanStep[];
-  /** Plan-level metadata */
-  metadata?: Record<string, unknown>;
-}
-
-/**
- * Validation result for an execution plan.
- */
-export interface PlanValidation {
-  /** Whether the plan is valid */
-  valid: boolean;
-  /** Validation errors (present when valid is false) */
-  errors: Array<{ message: string; stepId?: string }>;
-}
-
-/**
- * Options passed to Planner.plan()
- */
-export interface PlannerOptions {
-  /** Available tool names */
-  availableTools: string[];
-  /** Maximum number of steps allowed */
-  maxSteps: number;
-}
-
-/**
- * Planner Interface
- *
- * Generates an execution plan before the agent loop begins.
- * Implementations may use LLM, rules, or static templates.
- */
-export interface Planner {
-  /** Generate an execution plan for the given input */
-  plan(input: string, options: PlannerOptions): Promise<ExecutionPlan>;
-
-  /** Validate a plan before execution */
-  validate(plan: ExecutionPlan): Promise<PlanValidation>;
-}
-
-// ============================================================
 // Security Interfaces (defined here for DI, implemented in src/security/)
 // ============================================================
 
@@ -846,12 +779,14 @@ export interface PermissionController {
   ask(options: PermissionAskOptions): Promise<PermissionDecision>;
 
   /** Subscribe to permission prompts (for UI). Returns unsubscribe. */
-  onAsk(listener: (prompt: {
-    promptId: string;
-    permission: string;
-    context?: Record<string, unknown>;
-    options: PermissionDecision[];
-  }) => void): () => void;
+  onAsk(
+    listener: (prompt: {
+      promptId: string;
+      permission: string;
+      context?: Record<string, unknown>;
+      options: PermissionDecision[];
+    }) => void
+  ): () => void;
 
   /** Provide a permission decision — called by UI */
   answer(promptId: string, decision: PermissionDecision): void;

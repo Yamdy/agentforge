@@ -79,10 +79,9 @@ interface Agent {
   // 流式模式：回调处理
   stream(input: string, handlers: StreamHandlers): Promise<void>;
 
-  // 事件监听（替代旧版 Observable）
+  // 事件监听
   on(eventType: string, handler: (event: AgentEvent) => void): () => void;
   onAny(handler: (event: AgentEvent) => void): () => void;
-  run$(input: string): any; // @deprecated 使用 run() + on() 替代
 
   // 控制
   cancel(reason?: string): void;

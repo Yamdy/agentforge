@@ -1,6 +1,6 @@
 # 预设组合
 
-> ⚠️ **已废弃**：本文档描述的是 RxJS 操作符预设模式。去 RxJS 后，预设通过 `createAgent({ preset: 'production' | 'debug' | 'test' })` 配置。详见 [createAgent API](/api/create-agent)。
+> ⚠️ **已废弃**：本文档描述的是操作符预设模式。去 RxJS 后，预设通过 `createAgent({ preset: 'production' | 'debug' | 'test' })` 配置。详见 [createAgent API](/api/create-agent)。
 
 预设组合是预配置的操作符组合，用于常见场景。
 
@@ -11,7 +11,7 @@
 ```typescript
 function productionPreset(
   config: ProductionPresetConfig
-): MonoTypeOperatorFunction<AgentEvent>;
+): void;
 ```
 
 ### ProductionPresetConfig
@@ -42,23 +42,20 @@ interface ProductionPresetConfig {
 ### 示例
 
 ```typescript
-import { productionPreset } from 'agentforge/operators';
-import { MyTracer, MyMetrics, SQLiteCheckpointStorage } from './observability';
+import { createAgent } from 'agentforge';
 
-const tracer = new MyTracer();
-const metrics = new MyMetrics();
-const storage = new SQLiteCheckpointStorage();
+const agent = createAgent({
+  name: 'assistant',
+  model: 'openai/gpt-4o',
+  preset: 'production',
+  tracing: { tracer: new MyTracer() },
+  metrics: { metrics: new MyMetrics() },
+  checkpoint: { storage: new SQLiteCheckpointStorage() },
+  timeout: 30000,
+  retry: 3,
+});
 
-agent.run$('Hello').pipe(
-  productionPreset({
-    tracer,
-    metrics,
-    checkpointStorage: storage,
-    sessionId: 'session-123',
-    timeout: 30000,
-    maxRetries: 3,
-  })
-).subscribe();
+const result = await agent.run('Hello');
 ```
 
 ---
@@ -70,7 +67,7 @@ agent.run$('Hello').pipe(
 ```typescript
 function debugPreset(
   configOrLogger?: Logger | DebugPresetConfig
-): MonoTypeOperatorFunction<AgentEvent>;
+): void;
 ```
 
 ### DebugPresetConfig
@@ -92,12 +89,11 @@ interface DebugPresetConfig {
 ### 示例
 
 ```typescript
-import { debugPreset } from 'agentforge/operators';
-
 // 默认配置
-agent.run$('Hello').pipe(
-  debugPreset()
-);
+const agent = createAgent({
+  model: 'openai/gpt-4o',
+  preset: 'debug',
+});
 
 // 自定义 logger
 const winstonLogger = {
@@ -107,17 +103,21 @@ const winstonLogger = {
   error: (msg, data) => winston.error(msg, data),
 };
 
-agent.run$('Hello').pipe(
-  debugPreset(winstonLogger)
-);
+const agent2 = createAgent({
+  model: 'openai/gpt-4o',
+  preset: 'debug',
+  tracing: { logger: winstonLogger },
+});
 
 // 仅记录关键事件
-agent.run$('Hello').pipe(
-  debugPreset({
+const agent3 = createAgent({
+  model: 'openai/gpt-4o',
+  preset: 'debug',
+  debug: {
     logAllEvents: false,
     alwaysLogTypes: ['agent.start', 'agent.error', 'agent.complete', 'done'],
-  })
-);
+  },
+});
 ```
 
 ---
@@ -129,7 +129,7 @@ agent.run$('Hello').pipe(
 ```typescript
 function testPreset(
   config?: TestPresetConfig
-): MonoTypeOperatorFunction<AgentEvent>;
+): void;
 ```
 
 ### TestPresetConfig
@@ -152,20 +152,23 @@ interface TestPresetConfig {
 ### 示例
 
 ```typescript
-import { testPreset } from 'agentforge/operators';
-import { firstValueFrom, toArray } from 'rxjs';
+import { createAgent } from 'agentforge';
+
+const agent = createAgent({
+  model: 'openai/gpt-4o',
+  preset: 'test',
+});
 
 const collectedEvents: AgentEvent[] = [];
 
-const result$ = agent.run$('Hello').pipe(
-  testPreset({
-    onEvent: event => collectedEvents.push(event),
-    onTerminal: event => console.log('Terminal:', event.type),
-    verbose: true,
-  })
-);
+agent.onAny((event) => {
+  collectedEvents.push(event);
+  if (event.type === 'agent.complete' || event.type === 'agent.error') {
+    console.log('Terminal:', event.type);
+  }
+});
 
-await firstValueFrom(result$.pipe(toArray()));
+const result = await agent.run('Hello');
 
 // 测试断言
 expect(collectedEvents.length).toBeGreaterThan(0);
@@ -180,24 +183,24 @@ expect(collectedEvents.some(e => e.type === 'agent.complete')).toBe(true);
 
 ```typescript
 function createPreset(
-  operators: MonoTypeOperatorFunction<AgentEvent>[]
-): MonoTypeOperatorFunction<AgentEvent>;
+  operators: Record<string, unknown>[]
+): void;
 ```
 
 ### 示例
 
 ```typescript
-import { createPreset, logEvents, recordMetrics } from 'agentforge/operators';
+import { createAgent } from 'agentforge';
 
-const myPreset = createPreset([
-  logEvents(myLogger),
-  recordMetrics(myMetrics),
-  timeoutOnEventType('done', 30000),
-]);
+const agent = createAgent({
+  model: 'openai/gpt-4o',
+  preset: 'production',
+  tracing: { logger: myLogger },
+  metrics: { metrics: myMetrics },
+  timeout: 30000,
+});
 
-agent.run$('Hello').pipe(
-  myPreset
-);
+const result = await agent.run('Hello');
 ```
 
 ---
@@ -237,8 +240,8 @@ const testAgent = createAgent({
 |------|---------|
 | 生产环境 | `productionPreset` |
 | 开发调试 | `debugPreset` |
-| 单元���试 | `testPreset` |
-| 自定义场景 | `createPreset` |
+| 单元测试 | `testPreset` |
+| 自定义场景 | `createAgent({ preset: 'custom', ... })` |
 
 ## 相关 API
 

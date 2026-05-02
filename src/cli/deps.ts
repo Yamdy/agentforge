@@ -5,7 +5,7 @@ import type { PromptsConfig } from './config.js';
  */
 const CORE_DEPS: Record<string, string> = {
   agentforge: '^0.1.0',
-  // rxjs removed — agentforge uses imperative loop + AgentEventEmitter instead
+  // agentforge uses imperative loop + AgentEventEmitter
   zod: '^3.23.8',
   dotenv: '^16.4.0',
 };

@@ -1,6 +1,6 @@
 # 架构概览
 
-AgentForge 的架构设计遵循函数式编程和响应式编程原则。
+AgentForge 的架构设计遵循函数式编程和事件驱动编程原则。
 
 ## 核心架构
 
@@ -13,10 +13,10 @@ AgentForge 的架构设计遵循函数式编程和响应式编程原则。
 │  ┌──────────────────────────────────────────────────────┐   │
 │  │                  Agent Loop                           │   │
 │  │                                                       │   │
-│  │   run() ──► Observable<AgentEvent>                    │   │
+│  │   run() ──► Promise<string>                             │   │
 │  │              │                                        │   │
 │  │              ▼                                        │   │
-│  │         expand(step) ──► 递归处理                      │   │
+│  │         while(true) ──► 命令式循环                        │   │
 │  │              │                                        │   │
 │  │              ▼                                        │   │
 │  │     ┌────────────────────┐                            │   │
@@ -54,17 +54,15 @@ AgentForge 的架构设计遵循函数式编程和响应式编程原则。
 
 ### 1. 错误即事件
 
-**原则**：所有错误都作为事件发出，不使用 RxJS 错误通道。
+**原则**：所有错误都作为事件发出，不使用异常抛出。
 
 ```typescript
 // ❌ 错误做法：抛出异常
 throw new Error('LLM failed');
 
 // ✅ 正确做法：发出错误事件
-return from([
-  { type: 'agent.error', error: serializeError(err) },
-  { type: 'done', reason: 'error' },
-]);
+emitter.emit({ type: 'agent.error', error: serializeError(err) });
+emitter.emit({ type: 'done', reason: 'error' });
 ```
 
 **好处**：
@@ -72,22 +70,23 @@ return from([
 - 错误可追溯、可重试
 - 统一的错误处理模式
 
-### 2. Observable 异步
+### 2. 命令式循环 + await
 
-**原则**：所有异步操作都通过 Observable 表达。
+**原则**：所有异步操作通过 `while(true) + await` 命令式循环表达。
 
 ```typescript
-// ❌ 错误做法：直接返回 Promise
-expand(() => promise);
-
-// ✅ 正确做法：包装为 Observable
-expand(() => from(promise).pipe(mergeMap(arr => from(arr))));
+// ✅ 正确做法：命令式循环
+while (true) {
+  const { event, state } = await processStep(currentState);
+  if (isTerminalEvent(event)) break;
+  currentState = state;
+}
 ```
 
 **好处**：
-- 统一的异步抽象
-- 支持取消和背压
-- 可组合的操作符
+- 线性可读的控制流
+- 支持 AbortController 取消
+- 简化的错误处理
 
 ### 3. 轻量依赖注入
 
@@ -186,7 +185,7 @@ done (reason: 'error')                          │
 ### 取消流程
 
 ```
-用户取消 / destroy$
+用户取消 / AbortController
     │
     ▼
 cancel 事件
@@ -210,7 +209,7 @@ src/
 │   └── prompt-builder.ts   # Prompt 构建器
 │
 ├── loop/                    # Agent 主循环
-│   └── agent-loop.ts       # expand 递归核心
+│   └── agent-loop.ts       # while(true) 命令式循环核心
 │
 ├── api/                     # L2/L3 API 层
 │   ├── create-agent.ts     # L2: createAgent()
@@ -223,11 +222,9 @@ src/
 │   ├── pipeline.ts         # 管道构建
 │   └── manager.ts          # 插件管理
 │
-├── operators/               # RxJS 操作符
-│   ├── control.ts          # 控制流
-│   ├── transform.ts        # 变换
-│   ├── notify.ts           # 通知
-│   └── presets.ts          # 预设
+├── hooks/                    # Hook 系统
+│   ├── hooks.ts            # RequestHook / ToolHook / LifecycleHook
+│   └── hook-registry.ts   # Hook 注册管理
 │
 ├── adapters/                # LLM 适配器
 │   ├── openai.ts           # OpenAI
@@ -255,10 +252,10 @@ src/
 ### 背压控制
 
 ```typescript
-// 使用 pauseOnSignal 控制流
-agent.run(input).pipe(
-  pauseOnSignal(pause$, { maxBufferSize: 100 }),
-);
+// 使用 pause/resume 控制执行
+agent.pause();
+// ... 稍后恢复
+await agent.resume(checkpoint);
 ```
 
 ### 并行工具执行
@@ -293,10 +290,10 @@ const manager = new CompactionManager({
 |------|---------|
 | 架构总览与核心铁律 | [design/00-OVERVIEW.md](/design/00-OVERVIEW.md) |
 | 事件类型与状态定义 | [design/01-CORE-TYPES.md](/design/01-CORE-TYPES.md) |
-| 事件流与 RxJS 扩展机制 | [design/05-EVENT-STREAM.md](/design/05-EVENT-STREAM.md) |
+| 事件流与 EventEmitter 机制 | [design/05-EVENT-STREAM.md](/design/05-EVENT-STREAM.md) |
 | 3 层 Context 依赖注入 | [design/03-DI.md](/design/03-DI.md) |
 | 插件系统 | [design/07-PLUGIN-SYSTEM.md](/design/07-PLUGIN-SYSTEM.md) |
-| 操作符库 | [design/11-OPERATORS.md](/design/11-OPERATORS.md) |
+| Hook 系统 | [design/11-OPERATORS.md](/design/11-OPERATORS.md) |
 | API 设计（L1/L2/L3） | [design/12-API-DESIGN.md](/design/12-API-DESIGN.md) |
 | 安全架构 | [design/17-SECURITY.md](/design/17-SECURITY.md) |
 | 配额集成 | [design/18-QUOTA-INTEGRATION.md](/design/18-QUOTA-INTEGRATION.md) |

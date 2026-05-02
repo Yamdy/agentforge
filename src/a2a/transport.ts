@@ -4,13 +4,16 @@
  * Defines the interface for transport implementations.
  * Supports WebSocket, HTTP, and gRPC transports.
  *
- * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN/09-A2A.md
  */
 
 // Callback-based subscribable type — used only for interface signatures.
-// Replaces rxjs Observable for de-rxjs migration.
+// Event-based communication via callbacks.
 export interface Subscribable<T> {
-  subscribe(observer: { next: (v: T) => void; error?: (e: unknown) => void; complete?: () => void }): { unsubscribe(): void };
+  subscribe(observer: {
+    next: (v: T) => void;
+    error?: (e: unknown) => void;
+    complete?: () => void;
+  }): { unsubscribe(): void };
 }
 
 import type { A2AMessage } from './types.js';
@@ -202,7 +205,10 @@ export function registerTransportFactory(type: A2ATransportType, factory: Transp
  * @returns Transport instance
  * @throws Error if transport type is not registered
  */
-export function createTransport(type: A2ATransportType, options: A2ATransportOptions): A2ATransport {
+export function createTransport(
+  type: A2ATransportType,
+  options: A2ATransportOptions
+): A2ATransport {
   // Validate transport type
   const typeResult = A2ATransportTypeSchema.safeParse(type);
   if (!typeResult.success) {
@@ -288,7 +294,10 @@ export class TransportError extends Error {
  * Connection error (network, timeout, etc.)
  */
 export class TransportConnectionError extends TransportError {
-  constructor(message: string, public readonly cause?: Error) {
+  constructor(
+    message: string,
+    public readonly cause?: Error
+  ) {
     super(message, 'CONNECTION_ERROR', true);
     this.name = 'TransportConnectionError';
   }
@@ -298,7 +307,10 @@ export class TransportConnectionError extends TransportError {
  * Send error (buffer full, not connected, etc.)
  */
 export class TransportSendError extends TransportError {
-  constructor(message: string, public readonly messageData?: Partial<A2AMessage>) {
+  constructor(
+    message: string,
+    public readonly messageData?: Partial<A2AMessage>
+  ) {
     super(message, 'SEND_ERROR', false);
     this.name = 'TransportSendError';
   }
@@ -308,7 +320,10 @@ export class TransportSendError extends TransportError {
  * Parse error (invalid message format)
  */
 export class TransportParseError extends TransportError {
-  constructor(message: string, public readonly rawData?: unknown) {
+  constructor(
+    message: string,
+    public readonly rawData?: unknown
+  ) {
     super(message, 'PARSE_ERROR', false);
     this.name = 'TransportParseError';
   }

@@ -1,7 +1,7 @@
 /**
  * AgentForge Plugin System - New Imperative Interfaces
  *
- * Replaces the RxJS-based Interceptor/Observer pattern with:
+ * Plugin system using hooks for interception points:
  * - RequestHook: modify messages before LLM call
  * - ToolHook: check/block tool execution
  * - LifecycleHook: (input, output) => Promise<void> at cut-points

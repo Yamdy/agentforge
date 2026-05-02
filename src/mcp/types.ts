@@ -4,7 +4,6 @@
  * Zod schemas for JSON-RPC 2.0 messages used by MCP.
  * All external data from MCP servers is validated with these schemas.
  *
- * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN/08-SUBSYSTEMS.md
  */
 
 import { z } from 'zod';

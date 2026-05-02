@@ -4,131 +4,99 @@
 
 ---
 
-## 核心问题：嵌套 Observable
+## 核心问题：嵌套执行
 
 Agent Loop 执行 `tool.call` 时，可能是：
 
 - **本地工具**: 同步执行 `tool.execute(args)`
-- **Subagent 委托**: 嵌套的 `Observable<AgentEvent>`
+- **Subagent 委托**: 嵌套的 Agent 执行
 - **MCP 工具**: 远程 JSON-RPC 调用
 
-三种模式需要统一为事件流。
+三种模式通过统一的事件循环模型处理。
 
 ---
 
-## 统一模型：嵌套流展平
+## 统一模型：嵌套执行
 
 ```typescript
-private handleToolCall(event: AgentEvent, state: AgentState, ctx: AgentContext): Observable<AgentEvent> {
+async function* handleToolCall(event: AgentEvent, state: AgentState, ctx: AgentContext): AsyncGenerator<AgentEvent> {
   const call = event as Extract<AgentEvent, { type: 'tool.call' }>;
 
   // 1. Subagent 委托
   if (ctx.subagents?.has(call.toolName)) {
-    return concat(
-      // Layer 2 事件：subagent 生命周期
-      of({
-        type: 'subagent.start',
-        timestamp: Date.now(),
-        sessionId: ctx.sessionId,
-        subagentName: call.toolName,
-        input: call.args,
-      }),
+    // Layer 2 事件：subagent 生命周期
+    yield {
+      type: 'subagent.start',
+      timestamp: Date.now(),
+      sessionId: ctx.sessionId,
+      subagentName: call.toolName,
+      input: call.args,
+    };
 
-      // 嵌套流：所有事件冒泡到父级（带上下文标记）
-      ctx.subagents.run(call.toolName, call.args.input).pipe(
-        map((e) => ({
-          ...e,
-          // 标记来源，用于追溯
-          parentId: call.toolCallId,
-          parentSessionId: ctx.sessionId,
-        })),
-      ),
+    // 嵌套执行：所有事件冒泡到父级（带上下文标记）
+    for await (const e of ctx.subagents.run(call.toolName, call.args.input)) {
+      yield {
+        ...e,
+        parentId: call.toolCallId,
+        parentSessionId: ctx.sessionId,
+      };
+    }
 
-      // Layer 2 事件：subagent 完成
-      of({
-        type: 'subagent.complete',
-        timestamp: Date.now(),
-        sessionId: ctx.sessionId,
-        subagentName: call.toolName,
-        output: '...', // 从嵌套流的最后事件获取
-      }),
-    );
+    // Layer 2 事件：subagent 完成
+    yield {
+      type: 'subagent.complete',
+      timestamp: Date.now(),
+      sessionId: ctx.sessionId,
+      subagentName: call.toolName,
+      output: '...', // 从嵌套执行的最后事件获取
+    };
+    return;
   }
 
   // 2. MCP 工具
   if (ctx.mcp && isMcpTool(call.toolName)) {
-    return concat(
-      of({ type: 'tool.execute', ...call }),
+    yield { type: 'tool.execute', ...call };
 
+    try {
       // MCP 调用（可能超时）
-      defer(() => ctx.mcp!.callTool(call.toolName, call.args)).pipe(
-        timeout(ctx.mcp!.options?.timeout ?? 30000),
-        map((result) => ({
-          type: 'tool.result',
-          toolCallId: call.toolCallId,
-          toolName: call.toolName,
-          result,
-          isError: false,
-        })),
-        catchError((error) => of({
-          type: 'tool.error',
-          toolCallId: call.toolCallId,
-          toolName: call.toolName,
-          error,
-        })),
-      ),
-    );
-  }
-
-  // 3. 本地工具
-  return concat(
-    of({ type: 'tool.execute', ...call }),
-
-    defer(() => ctx.tools.execute(call.toolName, call.args)).pipe(
-      // 流式工具结果（如 bash 长输出）
-      mergeMap((result) => {
-        if (typeof result === 'string') {
-          return of({
-            type: 'tool.result',
-            toolCallId: call.toolCallId,
-            toolName: call.toolName,
-            result,
-          });
-        }
-        // 如果工具返回 Observable，逐块发送
-        if (result instanceof Observable) {
-          return result.pipe(
-            map((chunk) => ({
-              type: 'tool.result.delta',
-              toolCallId: call.toolCallId,
-              toolName: call.toolName,
-              delta: chunk,
-            })),
-            // 最后发送完整结果
-            last(),
-            map((final) => ({
-              type: 'tool.result',
-              toolCallId: call.toolCallId,
-              toolName: call.toolName,
-              result: final,
-            })),
-          );
-        }
-        return of({
-          type: 'tool.result',
-          toolCallId: call.toolCallId,
-          toolName: call.toolName,
-          result: JSON.stringify(result),
-        });
-      }),
-      catchError((error) => of({
+      const result = await ctx.mcp!.callTool(call.toolName, call.args);
+      yield {
+        type: 'tool.result',
+        toolCallId: call.toolCallId,
+        toolName: call.toolName,
+        result,
+        isError: false,
+      };
+    } catch (error) {
+      yield {
         type: 'tool.error',
         toolCallId: call.toolCallId,
         toolName: call.toolName,
         error,
-      })),
-    ),
-  );
+      };
+    }
+    return;
+  }
+
+  // 3. 本地工具
+  yield { type: 'tool.execute', ...call };
+
+  try {
+    const result = await ctx.tools.execute(call.toolName, call.args);
+    yield {
+      type: 'tool.result',
+      toolCallId: call.toolCallId,
+      toolName: call.toolName,
+      result: typeof result === 'string' ? result : JSON.stringify(result),
+    };
+  } catch (error) {
+    yield {
+      type: 'tool.error',
+      toolCallId: call.toolCallId,
+      toolName: call.toolName,
+      error,
+    };
+  }
 }
 ```
 
@@ -139,12 +107,13 @@ private handleToolCall(event: AgentEvent, state: AgentState, ctx: AgentContext):
 Workflow 不是 Agent Loop 内部机制，而是 Agent 之上的编排层。每个 step 内部调用 `agent.run()`，事件冒泡到顶层。
 
 ```typescript
-// Workflow 执行时的事件流
-const workflow$ = workflow.run({ topic: 'AI' }).pipe(
+// Workflow 执行时监听事件
+workflow.on('event', (e) => {
   // 过滤 workflow 层事件 + 嵌套的 agent 事件
-  filter((e) => e.type.startsWith('workflow.') || e.type.startsWith('agent.')),
-  tap(tracer.record),
-);
+  if (e.type.startsWith('workflow.') || e.type.startsWith('agent.')) {
+    tracer.record(e);
+  }
+});
 
 // Workflow step 内部
 class WorkflowExecutor {
@@ -152,13 +121,9 @@ class WorkflowExecutor {
     // 发出 workflow.step.start 事件
     this.emit({ type: 'workflow.step.start', stepId: step.id, input });
 
-    // 调用 Agent（嵌套流）
-    const result = await firstValueFrom(
-      this.agent.run(step.prompt(input)).pipe(
-        filter((e) => e.type === 'agent.complete'),
-        map((e) => e.output),
-      ),
-    );
+    // 调用 Agent（嵌套执行）
+    const result = await this.agent.run(step.prompt(input));
+    // 从结果中提取输出
 
     // 发出 workflow.step.end 事件
     this.emit({ type: 'workflow.step.end', stepId: step.id, output: result });
@@ -316,11 +281,11 @@ keywords:
 | `subagent.*` | 在嵌套 agent 事件外层包裹 |
 | `mcp.*` | 不冒泡，仅在 MCP 客户端内部 |
 | `workflow.*` | 直接冒泡，嵌套的 agent 事件加 `workflowId` |
-| `skill.*` | 不产生事件流事件；加载结果注入 Agent 上下文 |
+| `skill.*` | 不产生事件循环事件；加载结果注入 Agent 上下文 |
 | `compaction.*` | 不冒泡，内部操作 |
 | `permission.*` | 不冒泡，内部操作（但可通过 HITL 暴露） |
 
-> ⚠️ **注意**：Skill 不是执行子系统，不产生低延迟事件流事件。`load_skill` 工具的返回是同步的知识内容注入。
+> ⚠️ **注意**：Skill 不是执行子系统，不产生低延迟事件循环事件。`load_skill` 工具的返回是同步的知识内容注入。
 
 ---
 
@@ -395,7 +360,7 @@ export interface MCPClient {
   tools(): Promise<MCPTool[]>;
   callTool(name: string, args: Record<string, unknown>): Promise<string>;
   status(): MCPStatus;
-  onStatusChange(): Observable<MCPStatus>;
+  onStatusChange(handler: (status: MCPStatus) => void): () => void;
 }
 ```
 
@@ -686,7 +651,7 @@ await client.disconnect();
 ```typescript
 // 在 agent-loop.ts 的 handleToolCall 中添加 MCP 路由
 
-private handleToolCall(event: AgentEvent, state: AgentState, ctx: AgentContext): Observable<AgentEvent> {
+private async handleToolCall(event: AgentEvent, state: AgentState, ctx: AgentContext): AsyncGenerator<AgentEvent> {
   const call = event as Extract<AgentEvent, { type: 'tool.call' }>;
 
   // 1. SubAgent 委托
@@ -708,33 +673,30 @@ private isMcpTool(mcp: MCPClient, toolName: string): boolean {
   return toolName.startsWith('mcp_');
 }
 
-private handleMcpTool(
+private async handleMcpTool(
   call: ToolCallEvent,
   state: AgentState,
   ctx: AgentContext
-): Observable<AgentEvent> {
-  return concat(
-    of({ type: 'tool.execute', ...call }),
+): AsyncGenerator<AgentEvent> {
+  yield { type: 'tool.execute', ...call };
 
-    defer(() => ctx.mcp!.callTool(call.toolName, call.args)).pipe(
-      timeout(30000),
-      map((result) => ({
-        type: 'tool.result',
-        toolCallId: call.toolCallId,
-        toolName: call.toolName,
-        result,
-        isError: false,
-      })),
-      catchError((error) =>
-        of({
-          type: 'tool.error',
-          toolCallId: call.toolCallId,
-          toolName: call.toolName,
-          error: serializeError(error),
-        })
-      ),
-    ),
-  );
+  try {
+    const result = await ctx.mcp!.callTool(call.toolName, call.args);
+    yield {
+      type: 'tool.result',
+      toolCallId: call.toolCallId,
+      toolName: call.toolName,
+      result,
+      isError: false,
+    };
+  } catch (error) {
+    yield {
+      type: 'tool.error',
+      toolCallId: call.toolCallId,
+      toolName: call.toolName,
+      error: serializeError(error),
+    };
+  }
 }
 ```
 
@@ -746,7 +708,7 @@ private handleMcpTool(
 
 ### 设计动机
 
-当前 AgentForge 的 `expand` 递归模式：
+当前 AgentForge 的 while(true) 递归模式：
 - ❌ 无全局规划：每一步都是局部决策
 - ❌ 上下文爆炸：长任务导致 token 耗尽
 - ❌ 盲目重试：失败后无指导性重试
@@ -791,42 +753,33 @@ interface DecisionChain {
 #### 模式 A: 预规划模式 (Pre-Planning)
 
 ```typescript
-// 在 expand 循环开始前生成完整计划
-function runWithPlan(input: string, ctx: AgentContext): Observable<AgentEvent> {
+// 在循环开始前生成完整计划
+async function* runWithPlan(input: string, ctx: AgentContext): AsyncGenerator<AgentEvent> {
   // Phase 1: 规划 (单次 LLM 调用)
-  const planning$ = createPlan(input, ctx).pipe(
-    map(plan => ({ type: 'plan.created', plan, sessionId: ctx.sessionId }))
-  );
-  
+  const plan = await createPlan(input, ctx);
+  yield { type: 'plan.created', plan, sessionId: ctx.sessionId };
+
   // Phase 2: 按计划执行步骤
-  const execution$ = planning$.pipe(
-    take(1),
-    mergeMap(planEvent => executePlanSteps(planEvent.plan, ctx))
-  );
-  
-  return concat(planning$, execution$);
+  for await (const event of executePlanSteps(plan, ctx)) {
+    yield event;
+  }
 }
 
 // 执行计划步骤 (顺序)
-function executePlanSteps(plan: PlanState, ctx: AgentContext): Observable<AgentEvent> {
-  return from(plan.steps).pipe(
-    concatMap((step, index) => {
-      if (step.status === 'skipped') return EMPTY;
-      
-      return concat(
-        of({ type: 'plan.step.start', stepId: step.id, stepIndex: index }),
-        // 每个 step 是独立的 AgentLoop (有 maxSteps 限制)
-        createAgentLoop(ctx, { maxSteps: 5 }).run(step.description).pipe(
-          tap(event => {
-            if (event.type === 'agent.complete') {
-              plan.stepResults.set(step.id, event.output);
-            }
-          })
-        ),
-        of({ type: 'plan.step.complete', stepId: step.id })
-      );
-    })
-  );
+async function* executePlanSteps(plan: PlanState, ctx: AgentContext): AsyncGenerator<AgentEvent> {
+  for (const [index, step] of plan.steps.entries()) {
+    if (step.status === 'skipped') continue;
+
+    yield { type: 'plan.step.start', stepId: step.id, stepIndex: index };
+    // 每个 step 是独立的 AgentLoop (有 maxSteps 限制)
+    for await (const event of await createAgentLoop(ctx, { maxSteps: 5 }).run(step.description)) {
+      yield event;
+      if (event.type === 'agent.complete') {
+        plan.stepResults.set(step.id, event.output);
+      }
+    }
+    yield { type: 'plan.step.complete', stepId: step.id };
+  }
 }
 ```
 
@@ -894,70 +847,48 @@ interface ReplanState {
   replanTriggered: boolean;
 }
 
-function executeWithReplan(input: string, ctx: AgentContext): Observable<AgentEvent> {
-  return of({ type: 'plan.create', state: { plan: null, failures: [], replanTriggered: false } }).pipe(
-    expand((sctx) => {
-      const { event, state } = sctx as { event: AgentEvent; state: ReplanState };
-      
-      // 终止条件: 所有步骤完成
-      if (state.plan && state.plan.currentStepIndex >= state.plan.steps.length) {
-        return EMPTY;
-      }
-      
-      // 规划阶段
-      if (!state.plan) {
-        return createPlan(input, ctx).pipe(
-          map(plan => ({
-            event: { type: 'plan.created' },
-            state: { ...state, plan }
-          }))
-        );
-      }
-      
-      // 执行步骤
-      if (event.type === 'plan.created' || event.type === 'plan.step.complete') {
-        const step = state.plan.steps[state.plan.currentStepIndex];
-        return executeStep(step, ctx).pipe(
-          map(result => ({
-            event: { type: 'plan.step.executed', result },
-            state
-          }))
-        );
-      }
-      
-      // 验证步骤结果
-      if (event.type === 'plan.step.executed') {
-        const step = state.plan.steps[state.plan.currentStepIndex];
-        const score = validateStepResult(event.result, step);
-        
-        if (score < 0.7) {
-          // 失败 → 触发重规划
-          return of({
-            event: { type: 'plan.replan.trigger', reason: 'step_failed', score },
-            state: { ...state, replanTriggered: true, failures: [...state.failures, step.id] }
-          });
-        }
-        
-        // 成功 → 进入下一步
-        return of({
-          event: { type: 'plan.step.complete' },
-          state: { ...state, plan: { ...state.plan, currentStepIndex: state.plan.currentStepIndex + 1 } }
-        });
-      }
+async function* executeWithReplan(input: string, ctx: AgentContext): AsyncGenerator<AgentEvent> {
+  let state: ReplanState = { plan: null, failures: [], replanTriggered: false };
+  yield { type: 'plan.create', sessionId: ctx.sessionId };
+
+  while (true) {
+    // 终止条件: 所有步骤完成
+    if (state.plan && state.plan.currentStepIndex >= state.plan.steps.length) {
+      return;
+    }
+    
+    // 规划阶段
+    if (!state.plan) {
+      const plan = await createPlan(input, ctx);
+      state = { ...state, plan };
+      yield { type: 'plan.created', sessionId: ctx.sessionId };
+      continue;
+    }
+    
+    // 执行步骤
+    const step = state.plan.steps[state.plan.currentStepIndex];
+    const result = await executeStep(step, ctx);
+    yield { type: 'plan.step.executed', result, sessionId: ctx.sessionId };
+    
+    // 验证步骤结果
+    const score = validateStepResult(result, step);
+    
+    if (score < 0.7) {
+      // 失败 → 触发重规划
+      state = { ...state, replanTriggered: true, failures: [...state.failures, step.id] };
+      yield { type: 'plan.replan.trigger', reason: 'step_failed', score, sessionId: ctx.sessionId };
       
       // 重规划
-      if (event.type === 'plan.replan.trigger') {
-        return replan(state.plan, state.failures, ctx).pipe(
-          map(newPlan => ({
-            event: { type: 'plan.updated', replanCount: state.plan.replanCount + 1 },
-            state: { ...state, plan: newPlan, replanTriggered: false }
-          }))
-        );
-      }
-      
-      return EMPTY;
-    })
-  );
+      const newPlan = await replan(state.plan, state.failures, ctx);
+      state = { ...state, plan: newPlan, replanTriggered: false };
+      yield { type: 'plan.updated', replanCount: state.plan.replanCount + 1, sessionId: ctx.sessionId };
+      continue;
+    }
+    
+    // 成功 → 进入下一步
+    yield { type: 'plan.step.complete', sessionId: ctx.sessionId };
+    state = { ...state, plan: { ...state.plan, currentStepIndex: state.plan.currentStepIndex + 1 } };
+  }
 }
 ```
 
@@ -979,9 +910,9 @@ function executeWithReplan(input: string, ctx: AgentContext): Observable<AgentEv
 
 | 兼容点 | 当前设计 | 规划模式整合 |
 |--------|---------|-------------|
-| **状态不可变** | `StepContext.state` 通过 expand 传递 | `PlanState` 同样不可变，每次更新返回新对象 |
+| **状态不可变** | `AgentState` 通过闭包传递 | `PlanState` 同样不可变，每次更新返回新对象 |
 | **错误即事件** | 失败发 `agent.error` + `done` | 规划失败发 `plan.step.failed`，但不终止流，触发重规划 |
-| **Observable 嵌套** | SubAgent 通过 `concat` 展平 | 每个 `PlanStep` 是嵌套 `AgentLoop`，事件冒泡 |
+| **嵌套执行** | SubAgent 通过 AsyncGenerator 展平 | 每个 `PlanStep` 是嵌套 `AgentLoop`，事件冒泡 |
 | **Checkpoint** | 断点保存完整状态 | `PlanState` 添加到 Checkpoint，支持恢复 |
 
 ---
@@ -1314,8 +1245,8 @@ const vectorStore = new MemoryVectorStore(embeddingModel);
 
 // 2. 索引文档
 await vectorStore.addDocuments([
-  { id: 'doc-1', content: 'AgentForge 是一个基于 RxJS 的 Agent 框架...' },
-  { id: 'doc-2', content: '事件流架构使用 Observable 模式...' },
+  { id: 'doc-1', content: 'AgentForge 是一个基于事件驱动的 Agent 框架...' },
+  { id: 'doc-2', content: '事件循环架构使用 AsyncGenerator 模式...' },
 ]);
 
 // 3. 创建检索工具
@@ -1339,7 +1270,7 @@ const agent = createAgent({
 - [00-OVERVIEW.md](./00-OVERVIEW.md) - 架构总览
 - [01-CORE-TYPES.md](./01-CORE-TYPES.md) - 核心类型定义
 - [03-DI.md](./03-DI.md) - 轻量依赖注入
-- [05-EVENT-STREAM.md](./05-EVENT-STREAM.md) - 事件流底座
+- [05-EVENT-STREAM.md](./05-EVENT-STREAM.md) - 事件循环底座
 - [06-FLOW-CONSTRAINTS.md](./06-FLOW-CONSTRAINTS.md) - 流层陷阱与约束
 
 ---

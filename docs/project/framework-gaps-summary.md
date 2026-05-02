@@ -20,7 +20,7 @@
 | 模块 | 当前状态 | 参考实现 |
 |------|---------|---------|
 | **SubAgent** | ✅ 已实现（orchestrator + transparent expand passthrough） | DeepAgents `SubAgentMiddleware` + `task` tool |
-| **MsgHub** | ❌ 不适用 — A2A broadcast + RxJS Subject 已覆盖 | AgentScope `MsgHub` + auto-broadcast |
+| **MsgHub** | ❌ 不适用 — A2A broadcast + AgentEventEmitter 已覆盖 | AgentScope `MsgHub` + auto-broadcast |
 | **Pipeline** | ✅ 已实现（SequentialPipeline, ParallelPipeline） | AgentScope `SequentialPipeline` / Mastra `Workflow.then()` |
 
 ---
@@ -58,7 +58,7 @@
 AgentScope:  MsgHub + Hooks + TypedDict
 DeepAgents:  Middleware + Backend Protocol + 85% Summarization
 Mastra:      Processor + DynamicArgument + Composite Storage
-AgentForge:  Observable<AgentEvent> + expand + errors-as-events
+AgentForge:  AgentEventEmitter + while(true) + errors-as-events
 ```
 
 ## 实施优先级

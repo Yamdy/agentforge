@@ -14,7 +14,6 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-// No rxjs imports needed - Subscription replacement inline
 import {
   createAgentLoop,
   type AgentLoopConfig,
@@ -418,7 +417,7 @@ describe.skipIf(skipIfNoLLM)('E2E: Real LLM Tests', () => {
         const agent = createAgentLoop(ctx, config);
         const events = await runAndCollect(agent, 'Hello, this is a normal request.');
 
-        // Verify no RxJS error channel usage
+        // Verify proper error handling
         // All events should have valid structure
         for (const event of events) {
           expect(event.type).toBeDefined();
@@ -566,7 +565,7 @@ describe.skipIf(skipIfNoLLM)('E2E: Real LLM Tests', () => {
     );
 
     it(
-      'should handle destroy$ signal',
+      'should handle destroy signal',
       async () => {
         const ctx = createTestContext(llm);
         const config = createTestConfig();

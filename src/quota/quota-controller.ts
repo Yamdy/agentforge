@@ -10,7 +10,6 @@
  * - Session-scoped tracking (multi-tenant isolation)
  * - Graceful degradation (missing quota = allowed)
  *
- * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN/06-FLOW-CONSTRAINTS.md
  */
 
 /**

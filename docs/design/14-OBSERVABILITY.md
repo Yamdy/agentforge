@@ -26,8 +26,6 @@
 ```typescript
 // src/observability/resource-monitor.ts
 
-import { Observable, interval, map } from 'rxjs';
-
 export interface ResourceMetrics {
   timestamp: number;
   
@@ -56,11 +54,12 @@ export class ResourceMonitor {
     this.intervalMs = intervalMs;
   }
   
-  /** 资源指标流 */
-  get metrics$(): Observable<ResourceMetrics> {
-    return interval(this.intervalMs).pipe(
-      map(() => this.collect()),
-    );
+  /** 启动定期资源采集 */
+  start(callback: (metrics: ResourceMetrics) => void): () => void {
+    const timer = setInterval(() => {
+      callback(this.collect());
+    }, this.intervalMs);
+    return () => clearInterval(timer);
   }
   
   /** 采集当前资源指标 */
@@ -171,15 +170,20 @@ export const StateTransitions: Record<AgentState, AgentState[]> = {
 
 export class StateMachine {
   private state: AgentState = 'pending';
-  private stateSubject = new BehaviorSubject<AgentState>('pending');
   private transitionHooks: Map<string, StateTransitionHook[]> = new Map();
+  private stateListeners: Array<(state: AgentState) => void> = [];
   
   get current(): AgentState {
     return this.state;
   }
   
-  get state$(): Observable<AgentState> {
-    return this.stateSubject.asObservable();
+  /** 监听状态变化 */
+  onStateChange(listener: (state: AgentState) => void): () => void {
+    this.stateListeners.push(listener);
+    return () => {
+      const idx = this.stateListeners.indexOf(listener);
+      if (idx >= 0) this.stateListeners.splice(idx, 1);
+    };
   }
   
   /** 尝试转换状态 */
@@ -197,7 +201,11 @@ export class StateMachine {
     
     // 执行转换
     this.state = newState;
-    this.stateSubject.next(newState);
+    
+    // 通知监听器
+    for (const listener of this.stateListeners) {
+      try { listener(newState); } catch {}
+    }
     
     // 发出状态变更事件
     this.emitStateEvent(oldState, newState);
@@ -228,43 +236,51 @@ export interface StateTransitionHook {
 ```typescript
 // src/config/runtime-config.ts
 
-import { BehaviorSubject, Observable } from 'rxjs';
-
 export class RuntimeConfig {
-  private configSubject: BehaviorSubject<AgentConfig>;
+  private config: AgentConfig;
+  private watchers: Map<string, Array<(value: unknown) => void>> = new Map();
   
   constructor(initialConfig: AgentConfig) {
-    const validated = AgentConfigSchema.parse(initialConfig);
-    this.configSubject = new BehaviorSubject(validated);
-  }
-  
-  /** 配置流（响应式） */
-  get config$(): Observable<AgentConfig> {
-    return this.configSubject.asObservable();
+    this.config = AgentConfigSchema.parse(initialConfig);
   }
   
   /** 当前配置快照 */
   get current(): AgentConfig {
-    return this.configSubject.value;
+    return this.config;
   }
   
   /** 更新配置（部分更新） */
   update(partial: Partial<AgentConfig>): void {
-    const newConfig = AgentConfigSchema.parse({
-      ...this.configSubject.value,
+    this.config = AgentConfigSchema.parse({
+      ...this.config,
       ...partial,
     });
-    this.configSubject.next(newConfig);
+    // 通知监听器
+    for (const [key, listeners] of this.watchers) {
+      const value = this.config[key as keyof AgentConfig];
+      for (const listener of listeners) {
+        try { listener(value); } catch {}
+      }
+    }
   }
   
   /** 监听特定字段变化 */
   watch<K extends keyof AgentConfig>(
     key: K,
-  ): Observable<AgentConfig[K]> {
-    return this.config$.pipe(
-      map(config => config[key]),
-      distinctUntilChanged(),
-    );
+    callback: (value: AgentConfig[K]) => void,
+  ): () => void {
+    if (!this.watchers.has(key as string)) {
+      this.watchers.set(key as string, []);
+    }
+    const listener = callback as (value: unknown) => void;
+    this.watchers.get(key as string)!.push(listener);
+    return () => {
+      const arr = this.watchers.get(key as string);
+      if (arr) {
+        const idx = arr.indexOf(listener);
+        if (idx >= 0) arr.splice(idx, 1);
+      }
+    };
   }
 }
 ```
@@ -286,33 +302,30 @@ agent.updateConfig({ timeout: 60000 });  // 后续 run() 使用新值
 
 ---
 
-## 4. 管道模板复用
+## 4. 执行模板复用
 
 ### 4.1 问题背景
 
 ```typescript
-// ❌ 当前：每次 run() 都重建管道
-agent.run(input1).pipe(timeout(30000), retry(3), tracer());  // 建管道1
-agent.run(input2).pipe(timeout(30000), retry(3), tracer());  // 建管道2（相同）
+// ❌ 重复配置相同的选项
+agent.run(input1, { signal: AbortSignal.timeout(30000), maxSteps: 3 });
+agent.run(input2, { signal: AbortSignal.timeout(30000), maxSteps: 3 }); // 相同配置重复
 
-// 性能开销：
-// - 每次创建新的 Operator 链
-// - 闭包重复创建
-// - GC 压力
+// 解决方案：配置预设复用
 ```
 
-### 4.2 管道模板模式
+### 4.2 配置预设模式
 
 ```typescript
 // src/core/pipeline-template.ts
 
-/** 管道模板 */
-export interface PipelineTemplate<T, R> {
-  /** 应用模板到源流 */
-  apply(source: Observable<T>): Observable<R>;
+/** 执行配置预设 */
+export interface ExecutionPreset<T> {
+  /** 应用预设到执行选项 */
+  apply(options: RunOptions): RunOptions;
   
-  /** 组合另一个模板 */
-  compose<RR>(other: PipelineTemplate<R, RR>): PipelineTemplate<T, RR>;
+  /** 组合另一个预设 */
+  compose<R>(other: ExecutionPreset<R>): ExecutionPreset<T & R>;
 }
 
 /** 创建管道模板 */
@@ -458,7 +471,7 @@ class Agent {
   async handleLLMRequest(
     event: AgentEvent,
     state: AgentState,
-  ): Promise<Observable<StepContext>> {
+  ): Promise<StepContext> {
     let messages = state.messages;
     
     // 检查是否需要压缩
@@ -500,7 +513,7 @@ class Agent {
 |------|------|---------|
 | **埋点全覆盖** | 所有核心路径必须有事件 | 盲区无法排查问题 |
 | **状态机强制** | 所有状态变更通过 `StateMachine` | 状态混乱，难以追踪 |
-| **热更新用 Observable** | 配置源必须是 `Observable<Config>` | 静态配置无法更新 |
+| **热更新用回调** | 配置变更通过 `watch()` 回调通知 | 静态配置无法更新 |
 | **管道模板复用** | 高频场景使用预构建模板 | 性能浪费、GC 压力 |
 | **资源监控周期** | 内存监控间隔 ≤ 10s | 内存泄漏发现滞后 |
 | **资源告警必设** | 生产环境必须配置内存告警 | OOM 时无预警 |
@@ -999,7 +1012,7 @@ const agent = createAgent({
 ## 相关文档
 
 - [00-OVERVIEW.md](./00-OVERVIEW.md) - 架构总览
-- [05-EVENT-STREAM.md](./05-EVENT-STREAM.md) - 事件流底座
+- [05-EVENT-STREAM.md](./05-EVENT-STREAM.md) - 事件循环底座
 - [06-FLOW-CONSTRAINTS.md](./06-FLOW-CONSTRAINTS.md) - 流层陷阱与约束
 - [07-PLUGIN-SYSTEM.md](./07-PLUGIN-SYSTEM.md) - Hook + 插件系统
 - [10-FEATURES.md](./10-FEATURES.md) - 特性实现

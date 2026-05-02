@@ -4,7 +4,7 @@
  * Manages plugin registration, lifecycle, and hook activation.
  * Internally wraps a HookRegistry + AgentEventEmitter.
  *
- * No RxJS — plugins register hooks, not intercept event streams.
+ * Plugins register hooks, not intercept event streams.
  *
  * Lifecycle:
  * 1. Register plugin => init() called with context
@@ -69,7 +69,11 @@ export class PluginManager {
     const plugin = this.plugins.get(name);
     if (plugin) {
       if (plugin.destroy) {
-        try { plugin.destroy(); } catch { /* isolate */ }
+        try {
+          plugin.destroy();
+        } catch {
+          /* isolate */
+        }
       }
       this.plugins.delete(name);
     }
@@ -98,7 +102,7 @@ export class PluginManager {
   }
 
   getActivePlugins(): Plugin[] {
-    return [...this.plugins.values()].filter((p) => p.enabled);
+    return [...this.plugins.values()].filter(p => p.enabled);
   }
 
   /** @deprecated — all plugins now use lifecycle hooks */
@@ -122,7 +126,6 @@ export class PluginManager {
   /**
    * Build the plugin pipeline — registers all plugin hooks and event subscriptions.
    *
-   * @param hookRegistryOrSource - HookRegistry (new API) or deprecated Observable source (old API)
    * @param emitterOrCtx         - EventEmitter (new API) or PluginContext (old API)
    * @param ctx                  - Plugin context (new API only)
    */
@@ -131,9 +134,7 @@ export class PluginManager {
     emitterOrCtx?: AgentEventEmitter | PluginContext,
     ctx?: PluginContext
   ): any {
-    // Detect old API: first arg is Observable (has .pipe/.subscribe)
     if (hookRegistryOrSource && typeof hookRegistryOrSource.pipe === 'function') {
-      // Old API: initialize plugins first, then return pass-through Observable
       if (this.pluginContext) {
         for (const plugin of this.getActivePlugins()) {
           if (plugin.init) {
@@ -146,7 +147,7 @@ export class PluginManager {
 
     const hookRegistry = hookRegistryOrSource as HookRegistry;
     const emitter = emitterOrCtx as AgentEventEmitter;
-    const context = (ctx ?? (emitterOrCtx && !('emit' in emitterOrCtx) ? emitterOrCtx : undefined));
+    const context = ctx ?? (emitterOrCtx && !('emit' in emitterOrCtx) ? emitterOrCtx : undefined);
 
     if (context) {
       this.pluginContext = context;
@@ -183,7 +184,11 @@ export class PluginManager {
     this.unregisterHooks?.();
     for (const plugin of this.plugins.values()) {
       if (plugin.destroy) {
-        try { plugin.destroy(); } catch { /* isolate */ }
+        try {
+          plugin.destroy();
+        } catch {
+          /* isolate */
+        }
       }
     }
     this.plugins.clear();

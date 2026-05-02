@@ -63,7 +63,7 @@ catch (error) {
 }
 ```
 
-### 3. Hook System (Replaces RxJS operators)
+### 3. Hook System
 ```typescript
 // RequestHook — modify LLM messages before chat
 // ToolHook — check permissions before tool execution
@@ -131,7 +131,7 @@ llm.response → tool.call[] or agent.complete
 tool.call → tool.execute + tool.result
 tool.result → agent.step + llm.request (loop)
 llm.output.invalid → retry or agent.error (repair loop)
-hitl.ask → Observable subscription (NEVER-blocking until answer arrives)
+hitl.ask → callback-based async (NEVER-blocking until answer arrives)
 hitl.answer → EMPTY (pure observability)
 ```
 
@@ -164,13 +164,13 @@ completed/cancelled/error → [] (terminal, irreversible)
 2. **Optional fields**: `foo?: string` means omit or string, NOT `string | undefined`
 3. **Checkpoint saves**: Fire-and-forget, never blocks event flow
 4. **HITL**: Uses callback-based async pattern. `ctx.hitl.ask()` returns Promise. UI subscribes to `onAsk()` and calls `answer()` when human responds.
-5. **AgentEventEmitter**: 50-line implementation replacing rxjs. `on()`/`onAny()`/`emit()`. All imports use `.js` extension (verbatimModuleSyntax).
+5. **AgentEventEmitter**: 50-line implementation. `on()`/`onAny()`/`emit()`. All imports use `.js` extension (verbatimModuleSyntax).
 6. **Errors-as-events**: ALL errors must become `agent.error` + `done` events. Never use throw/exceptions for expected errors. Even re-entry guard uses this pattern.
 7. **Pause**: Uses Promise-based `onResume()` — returns cleanup function, avoids memory leaks.
 
 ## Documentation
 
-- Design doc: `docs/architecture/RXJS-EVENT-STREAM-DESIGN.md` (~8900 lines)
+- Design doc: `docs/design/00-OVERVIEW.md`
 - Project status: `.sisyphus/handoff.md`
 
 ## Node Version
@@ -187,7 +187,7 @@ Requires Node.js >= 18.0.0
 
 ### Completed Previously
 
-- **Event-Driven Architecture**: Command imperative loop with `AgentEventEmitter` instead of RxJS expand recursion.
+- **Event-Driven Architecture**: Imperative loop with `AgentEventEmitter`.
 - **Husky + lint-staged**: Pre-commit hooks for code quality (see Git Hooks section).
 
 ## Git Hooks

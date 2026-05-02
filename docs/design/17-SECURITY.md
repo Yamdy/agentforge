@@ -27,7 +27,7 @@
 |------|------|--------|
 | Tier 1 合约校验 | `src/contracts/llm-contract.ts`, `mcp-contract.ts`, `user-input-contract.ts` | ✅ 成熟 — safeParse + 优雅降级 |
 | errors-as-events 模式 | `src/loop/agent-loop.ts` 全局 | ✅ 成熟 — 所有错误转事件，永不崩溃 |
-| HITL Observable 模式 | `src/core/context.ts:359-463` DefaultHITLController | ✅ 成熟 — ask() 返回 Observable，observeOn(asyncScheduler) 防死锁 |
+| HITL 回调模式 | `src/core/context.ts:359-463` DefaultHITLController | ✅ 成熟 — ask() 返回 Promise，回调模式防死锁 |
 | Plugin 上下文隔离 | `src/plugins/plugin.ts:18-45` | ✅ 成熟 — 禁止访问 llm/tools/memory/checkpoint |
 | Plugin 校验 | `src/plugins/plugin.ts:178-195` Zod Schema | ✅ 成熟 — 第三方插件强烈校验 |
 | QuotaController | `src/quota/quota-controller.ts` | ⚠️ 接口定义完整，但未集成到 Agent Loop |
@@ -119,7 +119,7 @@ src/security/
 
 #### 设计原则
 
-复用已有 `permission.prompt`/`permission.decision` 事件 Schema 和 HITL Observable 模式。
+复用已有 `permission.prompt`/`permission.decision` 事件 Schema 和 HITL 回调模式。
 
 #### 核心接口
 

@@ -323,7 +323,6 @@ describe('deps', () => {
       const config = { ...DEFAULT_CONFIG, projectName: 'test', llm: 'mock' as const };
       const deps = computeDependencies(config);
       expect(deps).toHaveProperty('agentforge');
-      expect(deps).toHaveProperty('rxjs');
       expect(deps).toHaveProperty('zod');
       expect(deps).toHaveProperty('dotenv');
       expect(deps).not.toHaveProperty('@ai-sdk/openai');
@@ -382,7 +381,6 @@ import type { PromptsConfig } from './config.js';
 
 const CORE_DEPS: Record<string, string> = {
   agentforge: '^0.1.0',
-  rxjs: '^7.8.1',
   zod: '^3.23.8',
   dotenv: '^16.4.0',
 };

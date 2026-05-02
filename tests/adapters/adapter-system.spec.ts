@@ -4,7 +4,7 @@
  * Tests: ProviderRegistry, createLLMAdapterFromSpec, parseModelSpec,
  *        classifyError, createHttpAdapter, OpenAI HTTP adapter, adapter factory.
  *
- * All HTTP calls are mocked via vi.fn() â€” no network access required.
+ * All HTTP calls are mocked via vi.fn() â€?no network access required.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -403,7 +403,7 @@ describe('calculateRetryDelay', () => {
       maxDelayMs: 5000,
     };
 
-    // attempt=10: 1000 * 2^9 = 512000 â†’ capped to 5000
+    // attempt=10: 1000 * 2^9 = 512000 â†?capped to 5000
     expect(calculateRetryDelay(10, error, config)).toBe(5000);
   });
 
@@ -413,7 +413,7 @@ describe('calculateRetryDelay', () => {
       message: 'ECONNRESET',
       retryable: true,
     };
-    // Default: baseDelayMs=2000, attempt=1 â†’ 2000 * 2^0 = 2000
+    // Default: baseDelayMs=2000, attempt=1 â†?2000 * 2^0 = 2000
     expect(calculateRetryDelay(1, error)).toBe(2000);
   });
 });
@@ -439,7 +439,7 @@ describe('createHttpAdapter', () => {
     expect(adapter.provider).toBe('deepseek');
   });
 
-  it('should return EMPTY observable for stream()', () => {
+  it('should return empty-like result for stream()', () => {
     const adapter = createHttpAdapter('test', 'model', {
       apiKey: 'key',
       baseURL: 'https://api.test.com/v1',
@@ -756,13 +756,13 @@ describe('OpenAI HTTP Adapter', () => {
   it('should retry without tools when API returns tool-related error', async () => {
     const fetchMock = vi
       .fn()
-      // First call with tools â†’ error about tools
+      // First call with tools â†?error about tools
       .mockResolvedValueOnce({
         ok: false,
         status: 400,
         json: () => Promise.resolve({ error: { message: 'Invalid Param: tool_choice' } }),
       })
-      // Second call without tools â†’ success
+      // Second call without tools â†?success
       .mockResolvedValueOnce({
         ok: true,
         status: 200,

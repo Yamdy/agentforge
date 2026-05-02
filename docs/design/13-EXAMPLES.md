@@ -14,31 +14,30 @@ const agent = new Agent(
   { llm, tools }
 );
 
-agent.run('Hello, how are you?').subscribe({
-  next: (event) => console.log(event.type),
-  complete: () => console.log('Done'),
-});
+const agent = new Agent(config, { llm, tools });
+
+// 运行并获取结果
+const result = await agent.run('Hello, how are you?');
+console.log(result);
 ```
 
 ---
 
-## 2. 带操作符
+## 2. 带回调
 
 ```typescript
-agent.run('Complex task').pipe(
+agent.run('Complex task', {
   // 控制流
-  timeout(60000),
-  retry(3),
-  requirePermission(checkPermission),
-  
+  signal: AbortSignal.timeout(60000),
+  maxSteps: 3,
+
   // 通知
-  logEvents(),
-  traceEvents(tracer),
-  recordMetrics(metrics),
-  
+  onEvent: (event) => tracer.record(event),
+  onMetrics: (metrics) => recordMetrics(metrics),
+
   // 变换
-  transformLLMParams((p) => ({ ...p, temperature: 0.7 })),
-).subscribe();
+  transformLLMParams: (p) => ({ ...p, temperature: 0.7 }),
+});
 ```
 
 ---
@@ -46,14 +45,12 @@ agent.run('Complex task').pipe(
 ## 3. 可中断
 
 ```typescript
-const cancel$ = new Subject<void>();
+const controller = new AbortController();
 
-agent.run('Long task').pipe(
-  takeUntil(cancel$),
-).subscribe();
+agent.run('Long task', { signal: controller.signal });
 
 // 30秒后取消
-setTimeout(() => cancel$.next(), 30000);
+setTimeout(() => controller.abort(), 30000);
 ```
 
 ---
@@ -64,14 +61,18 @@ setTimeout(() => cancel$.next(), 30000);
 // 首次运行，自动打点
 const storage = new SQLiteCheckpointStorage();
 
-agent.run('Task').pipe(
-  checkpoint(storage, agent.sessionId, (e) => e.type === 'tool.result'),
-).subscribe();
+await agent.run('Task', {
+  checkpoint: {
+    storage,
+    sessionId,
+    saveOn: (e) => e.type === 'tool.result',
+  },
+});
 
 // 恢复
 const checkpoint = await storage.load(sessionId);
 if (checkpoint) {
-  resumeAgent(checkpoint, config, deps).subscribe();
+  await resumeAgent(checkpoint, config, deps);
 }
 ```
 
@@ -89,14 +90,14 @@ const agent = new Agent(config, {
 });
 
 // UI 监听询问
-hitl.onAsk().subscribe((ask) => {
+hitl.onAsk((ask) => {
   showPermissionDialog(ask.question).then((answer) => {
     hitl.answer(ask.askId, answer);
   });
 });
 
 // 运行
-agent.run('Delete file.txt').subscribe();
+await agent.run('Delete file.txt');
 ```
 
 ---
@@ -104,23 +105,22 @@ agent.run('Delete file.txt').subscribe();
 ## 6. 生产环境
 
 ```typescript
-agent.run(input).pipe(
-  productionPreset({
-    timeout: 120000,
-    maxRetries: 3,
-    tracer: new OpenTelemetryTracer(),
-    metrics: new PrometheusMetrics(),
-    checkpoint: new SQLiteCheckpointStorage(),
-  }),
-).subscribe({
-  next: (event) => {
+const result = await agent.run(input, {
+  signal: AbortSignal.timeout(120000),
+  onEvent: (event) => {
     if (event.type === 'agent.complete') {
       console.log('Output:', event.output);
     }
   },
-  error: (err) => {
-    alert('Agent failed: ' + err.message);
+  onError: (error) => {
+    alert('Agent failed: ' + error.message);
   },
+  productionPreset: {
+    tracer: new OpenTelemetryTracer(),
+    metrics: new PrometheusMetrics(),
+    checkpoint: new SQLiteCheckpointStorage(),
+  },
+});
 });
 ```
 

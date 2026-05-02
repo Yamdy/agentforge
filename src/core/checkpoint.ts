@@ -8,7 +8,6 @@
  * - Idempotency: Tools can be safely re-executed on recovery
  * - Cross-process state: A2A pending requests are tracked
  *
- * @see docs/RXJS-EVENT-STREAM-DESIGN.md - Core Types section
  */
 
 import { z } from 'zod';

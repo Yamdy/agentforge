@@ -5,7 +5,7 @@
  * Configuration-driven Agent factory.
  * Creates a fully configured Agent from a declarative config.
  *
- * Imperative implementation: no RxJS, no operators.
+ * Imperative implementation with while(true) loop.
  * Plugins register via HookRegistry, events via AgentEventEmitter.
  *
  * @module
@@ -79,7 +79,7 @@ function resolveConfig(raw: AgentConfig): ResolvedConfig {
     maxLLMRepairAttempts: raw.maxLLMRepairAttempts ?? (defaults as any).maxLLMRepairAttempts ?? 3,
     parallelToolCalls: raw.parallelToolCalls ?? (defaults as any).parallelToolCalls ?? true,
     streaming: raw.streaming ?? (defaults as any).streaming ?? false,
-    tokenBudget: raw.timeout, // Reuse timeout as token budget for now
+    tokenBudget: raw.tokenBudget,
     fallbackModel: undefined,
     toolNames: (raw.tools ?? []).map(t => (typeof t === 'string' ? t : t.name)),
     systemPrompt: raw.systemPrompt,

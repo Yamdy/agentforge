@@ -97,7 +97,7 @@ default 分支应该改为：
 
 **当前状态**：`emitCheckpoint()` 在 handler 中 emit，但 `step()` 没有 case。
 
-**问题**：checkpoint 事件流到 subscriber 但不触发任何循环行为。这是**正确的**——checkpoint 是纯观察性事件。
+**问题**：checkpoint 事件到达 observer 但不触发任何循环行为。这是**正确的**——checkpoint 是纯观察性事件。
 
 **结论**：✅ 当前行为正确。只需从 switch 的 default 改为显式 case（见第 4 节）。
 
@@ -467,7 +467,7 @@ export interface AgentContext {
 - **首次 LLM 调用**：使用未压缩的消息（因为压缩还未完成）
 - **后续 LLM 调用**：使用已压缩的消息（压缩已完成）
 
-这是设计权衡，不是 bug。`CompactionManager` 的 `compact()` 方法设计为同步返回结果（truncate 立即生效），如果底层策略需要异步，应在 `CompactionManager` 内部管理 Promise 链和缓存。Agent Loop 不应等待异步压缩完成——那会阻塞整个事件流。
+这是设计权衡，不是 bug。`CompactionManager` 的 `compact()` 方法设计为同步返回结果（truncate 立即生效），如果底层策略需要异步，应在 `CompactionManager` 内部管理 Promise 链和缓存。Agent Loop 不应等待异步压缩完成——那会阻塞整个事件循环。
 
 ### 8.2 Subagent 事件的注释
 

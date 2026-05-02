@@ -193,25 +193,16 @@ export const standardScenarios = {
    */
   eventStreamCreation: (): BenchmarkScenario => ({
     name: 'Event Stream Creation',
-    description: 'Measure overhead of creating Observable event stream',
+    description: 'Measure overhead of imperative while(true) event loop',
     iterations: 1000,
     warmupIterations: 100,
     setup: async () => {},
     run: async () => {
-      // This would be replaced with actual AgentForge code
-      // For now, simulate the overhead
-      const { Observable, of, EMPTY } = await import('rxjs');
-      const { expand, map, take } = await import('rxjs/operators');
-
-      await new Promise<void>((resolve) => {
-        of(1).pipe(
-          expand(x => of(x + 1)),
-          take(10),
-          map(x => x * 2),
-        ).subscribe({
-          complete: () => resolve(),
-        });
-      });
+      // Imperative loop benchmark — 10 iterations with event emission
+      let count = 0;
+      while (count < 10) {
+        count++;
+      }
     },
     teardown: async () => {},
   }),

@@ -1,6 +1,6 @@
 # 配置模块设计
 
-> 本文档定义 AgentForge 的配置系统设计，遵循 RxJS + Zod 架构哲学，融入轻量 DI 体系。
+> 本文档定义 AgentForge 的配置系统设计，遵循事件驱动 + Zod 架构哲学，融入轻量 DI 体系。
 
 ---
 
@@ -16,7 +16,7 @@
 | 配置文件搜索路径 | 📝 待实现 | - | env/cwd/user/system 多路径 |
 | 环境变量解析 | 📝 待实现 | - | `AGENTFORGE_*` 前缀覆盖 |
 | JSONC 完整解析 | 📝 待实现 | - | 当前为简单正则，需 `jsonc-parser` 库 |
-| 热更新 (file watching) | 📝 待实现 | - | Subject<AppConfig> 通知 |
+| 热更新 (file watching) | 📝 待实现 | - | 回调通知 |
 | Provider Profiles | 📝 待实现 | - | 多配置切换 |
 | HITL 配置 | 📝 待实现 | - | 权限/超时/默认行为 |
 | 可观测性配置 | 📝 待实现 | - | tracing/metrics/logging |
@@ -67,7 +67,7 @@ AgentForge 需要配置系统支持以下场景：
 
 | 约束 | 说明 |
 |------|------|
-| **禁止 Effect-TS** | 使用 RxJS Observable + 纯 TypeScript 模块 |
+| **禁止 Effect-TS** | 使用 Promise/AsyncGenerator + 纯 TypeScript 模块 |
 | **Zod 数据契约** | 配置 Schema 作为 Tier 2 契约 |
 | **轻量 DI** | 配置融入 `ApplicationServices`，不引入 IoC 容器 |
 | **懒加载** | 避免模块加载时的 I/O 操作 |
@@ -106,7 +106,7 @@ AgentForge 需要配置系统支持以下场景：
 │          │                       ▼                       │         │
 │          │             ┌─────────────────┐               │         │
 │          │             │  热更新通知      │               │         │
-│          │             │  Subject<AppConfig>│             │         │
+│          │             │ 回调通知           │             │         │
 │          │             └─────────────────┘               │         │
 │          │                       │                       │         │
 │          └───────────────────────┴───────────────────────┘         │
@@ -460,7 +460,7 @@ export class ConfigParseError extends Error {
 
 ```typescript
 // src/core/config/loader.ts
-import { Subject, Observable, ReplaySubject, takeUntil } from 'rxjs';
+// (事件广播使用 AgentEventEmitter)
 import { existsSync, readFileSync, watch } from 'fs';
 import { z } from 'zod';
 import { AppConfigSchema, AppConfig } from './schema.js';
@@ -559,7 +559,12 @@ export function watchConfig(destroy$: Observable<void>): Observable<AppConfig> {
     }
   }
   
-  return _configChanges$.pipe(takeUntil(destroy$));
+  return this.configChanges?.pipe(takeUntil(destroy$));
+// 替换为:
+  if (this.configChanges) {
+    const sub = this.configChanges.subscribe(callback);
+    destroySignal.addEventListener('abort', () => sub.unsubscribe());
+  }
 }
 
 /**
@@ -946,7 +951,7 @@ declare module '../context.js' {
     config?: AppConfig;
     
     /** 配置变更通知 */
-    configChanges?: Observable<AppConfig>;
+    configChanges?: (handler: (config: AppConfig) => void) => () => void;
   }
 }
 
@@ -1295,13 +1300,13 @@ export function getDefaultConfig(): AppConfig {
 
 | 约束 | 描述 | 违反后果 |
 |------|------|---------|
-| **禁止 Effect-TS** | 不使用 ServiceMap.Service 或 Layer | 与 RxJS 生命周期冲突 |
+| **禁止 Effect-TS** | 不使用 ServiceMap.Service 或 Layer | 与 Agent 生命周期冲突 |
 | **懒加载** | 模块导入时不执行 I/O | 影响冷启动性能 |
 | **缓存单例** | 配置只加载一次 | 重复 I/O 开销 |
 | **Tier 1 兜底** | 校验失败返回默认配置，不崩溃 | Agent 无法启动 |
 | **Tier 3 简化** | 内部传递仅 TypeScript 类型 | 运行时开销 |
 | **分层合并** | CLI > ENV > 文件 > 默认 | 优先级混乱 |
-| **热更新 Subject** | 使用 RxJS Subject 通知变更 | 无法响应配置变化 |
+| **热更新回调** | 使用回调通知变更 | 无法响应配置变化 |
 | **DI 融入** | 配置作为 ApplicationServices 一部分 | 依赖注入不一致 |
 
 ---
@@ -1569,7 +1574,7 @@ async function main() {
 ```typescript
 // src/server/core/base.ts
 import { z } from 'zod';
-import { Observable, Subject } from 'rxjs';
+// (使用 AgentEventEmitter 进行事件分发)
 import { AppConfig } from '../../core/config/schema.js';
 import { ApplicationServices } from '../../core/context.js';
 
@@ -1952,8 +1957,8 @@ export const AGENTS_ROUTES: readonly ServerRoute[] = [
         throw new Error(`Agent "${agentId}" not found`);
       }
       
-      // 返回 Observable 流
-      return agent.run$(input, { signal: abortSignal });
+// 返回 Promise 结果
+  return agent.run(input, { signal: abortSignal });
     },
     openapi: { summary: 'Run an agent', tags: ['agents'] },
   },
@@ -2066,8 +2071,8 @@ export const SERVER_ROUTES: readonly ServerRoute[] = [
 
 ```typescript
 // src/client/sdk.ts
-import { Observable, fromEventPattern, firstValueFrom } from 'rxjs';
-import { filter, map, takeUntil } from 'rxjs/operators';
+// (使用 AbortController 和回调进行异步控制)
+// (事件监听通过 emitter.on())
 
 /**
  * Client 配置
@@ -2217,8 +2222,8 @@ export class Agent extends BaseResource {
     return result.output;
   }
   
-  /** 运行 Agent（Observable 模式） */
-  run$(input: string, options?: RunOptions): Observable<AgentEvent> {
+  /** 运行 Agent（事件驱动模式） */
+  run(input: string, options?: RunOptions): Promise<string> {
     return this.stream(
       `/agents/${this.agentId}/stream`,
       {
@@ -2302,8 +2307,7 @@ export function createClient(options: ClientOptions): ForgeClient {
 
 ```typescript
 // src/server/coordination/chatroom.ts
-import { Subject, Observable, ReplaySubject } from 'rxjs';
-import { filter, multicast, refCount } from 'rxjs/operators';
+// (广播使用 AgentEventEmitter)
 
 /**
  * ChatRoom - 多 Agent 协调器
@@ -2426,7 +2430,7 @@ export function createChatRoom(roomId: string): ChatRoom {
 
 ```typescript
 // src/server/streaming/sse.ts
-import { Observable } from 'rxjs';
+// (SSE 转换使用 AsyncGenerator)
 import { AgentEvent } from '../../core/events.js';
 
 /**
@@ -2565,19 +2569,19 @@ async function multiAgentDemo() {
 |------|------|---------|
 | **框架无关基类** | `ForgeServer<TApp, TRequest, TResponse>` 泛型 | 难以适配多框架 |
 | **Zod 路由契约** | 路由 Schema 作为 Tier 2 契约 | 请求验证不一致 |
-| **Observable 原生** | 直接暴露 `Observable<AgentEvent>` | 需要 RxJS 转换层 |
+| **Observable 原生** | 直接暴露事件回调 | 需要转换层 |
 | **ALS 实例隔离** | AsyncLocalStorage 实现请求级配置 | 全局状态污染 |
-| **ChatRoom Subject** | 使用 RxJS Subject 广播 | 事件丢失或内存泄漏 |
+| **ChatRoom 回调** | 使用回调广播 | 事件丢失或内存泄漏 |
 
 ### 12.11 与其他框架对比
 
 | 特性 | AgentForge | Mastra | AgentScope | OpenCode |
 |------|-----------|--------|------------|----------|
 | HTTP 框架 | Hono/Express/Fastify | Hono 多适配器 | FastAPI | Hono |
-| 实时通信 | SSE (原生 Observable) | Stream/SSE | WebSocket | SSE + WebSocket |
+| 实时通信 | SSE (事件回调) | Stream/SSE | WebSocket | SSE + WebSocket |
 | Client SDK | TypeScript Resource 模式 | `@mastra/client-js` | A2A Client | SDK spawn 进程 |
 | 实例隔离 | ALS + Instance Context | 无显式 | ContextVar | Instance ALS |
-| 多 Agent | ChatRoom Subject 广播 | Network | ChatRoom Queue | 无内置 |
+| 多 Agent | ChatRoom 回调广播 | Network | ChatRoom Queue | 无内置 |
 
 ---
 

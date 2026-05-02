@@ -1,6 +1,6 @@
 # 架构总览
 
-> AgentForge 事件流架构的完整架构图、迁移路径和实施路线图。
+> AgentForge 事件驱动架构的完整架构图、API 分层和实施路线图。
 
 ---
 
@@ -8,7 +8,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                        AgentForge 事件流架构                             │
+│                        AgentForge 事件驱动架构                            │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
 │  ┌────────────────────────────────────────────────────────────────────┐ │
@@ -19,39 +19,39 @@
 │  │   createAgent(config) → agent.run() / agent.stream()              │ │
 │  │   配置驱动 DI：自动解析 LLM/Tools/Checkpoint/Tracing/MCP          │ │
 │  ├────────────────────────────────────────────────────────────────────┤ │
-│  │                   L3: 编程式 (RxJS)                                │ │
-│  │   agent.run$(input).pipe(timeout(), retry(), tap()).subscribe()   │ │
+│  │                   L3: 编程式 (命令式)                              │ │
+│  │   agent.run(input, { signal, onEvent, maxSteps })                 │ │
 │  └────────────────────────────────────────────────────────────────────┘ │
 │                                   │                                      │
 │                                   ▼                                      │
 │  ┌────────────────────────────────────────────────────────────────────┐ │
-│  │                       操作符层 (可插拔)                             │ │
+│  │                       Hook 切面层 (可插拔)                           │ │
 │  │                                                                     │ │
-│  │  控制流: timeout, retry, takeUntil, requirePermission              │ │
-│  │  变换:   transformLLMParams, transformToolArgs, compressMessages   │ │
-│  │  通知:   logEvents, traceEvents, recordMetrics, exportEvents       │ │
-│  │  组合:   productionPreset, debugPreset                              │ │
+│  │  控制:  signal(AbortSignal), maxSteps, timeout                     │ │
+│  │  变换:  transformLLMParams, transformToolArgs, compressMessages    │ │
+│  │  通知:  onEvent, onMetrics, onError                                │ │
+│  │  组合:  productionPreset, debugPreset                              │ │
 │  │                                                                     │ │
 │  └────────────────────────────────────────────────────────────────────┘ │
 │                                   │                                      │
 │                                   ▼                                      │
 │  ┌────────────────────────────────────────────────────────────────────┐ │
-│  │                      Agent Loop (expand)                            │ │
+│  │                    Agent Loop (while(true) + await)                  │ │
 │  │                                                                     │ │
-│  │   Observable<AgentEvent>                                            │ │
+│  │   AsyncGenerator<AgentEvent>                                        │ │
 │  │       │                                                             │ │
-│  │       └─ expand(事件 → 下一步事件流)                                │ │
+│  │       └─ while(true) { await step() }                               │ │
 │  │            │                                                        │ │
 │  │            ├─ agent.start → llm.request                            │ │
 │  │            ├─ llm.request → llm.stream.* → llm.response            │ │
 │  │            ├─ llm.response → tool.call[] 或 done                   │ │
 │  │            ├─ tool.call → 本地工具 / Subagent / MCP                │ │
 │  │            │         ├─ 本地 → tool.execute → tool.result           │ │
-│  │            │         ├─ Subagent → subagent.* → 嵌套流冒泡          │ │
+│  │            │         ├─ Subagent → subagent.* → 嵌套执行冒泡        │ │
 │  │            │         └─ MCP → mcp.callTool → tool.result            │ │
 │  │            ├─ tool.result → llm.request (循环)                     │ │
 │  │            ├─ hitl.ask → 等待 hitl.answer (暂停)                   │ │
-│  │            └─ done → EMPTY (终止)                                   │ │
+│  │            └─ done → break (终止)                                   │ │
 │  │                                                                     │ │
 │  └────────────────────────────────────────────────────────────────────┘ │
 │                                   │                                      │
@@ -63,7 +63,7 @@
 │  │   编程式组装:   ContextBuilder.create().withLLM().build()          │ │
 │  │   测试 Mock:    ContextBuilder + Mock 接口                          │ │
 │  │                                                                     │ │
-│  │   Context 通过闭包传入事件流处理器（不在事件载荷中）               │ │
+│  │   Context 通过闭包传入事件循环处理器（不在事件载荷中）               │ │
 │  │                                                                     │ │
 │  │   必填: llm, tools                                                  │ │
 │  │   可选: checkpoint, hitl, tracer, metrics, mcp, subagents          │ │
@@ -72,9 +72,9 @@
 │                                   │                                      │
 │                                   ▼                                      │
 │  ┌────────────────────────────────────────────────────────────────────┐ │
-│  │                      事件流底座 (RxJS + Zod)                       │ │
+│  │                    事件循环底座 (AgentEventEmitter + Zod)            │ │
 │  │                                                                     │ │
-│  │   Observable<AgentEvent> + Zod discriminatedUnion 验证            │ │
+│  │   AgentEvent + Zod discriminatedUnion 验证                          │ │
 │  │                                                                     │ │
 │  │   Layer 1: 核心 Agent Loop (18 种事件)                             │ │
 │  │   Layer 2: 子系统生命周期 (15 种事件)                              │ │
@@ -82,13 +82,13 @@
 │  │   总计: 40 种类型安全事件                                           │ │
 │  │                                                                     │ │
 │  │   特性:                                                             │ │
-│  │   - 可观测: subscribe()                                             │ │
-│  │   - 可中断: takeUntil(), unsubscribe()                              │ │
+│  │   - 可观测: emitter.on('type', callback)                            │ │
+│  │   - 可中断: AbortController.signal                                  │ │
 │  │   - 可恢复: Checkpoint + resumeAgent()                              │ │
-│  │   - 重试:   retry()                                                 │ │
-│  │   - 超时:   timeout()                                               │ │
-│  │   - 打点:   tap()                                                   │ │
-│  │   - HITL:   Subject + resume()                                      │ │
+│  │   - 重试:   error analyser + while(true)                            │ │
+│  │   - 超时:   AbortSignal.timeout()                                   │ │
+│  │   - 打点:   Hook / onEvent callback                                 │ │
+│  │   - HITL:   Promise + callback 异步模式                             │ │
 │  │                                                                     │ │
 │  └────────────────────────────────────────────────────────────────────┘ │
 │                                                                          │
@@ -97,7 +97,7 @@
 
 ---
 
-## 迁移路径
+## 架构层次
 
 | 现有机制 | 迁移到 |
 |---------|--------|
@@ -126,7 +126,7 @@ src/core/
 
 ```
 src/core/
-├── agent.ts           # Agent 类 + run/run$/stream 方法
+├── agent.ts           # Agent 类 + run/stream 方法
 ├── handlers/          # 事件处理器
 │   ├── llm.ts         # LLM 请求/响应处理
 │   ├── tool.ts        # 工具执行处理（含嵌套流）
@@ -621,4 +621,4 @@ agentforge deploy -c agentforge.deploy.yaml
 - [02-ZOD-CONTRACT.md](./02-ZOD-CONTRACT.md) - Zod 数据契约层
 - [03-DI.md](./03-DI.md) - 轻量依赖注入
 - [04-PROMPT-BUILDER.md](./04-PROMPT-BUILDER.md) - Prompt 构建
-- [05-EVENT-STREAM.md](./05-EVENT-STREAM.md) - 事件流底座
+- [05-EVENT-STREAM.md](./05-EVENT-STREAM.md) - 事件循环底座

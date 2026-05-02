@@ -168,27 +168,28 @@ compactor.events.subscribe(event => {
 将压缩管理器集成到 AgentContext：
 
 ```typescript
-import { ContextBuilder } from 'agentforge';
+import { createAgent } from 'agentforge';
 
 const compactor = createCompactionManager(llmAdapter);
+const agent = createAgent({
+  name: 'assistant',
+  model: 'openai/gpt-4o',
+});
 
-// 注意：当前版本需要手动在 Agent 循环外部处理
-// 通过事件流触发压缩
-agent.run$('Long conversation...').pipe(
-  tap(event => {
-    if (event.type === 'llm.request') {
-      const context = compactor.createContext(
-        event.sessionId,
-        event.messages,
-        4000
-      );
-      
-      if (compactor.needsCompaction(context)) {
-        // 触发压缩逻辑
-      }
-    }
-  })
-);
+// 通过事件监听触发压缩
+agent.on('llm.request', (event) => {
+  const context = compactor.createContext(
+    event.sessionId,
+    event.messages,
+    4000
+  );
+
+  if (compactor.needsCompaction(context)) {
+    // 触发压缩逻辑
+  }
+});
+
+const result = await agent.run('Long conversation...');
 ```
 
 ## 自定义压缩策略

@@ -15,10 +15,9 @@
 | **DeepAgents** | LangGraph state graph（编译后的图执行） | Python | LangGraph |
 | **Mastra** | Agent + Workflow 双模型，Workflow 用 graph engine | TS | 自研 graph engine |
 | **AgentScope** | `async agent(msg)` ReActAgent — imperative | Python | 无 |
-| **AgentForge (旧)** | `Observable.pipe(expand(step))` | TS | RxJS |
-| **AgentForge (新)** | `async function while(true)` + `emit()` | TS | **无** |
+| **AgentForge** | `async function while(true)` + `AgentEventEmitter` | TS | **无** |
 
-**结论**：6 个参考框架中，4 个用 imperative 循环（ClaudeCode、OpenHarness、AgentScope、Mastra Agent），1 个用 graph engine（DeepAgents），1 个用 Effect（OpenCode）。**没有框架用 RxJS 做循环引擎。** AgentForge 的 `expand()` 递归是独有的，也是错误的抽象。
+**结论**：6 个参考框架中，4 个用 imperative 循环（ClaudeCode、OpenHarness、AgentScope、Mastra Agent），1 个用 graph engine（DeepAgents），1 个用 Effect（OpenCode）。AgentForge 采用 command-line imperative while(true) 循环 + AgentEventEmitter，与主流保持一致。
 
 ---
 
@@ -82,7 +81,7 @@ async def __call__(self, msg: Msg | None = None) -> Msg:
 | **DeepAgents** | middleware + callbacks | graph node 级 | LangGraph 回调 |
 | **Mastra** | middleware | agent/workflow step 级 | `(context, next) => ...` |
 | **AgentScope** | 无独立 Hook — callback 注入 | agent/memory/model 级 | 各模块独立 |
-| **AgentForge (旧)** | Plugin（Interceptor + Observer） | 事件级（40+ types） | `intercept(event): Observable<AgentEvent>` |
+| **AgentForge** | Plugin（Interceptor + Observer） | 事件级（40+ types） | `intercept(event): Promise<AgentEvent>` |
 | **AgentForge (新)** | HookRegistry 12 切面 + RequestHook + ToolHook | llm.request/response + tool.execute + session lifecycle | `(input, output) => Promise<void>` |
 
 **结论**：AgentForge 新 Hook 系统（12 生命周期切面 + RequestHook + ToolHook）与 OpenCode 的 16 切面模型最接近，但比 OpenCode 多一个 RequestHook（修改 LLM 前消息）和 ToolHook（执行前检查）。比 OpenHarness 的 PreToolUse/PostToolUse 覆盖更广——OpenHarness 只在工具执行周围有 hook，没有 LLM 请求/响应 hook。比 ClaudeCode 多了一个完整的 hook 系统（ClaudeCode 没有）。
@@ -159,15 +158,14 @@ OpenHarness 是唯一一个明确自称 "Agent Harness" 的项目，且用 Pytho
                          │
     ┌────────────────────┼────────────────────┐
     │                    │                    │
-  imperative          graph-based          stream-based
+  imperative          graph-based          imperative
     │                    │                    │
-  ClaudeCode ✓       DeepAgents           AgentForge (旧) ✗
-  OpenHarness ✓      Mastra Workflow      (唯一的 RxJS)
+  ClaudeCode ✓       DeepAgents           AgentForge ✓
+  OpenHarness ✓      Mastra Workflow
   AgentScope ✓
-  AgentForge (新) ✓
 ```
 
-AgentForge 的新架构方向——imperative 循环 + Hook 切面 + 无 RxJS——在行业中**不是特立独行，而是回归主流**。ClaudeCode、OpenHarness、AgentScope 都用了同样的模式并证明了它的可行性。
+AgentForge 的架构方向——imperative 循环 + Hook 切面——在行业中**不是特立独行，而是回归主流**。ClaudeCode、OpenHarness、AgentScope 都用了同样的模式并证明了它的可行性。
 
 AgentForge 的差异化在于：
 1. **借鉴 ClaudeCode 但超越 ClaudeCode**：Token 预算、错误恢复、并发安全三项 ClaudeCode 独有的工程能力被提取并 Hook 化

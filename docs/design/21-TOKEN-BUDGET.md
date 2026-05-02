@@ -50,7 +50,7 @@ function checkTokenBudget(tracker, agentId, budget, globalTurnTokens) {
 
 ### 2.1 集成位置
 
-**在 RxJS 事件流中，预算检查发生在这里：**
+**在事件循环中，预算检查发生在这里：**
 
 ```
 llm.request → [LLM call] → llm.response

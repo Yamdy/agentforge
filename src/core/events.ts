@@ -4,7 +4,6 @@
  * Core event schemas for the Agent event stream architecture.
  * All events are validated with Zod at boundaries (Tier 1/2).
  *
- * @see docs/RXJS-EVENT-STREAM-DESIGN.md
  */
 
 import { z } from 'zod';
@@ -737,13 +736,13 @@ export function generateId(prefix = ''): string {
 }
 
 // ============================================================
-// Agent Event Emitter (lightweight, no RxJS dependency)
+// Agent Event Emitter (lightweight custom implementation)
 // ============================================================
 
 /**
  * Lightweight typed event emitter for Agent events.
  *
- * Replaces RxJS Subject/Observable for event distribution.
+ * Lightweight event distribution with type-safe emit/on/onAny API.
  * Listeners can be registered per-event-type or catch-all.
  * All listeners are fire-and-forget — errors in one listener
  * do not affect others.

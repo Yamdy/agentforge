@@ -44,7 +44,6 @@
  * await watcher.start();
  * ```
  *
- * @see docs/architecture/RXJS-EVENT-STREAM-DESIGN/08-SUBSYSTEMS.md
  */
 
 // Types

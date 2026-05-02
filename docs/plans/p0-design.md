@@ -43,7 +43,6 @@ tests/adapters/
  * @packageDocumentation
  */
 
-import { Observable } from 'rxjs';
 import { generateText, streamText, jsonSchema } from 'ai';
 import { google, createGoogle } from '@ai-sdk/google';
 import type {
@@ -201,47 +200,43 @@ export class GoogleAdapter implements LLMAdapter {
   /**
    * Streaming chat completion
    */
-  stream(messages: Message[], options?: LLMOptions): Observable<LLMChunk> {
-    return new Observable<LLMChunk>(subscriber => {
-      const run = async (): Promise<void> => {
-        try {
-          const { systemPrompt, filteredMessages } = this.extractSystemPrompt(messages);
+  stream(messages: Message[], options?: LLMOptions): AsyncGenerator<LLMChunk> {
+    const stream = async function* (): AsyncGenerator<LLMChunk> {
+      try {
+        const { systemPrompt, filteredMessages } = this.extractSystemPrompt(messages);
 
-          const config: Record<string, unknown> = {
-            model: this.model,
-            messages: this.convertMessages(filteredMessages),
-          };
+        const config: Record<string, unknown> = {
+          model: this.model,
+          messages: this.convertMessages(filteredMessages),
+        };
 
-          if (systemPrompt) config.system = systemPrompt;
-          if (options?.temperature !== undefined) config.temperature = options.temperature;
-          if (options?.maxTokens !== undefined) config.maxTokens = options.maxTokens;
+        if (systemPrompt) config.system = systemPrompt;
+        if (options?.temperature !== undefined) config.temperature = options.temperature;
+        if (options?.maxTokens !== undefined) config.maxTokens = options.maxTokens;
 
-          const tools = options?.tools as FunctionDefinition[] | undefined;
-          if (tools && tools.length > 0) {
-            const toolsRecord: Record<string, { description: string; parameters: ReturnType<typeof jsonSchema> }> = {};
-            for (const tool of tools) {
-              toolsRecord[tool.name] = {
-                description: tool.description,
-                parameters: jsonSchema(tool.parameters as JSONSchema7),
-              };
-            }
-            config.tools = toolsRecord;
+        const tools = options?.tools as FunctionDefinition[] | undefined;
+        if (tools && tools.length > 0) {
+          const toolsRecord: Record<string, { description: string; parameters: ReturnType<typeof jsonSchema> }> = {};
+          for (const tool of tools) {
+            toolsRecord[tool.name] = {
+              description: tool.description,
+              parameters: jsonSchema(tool.parameters as JSONSchema7),
+            };
           }
-
-          const result = streamText(config as Parameters<typeof streamText>[0]);
-
-          for await (const textPart of result.textStream) {
-            subscriber.next({ text: textPart });
-          }
-
-          subscriber.complete();
-        } catch (error) {
-          subscriber.error(error instanceof Error ? error : new Error(String(error)));
+          config.tools = toolsRecord;
         }
-      };
 
-      run().catch(error => subscriber.error(error instanceof Error ? error : new Error(String(error))));
-    });
+        const result = streamText(config as Parameters<typeof streamText>[0]);
+
+        for await (const textPart of result.textStream) {
+          yield { text: textPart };
+        }
+      } catch (error) {
+        throw error instanceof Error ? error : new Error(String(error));
+      }
+    };
+
+    return stream();
   }
 
   /**
@@ -292,7 +287,6 @@ export function googleAdapterFactory(model: string, options: Record<string, unkn
  * @packageDocumentation
  */
 
-import { Observable } from 'rxjs';
 import { generateText, streamText, jsonSchema } from 'ai';
 import { ollama, createOllama } from '@ai-sdk/ollama';
 import type {
@@ -421,52 +415,47 @@ export class OllamaAdapter implements LLMAdapter {
     }
 
     return response;
-    // 注意：不捕获错误，让 agent-loop.ts 的 catchError 统一处理
-    // 这与 stream() 方法的 subscriber.error() 行为一致
+    // 注意：不捕获错误，让 agent-loop.ts 的错误处理统一处理
   }
 
-  stream(messages: Message[], options?: LLMOptions): Observable<LLMChunk> {
-    return new Observable<LLMChunk>(subscriber => {
-      const run = async (): Promise<void> => {
-        try {
-          const { systemPrompt, filteredMessages } = this.extractSystemPrompt(messages);
+  stream(messages: Message[], options?: LLMOptions): AsyncGenerator<LLMChunk> {
+    const stream = async function* (): AsyncGenerator<LLMChunk> {
+      try {
+        const { systemPrompt, filteredMessages } = this.extractSystemPrompt(messages);
 
-          const config: Record<string, unknown> = {
-            model: this.model,
-            messages: this.convertMessages(filteredMessages),
-          };
+        const config: Record<string, unknown> = {
+          model: this.model,
+          messages: this.convertMessages(filteredMessages),
+        };
 
-          if (systemPrompt) config.system = systemPrompt;
+        if (systemPrompt) config.system = systemPrompt;
 
-          if (options?.temperature !== undefined) config.temperature = options.temperature;
-          if (options?.maxTokens !== undefined) config.maxTokens = options.maxTokens;
+        if (options?.temperature !== undefined) config.temperature = options.temperature;
+        if (options?.maxTokens !== undefined) config.maxTokens = options.maxTokens;
 
-          const tools = options?.tools as FunctionDefinition[] | undefined;
-          if (tools && tools.length > 0) {
-            const toolsRecord: Record<string, { description: string; parameters: ReturnType<typeof jsonSchema> }> = {};
-            for (const tool of tools) {
-              toolsRecord[tool.name] = {
-                description: tool.description,
-                parameters: jsonSchema(tool.parameters as JSONSchema7),
-              };
-            }
-            config.tools = toolsRecord;
+        const tools = options?.tools as FunctionDefinition[] | undefined;
+        if (tools && tools.length > 0) {
+          const toolsRecord: Record<string, { description: string; parameters: ReturnType<typeof jsonSchema> }> = {};
+          for (const tool of tools) {
+            toolsRecord[tool.name] = {
+              description: tool.description,
+              parameters: jsonSchema(tool.parameters as JSONSchema7),
+            };
           }
-
-          const result = streamText(config as Parameters<typeof streamText>[0]);
-
-          for await (const textPart of result.textStream) {
-            subscriber.next({ text: textPart });
-          }
-
-          subscriber.complete();
-        } catch (error) {
-          subscriber.error(error instanceof Error ? error : new Error(String(error)));
+          config.tools = toolsRecord;
         }
-      };
 
-      run().catch(error => subscriber.error(error instanceof Error ? error : new Error(String(error))));
-    });
+        const result = streamText(config as Parameters<typeof streamText>[0]);
+
+        for await (const textPart of result.textStream) {
+          yield { text: textPart };
+        }
+      } catch (error) {
+        throw error instanceof Error ? error : new Error(String(error));
+      }
+    };
+
+    return stream();
   }
 
   formatTools(tools: FunctionDefinition[]): unknown {

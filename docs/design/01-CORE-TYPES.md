@@ -927,27 +927,25 @@ export interface DecisionTraceStorage {
 
 ```typescript
 // src/loop/agent-loop.ts callLLM() 修改
-function callLLM(state: AgentState): Observable<StepContext> {
-  return from(ctx.llm.chat(state.messages, llmOptions)).pipe(
-    mergeMap(response => {
-      // 🔴 P1 新增: 捕获原始输出
-      const rawOutput = response.rawOutput ?? JSON.stringify(response);
-      
-      const responseEvent: AgentEvent = {
-        type: 'llm.response',
-        content: response.content,
-        toolCalls: response.toolCalls,
-        finishReason: response.finishReason,
-        usage: response.usage,
-        reasoning: {  // 🔴 P1 新增
-          rawOutput,
-          thoughtProcess: response.thoughtProcess,
-          model: config.model.model,
-        },
-      };
-      return of({ event: responseEvent, state });
-    }),
-  );
+async function callLLM(state: AgentState): Promise<StepContext> {
+  const response = await ctx.llm.chat(state.messages, llmOptions);
+
+  // 🔴 P1 新增: 捕获原始输出
+  const rawOutput = response.rawOutput ?? JSON.stringify(response);
+
+  const responseEvent: AgentEvent = {
+    type: 'llm.response',
+    content: response.content,
+    toolCalls: response.toolCalls,
+    finishReason: response.finishReason,
+    usage: response.usage,
+    reasoning: {  // 🔴 P1 新增
+      rawOutput,
+      thoughtProcess: response.thoughtProcess,
+      model: config.model.model,
+    },
+  };
+  return { event: responseEvent, state };
 }
 ```
 
@@ -1260,7 +1258,7 @@ registry.register({
 ## 相关文档
 
 - [02-ZOD-CONTRACT.md](./02-ZOD-CONTRACT.md) - Zod 数据契约与校验策略
-- [05-EVENT-STREAM.md](./05-EVENT-STREAM.md) - 事件流底座与 Agent Loop
+- [05-EVENT-STREAM.md](./05-EVENT-STREAM.md) - 事件循环底座与 Agent Loop
 
 ---
 

@@ -13,7 +13,7 @@ import type { AgentMode } from '../core/interfaces.js';
 /**
  * Agent Loop type reference.
  *
- * Matches the real AgentLoop interface from loop/agent-loop.ts (Promise-based, no Observable).
+ * Matches the real AgentLoop interface from loop/agent-loop.ts (Promise-based).
  */
 export interface AgentLoop {
   /** Run the agent with input, returns output via Promise */

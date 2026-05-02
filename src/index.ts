@@ -882,7 +882,13 @@ export { SqliteCheckpointStorage, SqliteSessionStorage } from './storage/index.j
 export {
   type PlanStep,
   type ExecutionPlan,
+  type Planner,
+  type PlanExecutor,
+  type StepResult,
+  type ExecutionResult,
+  type PlanValidationResult,
   PlannerImpl,
+  LLMPlanner,
   PlanExecutorImpl,
 } from './planning/index.js';
 

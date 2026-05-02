@@ -2,7 +2,7 @@
 
 > 分析时间：2026-04-28
 > 仓库地址：https://github.com/Yamdy/agentforge.git
-> 版本：v0.1.3 (post-RxJS, 命令式事件驱动)
+> 版本：v0.1.3 (命令式事件驱动)
 
 ---
 
