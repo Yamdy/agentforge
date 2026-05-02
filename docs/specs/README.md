@@ -8,7 +8,7 @@
 
 | 文档 | 描述 |
 |------|------|
-| [studio-design.md](./studio-design.md) | AgentForge Studio 设计文档 - Web Studio 完整设计 |
+| [studio-design.md](./studio-design.md) | AgentForge Studio 设计文档 - Web Studio 完整设计（📦 已归档至 `docs/archive/rxjs/studio-design.md`） |
 
 ---
 

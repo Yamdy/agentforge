@@ -1,9 +1,9 @@
 # AgentForge 事件流架构设计
 
 > 设计日期: 2026-04-24
-> 最后更新: 2026-04-26 (P0 安全架构设计)
-> 状态: **已实现**
-> 核心理念: 命令式事件驱动 + Zod 类型安全 = Agent 框架底座
+> 最后更新: 2026-05-02 (v18)
+> 状态: **持续演进**
+> 核心理念: 命令式 while(true) 事件循环 + Zod 类型安全 = Agent 框架底座
 
 ---
 
@@ -13,7 +13,7 @@
 
 | 文档 | 描述 |
 |------|------|
-| [00-OVERVIEW.md](./00-OVERVIEW.md) | 设计理念、核心思想、为什么是 RxJS + Zod、落地铁律 |
+| [00-OVERVIEW.md](./00-OVERVIEW.md) | 设计理念、核心思想、15 条铁律体系（5A+6R+4I）、分级和约束矩阵 |
 | [harness.md](./harness.md) | **Agent Harness 核心概念** — E/T/C/S/L/V 六大工程要件、行业定位、伪陷阱规避 |
 | [01-CORE-TYPES.md](./01-CORE-TYPES.md) | 事件类型定义（40 种事件 Schema）、Agent 状态定义、检查点定义 |
 
@@ -67,9 +67,9 @@
 | [21-TOKEN-BUDGET.md](./21-TOKEN-BUDGET.md) | **Token 预算 + 递减收益检测** — 参考 ClaudeCode 实现 |
 | [22-ERROR-RECOVERY.md](./22-ERROR-RECOVERY.md) | **分级错误恢复** — max_output_tokens/prompt_too_long/model_overloaded |
 | [23-TOOL-CONCURRENCY.md](./23-TOOL-CONCURRENCY.md) | **Per-Tool 并发安全判定** — isConcurrencySafe() + 工具分批执行 |
-| [24-ARCH-REFACTOR.md](./24-ARCH-REFACTOR.md) | ✅ **已完成** — Imperative 循环 + Hook 切面（参考 ClaudeCode + OpenCode） |
-| [25-DE-RXJS.md](./25-DE-RXJS.md) | ✅ **已完成** — 移除 RxJS，全栈重构，事件类型 50+→18，依赖消除 |
-| [27-IMPLEMENTATION-PLAN.md](./27-IMPLEMENTATION-PLAN.md) | ✅ **已完成** — 6 Phase 逐文件变更指南已执行完毕 |
+| 📦 [24-ARCH-REFACTOR.md] — 📦 [25-DE-RXJS.md] — 📦 [27-IMPLEMENTATION-PLAN.md] | ✅ **已完成并归档** — 架构重构 + RxJS 移除 + 6 Phase 实施计划 → `docs/archive/implemented/` |
+| [28-OTEL-TRACING.md](./28-OTEL-TRACING.md) | ✅ **已实现** — OpenTelemetry 分布式追踪（OTelTracer，`src/observability/tracers/`） |
+| [29-EVALUATION-FRAMEWORK.md](./29-EVALUATION-FRAMEWORK.md) | ✅ **已实现** — LLMScorer 评估管道 + QualityGate 前置过滤（`src/evaluation/`） |
 
 ### 总览
 
@@ -85,10 +85,10 @@
 
 | 角色 | 推荐阅读顺序 |
 |------|-------------|
-| **技术负责人** | 00 → 06 → 15 → 01 → 02 → 03 |
-| **应用开发者** | 12 → 13 → 10 → 11 → 05 |
-| **框架开发者** | 01 → 02 → 03 → 04 → 05 → 07 → 08 |
-| **运维人员** | 14 → 06 → 10 |
+| **技术负责人** | 00 → harness → 15 → 01 → 02 → 03 |
+| **应用开发者** | 13 → 10 → 21 → 22 → 23 |
+| **框架开发者** | 01 → 02 → 03 → 04 → 07 → 08 → 24 |
+| **运维人员** | 14 → 17 → 10 |
 
 ### 按主题阅读
 
@@ -96,17 +96,16 @@
 |------|---------|
 | **类型安全** | 01, 02 |
 | **依赖注入** | 03, 04 |
-| **事件流** | 05, 06, 10 |
-| **插件扩展** | 07, 08 |
+| **Hook 与插件** | 07, 08 |
 | **分布式通信** | 09 |
-| **生产就绪** | 06, 14, 15, 07 (安全整合), 21, 22, 23 |
-| **安全合规** | 17, 07, 06, 10 |
+| **生产就绪** | 14, 15, 17, 21, 22, 23, 28 |
+| **安全合规** | 17, 07, 10 |
 
 ---
 
 ## 核心铁律速查
 
-> 完整铁律体系见 [00-OVERVIEW.md](./00-OVERVIEW.md)（14 条：5 架构 + 5 运行时 + 4 实现，含分级和约束矩阵）
+> 完整铁律体系见 [00-OVERVIEW.md](./00-OVERVIEW.md)（15 条：5 架构 + 6 运行时 + 4 实现，含分级和约束矩阵）
 
 ### 架构层
 
@@ -127,6 +126,7 @@
 | R3 | 工具调用必经注册表 |
 | R4 | 主流程串行，副作用并行 |
 | R5 | 状态外部化，可中断恢复 |
+| R6 | 检查点声明式接线 — 所有跨切面关注点通过 CheckpointRegistry 注册，禁止硬编码 `if (ctx.X)` 门控 |
 
 ### 实现
 
@@ -160,6 +160,7 @@
 | v15 | 2026-04-27 | **Adapter 重构**: 新增 adapter-system.ts (错误分类/重试/Provider注册)，参考 AgentScope/Mastra/OpenCode/DeepAgents |
 | v16 | 2026-04-29 | **ClaudeCode 借鉴设计**: 新增 21-TOKEN-BUDGET.md (Token预算+递减收益)、22-ERROR-RECOVERY.md (分级错误恢复)、23-TOOL-CONCURRENCY.md (Per-Tool并发安全) |
 | v17 | 2026-04-30 | **架构重构设计**: 新增 24-ARCH-REFACTOR.md (Imperative循环+Hook切面)、25-DE-RXJS.md (移除RxJS全栈重构)、26-FRAMEWORK-COMPARISON.md (6框架横比) |
+| v18 | 2026-05-02 | **架构审计 + 文档追认**: 新增 28-OTEL-TRACING.md、29-EVALUATION-FRAMEWORK.md。铁律扩展为 15 条（R6 检查点声明式接线）。修正实现矩阵过时状态。 |
 
 ---
 
@@ -187,20 +188,21 @@
 | **API 层** | 12-API-DESIGN.md | `src/api/*.ts` | ✅ 已实现 |
 | **配置模块** | 16-CONFIG-MODULE.md | `src/core/config/*.ts` | 📝 设计完成 |
 | **安全架构** | 17-SECURITY.md | `src/security/` | 🔧 评审中 (5决策已确认，3缺口已补强) |
-| **Quota 集成** | 18-QUOTA-INTEGRATION.md | `src/quota/*.ts` | 📝 模块存在，待集成到主循环 |
-| **事件路由补全** | 19-EVENT-ROUTING.md | `src/loop/agent-loop.ts` | 📝 待评审 |
+| **Quota 集成** | 18-QUOTA-INTEGRATION.md | `src/quota/*.ts` | ✅ 已集成（pre-LLM check + post-LLM consume） |
+| **事件路由补全** | 19-EVENT-ROUTING.md | `src/loop/agent-loop.ts` | ✅ 已实现（AgentLoop.emit() 暴露） |
 | **发布就绪性** | 20-PUBLISH-READINESS.md | `src/index.ts`, `package.json` | 📝 待评审 |
-| **Token 预算** | 21-TOKEN-BUDGET.md | `src/loop/token-budget.ts` | 📝 设计完成 |
-| **错误恢复** | 22-ERROR-RECOVERY.md | `src/loop/error-analyzer.ts` | 📝 设计完成 |
-| **工具并发安全** | 23-TOOL-CONCURRENCY.md | `src/loop/tool-partition.ts` | 📝 设计完成 |
-| **架构重构** | 24-ARCH-REFACTOR.md | `src/core/hooks.ts`, `src/loop/agent-loop.ts` | 📝 设计完成 |
-| **移除 RxJS** | 25-DE-RXJS.md | 87 文件 | 📝 设计完成 |
+| **Token 预算** | 21-TOKEN-BUDGET.md | `src/loop/token-budget.ts` | ✅ 已实现（checkTokenBudget wired） |
+| **错误恢复** | 22-ERROR-RECOVERY.md | `src/loop/error-analyzer.ts` | ✅ 已实现（handleLLMError 4-tier wired） |
+| **工具并发安全** | 23-TOOL-CONCURRENCY.md | `src/loop/tool-partition.ts` | ✅ 已实现（partitionToolCalls wired） |
+| 📦 **架构重构 + RxJS 移除 + 实施计划** | — | `docs/archive/implemented/` | ✅ 已完成并归档 |
 | **框架横比** | 26-FRAMEWORK-COMPARISON.md | — | 📝 设计完成 |
+| **OpenTelemetry Tracing** | 28-OTEL-TRACING.md | `src/observability/tracers/otel-tracer.ts` | ✅ 已实现 |
+| **Evaluation 评估框架** | 29-EVALUATION-FRAMEWORK.md | `src/evaluation/llm-scorer.ts` | ✅ 已实现 |
 | **P1: 规划/执行分离** | 08-SUBSYSTEMS.md | - | 🔮 未实现 |
 | **P1: outputSchema** | 01-CORE-TYPES.md | `src/contracts/tool-output-contract.ts` | ✅ 已实现 |
 | **P1: 决策追溯** | 01-CORE-TYPES.md | `src/contracts/decision-trace-storage.ts` | ✅ 已实现 |
 | **P1: 外部状态机** | 01-CORE-TYPES.md | - | 🔮 未实现 |
 | **P2: Working Memory** | 01-CORE-TYPES.md | - | 🔮 未实现 |
-| **P2: Evaluation** | 14-OBSERVABILITY.md | - | 🔮 未实现 |
+| **P2: Evaluation** | 29-EVALUATION-FRAMEWORK.md | `src/evaluation/llm-scorer.ts`, `src/validation/quality-gate.ts` | ✅ 已实现 (LLMScorer + QualityGate) |
 | **P2: RAG** | 08-SUBSYSTEMS.md | - | 🔮 未实现 |
 | **P2: Deployment** | 15-ARCHITECTURE.md | - | 🔮 未实现 |

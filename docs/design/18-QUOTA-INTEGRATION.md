@@ -1,8 +1,8 @@
 # Quota 集成到 Agent Loop — 设计文档
 
-> 状态：待评审
-> 阻塞等级：P0 — 无 quota check 意味着一个死循环或 LLM 异常响应就能烧光 API 额度
-> 预估工作量：0.5 天
+> 状态：✅ 已实现 (pre-LLM check + post-LLM consume 已接入 agent-loop.ts:759,826)
+> 阻塞等级：P0 — 已解决
+> 预估工作量：0.5 天（已完成）
 
 ---
 

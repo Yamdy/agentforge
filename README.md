@@ -26,18 +26,20 @@ Agent = LLM（认知决策核心）+ Harness（工程管控基座）
 
 ## MPU 模块
 
-| 模块 | 说明 | 导入 |
-|------|------|------|
-| M1 | SQLite 持久化存储 | `@primo512109/agentforge/storage` |
-| M2 | 任务规划引擎 | `@primo512109/agentforge/planning` |
-| M3 | Docker 沙箱隔离 | `@primo512109/agentforge/sandbox` |
-| M4 | 异常熔断 | `@primo512109/agentforge/resilience` |
-| M5 | 审计日志 | `@primo512109/agentforge/audit` |
-| M6 | 工具安全 | `@primo512109/agentforge/security` |
-| M7 | 成本管控 | `@primo512109/agentforge/quota` |
-| M8 | 可观测性 | `@primo512109/agentforge/observability` |
-| M9 | 优雅关闭 | `@primo512109/agentforge/lifecycle` |
-| M10 | 结果校验 | `@primo512109/agentforge/validation` |
+| 模块 | 说明 | 导入 | 成熟度 |
+|------|------|------|--------|
+| M1 | SQLite 持久化存储 | `@primo512109/agentforge/storage` | ✅ 稳定 |
+| M2 | 任务规划引擎 | `@primo512109/agentforge/planning` | ✅ 稳定 |
+| M3 | Docker 沙箱隔离 | `@primo512109/agentforge/sandbox` | 🔧 开发中 |
+| M4 | 异常熔断修复 | `@primo512109/agentforge/resilience` | ✅ 稳定 |
+| M5 | 审计日志 | `@primo512109/agentforge/audit` | ✅ 稳定 |
+| M6 | 工具安全 | `@primo512109/agentforge/security` | 🔧 部分接线 |
+| M7 | 成本管控 | `@primo512109/agentforge/quota` | 🔧 部分接线 |
+| M8 | 可观测性 | `@primo512109/agentforge/observability` | ✅ 稳定 |
+| M9 | 优雅关闭 | `@primo512109/agentforge/lifecycle` | ✅ 稳定 |
+| M10 | 结果校验 | `@primo512109/agentforge/validation` | ✅ 稳定 |
+
+> 成熟度：✅ 稳定（完整接线+测试覆盖）| 🔧 开发中（部分接线/功能缺口）| 🔮 规划中
 
 ## 安装
 
@@ -261,7 +263,7 @@ src/
 
 **架构层（5 条）**: A1 命令式循环 + 事件发射器 | A2 Harness 硬管控 | A3 Zod 分层数据契约 | A4 DI 解耦 | A5 三层 API
 
-**运行时（5 条）**: R1 错误即事件不 throw | R2 Hook 异常隔离 | R3 工具必经注册表 | R4 主串行副并行 | R5 状态外部化可恢复
+**运行时（6 条）**: R1 错误即事件不 throw | R2 Hook 异常隔离 | R3 工具必经注册表 | R4 主串行副并行 | R5 状态外部化可恢复 | R6 检查点声明式接线
 
 **实现（4 条）**: I1 as any 零容忍 | I2 ESM 不含 RxJS | I3 外部输入不信任 | I4 测试即文档
 
@@ -297,7 +299,7 @@ npm run format
 
 ## 文档
 
-完整文档见 [docs/DOCUMENTATION.md](./docs/DOCUMENTATION.md)：
+完整文档见 [docs/design/README.md](./docs/design/README.md)：
 
 ### 快速导航
 
@@ -305,7 +307,6 @@ npm run format
 |------|------|------|
 | **设计文档** | 核心架构设计 | [docs/design/](./docs/design/) |
 | **分析文档** | 框架对比分析 | [docs/analysis/](./docs/analysis/) |
-| **架构文档** | 架构改进设计 | [docs/architecture/](./docs/architecture/) |
 | **用户指南** | 快速上手指南 | [docs/guide/](./docs/guide/) |
 | **API 参考** | 详细 API 说明 | [docs/api/](./docs/api/) |
 | **开发计划** | 功能实现计划 | [docs/plans/](./docs/plans/) |

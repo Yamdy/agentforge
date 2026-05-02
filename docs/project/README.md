@@ -8,14 +8,13 @@
 
 | 文档 | 描述 |
 |------|------|
-| [handoff.md](./handoff.md) | 项目交接文档 - 当前状态、已完成工作、待办事项 |
-| [framework-gaps-summary.md](./framework-gaps-summary.md) | 框架差距总结 - 基于 AgentScope/DeepAgents/Mastra 对比 |
+| [handoff.md](../../.sisyphus/handoff.md) | 项目交接文档 — 当前状态、已完成工作、待办事项 |
 
 ---
 
 ## 项目状态
 
 - **Phase 0-2c + Studio Phase 0 + MCP + MPU**: ✅ 全部完成
-- **测试**: 1726 passed
+- **测试**: 1731 passed (75 test files)
 - **TypeScript**: ✅ 编译干净
 - **ESLint**: ✅ 0 errors
