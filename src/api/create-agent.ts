@@ -30,6 +30,8 @@ import {
 import { FileBasedMemory } from '../memory/index.js';
 import { createMemorySearchTool } from '../tools/memory-search.js';
 import { PlanNotebook } from '../planning/plan-notebook.js';
+import { LLMPlanner } from '../planning/llm-planner.js';
+import type { Planner } from '../planning/types.js';
 import {
   type AgentConfig,
   type Agent as AgentInterface,
@@ -50,6 +52,7 @@ interface ResolvedConfig {
   maxLLMRepairAttempts: number;
   parallelToolCalls: boolean;
   streaming: boolean;
+  executionMode: 'react' | 'plan-then-execute' | 'plan-then-execute-strict';
   tokenBudget: number | undefined;
   fallbackModel: { provider: string; model: string } | undefined;
   toolNames: string[];
@@ -81,6 +84,7 @@ function resolveConfig(raw: AgentConfig): ResolvedConfig {
     maxLLMRepairAttempts: raw.maxLLMRepairAttempts ?? defaults.maxLLMRepairAttempts ?? 3,
     parallelToolCalls: raw.parallelToolCalls ?? defaults.parallelToolCalls ?? true,
     streaming: raw.streaming ?? defaults.streaming ?? false,
+    executionMode: raw.executionMode ?? 'react',
     tokenBudget: raw.tokenBudget,
     fallbackModel: undefined,
     toolNames: (raw.tools ?? []).map(t => (typeof t === 'string' ? t : t.name)),
@@ -210,6 +214,7 @@ export function createAgent(config: AgentConfig, services?: Partial<AgentContext
     maxLLMRepairAttempts: resolved.maxLLMRepairAttempts,
     parallelToolCalls: resolved.parallelToolCalls,
     streaming: resolved.streaming,
+    executionMode: resolved.executionMode,
     systemPrompt: resolved.systemPrompt,
     history: resolved.history,
   };
@@ -321,9 +326,12 @@ export function createAgent(config: AgentConfig, services?: Partial<AgentContext
     }
   }
 
-  // ── PlanNotebook auto-wiring ──
-  if (ctx.planner) {
-    const notebook = new PlanNotebook(ctx.planner, {
+  // ── Default Planner + PlanNotebook (only for non-react modes) ──
+  if (resolved.executionMode !== 'react') {
+    const planner: Planner = ctx.planner ?? new LLMPlanner(llm, 2);
+    if (!ctx.planner) ctx.planner = planner;
+
+    const notebook = new PlanNotebook(planner, {
       availableTools: resolved.toolNames,
       maxSteps: resolved.maxSteps,
     });

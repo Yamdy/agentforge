@@ -40,6 +40,34 @@ const llmStepSchema = z.object({
 const llmStepsArraySchema = z.array(llmStepSchema);
 
 // ============================================================
+// Diagnostic Helper
+// ============================================================
+
+/**
+ * Build a diagnostic message for plan generation failures.
+ * Used by strict-mode callers to present actionable information to the user.
+ */
+function buildDiagnostic(input: string, context: PlannerContext, errMsg: string): string {
+  const lines = [
+    `Planner could not generate a valid execution plan.`,
+    ``,
+    `Reason: ${errMsg}`,
+    ``,
+    `Task input: "${input.slice(0, 300).replace(/\n/g, '\\n').replace(/\r/g, '\\r')}"`,
+    ``,
+    `Available tools (${context.availableTools.length}): ${context.availableTools.join(', ') || '(none)'}`,
+    `Max steps allowed: ${context.maxSteps}`,
+    ``,
+    `Suggestions:`,
+    `- If the task involves unavailable tools, add the required tools to the agent configuration`,
+    `- If the task is too complex, break it into smaller sub-tasks`,
+    `- If the LLM response was malformed, retry with a simpler task description`,
+    `- Verify that the LLM model supports structured JSON output`,
+  ];
+  return lines.join('\n');
+}
+
+// ============================================================
 // ID Generation
 // ============================================================
 
@@ -88,6 +116,9 @@ export class LLMPlanner implements Planner {
   private readonly maxReplanAttempts: number;
   private replanAttemptCount = 0;
 
+  /** Last diagnostic message — set when plan generation fails, useful for strict mode callers */
+  lastDiagnostic: string | undefined;
+
   /**
    * @param llm - LLM adapter for generating plans
    * @param maxReplanAttempts - Maximum replan attempts before giving up (default 2)
@@ -103,14 +134,18 @@ export class LLMPlanner implements Planner {
 
   async plan(input: string, context: PlannerContext): Promise<ExecutionPlan> {
     try {
+      this.lastDiagnostic = undefined;
       const prompt = this.buildPlanPrompt(input, context);
       const response = await this.callLLM(prompt);
       const steps = this.parseResponse(response, context);
       return this.buildPlan(steps);
     } catch (error) {
+      const errMsg = error instanceof Error ? error.message : String(error);
       console.warn(
-        `[LLMPlanner] Plan generation failed, falling back to single-step plan: ${String(error)}`
+        `[LLMPlanner] Plan generation failed, falling back to single-step plan: ${errMsg}`
       );
+      const diagnostic = buildDiagnostic(input, context, errMsg);
+      this.lastDiagnostic = diagnostic;
       return this.fallbackPlan(input, context);
     }
   }

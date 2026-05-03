@@ -86,6 +86,8 @@ export interface PlanValidationError {
  * Planner interface - generates and validates execution plans
  */
 export interface Planner {
+  /** Last diagnostic message — set when plan generation fails, useful for strict mode callers */
+  lastDiagnostic?: string | undefined;
   /** Generate an execution plan from user input */
   plan(input: string, context: PlannerContext): Promise<ExecutionPlan>;
   /** Validate an execution plan (optional context for maxSteps check) */

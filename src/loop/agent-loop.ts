@@ -52,6 +52,14 @@ export interface AgentLoopConfig {
   history?: Message[] | undefined;
   systemPrompt?: string | undefined;
   checkpoint?: { enabled?: boolean; interval?: string } | undefined;
+  /**
+   * Execution mode for the planner.
+   *
+   * - 'react': ReAct loop only, planner is never invoked (default, backward compatible)
+   * - 'plan-then-execute': Try planner first, fall back to ReAct on failure
+   * - 'plan-then-execute-strict': Planner MUST succeed, otherwise error and terminate
+   */
+  executionMode?: 'react' | 'plan-then-execute' | 'plan-then-execute-strict';
 }
 
 /**
@@ -851,10 +859,48 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
     );
 
     // ====================================================================
-    // Plan-Then-Execute (LLM-driven planning, optional)
+    // Plan-Then-Execute (LLM-driven planning, controlled by executionMode)
     // ====================================================================
+    const execMode = config.executionMode ?? 'react';
     let plannerSucceeded = false;
-    if (ctx.planner) {
+
+    const cleanupRun: () => void = (): void => {
+      if (onExternalAbort) {
+        ctx.abortSignal?.removeEventListener('abort', onExternalAbort);
+        onExternalAbort = null;
+      }
+      isRunning = false;
+      abortController = null;
+    };
+
+    const strictFail = (reason: string, planningError?: unknown): void => {
+      const causeMsg = planningError instanceof Error ? planningError.message : '';
+      const fullMessage = causeMsg
+        ? `Plan-then-execute (strict mode) failed: ${causeMsg} — ${reason}`
+        : `Plan-then-execute (strict mode) failed: ${reason}`;
+      ctx.logger?.error(`[strict plan-then-execute] ${fullMessage}`);
+      const plannedError: SerializedError = {
+        name: 'PlannerError',
+        message: fullMessage,
+        stack: planningError instanceof Error ? planningError.stack : undefined,
+      };
+      stateMachine.transition('error');
+      void emitter.emit({
+        type: 'agent.error',
+        timestamp: Date.now(),
+        sessionId: ctx.sessionId,
+        error: plannedError,
+      } as AgentEvent);
+      void emitter.emit({
+        type: 'done',
+        reason: 'error',
+        timestamp: Date.now(),
+        sessionId: ctx.sessionId,
+      });
+      cleanupRun();
+    };
+
+    if (execMode !== 'react' && ctx.planner) {
       try {
         const toolNames = ctx.tools?.getFunctionDefs().map((f: { name: string }) => f.name) ?? [];
         const plan = await ctx.planner.plan(input, {
@@ -862,13 +908,26 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           maxSteps: config.maxSteps ?? 10,
         });
 
-        if (plan && plan.steps.length > 0) {
+        if (!plan || plan.steps.length === 0) {
+          if (execMode === 'plan-then-execute-strict') {
+            strictFail(
+              ctx.planner.lastDiagnostic ?? 'Planner produced an empty plan (no steps generated)'
+            );
+            return '';
+          }
+        } else {
           const validation = await ctx.planner.validate(plan, {
             availableTools: toolNames,
             maxSteps: config.maxSteps ?? 10,
           });
 
-          if (validation.valid && ctx.tools) {
+          if (!validation.valid) {
+            if (execMode === 'plan-then-execute-strict') {
+              const errorDetail = validation.errors.map(e => `${e.path}: ${e.message}`).join('; ');
+              strictFail(`Plan validation failed: ${errorDetail}`);
+              return '';
+            }
+          } else if (ctx.tools) {
             // Dynamic import PlanExecutorImpl to avoid circular deps
             const { PlanExecutorImpl } = await import('../planning/plan-executor.js');
             const executor = new PlanExecutorImpl();
@@ -878,7 +937,6 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             let replanAttempts = 0;
             const maxReplanAttempts = 2;
             while (result.status === 'failed' && replanAttempts < maxReplanAttempts) {
-              // Find the first failed step
               let failedStepId: string | undefined;
               for (const [stepId, stepResult] of result.stepResults) {
                 if (stepResult.status === 'failed') {
@@ -907,7 +965,6 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             }
             if (outputs.length > 0) {
               plannerSucceeded = true;
-              // R1 fix (Oracle finding #4 + R2 fix): cleanup planner path
               const finalOutput = outputs.join('\n');
               stateMachine.transition('completed');
               void emitter.emit({
@@ -924,18 +981,22 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
                 sessionId: ctx.sessionId,
               });
               state.output = finalOutput;
-              // Planner path must clean up isRunning / listeners (not in finally scope)
-              if (onExternalAbort) {
-                ctx.abortSignal?.removeEventListener('abort', onExternalAbort);
-                onExternalAbort = null;
-              }
-              isRunning = false;
-              abortController = null;
+              cleanupRun();
+            } else if (execMode === 'plan-then-execute-strict') {
+              strictFail(
+                'Plan execution produced no output (all steps completed but returned empty)'
+              );
+              return '';
             }
           }
         }
-      } catch (_planningError) {
-        // Planning failed — fall through to ReAct loop
+      } catch (planningError) {
+        if (execMode === 'plan-then-execute-strict') {
+          strictFail(ctx.planner.lastDiagnostic ?? 'Planner threw an exception', planningError);
+          return '';
+        }
+
+        // Plan-then-execute (non-strict): fall through to ReAct loop
         if (ctx.logger) {
           ctx.logger.warn('Plan-then-execute failed, falling back to ReAct loop');
         }

@@ -99,6 +99,7 @@ description: A test skill for verification
 
     const hooks = agent.ctx.hookRegistry as HookRegistry;
     expect(hooks).toBeInstanceOf(HookRegistry);
+    // No auto-plugins, no planner → 0 request hooks
     expect(hooks.getRequestHooks()).toHaveLength(0);
   });
 

@@ -218,6 +218,15 @@ export interface AgentConfig {
   /** Enable parallel tool calls (default: true) */
   parallelToolCalls?: boolean;
 
+  /**
+   * Execution mode for the planner.
+   *
+   * - 'react': ReAct loop only, planner is never invoked (default, backward compatible)
+   * - 'plan-then-execute': Try planner first, fall back to ReAct on failure
+   * - 'plan-then-execute-strict': Planner MUST succeed, otherwise error and terminate
+   */
+  executionMode?: 'react' | 'plan-then-execute' | 'plan-then-execute-strict';
+
   /** Enable streaming LLM responses (default: false) */
   streaming?: boolean;
 
