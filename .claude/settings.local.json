@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(npx vitest *)",
+      "mcp__plugin_context7_context7__resolve-library-id",
+      "mcp__plugin_context7_context7__query-docs",
+      "Bash(head -592 tests/adapters/adapter-system.spec.ts)",
+      "Bash(cat /tmp/openai_http_section.ts)",
+      "Bash(tail -n +780 tests/adapters/adapter-system.spec.ts)",
+      "Bash(mv /tmp/spec_part1.ts tests/adapters/adapter-system.spec.ts)",
+      "Bash(head -889 tests/adapters/adapter-system.spec.ts)",
+      "Bash(cat /tmp/edge_cases_section.ts)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(node -e ' *)",
+      "Bash(npx tsx -e ' *)"
+    ]
+  }
+}
