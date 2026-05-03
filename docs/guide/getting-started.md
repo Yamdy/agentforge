@@ -1,11 +1,16 @@
 # 快速开始
 
 > **AgentForge 是什么？**  
-> AgentForge 是一个 **Agent 开发框架底座（Harness）**，核心理念是：  
-> **模型是认知决策核心，框架是工程管控基座。**  
-> 所有 Agent 行为必须经过 Harness 管控，不可绕过。
+> AgentForge 是 **The Harness Engine for Production AI Agents**——审计、沙箱、熔断、配额。  
+> 不是新的 Agent 框架，是包裹你现有 Agent 的安全层。所有 Agent 行为必须经过 Harness 管控，不可绕过。
 
-本指南将帮助你在 5 分钟内创建第一个 Agent。
+## 30 秒体验
+
+```bash
+npx agentforge demo
+```
+
+无需 API Key、无需配置。30 秒内看到沙箱拦截、安全守卫、熔断器、配额控制的实际效果。
 
 ## 推荐：使用脚手架工具（create-agentforge）
 

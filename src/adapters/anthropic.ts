@@ -19,6 +19,7 @@ import type {
 } from '../core/interfaces.js';
 import type { JSONSchema7 } from 'json-schema';
 import type { Message, ToolCall } from '../core/events.js';
+import { extractText } from '../core/content-utils.js';
 
 // ============================================================
 // Types
@@ -56,8 +57,6 @@ export class AnthropicAdapter implements LLMAdapter {
 
   private convertMessages(messages: Message[]): Array<Record<string, unknown>> {
     return messages.map(msg => {
-      const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
-
       if (msg.role === 'tool') {
         return {
           role: 'tool',
@@ -66,13 +65,14 @@ export class AnthropicAdapter implements LLMAdapter {
               type: 'tool-result',
               toolCallId: msg.toolCallId ?? '',
               toolName: msg.name ?? '',
-              output: content,
+              output: extractText(msg.content),
             },
           ],
         };
       }
 
-      return { role: msg.role, content };
+      // Pass content directly — AI SDK supports both strings and ContentPart[] arrays
+      return { role: msg.role, content: msg.content };
     });
   }
 
@@ -84,7 +84,9 @@ export class AnthropicAdapter implements LLMAdapter {
     const otherMessages = messages.filter(m => m.role !== 'system');
 
     const systemPrompt =
-      systemMessages.length > 0 ? systemMessages.map(m => m.content).join('\n\n') : undefined;
+      systemMessages.length > 0
+        ? systemMessages.map(m => extractText(m.content)).join('\n\n')
+        : undefined;
 
     return { systemPrompt, filteredMessages: otherMessages };
   }
@@ -183,13 +185,20 @@ export class AnthropicAdapter implements LLMAdapter {
     const tools = this.convertTools(options?.tools as FunctionDefinition[] | undefined);
     const toolChoice = this.convertToolChoice(options?.toolChoice as ToolChoice | undefined);
 
-    const config: Record<string, unknown> = { model: this.model, messages: this.convertMessages(filteredMessages) };
+    const config: Record<string, unknown> = {
+      model: this.model,
+      messages: this.convertMessages(filteredMessages),
+    };
     if (systemPrompt) config.system = systemPrompt;
     if (options?.temperature !== undefined) config.temperature = options.temperature;
     if (options?.maxTokens !== undefined) config.maxTokens = options.maxTokens;
     if (options?.topP !== undefined) config.topP = options.topP;
-    if (options?.stopSequences && options.stopSequences.length > 0) config.stopSequences = options.stopSequences;
-    if (tools) { config.tools = tools; if (toolChoice) config.toolChoice = toolChoice; }
+    if (options?.stopSequences && options.stopSequences.length > 0)
+      config.stopSequences = options.stopSequences;
+    if (tools) {
+      config.tools = tools;
+      if (toolChoice) config.toolChoice = toolChoice;
+    }
 
     const result = streamText(config as Parameters<typeof streamText>[0]);
     for await (const textPart of result.textStream) {

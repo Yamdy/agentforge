@@ -108,9 +108,36 @@ export const MessageMetadataSchema = z.object({
 });
 export type MessageMetadata = z.infer<typeof MessageMetadataSchema>;
 
+/**
+ * ContentPart — a single part of a multimodal message.
+ * Either plain text or an image_url reference.
+ *
+ * Compatible with OpenAI's vision API content part format.
+ */
+export const ContentPartSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('text'), text: z.string() }),
+  z.object({
+    type: z.literal('image_url'),
+    image_url: z.object({
+      url: z.string(),
+      detail: z.enum(['auto', 'low', 'high']).optional(),
+    }),
+  }),
+]);
+export type ContentPart = z.infer<typeof ContentPartSchema>;
+
+/**
+ * MessageContent — either a plain string or an array of ContentParts.
+ *
+ * Backward compatible: plain strings (current format) continue to work unchanged.
+ * Multimodal: pass a ContentPart[] to include images alongside text.
+ */
+export const MessageContentSchema = z.union([z.string(), z.array(ContentPartSchema)]);
+export type MessageContent = z.infer<typeof MessageContentSchema>;
+
 export const MessageSchema = z.object({
   role: MessageRoleSchema,
-  content: z.string(),
+  content: MessageContentSchema,
   name: z.string().optional(),
   toolCallId: z.string().optional(),
   /** Optional message metadata for compaction and tracking */

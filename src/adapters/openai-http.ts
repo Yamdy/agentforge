@@ -93,7 +93,7 @@ export function createOpenAIHttpAdapter(
           model: modelName,
           messages: messages.map(m => ({
             role: m.role,
-            content: m.content,
+            content: m.content, // Pass directly — OpenAI API supports both strings and ContentPart[]
           })),
           max_tokens: (llmOptions?.maxTokens as number) ?? 1024, // Default max_tokens
         };

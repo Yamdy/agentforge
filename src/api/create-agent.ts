@@ -28,11 +28,14 @@ import {
   createSummarizationPlugin,
 } from '../plugins/index.js';
 import { FileBasedMemory } from '../memory/index.js';
+import { createMemorySearchTool } from '../tools/memory-search.js';
+import { PlanNotebook } from '../planning/plan-notebook.js';
 import {
   type AgentConfig,
   type Agent as AgentInterface,
   type RunHandlers,
   DEFAULT_AGENT_CONFIG,
+  AgentConfigError,
 } from './types.js';
 
 // ============================================================
@@ -154,11 +157,33 @@ export function createAgent(config: AgentConfig, services?: Partial<AgentContext
     ...services,
   };
 
+  // ── Validate: permissionPolicy requires permissionController ──
+  if (ctx.permissionPolicy && !ctx.permissionController) {
+    throw new AgentConfigError(
+      'permissionPolicy requires permissionController. Without a controller, HITL "ask" decisions cannot be resolved.'
+    );
+  }
+
   // ── Register tools ──
   if (resolved.toolNames.length > 0 && services?.tools) {
     for (const name of resolved.toolNames) {
       const def = services.tools.get(name);
       if (def) tools.register(def);
+    }
+  }
+
+  // ── Auto-register memory_search for pointer-indexed compaction ──
+  if (
+    config.compaction?.strategy === 'pointer-indexed' &&
+    config.compaction.vectorStore &&
+    config.compaction.embeddingModel
+  ) {
+    const memTools = createMemorySearchTool(
+      config.compaction.vectorStore,
+      config.compaction.embeddingModel
+    );
+    for (const t of memTools) {
+      tools.register(t);
     }
   }
 
@@ -296,6 +321,16 @@ export function createAgent(config: AgentConfig, services?: Partial<AgentContext
     }
   }
 
+  // ── PlanNotebook auto-wiring ──
+  if (ctx.planner) {
+    const notebook = new PlanNotebook(ctx.planner, {
+      availableTools: resolved.toolNames,
+      maxSteps: resolved.maxSteps,
+    });
+    notebook.registerTools(ctx.tools);
+    hookRegistry.registerRequest(notebook.planHintHook);
+  }
+
   // ── Return Agent interface ──
   return {
     async run(input: string, handlers?: RunHandlers): Promise<string> {
@@ -320,6 +355,8 @@ export function createAgent(config: AgentConfig, services?: Partial<AgentContext
     },
     resume: loop.resume.bind(loop),
     getState: (): AgentLoopState | null => loop.getState(),
+    getStatus: (): string => loop.getStatus(),
+    onStateChange: (fn: (from: string, to: string) => void): (() => void) => loop.onStateChange(fn),
 
     /** @deprecated Internal context access for backward compat with tests */
     ctx,

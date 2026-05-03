@@ -47,6 +47,7 @@ import type {
 } from '../core/interfaces.js';
 import type { AgentContext, ApplicationServices } from '../core/context.js';
 import type { SecurityGuard } from '../security/guard.js';
+import type { PermissionClassifier } from '../security/permission/classifier.js';
 import type {
   ErrorClassifier,
   CircuitBreaker,
@@ -117,6 +118,7 @@ interface BuilderState {
   inputSanitizer?: InputSanitizer;
   permissionController?: PermissionController;
   permissionPolicy?: PermissionPolicy;
+  permissionClassifier?: PermissionClassifier;
   sandboxExecutor?: SandboxExecutor;
   auditLogger?: AuditLogger;
   // Memory & validation
@@ -611,6 +613,21 @@ export class AgentContextBuilder {
   }
 
   /**
+   * Set permission classifier
+   *
+   * Enables automatic tool permission decisions via ML/heuristic classifiers.
+   * The classifier is consulted BEFORE human-in-the-loop approval.
+   * If the classifier returns 'allow' or 'deny', the human is skipped entirely.
+   *
+   * @param classifier - PermissionClassifier instance
+   * @returns this
+   */
+  withPermissionClassifier(classifier: PermissionClassifier): this {
+    this.state.permissionClassifier = classifier;
+    return this;
+  }
+
+  /**
    * Set sandbox executor
    *
    * Enables isolated tool execution in sandbox environments.
@@ -870,6 +887,9 @@ export class AgentContextBuilder {
     }
     if (this.state.permissionPolicy !== undefined) {
       ctx.permissionPolicy = this.state.permissionPolicy;
+    }
+    if (this.state.permissionClassifier !== undefined) {
+      ctx.permissionClassifier = this.state.permissionClassifier;
     }
     if (this.state.sandboxExecutor !== undefined) {
       ctx.sandboxExecutor = this.state.sandboxExecutor;

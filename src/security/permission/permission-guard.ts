@@ -15,6 +15,7 @@ import {
   type PermissionPolicy,
   type PolicyDecision,
 } from './permission-policy.js';
+import { safeClassify, type PermissionClassifier } from './classifier.js';
 
 // ============================================================
 // Types
@@ -116,7 +117,8 @@ export async function handlePermissionAsk(
   sessionId: string,
   step: number,
   permissionController: PermissionController,
-  onAllow: () => Promise<{ event: AgentEvent; state: unknown }>
+  onAllow: () => Promise<{ event: AgentEvent; state: unknown }>,
+  classifier?: PermissionClassifier
 ): Promise<Array<{ event: AgentEvent; state: unknown }>> {
   const promptId = `perm-${generateId()}`;
 
@@ -129,6 +131,44 @@ export async function handlePermissionAsk(
   }
 
   try {
+    // ── Permission Classifier: try auto-decision before human ask ──
+    const classification = await safeClassify(classifier, {
+      toolName: toolCall.name,
+      toolArgs: toolCall.args,
+      riskLevel: tool.riskLevel ?? 'medium',
+      sessionId,
+      step,
+      policyDecision: evaluatePermission(tool, {
+        riskPolicies: { low: 'allow', medium: 'allow', high: 'ask', critical: 'deny' },
+        defaultPolicy: 'ask',
+        toolPolicies: {},
+        enforceApprovalFlag: true,
+      }),
+    });
+
+    if (classification.action === 'allow' || classification.action === 'deny') {
+      const classifierDecision: PermissionDecision =
+        classification.action === 'allow' ? 'allow' : 'deny';
+      const decisionEvent = createPermissionDecisionEvent(promptId, classifierDecision, sessionId);
+
+      if (classifierDecision === 'allow') {
+        const result = await onAllow();
+        return [{ event: decisionEvent, state: result.state }, result];
+      }
+
+      const denialEvents = createPermissionDeniedEvents(
+        toolCall.name,
+        sessionId,
+        step,
+        classification.reason || `Classifier denied: ${toolCall.name}`
+      );
+      return [
+        { event: decisionEvent, state: undefined },
+        ...denialEvents.map(event => ({ event, state: undefined })),
+      ];
+    }
+
+    // ── Classifier unsure → fall through to human-in-the-loop ──
     const decision = await permissionController.ask({
       promptId,
       permission: toolCall.name,
@@ -141,10 +181,7 @@ export async function handlePermissionAsk(
 
     if (decision === 'allow' || decision === 'allow_always') {
       const result = await onAllow();
-      return [
-        { event: decisionEvent, state: result.state },
-        result,
-      ];
+      return [{ event: decisionEvent, state: result.state }, result];
     }
 
     const denialEvents = createPermissionDeniedEvents(

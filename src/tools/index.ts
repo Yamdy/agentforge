@@ -36,3 +36,27 @@ export {
   type TodoStatus,
   type TodoPriority,
 } from './todo-list.js';
+
+export { createBashTool, type BashToolConfig } from './bash.js';
+
+export { createWebFetchTool, type WebFetchToolConfig } from './web-fetch.js';
+
+export { createAskUserQuestionTool } from './ask-user.js';
+
+export {
+  createSyntheticOutputTool,
+  registerOutputType,
+  hasOutputType,
+  clearOutputTypes,
+  SYNTHETIC_OUTPUT_TOOL_NAME,
+} from './synthetic-output.js';
+
+export { taskRegistry, TaskRegistry } from './task-registry.js';
+
+export { createTaskKillTool } from './task-kill.js';
+
+export { createWebSearchTool, type WebSearchToolConfig } from './web-search.js';
+
+export { createMemorySearchTool } from './memory-search.js';
+
+export { createAddNoteTool, createPinContentTool } from './working-memory-tools.js';

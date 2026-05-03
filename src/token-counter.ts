@@ -14,7 +14,8 @@
  */
 
 import { encodingForModel, type TiktokenModel } from 'js-tiktoken';
-import type { Message } from './core/events.js';
+import type { Message, ContentPart } from './core/events.js';
+import { extractText, isContentArray } from './core/content-utils.js';
 
 // ============================================================
 // Types
@@ -125,7 +126,22 @@ export class TokenCounter {
   }
 
   /**
+   * Image token estimation constants (from OpenAI docs).
+   * - auto / low detail: 85 tokens per image
+   * - high detail: 340 tokens per image (higher resolution tiles)
+   */
+  private static readonly IMAGE_TOKEN_ESTIMATES: Record<string, number> = {
+    auto: 85,
+    low: 85,
+    high: 340,
+  };
+
+  /**
    * Count tokens in a message.
+   *
+   * For string content: uses BPE tokenization (or heuristic fallback).
+   * For ContentPart[]: estimates text tokens from extractText() +
+   *   image tokens based on detail level (auto/low=85, high=340).
    *
    * Includes overhead for role and formatting (~4 tokens per message).
    *
@@ -133,7 +149,25 @@ export class TokenCounter {
    * @returns Number of tokens including overhead
    */
   countMessageTokens(message: Message): number {
-    const contentTokens = this.countTokens(message.content);
+    let contentTokens: number;
+
+    if (isContentArray(message.content)) {
+      // Text tokens from all text parts
+      const textStr = extractText(message.content);
+      contentTokens = this.countTokens(textStr);
+
+      // Image tokens based on detail level
+      const contentParts = message.content as ReadonlyArray<ContentPart>;
+      for (const part of contentParts) {
+        if (part.type === 'image_url') {
+          const detail = part.image_url.detail ?? 'auto';
+          contentTokens += TokenCounter.IMAGE_TOKEN_ESTIMATES[detail] ?? 85;
+        }
+      }
+    } else {
+      contentTokens = this.countTokens(message.content);
+    }
+
     // Add overhead for role, formatting, and separators
     const overhead = 4;
     return contentTokens + overhead;

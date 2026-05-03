@@ -76,6 +76,9 @@ export {
   truncateOldest,
   summarize,
   importanceWeighted,
+  snipCompaction,
+  pointerIndexed,
+  type PointerIndexedConfig,
   type PreserveConfig,
   type MessageImportance,
 } from './strategies.js';
@@ -95,6 +98,7 @@ export {
   createCompactionManager,
   createTruncateCompactionManager,
   createSummarizeCompactionManager,
+  createPointerIndexedCompactionManager,
   createDisabledCompactionManager,
 } from './compaction.js';
 
@@ -142,3 +146,31 @@ export { type AgentsMdConfig, type AgentsMdResult, loadAgentsMd } from './agents
 // ============================================================
 
 export { type SQLiteVectorStoreOptions, SQLiteVectorStore } from './stores/sqlite.js';
+
+// ============================================================
+// In-Memory Vector Store (NEW - P0)
+// ============================================================
+
+export { type InMemoryVectorStoreOptions, InMemoryVectorStore } from './stores/in-memory.js';
+
+// ============================================================
+// Pinecone Vector Store (NEW - P0)
+// ============================================================
+
+export { type PineconeVectorStoreConfig, PineconeVectorStore } from './stores/pinecone.js';
+
+// ============================================================
+// Qdrant Vector Store (NEW - P0)
+// ============================================================
+
+export { type QdrantVectorStoreConfig, QdrantVectorStore } from './stores/qdrant.js';
+
+// ============================================================
+// Working Memory (short-term memory with pinned items + scratchpad)
+// ============================================================
+
+export {
+  type WorkingMemory,
+  createWorkingMemory,
+  WorkingMemoryProcessor,
+} from './working-memory.js';

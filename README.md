@@ -1,7 +1,29 @@
 # AgentForge
 
-> **Agent 开发框架底座（Harness）** — 模型是认知决策核心，框架是工程管控基座  
-> 基于事件驱动架构 + Zod 类型安全，提供可观测、可中断、可恢复的智能体构建能力
+> **The Harness Engine for Production AI Agents** — audit, sandbox, circuit-break, quota-control your agents. Not a new agent framework — a safety layer that wraps yours.
+>
+> 事件驱动架构 + Zod 类型安全。可观测、可中断、可恢复。
+
+```typescript
+// ❌ Without Harness
+const agent = new Agent({ model: 'gpt-4o' });
+await agent.run('delete temp files');
+// rm -rf / executed. No audit. No sandbox. No quota.
+
+// ✅ With AgentForge Harness
+const agent = createAgent({
+  model: { provider: 'openai', model: 'gpt-4o' },
+  harness: {
+    sandbox: 'docker',                          // Isolated execution
+    audit: true,                                // SHA-256 audit chain
+    circuitBreaker: { failureThreshold: 5 },    // Auto circuit-break
+    quota: { maxTokens: 50000 },                // Cost control
+    qualityGate: true,                          // Output quality validation
+  },
+});
+await agent.run('delete temp files');
+// Sandbox blocked, audit logged, quota checked. Zero damage. No tokens burned.
+```
 
 AgentForge 是一个 **Agent Harness 框架**，核心理念是：
 
@@ -33,7 +55,7 @@ Agent = LLM（认知决策核心）+ Harness（工程管控基座）
 | M3 | Docker 沙箱隔离 | `@primo512109/agentforge/sandbox` | 🔧 开发中 |
 | M4 | 异常熔断修复 | `@primo512109/agentforge/resilience` | ✅ 稳定 |
 | M5 | 审计日志 | `@primo512109/agentforge/audit` | ✅ 稳定 |
-| M6 | 工具安全 | `@primo512109/agentforge/security` | 🔧 部分接线 |
+| M6 | 工具安全 | `@primo512109/agentforge/security` | ✅ 稳定 |
 | M7 | 成本管控 | `@primo512109/agentforge/quota` | 🔧 部分接线 |
 | M8 | 可观测性 | `@primo512109/agentforge/observability` | ✅ 稳定 |
 | M9 | 优雅关闭 | `@primo512109/agentforge/lifecycle` | ✅ 稳定 |

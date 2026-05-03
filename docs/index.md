@@ -2,8 +2,8 @@
 layout: home
 hero:
   name: AgentForge
-  text: Agent 开发框架底座
-  tagline: 模型是智能核心，框架是工程管控基座 —— 命令式事件驱动 + Zod 类型安全的 Agent Harness
+  text: The Harness Engine for Production AI Agents
+  tagline: 审计、沙箱、熔断、配额 — 不是新的 Agent 框架，是包裹你现有 Agent 的安全层。事件驱动 + Zod 类型安全。
   image:
     src: /logo.svg
     alt: AgentForge
@@ -51,9 +51,17 @@ features:
     title: 子 Agent 支持
     details: 支持嵌套 Agent 执行，子 Agent 错误隔离，事件流可追溯。
 
+  - icon: 🔒
+    title: Harness 安全防护
+    details: 沙箱隔离、安全守卫、熔断器、配额控制、审计链 — 5 层防护让 Agent 行为可控、可追溯。
+
   - icon: 📊
     title: 生产就绪
     details: 内置配额控制、日志插件、指标收集，开箱即用的生产级功能。
+
+  - icon: ⚡
+    title: 零配置 Demo
+    details: 运行 `npx agentforge demo` 在 30 秒内看到所有 Harness 防护的实际效果。无需 API Key。
 ---
 
 <style>

@@ -7,6 +7,8 @@
  * - truncate-oldest: Remove oldest messages beyond preserveRecent
  * - summarize: Use LLM to summarize removed messages
  * - importance-weighted: Keep messages based on importance (fallback to truncate)
+ * - snip: Keep last N conversation turns
+ * - pointer-indexed: Index removed messages in VectorStore, replace with pointer
  *
  */
 
@@ -14,6 +16,9 @@ import { z } from 'zod';
 import type { Message } from '../core/events.js';
 import type { LLMAdapter } from '../core/interfaces.js';
 import { countMessagesTokens } from '../token-counter.js';
+import { extractText } from '../core/content-utils.js';
+import type { VectorStore, VectorDocument } from './vector-store.js';
+import type { EmbeddingModel } from './embedding.js';
 
 // ============================================================
 // Compaction Strategy Types
@@ -26,6 +31,8 @@ export const CompactionStrategySchema = z.enum([
   'truncate-oldest',
   'summarize',
   'importance-weighted',
+  'snip',
+  'pointer-indexed',
 ]);
 
 export type CompactionStrategy = z.infer<typeof CompactionStrategySchema>;
@@ -260,7 +267,7 @@ export async function summarize(
   const recentMessages = messages.slice(messages.length - preserveRecent);
 
   // Build history string for summarization
-  const historyText = toSummarize.map(m => `[${m.role}]: ${m.content}`).join('\n\n');
+  const historyText = toSummarize.map(m => `[${m.role}]: ${extractText(m.content)}`).join('\n\n');
 
   const prompt = SUMMARIZATION_PROMPT.replace('{maxLength}', String(maxSummaryLength)).replace(
     '{history}',
@@ -336,7 +343,7 @@ function calculateImportance(message: Message, index: number, total: number): Me
   }
 
   // Tool error detection
-  if (message.role === 'tool' && message.content.toLowerCase().includes('error')) {
+  if (message.role === 'tool' && extractText(message.content).toLowerCase().includes('error')) {
     score += 15;
     reasons.push('contains-error');
   }
@@ -416,5 +423,287 @@ export function importanceWeighted(
     tokensBefore,
     tokensAfter,
     strategy: 'importance-weighted',
+  };
+}
+
+// ============================================================
+// Snip Compaction Strategy
+// ============================================================
+
+/**
+ * Snip compaction options
+ */
+export interface SnipOptions {
+  /** Keep system messages (default: true) */
+  keepSystemMessages?: boolean;
+  /** Keep pinned messages (default: true) */
+  keepPinnedMessages?: boolean;
+}
+
+/**
+ * Snip compaction strategy
+ *
+ * Removes old conversation turns while preserving the most recent ones.
+ * A "turn" is defined as a user message + all following assistant/tool messages.
+ * System messages and pinned messages are preserved by default.
+ *
+ * @param messages - Original message array
+ * @param keepRecentTurns - Number of most recent turns to preserve
+ * @param options - Configuration options
+ * @returns Compaction result
+ */
+export function snipCompaction(
+  messages: Message[],
+  keepRecentTurns: number,
+  options: SnipOptions = {}
+): CompactionResult {
+  const tokensBefore = estimateTokens(messages);
+  const cfg = { keepSystemMessages: true, keepPinnedMessages: true, ...options };
+
+  if (messages.length === 0) {
+    return {
+      messages: [],
+      removedCount: 0,
+      tokensBefore,
+      tokensAfter: 0,
+      strategy: 'snip',
+    };
+  }
+
+  // Identify turn boundaries: each user message starts a new turn
+  // We scan from the end to count turns
+  const turnBoundaries: number[] = [];
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]?.role === 'user') {
+      turnBoundaries.push(i);
+    }
+  }
+  // turnBoundaries is in reverse order (last user first)
+  // If no user messages exist, treat the entire list as one "turn"
+  // and keep everything (no-op). This prevents dropping all messages.
+  if (turnBoundaries.length === 0) {
+    return {
+      messages: [...messages],
+      removedCount: 0,
+      tokensBefore,
+      tokensAfter: tokensBefore,
+      strategy: 'snip',
+    };
+  }
+
+  // Indices to preserve
+  const keepIndices = new Set<number>();
+
+  // Keep system messages
+  if (cfg.keepSystemMessages) {
+    for (let i = 0; i < messages.length; i++) {
+      if (messages[i]?.role === 'system') {
+        keepIndices.add(i);
+      }
+    }
+  }
+
+  // Keep pinned messages
+  if (cfg.keepPinnedMessages) {
+    for (let i = 0; i < messages.length; i++) {
+      if (messages[i]?.metadata?.pinned === true) {
+        keepIndices.add(i);
+      }
+    }
+  }
+
+  // Keep last keepRecentTurns turns
+  // turnBoundaries is reverse-ordered (index 0 = last user)
+  const turnsToKeep = Math.min(keepRecentTurns, turnBoundaries.length);
+
+  if (turnsToKeep > 0) {
+    // The first keepRecentTurns entries in turnBoundaries are the most recent turns
+    for (let t = 0; t < turnsToKeep; t++) {
+      const turnStart = turnBoundaries[t]!;
+      // A turn goes from turnStart to either the next turn boundary (which is turnBoundaries[t-1])
+      // or to the end of messages (for the last turn)
+      const turnEnd = t > 0 ? turnBoundaries[t - 1]! : messages.length;
+
+      for (let i = turnStart; i < turnEnd; i++) {
+        keepIndices.add(i);
+      }
+    }
+  }
+
+  // Build compacted messages (maintain order)
+  const compacted: Message[] = [];
+  for (let i = 0; i < messages.length; i++) {
+    if (keepIndices.has(i)) {
+      compacted.push(messages[i]!);
+    }
+  }
+
+  const tokensAfter = estimateTokens(compacted);
+
+  return {
+    messages: compacted,
+    removedCount: messages.length - compacted.length,
+    tokensBefore,
+    tokensAfter,
+    strategy: 'snip',
+  };
+}
+
+// ============================================================
+// Pointer-Indexed Strategy
+// ============================================================
+
+/**
+ * Pointer-indexed compaction configuration
+ */
+export interface PointerIndexedConfig {
+  /** Number of most recent messages to always preserve in context */
+  preserveRecent: number;
+  /** Session ID for indexing (used as namespace in VectorStore) */
+  sessionId: string;
+  /** Maximum number of messages to index per compaction (0 = unlimited) */
+  maxIndexCount?: number;
+  /** Monotonic compaction counter within this session (for unique doc IDs) */
+  compactionIndex?: number;
+}
+
+/**
+ * Pointer-indexed compaction strategy
+ *
+ * Instead of discarding removed messages, this strategy:
+ * 1. Generates embeddings for messages being removed
+ * 2. Indexes each message as a VectorDocument in the VectorStore
+ * 3. Replaces removed messages with a pointer message in context
+ * 4. Enables future semantic retrieval via VectorStore.search()
+ *
+ * The pointer message serves as a lightweight reference that
+ * future agent sessions can use to query the indexed history.
+ *
+ * Falls back to truncate-oldest if VectorStore or EmbeddingModel is unavailable.
+ *
+ * @param messages - Original message array
+ * @param config - Pointer-indexed configuration
+ * @param vectorStore - Vector store for indexing (optional, falls back to truncate)
+ * @param embeddingModel - Embedding model for generating vectors (optional)
+ * @returns Compaction result with pointer message
+ */
+export async function pointerIndexed(
+  messages: Message[],
+  config: PointerIndexedConfig,
+  vectorStore?: VectorStore,
+  embeddingModel?: EmbeddingModel
+): Promise<CompactionResult> {
+  const tokensBefore = estimateTokens(messages);
+
+  if (messages.length <= config.preserveRecent) {
+    return {
+      messages: [...messages],
+      removedCount: 0,
+      tokensBefore,
+      tokensAfter: tokensBefore,
+      strategy: 'pointer-indexed',
+    };
+  }
+
+  // Fallback to truncate if no VectorStore or EmbeddingModel
+  if (!vectorStore || !embeddingModel) {
+    return truncateOldest(messages, config.preserveRecent);
+  }
+
+  // Identify messages to archive (all except recent ones)
+  const toArchive = messages.slice(0, messages.length - config.preserveRecent);
+  const recentMessages = messages.slice(messages.length - config.preserveRecent);
+
+  // Limit index count if configured
+  const maxIndex =
+    config.maxIndexCount && config.maxIndexCount > 0
+      ? Math.min(config.maxIndexCount, toArchive.length)
+      : toArchive.length;
+
+  // Prepare texts for batch embedding
+  const indexedMessages: { msg: Message; index: number }[] = [];
+  const texts: string[] = [];
+  for (let i = 0; i < maxIndex; i++) {
+    const msg = toArchive[i];
+    if (!msg) continue;
+    const text = extractText(msg.content);
+    if (!text) continue;
+    indexedMessages.push({ msg, index: i });
+    texts.push(text);
+  }
+
+  // Batch generate all embeddings at once
+  let embeddings: number[][] = [];
+  try {
+    embeddings = await embeddingModel.embedBatch(texts);
+  } catch {
+    // All embeddings failed — fall back to truncate-oldest to avoid data loss
+    return truncateOldest(messages, config.preserveRecent);
+  }
+
+  // Index each message into VectorStore with isolation per insert
+  const cIdx = config.compactionIndex ?? 0;
+  let indexedCount = 0;
+  const indexedIds: string[] = [];
+
+  for (let j = 0; j < indexedMessages.length && j < embeddings.length; j++) {
+    const { msg, index } = indexedMessages[j]!;
+    const embedding = embeddings[j]!;
+
+    const docId = `${config.sessionId}-c${cIdx}-m${index}`;
+    const doc: VectorDocument = {
+      id: docId,
+      embedding,
+      content: extractText(msg.content),
+      metadata: {
+        role: msg.role,
+        name: msg.name,
+        sessionId: config.sessionId,
+        compactionIndex: cIdx,
+        messageIndex: index,
+        archivedAt: Date.now(),
+      },
+      createdAt: Date.now(),
+    };
+
+    try {
+      vectorStore.insert(doc);
+      indexedIds.push(docId);
+      indexedCount++;
+    } catch {
+      // Isolate per-insert failures — non-fatal
+    }
+  }
+
+  // If ALL indexing failed, fall back to truncate to avoid silent data loss
+  if (indexedCount === 0) {
+    return truncateOldest(messages, config.preserveRecent);
+  }
+
+  // Build pointer message summarizing what was indexed
+  const pointerContent = [
+    `[Semantic Memory Pointer]`,
+    `${indexedCount} messages archived to vector store.`,
+    `Session: ${config.sessionId}`,
+    `Compaction: #${cIdx}`,
+    `Pointer IDs: ${indexedIds.slice(0, 5).join(', ')}${indexedIds.length > 5 ? '...' : ''}`,
+    `Query via semantic search with session "${config.sessionId}" to retrieve context.`,
+  ].join('\n');
+
+  const pointerMsg: Message = {
+    role: 'system',
+    content: pointerContent,
+    name: `memory-pointer-c${cIdx}`,
+  };
+
+  const compacted = [pointerMsg, ...recentMessages];
+  const tokensAfter = estimateTokens(compacted);
+
+  return {
+    messages: compacted,
+    removedCount: toArchive.length,
+    tokensBefore,
+    tokensAfter,
+    strategy: 'pointer-indexed',
   };
 }

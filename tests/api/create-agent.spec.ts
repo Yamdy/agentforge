@@ -27,6 +27,8 @@ vi.mock('../../src/loop/agent-loop.js', () => ({
     pause: () => {},
     resume: () => {},
     getState: () => null,
+    getStatus: () => 'completed',
+    onStateChange: () => () => {},
     destroy: () => {},
     run$: (_input: string) => ({ type: 'done', reason: 'completed', timestamp: Date.now(), sessionId: 'test' } as AgentEvent),
   }),

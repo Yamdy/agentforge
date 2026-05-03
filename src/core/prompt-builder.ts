@@ -15,6 +15,7 @@ import { z } from 'zod';
 import type { ToolDefinition } from './interfaces.js';
 import type { Message } from './events.js';
 import { toolsToFunctionDefs } from './zod-to-schema.js';
+import { extractText } from './content-utils.js';
 
 // Re-export interfaces from interfaces.ts for convenience
 export type { PromptBuilder, PromptBuildOptions, BuiltPrompt } from './interfaces.js';
@@ -117,7 +118,7 @@ export class DefaultPromptBuilder {
     const functionDefs = tools.length > 0 ? toolsToFunctionDefs(tools) : [];
 
     // 7. Estimate tokens (rough: characters / 4)
-    const totalChars = messages.reduce((sum, msg) => sum + msg.content.length, 0);
+    const totalChars = messages.reduce((sum, msg) => sum + extractText(msg.content).length, 0);
     const tokenEstimate = Math.ceil(totalChars / 4);
 
     return {

@@ -1,7 +1,7 @@
 # AgentForge 事件流架构设计
 
 > 设计日期: 2026-04-24
-> 最后更新: 2026-05-02 (v18)
+> 最后更新: 2026-05-03 (v19)
 > 状态: **持续演进**
 > 核心理念: 命令式 while(true) 事件循环 + Zod 类型安全 = Agent 框架底座
 
@@ -187,7 +187,7 @@
 | **Adapter System** | - | `src/adapters/adapter-system.ts` | ✅ 已实现 (错误分类/重试/Provider注册) |
 | **API 层** | 12-API-DESIGN.md | `src/api/*.ts` | ✅ 已实现 |
 | **配置模块** | 16-CONFIG-MODULE.md | `src/core/config/*.ts` | 📝 设计完成 |
-| **安全架构** | 17-SECURITY.md | `src/security/` | 🔧 评审中 (5决策已确认，3缺口已补强) |
+| **安全架构** | 17-SECURITY.md | `src/security/` | ✅ 部分接线 (permissionController wired) |
 | **Quota 集成** | 18-QUOTA-INTEGRATION.md | `src/quota/*.ts` | ✅ 已集成（pre-LLM check + post-LLM consume） |
 | **事件路由补全** | 19-EVENT-ROUTING.md | `src/loop/agent-loop.ts` | ✅ 已实现（AgentLoop.emit() 暴露） |
 | **发布就绪性** | 20-PUBLISH-READINESS.md | `src/index.ts`, `package.json` | 📝 待评审 |
@@ -197,12 +197,16 @@
 | 📦 **架构重构 + RxJS 移除 + 实施计划** | — | `docs/archive/implemented/` | ✅ 已完成并归档 |
 | **框架横比** | 26-FRAMEWORK-COMPARISON.md | — | 📝 设计完成 |
 | **OpenTelemetry Tracing** | 28-OTEL-TRACING.md | `src/observability/tracers/otel-tracer.ts` | ✅ 已实现 |
+| **HITL Permission wiring** | 17-SECURITY.md | `src/security/permission-controller.ts` | ✅ 已实现 |
+| **State machine wiring** | 01-CORE-TYPES.md | `src/core/state-machine.ts` → loop | ✅ 已实现 |
+| **InMemoryVectorStore** | 14-OBSERVABILITY.md | `src/memory/inmemory-vector-store.ts` | ✅ 已实现 |
+| **Multimodal messages** | 01-CORE-TYPES.md | `src/core/events.ts` | ✅ 已实现 |
 | **Evaluation 评估框架** | 29-EVALUATION-FRAMEWORK.md | `src/evaluation/llm-scorer.ts` | ✅ 已实现 |
 | **P1: 规划/执行分离** | 08-SUBSYSTEMS.md | - | 🔮 未实现 |
 | **P1: outputSchema** | 01-CORE-TYPES.md | `src/contracts/tool-output-contract.ts` | ✅ 已实现 |
 | **P1: 决策追溯** | 01-CORE-TYPES.md | `src/contracts/decision-trace-storage.ts` | ✅ 已实现 |
-| **P1: 外部状态机** | 01-CORE-TYPES.md | - | 🔮 未实现 |
-| **P2: Working Memory** | 01-CORE-TYPES.md | - | 🔮 未实现 |
+| **P1: 外部状态机** | 01-CORE-TYPES.md | `src/core/state-machine.ts` (wired in agent-loop.ts) | ⚠️ 部分接线 (getStatus/onStateChange 已暴露) |
+| **P2: Working Memory** | 01-CORE-TYPES.md | `src/memory/working-memory.ts` | ✅ 已实现 |
 | **P2: Evaluation** | 29-EVALUATION-FRAMEWORK.md | `src/evaluation/llm-scorer.ts`, `src/validation/quality-gate.ts` | ✅ 已实现 (LLMScorer + QualityGate) |
 | **P2: RAG** | 08-SUBSYSTEMS.md | - | 🔮 未实现 |
 | **P2: Deployment** | 15-ARCHITECTURE.md | - | 🔮 未实现 |

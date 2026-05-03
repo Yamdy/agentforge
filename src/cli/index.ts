@@ -16,6 +16,7 @@ import { collectPrompts, mergeCliArgs } from './prompts.js';
 import { generateProject } from './generator.js';
 import type { GenerateOptions } from './generator.js';
 import { runPostInstall } from './post-install.js';
+import { runDemo } from './demo.js';
 
 /**
  * Main CLI action: parse args → collect config → generate → post-install.
@@ -52,6 +53,19 @@ export async function main(): Promise<void> {
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         console.error(chalk.red(`\n❌ Error: ${message}\n`));
+        process.exit(1);
+      }
+    });
+
+  program
+    .command('demo')
+    .description('Run a 30-second Harness demo — no API key required')
+    .action(async () => {
+      try {
+        await runDemo();
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(chalk.red(`\n❌ Demo failed: ${message}\n`));
         process.exit(1);
       }
     });
@@ -186,4 +200,13 @@ export async function runAction(
     console.log(chalk.white('  # Add your API key to .env'));
   }
   console.log(chalk.white('  npm run dev\n'));
+}
+
+// Auto-execute when run directly (e.g., via npx tsx or node)
+const isMain = process.argv[1]?.includes('index');
+if (isMain) {
+  main().catch((err: unknown) => {
+    console.error(chalk.red(String(err)));
+    process.exit(1);
+  });
 }

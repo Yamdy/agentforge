@@ -15,8 +15,11 @@ import {
   createCompactionManager,
   createTruncateCompactionManager,
   createSummarizeCompactionManager,
+  createPointerIndexedCompactionManager,
   createDisabledCompactionManager,
 } from '../../src/memory/compaction.js';
+import type { VectorStore, VectorDocument } from '../../src/memory/vector-store.js';
+import type { EmbeddingModel } from '../../src/memory/embedding.js';
 
 // ============================================================
 // Test Helpers
@@ -510,5 +513,229 @@ describe('Factory functions', () => {
       const manager = createSummarizeCompactionManager(llm, 10, 500, offloadMgr as any);
       expect(manager).toBeDefined();
     });
+  });
+});
+
+// ============================================================
+// Aggressive (Reactive) Compaction Mode Tests
+// ============================================================
+
+describe('Aggressive compaction mode', () => {
+  describe('needsCompaction with aggressive', () => {
+    it('should use lowered threshold (triggers earlier)', () => {
+      const manager = new CompactionManager({ triggerThreshold: 0.8 });
+      const context = {
+        sessionId: 's1',
+        messages: [],
+        currentTokenEstimate: 600, // below 0.8*1000=800 but above 0.8*0.7*1000=560
+        maxTokens: 1000,
+      };
+
+      // Normal mode: should NOT need compaction
+      expect(manager.needsCompaction(context)).toBe(false);
+
+      // Aggressive mode: threshold is lowered to 0.8 * 0.7 = 0.56, so 600 >= 560
+      expect(manager.needsCompaction(context, { aggressive: true })).toBe(true);
+    });
+  });
+
+  describe('compact with aggressive truncate-oldest', () => {
+    it('should use halved preserveRecent', async () => {
+      const manager = new CompactionManager({
+        strategy: 'truncate-oldest',
+        preserveRecent: 20,
+      });
+      const messages = createTestMessages(40);
+      const context = {
+        sessionId: 's1',
+        messages,
+        currentTokenEstimate: 5000,
+        maxTokens: 4000,
+      };
+
+      const normalResult = await manager.compact(context);
+      const aggressiveResult = await manager.compact(context, { aggressive: true });
+
+      // Aggressive mode should remove MORE messages (preserveRecent halved to 10)
+      expect(aggressiveResult.removedCount).toBeGreaterThan(normalResult.removedCount);
+      expect(aggressiveResult.tokensAfter).toBeLessThan(normalResult.tokensAfter);
+    });
+  });
+
+  describe('compact with aggressive summarize', () => {
+    it('should use halved maxSummaryLength', async () => {
+      const llm = createMockLLMAdapter(
+        'A somewhat long summary that would normally be truncated at the max length but with aggressive mode the max length is shorter so the truncation happens earlier in the flow.'
+      );
+      const manager = new CompactionManager(
+        { strategy: 'summarize', maxSummaryLength: 500 },
+        llm
+      );
+      const messages = createTestMessages(30);
+      const context = {
+        sessionId: 's1',
+        messages,
+        currentTokenEstimate: 5000,
+        maxTokens: 4000,
+      };
+
+      // Both should work, but aggressive mode uses halved maxSummaryLength
+      const normalResult = await manager.compact(context);
+      const aggressiveResult = await manager.compact(context, { aggressive: true });
+
+      expect(normalResult.strategy).toBe('summarize');
+      expect(aggressiveResult.strategy).toBe('summarize');
+
+      // Aggressive summary should be shorter (halved maxLength)
+      if (normalResult.summary && aggressiveResult.summary) {
+        expect(aggressiveResult.summary.length).toBeLessThanOrEqual(
+          normalResult.summary.length
+        );
+      }
+    });
+  });
+
+  describe('compact with aggressive importance-weighted', () => {
+    it('should reduce target token count by 40%', async () => {
+      const manager = new CompactionManager({
+        strategy: 'importance-weighted',
+        preserveRecent: 10,
+        targetTokenRatio: 0.5,
+      });
+      const messages = createTestMessages(50);
+      const context = {
+        sessionId: 's1',
+        messages,
+        currentTokenEstimate: 5000,
+        maxTokens: 4000,
+      };
+
+      const normalResult = await manager.compact(context);
+      const aggressiveResult = await manager.compact(context, { aggressive: true });
+
+      // Aggressive should have fewer tokens (target reduced by 40%)
+      expect(aggressiveResult.tokensAfter).toBeLessThan(normalResult.tokensAfter);
+    });
+  });
+
+  describe('compact with aggressive snip', () => {
+    it('should use halved keepRecentTurns', async () => {
+      const manager = new CompactionManager({
+        strategy: 'snip',
+        keepRecentTurns: 6,
+        preserveRecent: 10,
+      });
+      const messages = createTestMessages(40);
+      const context = {
+        sessionId: 's1',
+        messages,
+        currentTokenEstimate: 5000,
+        maxTokens: 4000,
+      };
+
+      const normalResult = await manager.compact(context);
+      const aggressiveResult = await manager.compact(context, { aggressive: true });
+
+      // Aggressive mode should remove MORE messages (keepRecentTurns halved to 3)
+      expect(aggressiveResult.removedCount).toBeGreaterThan(normalResult.removedCount);
+    });
+  });
+});
+
+// ============================================================
+// Pointer-Indexed Compaction Manager Tests (Gap 2 verification)
+// ============================================================
+
+describe('createPointerIndexedCompactionManager', () => {
+  class InMemoryVectorStore implements VectorStore {
+    readonly name = 'test-store';
+    private docs = new Map<string, VectorDocument>();
+
+    insert(doc: VectorDocument): void { this.docs.set(doc.id, doc); }
+    insertBatch(docs: VectorDocument[]): void {
+      for (const doc of docs) this.insert(doc);
+    }
+    search(_embedding: number[], limit = 5) {
+      return Array.from(this.docs.values())
+        .slice(0, limit)
+        .map(doc => ({ document: doc, score: 0.95 }));
+    }
+    get(id: string) { return this.docs.get(id) ?? null; }
+    delete(id: string) { this.docs.delete(id); }
+    clear() { this.docs.clear(); }
+    count() { return this.docs.size; }
+    close() { this.docs.clear(); }
+  }
+
+  class MockEmbeddingModel implements EmbeddingModel {
+    async embed(): Promise<number[]> { return new Array(128).fill(0.2); }
+    async embedBatch(texts: string[]): Promise<number[][]> {
+      return texts.map(() => new Array(128).fill(0.2));
+    }
+  }
+
+  function createTestMessages(count: number): Message[] {
+    const msgs: Message[] = [];
+    for (let i = 0; i < count; i++) {
+      msgs.push({ role: i % 2 === 0 ? 'user' : 'assistant', content: `Test message ${i}` });
+    }
+    return msgs;
+  }
+
+  it('should create a compaction manager with pointer-indexed strategy', () => {
+    const store = new InMemoryVectorStore();
+    const embedder = new MockEmbeddingModel();
+    const manager = createPointerIndexedCompactionManager(store, embedder, 5);
+
+    expect(manager.getConfig().strategy).toBe('pointer-indexed');
+    expect(manager.getConfig().preserveRecent).toBe(5);
+  });
+
+  it('should index messages when compacting with pointer-indexed strategy', async () => {
+    const store = new InMemoryVectorStore();
+    const embedder = new MockEmbeddingModel();
+    const manager = createPointerIndexedCompactionManager(store, embedder, 3);
+
+    const messages = createTestMessages(10);
+    const context = {
+      sessionId: 'test-session-1',
+      messages,
+      currentTokenEstimate: 5000,
+      maxTokens: 4000,
+    };
+
+    const result = await manager.compact(context);
+
+    expect(result.strategy).toBe('pointer-indexed');
+    expect(result.removedCount).toBe(7); // 10 - 3
+    expect(store.count()).toBe(7);
+
+    // Pointer message should be present
+    const pointerMsg = (result.messages as Message[])[0];
+    expect(pointerMsg?.role).toBe('system');
+    expect(pointerMsg?.name).toContain('memory-pointer');
+  });
+
+  it('should fall back to truncate-oldest when vector store is missing', async () => {
+    const embedder = new MockEmbeddingModel();
+    // Constructor with explicit undefined for vectorStore
+    const manager = new CompactionManager(
+      { strategy: 'pointer-indexed', preserveRecent: 3 },
+      undefined, // llmAdapter
+      undefined, // offloadManager
+      undefined, // vectorStore — key: omitted
+      embedder,
+    );
+
+    const messages = createTestMessages(10);
+    const context = {
+      sessionId: 's1',
+      messages,
+      currentTokenEstimate: 5000,
+      maxTokens: 4000,
+    };
+
+    const result = await manager.compact(context);
+    expect(result.strategy).toBe('truncate-oldest');
   });
 });

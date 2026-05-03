@@ -182,6 +182,13 @@ describe('SecurityGuard', () => {
       const result = guard.checkNetwork('http://localhost:8080/api');
       expect(result.allowed).toBe(false);
     });
+
+    it('should NOT false-positive on domains containing blocked strings', () => {
+      // 'my-localhost.example.com' contains 'localhost' but is NOT the localhost hostname
+      expect(guard.checkNetwork('my-localhost.example.com').allowed).toBe(true);
+      // '10.127.0.0.1' contains '127.0.0.1' but is a different IP
+      expect(guard.checkNetwork('10.127.0.0.1').allowed).toBe(true);
+    });
   });
 
   // --------------------------------------------------------

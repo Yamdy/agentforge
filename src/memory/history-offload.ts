@@ -14,6 +14,7 @@ import { join, dirname } from 'path';
 import type { Message } from '../core/events.js';
 import type { OffloadConfig } from './types.js';
 import { DEFAULT_OFFLOAD_CONFIG } from './types.js';
+import { extractText } from '../core/content-utils.js';
 
 /**
  * History Offload Manager
@@ -103,7 +104,7 @@ export class HistoryOffloadManager {
       .filter(m => m.role !== 'system') // Skip system messages
       .map(m => {
         const name = m.name ? ` (${m.name})` : '';
-        return `[${m.role}${name}]: ${m.content}`;
+        return `[${m.role}${name}]: ${extractText(m.content)}`;
       })
       .join('\n\n');
   }

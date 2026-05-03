@@ -4,6 +4,30 @@
  * @module
  */
 
+// Blocklist
+export {
+  DEFAULT_BLOCKED_COMMANDS,
+  DEFAULT_BLOCKED_PATHS,
+  DEFAULT_BLOCKED_DOMAINS,
+  BLOCKED_COMMANDS,
+  BLOCKED_PATHS,
+  BLOCKED_DOMAINS,
+  isCommandBlocked,
+  isPathBlocked,
+  isDomainBlocked,
+} from './blocklist.js';
+
+// Blocklist Config
+export {
+  type BlocklistConfig,
+  mergeBlocklists,
+  loadBlocklistConfig,
+  validateBlocklistConfig,
+} from './blocklist-config.js';
+
+// SecurityGuard
+export { SecurityGuard, type SecurityCheckResult } from './guard.js';
+
 // Permission
 export {
   type PermissionDecision,
@@ -104,3 +128,13 @@ export {
   type RateLimitStore,
   InMemoryRateLimitStore,
 } from './rate-limit/rate-limit-store.js';
+
+/* ===== Permission Classifier (Phase 3.3) ===== */
+export {
+  type PermissionClassifier,
+  type PermissionClassifierContext,
+  type PermissionClassification,
+  type ClassificationConfidence,
+  NoopPermissionClassifier,
+  safeClassify,
+} from './permission/classifier.js';

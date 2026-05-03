@@ -15,6 +15,10 @@ export {
   type AgentEventType,
   MessageRoleSchema,
   type MessageRole,
+  MessageContentSchema,
+  type MessageContent,
+  ContentPartSchema,
+  type ContentPart,
   MessageSchema,
   type Message,
   ToolCallSchema,
@@ -290,3 +294,9 @@ export { DefaultApprovalChannel } from './approval-channel.js';
 
 export type { LifecyclePhase, CheckpointResult, CheckpointFn } from './checkpoint-registry.js';
 export { CheckpointRegistry } from './checkpoint-registry.js';
+
+// ============================================================
+// Content Utilities (Multimodal message content access)
+// ============================================================
+
+export { extractText, hasImages, isContentArray } from './content-utils.js';

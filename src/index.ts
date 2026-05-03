@@ -1077,3 +1077,35 @@ export {
   type TokenCounterConfig,
   type ModelEncoding,
 } from './token-counter.js';
+
+// ============================================================
+// Content Utilities (Multimodal message content access)
+// ============================================================
+
+/**
+ * Utilities for accessing Message.content now that it supports
+ * both plain strings and multimodal ContentPart[] arrays.
+ *
+ * @example
+ * ```typescript
+ * import { extractText, hasImages, isContentArray } from 'agentforge';
+ *
+ * // Extract text from any content format
+ * const text = extractText(msg.content);
+ *
+ * // Check for images
+ * if (hasImages(msg.content)) { ... }
+ *
+ * // Type-narrow with isContentArray
+ * if (isContentArray(msg.content)) {
+ *   for (const part of msg.content) { ... }
+ * }
+ * ```
+ */
+export {
+  extractText,
+  hasImages,
+  isContentArray,
+  type ContentPart,
+  type MessageContent,
+} from './core/content-utils.js';

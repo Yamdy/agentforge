@@ -47,6 +47,9 @@ export const RequestHookPriority = {
   /** Persistent memory / AGENTS.md context */
   MEMORY_CONTEXT: 20,
 
+  /** Working memory — pinned items and scratchpad (survives compaction) */
+  WORKING_MEMORY: 25,
+
   /** Skill instructions / domain knowledge */
   SKILL_INSTRUCTIONS: 30,
 
@@ -246,7 +249,7 @@ export interface ToolProviderHook {
    */
   filter(
     tools: FunctionDefinition[],
-    state: AgentLoopState,
+    state: AgentLoopState
   ): FunctionDefinition[] | Promise<FunctionDefinition[]>;
 }
 
@@ -314,15 +317,15 @@ export class HookRegistry {
    * Register multiple lifecycle hooks at once.
    */
   registerLifecycle(hooks: Array<{ name: HookName; fn: HookFn; priority?: number }>): () => void {
-    const unregisters = hooks.map((h) => this.on(h.name, h.fn, h.priority));
-    return () => unregisters.forEach((u) => u());
+    const unregisters = hooks.map(h => this.on(h.name, h.fn, h.priority));
+    return () => unregisters.forEach(u => u());
   }
 
   /**
    * Get all lifecycle hooks for a given name, sorted by priority.
    */
   getLifecycleHooks(name: HookName): HookFn[] {
-    return (this.lifecycle.get(name) ?? []).map((e) => e.fn);
+    return (this.lifecycle.get(name) ?? []).map(e => e.fn);
   }
 
   // ── Request Hooks ──

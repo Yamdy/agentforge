@@ -28,3 +28,20 @@ export {
   createPermissionDecisionEvent,
   handlePermissionAsk,
 } from './permission-guard.js';
+
+export {
+  type DenialTrackerConfig,
+  DEFAULT_DENIAL_TRACKER_CONFIG,
+  DenialTracker,
+} from './denial-tracker.js';
+
+export { PERMISSION_PRESETS, getPermissionPreset, listPermissionPresets } from './presets.js';
+
+export {
+  type PermissionClassifier,
+  type PermissionClassifierContext,
+  type PermissionClassification,
+  type ClassificationConfidence,
+  NoopPermissionClassifier,
+  safeClassify,
+} from './classifier.js';

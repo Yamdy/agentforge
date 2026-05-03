@@ -122,8 +122,8 @@ describe('BLOCKED_DOMAINS', () => {
     expect(BLOCKED_DOMAINS).toContain('127.0.0.1');
   });
 
-  it('should have exactly 4 entries', () => {
-    expect(BLOCKED_DOMAINS).toHaveLength(4);
+  it('should have exactly 5 entries', () => {
+    expect(BLOCKED_DOMAINS).toHaveLength(5);
   });
 });
 
@@ -174,12 +174,28 @@ describe('isDomainBlocked()', () => {
     expect(isDomainBlocked('127.0.0.1')).toBe(true);
   });
 
-  it('should return true when domain contains blocked pattern', () => {
+  it('should return true when domain is subdomain of blocked entry', () => {
+    expect(isDomainBlocked('sub.localhost')).toBe(true);
+  });
+
+  it('should return true for URL with blocked hostname', () => {
     expect(isDomainBlocked('http://localhost:8080')).toBe(true);
+    expect(isDomainBlocked('https://localhost')).toBe(true);
+  });
+
+  it('should NOT false-positive on domains containing blocked strings', () => {
+    // 'localhost' substring should NOT block 'my-localhost.example.com'
+    expect(isDomainBlocked('my-localhost.example.com')).toBe(false);
+    // '127.0.0.1' should NOT block '10.127.0.0.1' (different IP)
+    expect(isDomainBlocked('10.127.0.0.1')).toBe(false);
   });
 
   it('should return false for safe domains', () => {
     expect(isDomainBlocked('api.openai.com')).toBe(false);
     expect(isDomainBlocked('github.com')).toBe(false);
+  });
+
+  it('should return false for empty string', () => {
+    expect(isDomainBlocked('')).toBe(false);
   });
 });

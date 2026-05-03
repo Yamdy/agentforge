@@ -42,6 +42,7 @@ import type { Logger } from './logger.js';
 import { NoopTracer, NoopMetrics } from './defaults.js';
 import type { QuotaController } from '../quota/quota-controller.js';
 import type { CompactionManager } from '../memory/index.js';
+import type { WorkingMemory, WorkingMemoryProcessor } from '../memory/working-memory.js';
 import type { PromptBuilder } from './interfaces.js';
 import type { QualityGate } from '../validation/quality-gate.js';
 import type {
@@ -55,6 +56,7 @@ import type {
   AutoRepairer,
 } from '../contracts/mpu-interfaces.js';
 import type { SecurityGuard } from '../security/guard.js';
+import type { PermissionClassifier } from '../security/permission/classifier.js';
 import type { Planner } from '../planning/types.js';
 import type { HITLAskOptions } from './interfaces.js';
 import type { HookRegistry } from './hooks.js';
@@ -169,6 +171,9 @@ export interface AgentContext {
   /** Permission controller for human approval flow */
   permissionController?: PermissionController;
 
+  /** Permission classifier — ML/heuristic auto-decision before human ask */
+  permissionClassifier?: PermissionClassifier;
+
   /** Sandbox executor for isolated tool execution */
   sandboxExecutor?: SandboxExecutor;
 
@@ -184,6 +189,12 @@ export interface AgentContext {
   // ----- Memory Management (optional) -----
   /** Compaction manager for context window management */
   compactionManager?: CompactionManager;
+
+  /** Working memory — pinned items and scratchpad shared across the session */
+  workingMemory?: WorkingMemory;
+
+  /** Working memory processor — extracts and formats working memory data */
+  workingMemoryProcessor?: WorkingMemoryProcessor;
 
   /** Quality gate — validates LLM output before it enters context */
   qualityGate?: QualityGate;

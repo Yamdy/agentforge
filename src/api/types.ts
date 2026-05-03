@@ -19,6 +19,8 @@ import type {
 } from '../core/index.js';
 import type { Plugin } from '../plugins/index.js';
 import type { PluginSpec } from '../plugins/plugin-loader.js';
+import type { VectorStore } from '../memory/vector-store.js';
+import type { EmbeddingModel } from '../memory/embedding.js';
 
 export type { PluginSpec };
 
@@ -282,6 +284,16 @@ export interface AgentConfig {
     offloadDir?: string;
   };
 
+  /** Compaction configuration for conversation context management */
+  compaction?: {
+    /** Compaction strategy (e.g., 'pointer-indexed') */
+    strategy?: string;
+    /** Vector store for semantic search (required for pointer-indexed strategy) */
+    vectorStore?: VectorStore;
+    /** Embedding model for query encoding (required for pointer-indexed strategy) */
+    embeddingModel?: EmbeddingModel;
+  };
+
   // ----- Advanced -----
   /** @deprecated LLM adapter instance (overrides model config) */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -315,6 +327,20 @@ export interface AgentConfig {
 
   /** Preset configuration ('production' | 'debug' | 'development' | 'test') */
   preset?: 'production' | 'debug' | 'development' | 'test';
+}
+
+// ============================================================
+// Errors
+// ============================================================
+
+/**
+ * Error thrown when agent configuration is invalid.
+ */
+export class AgentConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AgentConfigError';
+  }
 }
 
 // ============================================================
@@ -430,6 +456,12 @@ export interface Agent {
 
   /** Get current agent loop state (null if not started) */
   getState(): AgentLoopState | null;
+
+  /** Get current lifecycle status from state machine */
+  getStatus(): string;
+
+  /** Subscribe to lifecycle state changes. Returns unsubscribe function. */
+  onStateChange(fn: (from: string, to: string) => void): () => void;
 
   /** @deprecated Internal context for backward compat */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

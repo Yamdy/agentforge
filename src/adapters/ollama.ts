@@ -19,6 +19,7 @@ import type {
 } from '../core/interfaces.js';
 import type { JSONSchema7 } from 'json-schema';
 import type { Message, ToolCall } from '../core/events.js';
+import { extractText } from '../core/content-utils.js';
 
 // ============================================================
 // Types
@@ -51,8 +52,6 @@ export class OllamaAdapter implements LLMAdapter {
    */
   private convertMessages(messages: Message[]): Array<Record<string, unknown>> {
     return messages.map(msg => {
-      const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
-
       if (msg.role === 'tool') {
         return {
           role: 'tool',
@@ -61,13 +60,14 @@ export class OllamaAdapter implements LLMAdapter {
               type: 'tool-result',
               toolCallId: msg.toolCallId ?? '',
               toolName: msg.name ?? '',
-              output: content,
+              output: extractText(msg.content),
             },
           ],
         };
       }
 
-      return { role: msg.role, content };
+      // Pass content directly — AI SDK supports both strings and ContentPart[] arrays
+      return { role: msg.role, content: msg.content };
     });
   }
 
@@ -84,7 +84,9 @@ export class OllamaAdapter implements LLMAdapter {
     const otherMessages = messages.filter(m => m.role !== 'system');
 
     const systemPrompt =
-      systemMessages.length > 0 ? systemMessages.map(m => m.content).join('\n\n') : undefined;
+      systemMessages.length > 0
+        ? systemMessages.map(m => extractText(m.content)).join('\n\n')
+        : undefined;
 
     return { systemPrompt, filteredMessages: otherMessages };
   }
@@ -156,18 +158,28 @@ export class OllamaAdapter implements LLMAdapter {
    */
   async *stream(messages: Message[], options?: LLMOptions): AsyncGenerator<LLMChunk> {
     const { systemPrompt, filteredMessages } = this.extractSystemPrompt(messages);
-    const config: Record<string, unknown> = { model: this.model, messages: this.convertMessages(filteredMessages) };
+    const config: Record<string, unknown> = {
+      model: this.model,
+      messages: this.convertMessages(filteredMessages),
+    };
     if (systemPrompt) config.system = systemPrompt;
     if (options?.temperature !== undefined) config.temperature = options.temperature;
     if (options?.maxTokens !== undefined) config.maxTokens = options.maxTokens;
     if (options?.topP !== undefined) config.topP = options.topP;
-    if (options?.stopSequences && options.stopSequences.length > 0) config.stopSequences = options.stopSequences;
+    if (options?.stopSequences && options.stopSequences.length > 0)
+      config.stopSequences = options.stopSequences;
 
     const tools = options?.tools as FunctionDefinition[] | undefined;
     if (tools && tools.length > 0) {
-      const toolsRecord: Record<string, { description: string; parameters: ReturnType<typeof jsonSchema> }> = {};
+      const toolsRecord: Record<
+        string,
+        { description: string; parameters: ReturnType<typeof jsonSchema> }
+      > = {};
       for (const tool of tools) {
-        toolsRecord[tool.name] = { description: tool.description, parameters: jsonSchema(tool.parameters as JSONSchema7) };
+        toolsRecord[tool.name] = {
+          description: tool.description,
+          parameters: jsonSchema(tool.parameters as JSONSchema7),
+        };
       }
       config.tools = toolsRecord;
     }

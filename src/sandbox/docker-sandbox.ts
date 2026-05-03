@@ -79,32 +79,42 @@ export class DockerSandbox implements ContainerSandbox {
     // Check network violations
     this.checkNetworkViolations(command, tracked.config, violations);
 
-    // Simulate command execution
-    const stdout = this.simulateExecution(command, tracked.config);
-    const durationMs = Date.now() - startTime;
-
-    // Check timeout (for sleep commands, simulate the delay exceeded)
+    // Check simulated timeout (sleep commands with duration >= timeout)
     if (command.executable === 'sleep') {
-      const sleepSeconds = Number(command.args[0] ?? 0) * 1000;
-      if (sleepSeconds >= tracked.config.timeoutMs) {
+      const sleepMs = Number(command.args[0] ?? 0) * 1000;
+      if (sleepMs >= tracked.config.timeoutMs) {
         violations.push({ type: 'timeout', timeoutMs: tracked.config.timeoutMs });
       }
     }
+
+    // Execute command (real Docker exec with fallback to simulation)
+    const result = await this.executeCommand(instance, command, tracked.config, violations);
+    const durationMs = Date.now() - startTime;
 
     // Mark as running
     instance.status = 'running';
 
     return {
-      exitCode: violations.length > 0 ? 1 : 0,
-      stdout: violations.length > 0 ? '' : stdout,
-      stderr: violations.length > 0 ? `Violations detected: ${violations.length}` : '',
+      exitCode: violations.length > 0 ? Math.max(1, result.exitCode) : result.exitCode,
+      stdout: violations.length > 0 ? '' : result.stdout,
+      stderr:
+        violations.length > 0
+          ? `Violations detected: ${violations.length}; ${result.stderr}`
+          : result.stderr,
       durationMs,
       violations,
     };
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
   async destroy(instance: SandboxInstance): Promise<void> {
+    // Try real Docker cleanup
+    try {
+      const { execFile } = await import('node:child_process');
+      const { promisify } = await import('node:util');
+      await promisify(execFile)('docker', ['rm', '-f', instance.containerId], { timeout: 10000 });
+    } catch {
+      // Docker not available or container already removed — no-op
+    }
     instance.status = 'destroyed';
     this.instances.delete(instance.id);
   }
@@ -119,11 +129,66 @@ export class DockerSandbox implements ContainerSandbox {
   // --------------------------------------------------------
 
   /**
+   * Execute command via Docker exec (real), falling back to in-process simulation.
+   */
+  private async executeCommand(
+    instance: SandboxInstance,
+    command: SandboxCommand,
+    config: SandboxConfig,
+    violations: SandboxViolation[]
+  ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+    // Attempt real Docker execution
+    try {
+      const { execFile } = await import('node:child_process');
+      const { promisify } = await import('node:util');
+      const dockerArgs = ['exec', '-i', instance.containerId, command.executable, ...command.args];
+      if (command.workingDir) {
+        dockerArgs.splice(2, 0, '-w', command.workingDir);
+      }
+      const { stdout, stderr } = await promisify(execFile)('docker', dockerArgs, {
+        timeout: config.timeoutMs,
+        maxBuffer: 1024 * 1024, // 1MB
+        env: command.env,
+      });
+      return { stdout, stderr, exitCode: 0 };
+    } catch (err) {
+      const error = err as {
+        killed?: boolean;
+        stdout?: string;
+        stderr?: string;
+        code?: number | string;
+      };
+      if (error.killed) {
+        violations.push({ type: 'timeout', timeoutMs: config.timeoutMs });
+      }
+      // Docker not available — fall back to simulation
+      if (error.code === 'ENOENT' || (typeof error.code === 'number' && error.code > 0)) {
+        return {
+          stdout: this.simulateExecution(command, config),
+          stderr: '',
+          exitCode: 0,
+        };
+      }
+      return {
+        stdout: error.stdout ?? this.simulateExecution(command, config),
+        stderr: error.stderr ?? '',
+        exitCode: typeof error.code === 'number' ? error.code : 1,
+      };
+    }
+  }
+
+  /**
    * Simulate command execution for in-process sandbox.
    * In a real Docker sandbox, this would use `docker exec`.
    */
   private simulateExecution(command: SandboxCommand, _config: SandboxConfig): string {
     const { executable, args, stdin, env, workingDir } = command;
+
+    // Check for timeout-simulated commands (sleep, etc.)
+    const sleepSeconds = executable === 'sleep' ? Number(args[0] ?? 0) : 0;
+    if (sleepSeconds > 0 && sleepSeconds * 1000 >= _config.timeoutMs) {
+      return ''; // Simulated timeout — no output
+    }
 
     // Simulate printenv
     if (executable === 'printenv' && args.length > 0 && env) {

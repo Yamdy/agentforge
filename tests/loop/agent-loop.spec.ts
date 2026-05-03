@@ -9,6 +9,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   createAgentLoop,
   type AgentLoopConfig,
+  type AgentLoop,
   type StepContext,
 } from '../../src/loop/agent-loop.js';
 import {
@@ -21,11 +22,15 @@ import {
   type ToolRegistry,
   type ToolDefinition,
   type CheckpointStorage,
+  type PermissionController,
+  type PermissionDecision,
+  type PermissionPolicy,
   InMemoryStore,
   DefaultPauseController,
   DefaultHITLController,
   SimpleSchemaRegistry,
 } from '../../src/core/index.js';
+import { evaluatePermission } from '../../src/security/permission/permission-policy.js';
 
 // ============================================================
 // Mock LLM Adapter
@@ -104,6 +109,12 @@ class MockToolRegistry implements ToolRegistry {
     });
   }
 
+  /** Set risk level on an already-registered tool (for testing permission policies) */
+  setToolRiskLevel(name: string, riskLevel: 'low' | 'medium' | 'high' | 'critical'): void {
+    const tool = this.tools.get(name);
+    if (tool) { tool.riskLevel = riskLevel; }
+  }
+
   list(): string[] {
     return Array.from(this.tools.keys());
   }
@@ -154,6 +165,59 @@ class MockToolRegistry implements ToolRegistry {
     this.executionLog = [];
   }
 }
+
+// ============================================================
+// Test Helper: Create Agent Context
+// ============================================================
+
+/**
+ * Mock PermissionController for testing HITL wiring.
+ * Returns pre-configured decisions without requiring human interaction.
+ */
+class MockPermissionController implements PermissionController {
+  private decisions: PermissionDecision[] = [];
+  private decisionIndex = 0;
+
+  setDecisions(decisions: PermissionDecision[]): void {
+    this.decisions = decisions;
+    this.decisionIndex = 0;
+  }
+
+  async ask(): Promise<PermissionDecision> {
+    if (this.decisionIndex < this.decisions.length) {
+      return this.decisions[this.decisionIndex++]!;
+    }
+    return 'deny'; // Default: deny if no more decisions
+  }
+
+  onAsk(): () => void {
+    return () => {};
+  }
+
+  answer(): void {}
+
+  isAutoAllowed(): boolean {
+    return false;
+  }
+
+  cancel(): void {}
+}
+
+/**
+ * Default permission policy used in tests.
+ * low/medium → allow, high → ask, critical → deny
+ */
+const TEST_PERMISSION_POLICY: PermissionPolicy = {
+  riskPolicies: {
+    low: 'allow',
+    medium: 'allow',
+    high: 'ask',
+    critical: 'deny',
+  },
+  defaultPolicy: 'ask',
+  toolPolicies: {},
+  enforceApprovalFlag: true,
+};
 
 // ============================================================
 // Test Helper: Create Agent Context
@@ -1489,5 +1553,354 @@ describe('Phase 2c: ToolProviderHook Integration', () => {
     const agent = createAgentLoop(ctx, config);
     const events = await runAndCollect(agent, 'test');
     expect(events.find(e => e.type === 'agent.complete')).toBeDefined();
+  });
+});
+
+// ============================================================
+// Scenario 15: HITL PermissionController (Gap 1 verification)
+// ============================================================
+describe('Scenario 15: HITL PermissionController integration', () => {
+  let llm: MockLLMAdapter;
+  let toolRegistry: MockToolRegistry;
+  let permController: MockPermissionController;
+
+  beforeEach(() => {
+    llm = new MockLLMAdapter();
+    toolRegistry = new MockToolRegistry();
+    permController = new MockPermissionController();
+
+    toolRegistry.register('high_risk_tool', async (args) => {
+      return `executed: ${args.action as string}`;
+    });
+    // Set risk to 'high' so the permission policy routes to 'ask'
+    toolRegistry.setToolRiskLevel('high_risk_tool', 'high');
+  });
+
+  function createContextWithPermission(): AgentContext {
+    const ctx = createTestContext(llm, toolRegistry);
+    ctx.permissionController = permController;
+    ctx.permissionPolicy = TEST_PERMISSION_POLICY;
+    return ctx;
+  }
+
+  it('should block tool when permissionController returns deny', async () => {
+    permController.setDecisions(['deny']);
+
+    llm.setResponses([
+      {
+        content: '',
+        toolCalls: [{ id: 'tc-1', name: 'high_risk_tool', args: { action: 'delete' } }],
+        finishReason: 'tool_calls',
+      },
+      { content: 'Done', finishReason: 'stop' },
+    ]);
+
+    const ctx = createContextWithPermission();
+    const agent = createAgentLoop(ctx, createTestConfig());
+    const events = await runAndCollect(agent, 'Do something risky');
+
+    // Should see permission.prompt and permission.decision events
+    const promptEvent = events.find(e => e.type === 'permission.prompt');
+    expect(promptEvent).toBeDefined();
+
+    const decisionEvent = events.find(e => e.type === 'permission.decision');
+    expect(decisionEvent).toBeDefined();
+
+    // Tool should NOT have been executed (denial in tool.result)
+    const toolResults = events.filter(e => e.type === 'tool.result');
+    expect(toolResults.length).toBe(1);
+    if (toolResults[0]?.type === 'tool.result') {
+      expect(toolResults[0].isError).toBe(true);
+      expect(toolResults[0].result).toContain('Permission denied');
+    }
+
+    // Execution log should be empty (tool never executed)
+    const log = toolRegistry.getExecutionLog();
+    expect(log.length).toBe(0);
+  });
+
+  it('should allow tool when permissionController returns allow', async () => {
+    permController.setDecisions(['allow']);
+
+    llm.setResponses([
+      {
+        content: '',
+        toolCalls: [{ id: 'tc-1', name: 'high_risk_tool', args: { action: 'read' } }],
+        finishReason: 'tool_calls',
+      },
+      { content: 'Action completed', finishReason: 'stop' },
+    ]);
+
+    const ctx = createContextWithPermission();
+    const agent = createAgentLoop(ctx, createTestConfig());
+    const events = await runAndCollect(agent, 'Do something');
+
+    // Tool should have been executed
+    const toolResults = events.filter(e => e.type === 'tool.result');
+    expect(toolResults.length).toBe(1);
+    if (toolResults[0]?.type === 'tool.result') {
+      expect(toolResults[0].isError).toBe(false);
+    }
+
+    const log = toolRegistry.getExecutionLog();
+    expect(log.length).toBe(1);
+    expect(log[0]?.name).toBe('high_risk_tool');
+  });
+
+  it('should emit permission.prompt and permission.decision events', async () => {
+    permController.setDecisions(['allow']);
+
+    llm.setResponses([
+      {
+        content: '',
+        toolCalls: [{ id: 'tc-1', name: 'high_risk_tool', args: { action: 'test' } }],
+        finishReason: 'tool_calls',
+      },
+      { content: 'Done', finishReason: 'stop' },
+    ]);
+
+    const ctx = createContextWithPermission();
+    const agent = createAgentLoop(ctx, createTestConfig());
+    const events = await runAndCollect(agent, 'Test');
+
+    const promptEvt = events.find(e => e.type === 'permission.prompt');
+    expect(promptEvt).toBeDefined();
+    expect((promptEvt as any).permission).toBe('high_risk_tool');
+
+    const decisionEvt = events.find(e => e.type === 'permission.decision');
+    expect(decisionEvt).toBeDefined();
+    expect((decisionEvt as any).decision).toBe('allow');
+  });
+});
+
+// ============================================================
+// Scenario 15b: Critical-risk tool blocked at policy layer
+// ============================================================
+describe('Scenario 15b: Critical-risk tool blocked at policy layer', () => {
+  // Unit test: evaluatePermission returns 'deny' for critical-risk tool
+  it('should return deny from evaluatePermission for critical-risk tool', () => {
+    const tool: ToolDefinition = {
+      name: 'critical_tool',
+      description: 'A dangerous tool',
+      parameters: {},
+      riskLevel: 'critical',
+    };
+
+    const result = evaluatePermission(tool, TEST_PERMISSION_POLICY);
+    expect(result).toBe('deny');
+  });
+
+  // Integration test: critical tool blocked at policy layer without invoking PermissionController
+  it('should block critical tool at policy layer without emitting permission.prompt', async () => {
+    const llm = new MockLLMAdapter();
+    const toolRegistry = new MockToolRegistry();
+    const permController = new MockPermissionController();
+
+    // Register tool and set risk to critical
+    toolRegistry.register('critical_tool', async (args) => {
+      return `executed: ${JSON.stringify(args)}`;
+    });
+    toolRegistry.setToolRiskLevel('critical_tool', 'critical');
+
+    // Set up LLM to call the critical tool
+    llm.setResponses([
+      {
+        content: '',
+        toolCalls: [{ id: 'tc-1', name: 'critical_tool', args: { action: 'destroy' } }],
+        finishReason: 'tool_calls',
+      },
+      { content: 'Done', finishReason: 'stop' },
+    ]);
+
+    // Create context with both permissionController and permissionPolicy
+    // (both are needed for the if-guard to enter the permission logic path)
+    const ctx = createTestContext(llm, toolRegistry);
+    ctx.permissionController = permController;
+    ctx.permissionPolicy = TEST_PERMISSION_POLICY;
+
+    const agent = createAgentLoop(ctx, createTestConfig());
+    const events = await runAndCollect(agent, 'Do something dangerous');
+
+    // Verify NO permission.prompt event (controller was never asked)
+    const promptEvent = events.find(e => e.type === 'permission.prompt');
+    expect(promptEvent).toBeUndefined();
+
+    // Verify NO permission.decision event
+    const decisionEvent = events.find(e => e.type === 'permission.decision');
+    expect(decisionEvent).toBeUndefined();
+
+    // Verify tool.result exists with isError=true and permission denied message
+    const toolResults = events.filter(e => e.type === 'tool.result');
+    expect(toolResults.length).toBe(1);
+    if (toolResults[0]?.type === 'tool.result') {
+      expect(toolResults[0].isError).toBe(true);
+      expect(toolResults[0].result).toContain('Permission denied');
+    }
+
+    // Verify execution log is empty (tool never ran)
+    const log = toolRegistry.getExecutionLog();
+    expect(log.length).toBe(0);
+  });
+});
+
+// ============================================================
+// State Machine Integration
+// ============================================================
+
+describe('State Machine Integration', () => {
+  let llm: MockLLMAdapter;
+  let toolRegistry: MockToolRegistry;
+
+  beforeEach(() => {
+    llm = new MockLLMAdapter();
+    toolRegistry = new MockToolRegistry();
+  });
+
+  it('a: after run() completes, getStatus() returns "completed"', async () => {
+    llm.setResponses([
+      { content: 'Hello!', finishReason: 'stop' },
+    ]);
+
+    const ctx = createTestContext(llm, toolRegistry);
+    const agent = createAgentLoop(ctx, createTestConfig());
+
+    await agent.run('Hi');
+
+    expect(agent.getStatus()).toBe('completed');
+  });
+
+  it('b: pause() → getStatus() "paused", resume() → "running"', async () => {
+    // Use a blocking tool to hold the loop while we test pause/resume
+    let toolBlocker: (() => void) | null = null;
+
+    toolRegistry.register('blocking_tool', async () => {
+      await new Promise<void>(resolve => { toolBlocker = resolve; });
+      return 'done';
+    });
+
+    llm.setResponses([
+      {
+        content: '',
+        toolCalls: [{ id: 'tc-1', name: 'blocking_tool', args: {} }],
+        finishReason: 'tool_calls',
+      },
+      { content: 'All done', finishReason: 'stop' },
+    ]);
+
+    const ctx = createTestContext(llm, toolRegistry);
+    const agent = createAgentLoop(ctx, createTestConfig({ parallelToolCalls: false }));
+    const runPromise = agent.run('Hello');
+
+    // Wait for tool invocation — the loop blocks in executeToolBatch
+    await new Promise(r => setTimeout(r, 20));
+
+    agent.pause();
+    expect(agent.getStatus()).toBe('paused');
+
+    agent.resume();
+    expect(agent.getStatus()).toBe('running');
+
+    // Release the tool so the loop can complete
+    toolBlocker?.();
+
+    await runPromise;
+    expect(agent.getStatus()).toBe('completed');
+  });
+
+  it('c: cancel() → getStatus() returns "cancelled"', async () => {
+    let toolBlocker: (() => void) | null = null;
+
+    toolRegistry.register('blocking_tool', async () => {
+      await new Promise<void>(resolve => { toolBlocker = resolve; });
+      return 'done';
+    });
+
+    llm.setResponses([
+      {
+        content: '',
+        toolCalls: [{ id: 'tc-1', name: 'blocking_tool', args: {} }],
+        finishReason: 'tool_calls',
+      },
+      { content: 'Done', finishReason: 'stop' },
+    ]);
+
+    const ctx = createTestContext(llm, toolRegistry);
+    const agent = createAgentLoop(ctx, createTestConfig({ parallelToolCalls: false }));
+    const runPromise = agent.run('Hello');
+
+    // Wait for the loop to enter the tool execution
+    await new Promise(r => setTimeout(r, 20));
+
+    agent.cancel();
+    expect(agent.getStatus()).toBe('cancelled');
+
+    // Release the tool — loop will abort on signal.aborted
+    toolBlocker?.();
+
+    await runPromise;
+    // Status stays cancelled (terminal)
+    expect(agent.getStatus()).toBe('cancelled');
+  });
+
+  it('d: onStateChange receives (from, to) pairs', async () => {
+    llm.setResponses([
+      { content: 'Hello!', finishReason: 'stop' },
+    ]);
+
+    const ctx = createTestContext(llm, toolRegistry);
+    const agent = createAgentLoop(ctx, createTestConfig());
+
+    const transitions: Array<{ from: string; to: string }> = [];
+    const unsub = agent.onStateChange((from, to) => transitions.push({ from, to }));
+
+    await agent.run('Hi');
+    unsub();
+
+    expect(transitions.length).toBe(2);
+    expect(transitions[0]).toEqual({ from: 'pending', to: 'running' });
+    expect(transitions[1]).toEqual({ from: 'running', to: 'completed' });
+  });
+
+  it('e: state.change events are emitted', async () => {
+    llm.setResponses([
+      { content: 'Hello!', finishReason: 'stop' },
+    ]);
+
+    const ctx = createTestContext(llm, toolRegistry);
+    const agent = createAgentLoop(ctx, createTestConfig());
+
+    const events = await runAndCollect(agent, 'Hi');
+
+    const stateChanges = events.filter(e => e.type === 'state.change');
+    expect(stateChanges.length).toBe(2);
+
+    // Verify first is pending→running
+    if (stateChanges[0]?.type === 'state.change') {
+      expect(stateChanges[0].from).toBe('pending');
+      expect(stateChanges[0].to).toBe('running');
+    }
+
+    // Verify second is running→completed
+    if (stateChanges[1]?.type === 'state.change') {
+      expect(stateChanges[1].from).toBe('running');
+      expect(stateChanges[1].to).toBe('completed');
+    }
+  });
+
+  it('f: terminal states are irreversible (completed→paused fails)', async () => {
+    llm.setResponses([
+      { content: 'Hello!', finishReason: 'stop' },
+    ]);
+
+    const ctx = createTestContext(llm, toolRegistry);
+    const agent = createAgentLoop(ctx, createTestConfig());
+
+    await agent.run('Hi');
+
+    expect(agent.getStatus()).toBe('completed');
+
+    // Attempt to pause from completed — should be rejected
+    agent.pause();
+    expect(agent.getStatus()).toBe('completed');
   });
 });

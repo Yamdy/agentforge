@@ -1,5 +1,5 @@
 /**
- * Token Budget System
+ * AgentForge Token Budget System
  *
  * Prevents infinite continuation by tracking diminishing returns.
  * After each continuation, the token budget delta shrinks.
@@ -9,6 +9,8 @@
  *
  * @see docs/design/21-TOKEN-BUDGET.md
  */
+
+import type { Message } from '../core/events.js';
 
 // ============================================================
 // Budget Tracker
@@ -100,7 +102,7 @@ export function checkTokenBudget(
  * @param contextWindow - Model's context window size (default 128k)
  */
 export function shouldCompact(
-  messages: { role: string; content: string }[],
+  messages: Message[],
   tokens: { prompt: number; completion: number },
   contextWindow = 128_000
 ): boolean {

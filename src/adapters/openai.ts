@@ -21,6 +21,7 @@ import type { JSONSchema7 } from 'json-schema';
 import type { Message, ToolCall } from '../core/events.js';
 import type { Logger } from '../core/logger.js';
 import { DefaultLogger } from '../core/logger.js';
+import { extractText } from '../core/content-utils.js';
 
 // ============================================================
 // Types
@@ -87,7 +88,8 @@ export class OpenAIAdapter implements LLMAdapter {
       | string
       | Array<
           | { type: 'text'; text: string }
-          | { type: 'tool-result'; toolCallId: string; toolName: string; output: unknown }
+          | { type: 'image_url'; image_url: { url: string; detail?: 'auto' | 'low' | 'high' } }
+          | { type: 'tool-result'; toolCallId: string; toolName: string; output: string }
         >;
   }> {
     const result: Array<{
@@ -96,17 +98,17 @@ export class OpenAIAdapter implements LLMAdapter {
         | string
         | Array<
             | { type: 'text'; text: string }
-            | { type: 'tool-result'; toolCallId: string; toolName: string; output: unknown }
+            | { type: 'image_url'; image_url: { url: string; detail?: 'auto' | 'low' | 'high' } }
+            | { type: 'tool-result'; toolCallId: string; toolName: string; output: string }
           >;
     }> = [];
 
     for (const msg of messages) {
-      const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
-
       if (msg.role === 'tool') {
-        // Tool result message
+        // Tool result message — extract text for tool-result output
         const toolCallId = msg.toolCallId ?? '';
         const toolName = msg.name ?? '';
+        const output = extractText(msg.content);
 
         result.push({
           role: 'tool',
@@ -115,15 +117,24 @@ export class OpenAIAdapter implements LLMAdapter {
               type: 'tool-result',
               toolCallId,
               toolName,
-              output: content,
+              output,
             },
           ],
         });
       } else {
         // Standard role messages (system, user, assistant)
+        // Pass content directly — AI SDK supports both strings and ContentPart[] arrays
         result.push({
           role: msg.role,
-          content,
+          content: msg.content as
+            | string
+            | Array<
+                | { type: 'text'; text: string }
+                | {
+                    type: 'image_url';
+                    image_url: { url: string; detail?: 'auto' | 'low' | 'high' };
+                  }
+              >,
         });
       }
     }
@@ -256,9 +267,15 @@ export class OpenAIAdapter implements LLMAdapter {
 
     const tools = options?.tools as FunctionDefinition[] | undefined;
     if (tools && tools.length > 0) {
-      const toolsRecord: Record<string, { description: string; parameters: ReturnType<typeof jsonSchema> }> = {};
+      const toolsRecord: Record<
+        string,
+        { description: string; parameters: ReturnType<typeof jsonSchema> }
+      > = {};
       for (const tool of tools) {
-        toolsRecord[tool.name] = { description: tool.description, parameters: jsonSchema(tool.parameters as JSONSchema7) };
+        toolsRecord[tool.name] = {
+          description: tool.description,
+          parameters: jsonSchema(tool.parameters as JSONSchema7),
+        };
       }
       config.tools = toolsRecord;
       const toolChoice = this.convertToolChoice(options?.toolChoice as ToolChoice | undefined);

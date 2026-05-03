@@ -13,6 +13,7 @@
 import { z } from 'zod';
 import { AgentEventSchema } from './events.js';
 import { AgentStateSchema } from './state.js';
+import { extractText } from './content-utils.js';
 
 // ============================================================
 // Checkpoint Position
@@ -203,7 +204,7 @@ export function getToolResult(checkpoint: Checkpoint, toolCallId: string): strin
   const toolMessage = checkpoint.state.messages.find(
     m => m.role === 'tool' && m.toolCallId === toolCallId
   );
-  return toolMessage?.content;
+  return toolMessage ? extractText(toolMessage.content) : undefined;
 }
 
 /**
