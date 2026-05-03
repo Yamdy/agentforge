@@ -4,7 +4,7 @@
  * Tests ordered cleanup execution with timeout support.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { GracefulShutdown } from '../../src/lifecycle/graceful-shutdown.js';
 
 // ============================================================
@@ -84,12 +84,20 @@ describe('GracefulShutdown', () => {
     // ----------------------------------------------------------
 
     it('TC-018: should force exit on timeout', async () => {
+      vi.useFakeTimers();
+
       shutdown.registerCleanup('fast', async () => {});
       shutdown.registerCleanup('slow', async () => {
         await new Promise(resolve => setTimeout(resolve, 5000));
       });
 
-      const result = await shutdown.shutdown(100);
+      const resultPromise = shutdown.shutdown(100);
+      await vi.advanceTimersByTimeAsync(100);
+      const result = await resultPromise;
+
+      // Drain the abandoned 5000ms timer from the slow cleanup
+      await vi.runAllTimersAsync();
+      vi.useRealTimers();
 
       expect(result.success).toBe(false);
       expect(result.completedCleanups).toEqual(['fast']);

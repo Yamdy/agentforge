@@ -517,9 +517,10 @@ describe('createHttpAdapter', () => {
 
     await adapter.chat(sampleMessages, { temperature: 0.7, maxTokens: 100 });
 
-    const callArgs = mockGenerateText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
-    expect(callArgs.temperature).toBe(0.7);
-    expect(callArgs.maxTokens).toBe(100);
+    expect(mockGenerateText).toHaveBeenLastCalledWith(expect.objectContaining({
+      temperature: 0.7,
+      maxTokens: 100,
+    }));
   });
 
   it('should return a successful response with usage', async () => {
@@ -636,16 +637,14 @@ describe('OpenAI HTTP Adapter', () => {
     const adapter = createOpenAIHttpAdapter('gpt-4o', { apiKey: 'key' });
     await adapter.chat(sampleMessages);
 
-    const callArgs = mockGenerateText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
-    expect(callArgs.maxTokens).toBe(1024);
+    expect(mockGenerateText).toHaveBeenLastCalledWith(expect.objectContaining({ maxTokens: 1024 }));
   });
 
   it('should override maxTokens from llmOptions', async () => {
     const adapter = createOpenAIHttpAdapter('gpt-4o', { apiKey: 'key' });
     await adapter.chat(sampleMessages, { maxTokens: 2048 });
 
-    const callArgs = mockGenerateText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
-    expect(callArgs.maxTokens).toBe(2048);
+    expect(mockGenerateText).toHaveBeenLastCalledWith(expect.objectContaining({ maxTokens: 2048 }));
   });
 
   it('should propagate errors to caller (R1: errors-as-events)', async () => {
@@ -704,10 +703,9 @@ describe('OpenAI HTTP Adapter', () => {
       ],
     });
 
-    const callArgs = mockGenerateText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
-    const tools = callArgs.tools as Record<string, unknown> | undefined;
-    expect(tools).toBeDefined();
-    expect(tools!['get_weather']).toBeDefined();
+    expect(mockGenerateText).toHaveBeenLastCalledWith(expect.objectContaining({
+      tools: expect.objectContaining({ get_weather: expect.anything() }),
+    }));
   });
 
   it('should use AI SDK for chat (no raw fetch)', async () => {

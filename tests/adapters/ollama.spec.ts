@@ -161,8 +161,7 @@ describe('OllamaAdapter', () => {
 
     it('should skip stopSequences when empty array', async () => {
       await adapter.chat(sampleMessages, { stopSequences: [] });
-      const callArgs = mockGenerateText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
-      expect(callArgs.stopSequences).toBeUndefined();
+      expect(mockGenerateText.mock.lastCall?.[0]).not.toHaveProperty('stopSequences');
     });
 
     it('should not catch errors (let agent-loop handle)', async () => {
@@ -177,19 +176,16 @@ describe('OllamaAdapter', () => {
     it('should pass tools converted via jsonSchema', async () => {
       await adapter.chat(sampleMessages, { tools: sampleTools });
 
-      const callArgs = mockGenerateText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
-      const tools = callArgs.tools as Record<string, unknown> | undefined;
-      expect(tools).toBeDefined();
-      expect(tools!['get_weather']).toBeDefined();
-      expect((tools!['get_weather'] as Record<string, unknown>).description).toBe(
-        'Get weather for a city'
-      );
+      expect(mockGenerateText).toHaveBeenLastCalledWith(expect.objectContaining({
+        tools: expect.objectContaining({
+          get_weather: expect.objectContaining({ description: 'Get weather for a city' }),
+        }),
+      }));
     });
 
     it('should skip tools when empty array', async () => {
       await adapter.chat(sampleMessages, { tools: [] });
-      const callArgs = mockGenerateText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
-      expect(callArgs.tools).toBeUndefined();
+      expect(mockGenerateText.mock.lastCall?.[0]).not.toHaveProperty('tools');
     });
 
     it('should return toolCalls from generateText result', async () => {
@@ -243,10 +239,9 @@ describe('OllamaAdapter', () => {
     it('should pass tools to streamText when provided', async () => {
       await adapter.stream(sampleMessages, { tools: sampleTools }).next();
 
-      const callArgs = mockStreamText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
-      const tools = callArgs.tools as Record<string, unknown> | undefined;
-      expect(tools).toBeDefined();
-      expect(tools!['get_weather']).toBeDefined();
+      expect(mockStreamText).toHaveBeenLastCalledWith(expect.objectContaining({
+        tools: expect.objectContaining({ get_weather: expect.anything() }),
+      }));
     });
   });
 

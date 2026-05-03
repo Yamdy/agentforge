@@ -12,29 +12,7 @@ import { describe, it, expect } from 'vitest';
 import { createAgent } from '../../src/api/create-agent.js';
 import type { AgentConfig } from '../../src/api/types.js';
 import { NoopTracer, ConsoleTracer, NoopMetrics, ConsoleMetrics } from '../../src/core/defaults.js';
-import type { LLMAdapter, LLMResponse, Message } from '../../src/core/interfaces.js';
-
-
-// ============================================================
-// Mock LLM Adapter
-// ============================================================
-
-class MockLLMAdapter implements LLMAdapter {
-  readonly name = 'mock';
-  readonly provider = 'mock';
-
-  async chat(_messages: Message[]): Promise<LLMResponse> {
-    return {
-      content: 'Hello!',
-      finishReason: 'stop',
-      usage: { promptTokens: 10, completionTokens: 5 },
-    };
-  }
-
-  async *stream(_messages: Message[]): AsyncGenerator<LLMChunk> {
-    yield { text: 'Hello!' };
-  }
-}
+import { MockLLMAdapter } from '../fixtures/llm-mocks.js';
 
 // ============================================================
 // Helper: Create minimal agent config

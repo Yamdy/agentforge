@@ -7,6 +7,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   type AgentStateEnum,
+  AGENT_STATES,
   AgentStateMachine,
   isValidTransition,
   getValidTransitions,
@@ -465,10 +466,11 @@ describe('getValidTransitions', () => {
     expect(transitions).toEqual([]);
   });
 
-  it('should return readonly array', () => {
-    const transitions = getValidTransitions('pending');
-    // TypeScript ensures this is readonly at compile time
-    // Runtime check: should not be able to modify
-    expect(Object.isFrozen(transitions) || !('push' in transitions) || true).toBe(true);
+  it('should return frozen array for every valid state', () => {
+    for (const state of AGENT_STATES) {
+      const t = getValidTransitions(state);
+      expect(Array.isArray(t)).toBe(true);
+      expect(Object.isFrozen(t)).toBe(true);
+    }
   });
 });

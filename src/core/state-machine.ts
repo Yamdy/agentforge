@@ -17,13 +17,22 @@
 
 export type AgentStateEnum = 'pending' | 'running' | 'paused' | 'completed' | 'cancelled' | 'error';
 
+export const AGENT_STATES: readonly AgentStateEnum[] = [
+  'pending',
+  'running',
+  'paused',
+  'completed',
+  'cancelled',
+  'error',
+] as const;
+
 const VALID_TRANSITIONS: Record<AgentStateEnum, readonly AgentStateEnum[]> = {
-  pending: ['running'] as const,
-  running: ['paused', 'completed', 'cancelled', 'error'] as const,
-  paused: ['running', 'cancelled'] as const,
-  completed: [] as const,
-  cancelled: [] as const,
-  error: [] as const,
+  pending: Object.freeze(['running']),
+  running: Object.freeze(['paused', 'completed', 'cancelled', 'error']),
+  paused: Object.freeze(['running', 'cancelled']),
+  completed: Object.freeze([]),
+  cancelled: Object.freeze([]),
+  error: Object.freeze([]),
 };
 
 /**

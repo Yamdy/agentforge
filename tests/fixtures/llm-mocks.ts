@@ -98,6 +98,18 @@ export class MockToolRegistry implements ToolRegistry {
     });
   }
 
+  /** Convenience: register multiple simple tools at once */
+  registerTools(names: string[]): void {
+    for (const name of names) {
+      this.tools.set(name, {
+        name,
+        description: `Tool: ${name}`,
+        parameters: {},
+        execute: async () => 'executed',
+      });
+    }
+  }
+
   setToolRiskLevel(name: string, riskLevel: 'low' | 'medium' | 'high' | 'critical'): void {
     const tool = this.tools.get(name);
     if (tool) {

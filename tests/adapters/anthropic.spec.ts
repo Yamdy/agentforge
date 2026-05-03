@@ -119,54 +119,51 @@ describe('AnthropicAdapter', () => {
 
       await adapter.chat(messagesWithSystem);
 
-      const callArgs = mockGenerateText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
-      expect(callArgs.system).toBe('You are a helpful assistant.');
+      const callArgs = mockGenerateText.mock.lastCall?.[0] as Record<string, unknown> | undefined;
+      expect(callArgs?.system).toBe('You are a helpful assistant.');
 
-      const callMessages = callArgs.messages as Array<Record<string, unknown>>;
+      const callMessages = callArgs?.messages as Array<Record<string, unknown>> | undefined;
       expect(callMessages).toHaveLength(1);
-      expect(callMessages[0]!.role).toBe('user');
+      expect(callMessages?.[0]?.role).toBe('user');
     });
 
     it('should pass temperature when provided', async () => {
       const adapter = new AnthropicAdapter('claude-3-5-sonnet-20241022');
       await adapter.chat(sampleMessages, { temperature: 0.5 });
 
-      const callArgs = mockGenerateText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
-      expect(callArgs.temperature).toBe(0.5);
+      expect(mockGenerateText).toHaveBeenLastCalledWith(expect.objectContaining({ temperature: 0.5 }));
     });
 
     it('should pass maxTokens when provided', async () => {
       const adapter = new AnthropicAdapter('claude-3-5-sonnet-20241022');
       await adapter.chat(sampleMessages, { maxTokens: 4096 });
 
-      const callArgs = mockGenerateText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
-      expect(callArgs.maxTokens).toBe(4096);
+      expect(mockGenerateText).toHaveBeenLastCalledWith(expect.objectContaining({ maxTokens: 4096 }));
     });
 
     it('should pass tools when provided', async () => {
       const adapter = new AnthropicAdapter('claude-3-5-sonnet-20241022');
       await adapter.chat(sampleMessages, { tools: sampleTools });
 
-      const callArgs = mockGenerateText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
-      const callTools = callArgs.tools as Record<string, unknown> | undefined;
-      expect(callTools).toBeDefined();
-      expect(callTools!['get_weather']).toBeDefined();
+      expect(mockGenerateText).toHaveBeenLastCalledWith(expect.objectContaining({
+        tools: expect.objectContaining({ get_weather: expect.anything() }),
+      }));
     });
 
     it('should convert required toolChoice to any for Anthropic', async () => {
       const adapter = new AnthropicAdapter('claude-3-5-sonnet-20241022');
       await adapter.chat(sampleMessages, { tools: sampleTools, toolChoice: 'required' });
 
-      const callArgs = mockGenerateText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
-      expect(callArgs.toolChoice).toBe('any');
+      expect(mockGenerateText).toHaveBeenLastCalledWith(expect.objectContaining({ toolChoice: 'any' }));
     });
 
     it('should pass stopSequences when provided', async () => {
       const adapter = new AnthropicAdapter('claude-3-5-sonnet-20241022');
       await adapter.chat(sampleMessages, { stopSequences: ['\n\nHuman:', '\n\nAssistant:'] });
 
-      const callArgs = mockGenerateText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
-      expect(callArgs.stopSequences).toEqual(['\n\nHuman:', '\n\nAssistant:']);
+      expect(mockGenerateText).toHaveBeenLastCalledWith(expect.objectContaining({
+        stopSequences: ['\n\nHuman:', '\n\nAssistant:'],
+      }));
     });
 
     it('should propagate generateText errors (R1: errors-as-events)', async () => {

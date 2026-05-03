@@ -118,52 +118,46 @@ describe('OpenAIAdapter', () => {
       const adapter = new OpenAIAdapter('gpt-4o');
       await adapter.chat(sampleMessages, { temperature: 0.7 });
 
-      const callArgs = mockGenerateText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
-      expect(callArgs.temperature).toBe(0.7);
+      expect(mockGenerateText).toHaveBeenLastCalledWith(expect.objectContaining({ temperature: 0.7 }));
     });
 
     it('should pass maxTokens when provided', async () => {
       const adapter = new OpenAIAdapter('gpt-4o');
       await adapter.chat(sampleMessages, { maxTokens: 2048 });
 
-      const callArgs = mockGenerateText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
-      expect(callArgs.maxTokens).toBe(2048);
+      expect(mockGenerateText).toHaveBeenLastCalledWith(expect.objectContaining({ maxTokens: 2048 }));
     });
 
     it('should pass stopSequences when provided', async () => {
       const adapter = new OpenAIAdapter('gpt-4o');
       await adapter.chat(sampleMessages, { stopSequences: ['END', 'STOP'] });
 
-      const callArgs = mockGenerateText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
-      expect(callArgs.stopSequences).toEqual(['END', 'STOP']);
+      expect(mockGenerateText).toHaveBeenLastCalledWith(expect.objectContaining({ stopSequences: ['END', 'STOP'] }));
     });
 
     it('should pass tools as Record when provided', async () => {
       const adapter = new OpenAIAdapter('gpt-4o');
       await adapter.chat(sampleMessages, { tools: sampleTools });
 
-      const callArgs = mockGenerateText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
-      const callTools = callArgs.tools as Record<string, unknown> | undefined;
-      expect(callTools).toBeDefined();
-      expect(callTools!['get_weather']).toBeDefined();
+      expect(mockGenerateText).toHaveBeenLastCalledWith(expect.objectContaining({
+        tools: expect.objectContaining({ get_weather: expect.anything() }),
+      }));
     });
 
     it('should pass toolChoice when tools are provided', async () => {
       const adapter = new OpenAIAdapter('gpt-4o');
       await adapter.chat(sampleMessages, { tools: sampleTools, toolChoice: 'required' });
 
-      const callArgs = mockGenerateText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
-      expect(callArgs.toolChoice).toBe('required');
+      expect(mockGenerateText).toHaveBeenLastCalledWith(expect.objectContaining({ toolChoice: 'required' }));
     });
 
     it('should handle toolChoice as object', async () => {
       const adapter = new OpenAIAdapter('gpt-4o');
       await adapter.chat(sampleMessages, { tools: sampleTools, toolChoice: { name: 'get_weather' } });
 
-      const callArgs = mockGenerateText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
-      const tc = callArgs.toolChoice as Record<string, unknown>;
-      expect(tc.type).toBe('tool');
-      expect(tc.toolName).toBe('get_weather');
+      expect(mockGenerateText).toHaveBeenLastCalledWith(expect.objectContaining({
+        toolChoice: expect.objectContaining({ type: 'tool', toolName: 'get_weather' }),
+      }));
     });
 
     it('should propagate generateText errors (R1: errors-as-events)', async () => {
