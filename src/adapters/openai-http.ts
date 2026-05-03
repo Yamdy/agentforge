@@ -1,76 +1,93 @@
 /**
- * OpenAI HTTP Adapter - Direct HTTP calls without AI SDK
+ * OpenAI HTTP Adapter — uses @ai-sdk/openai-compatible
  *
- * Supports v1 model format (compatible with MiMo, DeepSeek, etc.)
+ * Supports any v1-compatible API (MiMo, DeepSeek, Groq, etc.)
+ * with full AI SDK integration: streaming, tool calling, type safety.
  */
 
+import { generateText, streamText, jsonSchema } from 'ai';
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
+import type { JSONSchema7 } from 'json-schema';
 import type {
   LLMAdapter,
   LLMResponse,
   LLMOptions,
   Message,
-  ToolDefinition,
   LLMChunk,
+  FunctionDefinition,
+  ToolChoice,
 } from '../core/interfaces.js';
-import type { Logger } from '../core/logger.js';
-import { DefaultLogger } from '../core/logger.js';
+import type { ToolCall } from '../core/events.js';
+import { extractText } from '../core/content-utils.js';
 
 export interface OpenAIHttpAdapterOptions {
   apiKey?: string;
   baseURL?: string;
-  logger?: Logger;
 }
 
-/**
- * Convert ToolDefinition to OpenAI function format
- */
-function toolToOpenAIFormat(tool: ToolDefinition) {
-  // If parameters is a Zod schema, convert to JSON Schema
-  let parameters: Record<string, unknown>;
+// ============================================================
+// Message Conversion (same pattern as OpenAIAdapter)
+// ============================================================
 
-  if (tool.parameters && typeof tool.parameters === 'object' && 'shape' in tool.parameters) {
-    // Zod schema - convert to JSON Schema
-    const shape = (tool.parameters as { shape: Record<string, unknown> }).shape;
-    const properties: Record<string, unknown> = {};
-    const required: string[] = [];
+function convertMessages(messages: Message[]): Array<{
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content:
+    | string
+    | Array<
+        | { type: 'text'; text: string }
+        | { type: 'image_url'; image_url: { url: string; detail?: 'auto' | 'low' | 'high' } }
+        | { type: 'tool-result'; toolCallId: string; toolName: string; output: string }
+      >;
+}> {
+  const result: Array<{
+    role: 'system' | 'user' | 'assistant' | 'tool';
+    content:
+      | string
+      | Array<
+          | { type: 'text'; text: string }
+          | { type: 'image_url'; image_url: { url: string; detail?: 'auto' | 'low' | 'high' } }
+          | { type: 'tool-result'; toolCallId: string; toolName: string; output: string }
+        >;
+  }> = [];
 
-    for (const [key, value] of Object.entries(shape)) {
-      const field = value as {
-        description?: string;
-        _def?: { typeName?: string };
-        isOptional?: () => boolean;
-      };
-      properties[key] = {
-        type: 'string', // Simplified - would need proper Zod-to-JSON-Schema conversion
-        description: field.description || '',
-      };
-      if (field.isOptional && !field.isOptional()) {
-        required.push(key);
-      }
+  for (const msg of messages) {
+    if (msg.role === 'tool') {
+      result.push({
+        role: 'tool',
+        content: [
+          {
+            type: 'tool-result',
+            toolCallId: msg.toolCallId ?? '',
+            toolName: msg.name ?? '',
+            output: extractText(msg.content),
+          },
+        ],
+      });
+    } else {
+      result.push({
+        role: msg.role,
+        content: msg.content as
+          | string
+          | Array<
+              | { type: 'text'; text: string }
+              | { type: 'image_url'; image_url: { url: string; detail?: 'auto' | 'low' | 'high' } }
+            >,
+      });
     }
-
-    parameters = {
-      type: 'object',
-      properties,
-      required: required.length > 0 ? required : undefined,
-    };
-  } else {
-    // Already JSON Schema or other format
-    parameters = (tool.parameters as Record<string, unknown>) ?? { type: 'object', properties: {} };
   }
 
-  return {
-    type: 'function' as const,
-    function: {
-      name: tool.name,
-      description: tool.description,
-      parameters,
-    },
-  };
+  return result;
 }
 
+// ============================================================
+// Adapter Factory
+// ============================================================
+
 /**
- * Create OpenAI-compatible HTTP adapter (supports v1 model format)
+ * Create OpenAI-compatible HTTP adapter using AI SDK
+ *
+ * Supports any v1-compatible API (DeepSeek, MiMo, Groq, Together, etc.)
+ * with full streaming and tool calling support via @ai-sdk/openai-compatible.
  */
 export function createOpenAIHttpAdapter(
   modelName: string,
@@ -78,149 +95,130 @@ export function createOpenAIHttpAdapter(
 ): LLMAdapter {
   const apiKey = options.apiKey ?? process.env.OPENAI_API_KEY ?? '';
   const baseURL = options.baseURL ?? 'https://api.openai.com/v1';
-  const logger = options.logger ?? new DefaultLogger('openai-http');
 
-  // Store tools for use in chat calls
-  const registeredTools: ToolDefinition[] = [];
+  const aiProvider = createOpenAICompatible({
+    name: 'openai-http',
+    apiKey,
+    baseURL,
+  });
+  const aiModel = aiProvider(modelName);
 
-  const adapter: LLMAdapter = {
+  return {
     name: `openai-http-${modelName}`,
     provider: 'openai',
 
     async chat(messages: Message[], llmOptions?: LLMOptions): Promise<LLMResponse> {
-      try {
-        const body: Record<string, unknown> = {
-          model: modelName,
-          messages: messages.map(m => ({
-            role: m.role,
-            content: m.content, // Pass directly — OpenAI API supports both strings and ContentPart[]
-          })),
-          max_tokens: (llmOptions?.maxTokens as number) ?? 1024, // Default max_tokens
-        };
+      const config: Record<string, unknown> = {
+        model: aiModel,
+        messages: convertMessages(messages),
+      };
 
-        // Add tools if provided (from llmOptions or registered tools)
-        const tools = (llmOptions?.tools as ToolDefinition[]) ?? registeredTools;
-        const hasTools = tools.length > 0;
+      if (llmOptions?.temperature !== undefined) {
+        config.temperature = llmOptions.temperature;
+      }
+      if (llmOptions?.maxTokens !== undefined) {
+        config.maxTokens = llmOptions.maxTokens;
+      } else {
+        config.maxTokens = 1024; // Default for v1 models
+      }
+      if (llmOptions?.topP !== undefined) {
+        config.topP = llmOptions.topP;
+      }
+      if (llmOptions?.stopSequences && llmOptions.stopSequences.length > 0) {
+        config.stopSequences = llmOptions.stopSequences;
+      }
 
-        if (hasTools) {
-          body.tools = tools.map(toolToOpenAIFormat);
-          body.tool_choice = 'auto';
+      const tools = llmOptions?.tools as FunctionDefinition[] | undefined;
+      if (tools && tools.length > 0) {
+        const toolsRecord: Record<
+          string,
+          { description: string; parameters: ReturnType<typeof jsonSchema> }
+        > = {};
+        for (const tool of tools) {
+          toolsRecord[tool.name] = {
+            description: tool.description,
+            parameters: jsonSchema(tool.parameters as JSONSchema7),
+          };
         }
+        config.tools = toolsRecord;
 
-        if (llmOptions?.temperature !== undefined) {
-          body.temperature = llmOptions.temperature;
-        }
-        if (llmOptions?.maxTokens !== undefined) {
-          body.max_tokens = llmOptions.maxTokens;
-        }
-
-        let response = await fetch(`${baseURL}/chat/completions`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify(body),
-        });
-
-        // If API returns error and we sent tools, retry without tools
-        if (!response.ok && hasTools) {
-          const errorData = await response.json().catch(() => ({}));
-          const errorMsg = (errorData as { error?: { message?: string } }).error?.message ?? '';
-
-          // Only retry without tools if the error is about tools/params
-          if (
-            errorMsg.includes('Param') ||
-            errorMsg.includes('tool') ||
-            errorMsg.includes('function')
-          ) {
-            logger.warn("API doesn't support tools, retrying without tools");
-
-            const bodyWithoutTools: Record<string, unknown> = {
-              model: modelName,
-              messages: body.messages,
-              max_tokens: 1024, // MiMo requires max_tokens
-            };
-
-            response = await fetch(`${baseURL}/chat/completions`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${apiKey}`,
-              },
-              body: JSON.stringify(bodyWithoutTools),
-            });
+        if (llmOptions?.toolChoice) {
+          const choice = llmOptions.toolChoice as ToolChoice;
+          if (typeof choice === 'string') {
+            config.toolChoice = choice;
+          } else {
+            config.toolChoice = { type: 'tool', toolName: choice.name };
           }
         }
+      }
 
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          const errorMessage =
-            (errorData as { error?: { message?: string } }).error?.message ?? response.statusText;
-          throw new Error(`API error ${response.status}: ${errorMessage}`);
-        }
+      const result = await generateText(config as Parameters<typeof generateText>[0]);
 
-        const data = (await response.json()) as {
-          choices: Array<{
-            message: {
-              content: string;
-              tool_calls?: Array<{
-                id: string;
-                function: { name: string; arguments: string };
-              }>;
-            };
-            finish_reason: string;
-          }>;
-          usage?: {
-            prompt_tokens: number;
-            completion_tokens: number;
-          };
-        };
+      const toolCalls: ToolCall[] | undefined =
+        result.toolCalls && result.toolCalls.length > 0
+          ? result.toolCalls.map(tc => ({
+              id: tc.toolCallId,
+              name: tc.toolName,
+              args: (tc as { input?: Record<string, unknown> }).input ?? {},
+            }))
+          : undefined;
 
-        const choice = data.choices[0];
-        if (!choice) {
-          throw new Error('No choices in response');
-        }
+      const response: LLMResponse = {
+        content: result.text,
+        finishReason: result.finishReason as LLMResponse['finishReason'],
+      };
 
-        const result: LLMResponse = {
-          content: choice.message.content ?? '',
-          finishReason:
-            choice.finish_reason === 'stop'
-              ? 'stop'
-              : choice.finish_reason === 'tool_calls'
-                ? 'tool_calls'
-                : 'stop',
-        };
-
-        if (choice.message.tool_calls) {
-          result.toolCalls = choice.message.tool_calls.map(tc => ({
-            id: tc.id,
-            name: tc.function.name,
-            args: JSON.parse(tc.function.arguments) as Record<string, unknown>,
-          }));
-        }
-
-        if (data.usage) {
-          result.usage = {
-            promptTokens: data.usage.prompt_tokens,
-            completionTokens: data.usage.completion_tokens,
-          };
-        }
-
-        return result;
-      } catch (error) {
-        logger.error('Chat error', error instanceof Error ? error : undefined);
-        return {
-          content: '',
-          finishReason: 'error',
+      if (toolCalls) response.toolCalls = toolCalls;
+      if (result.usage) {
+        response.usage = {
+          promptTokens: result.usage.inputTokens ?? 0,
+          completionTokens: result.usage.outputTokens ?? 0,
         };
       }
+
+      return response;
     },
 
-    async *stream(): AsyncGenerator<LLMChunk> {
-      // HTTP adapter does not support streaming
+    async *stream(messages: Message[], llmOptions?: LLMOptions): AsyncGenerator<LLMChunk> {
+      const config: Record<string, unknown> = {
+        model: aiModel,
+        messages: convertMessages(messages),
+      };
+
+      if (llmOptions?.temperature !== undefined) config.temperature = llmOptions.temperature;
+      if (llmOptions?.maxTokens !== undefined) config.maxTokens = llmOptions.maxTokens;
+      if (llmOptions?.topP !== undefined) config.topP = llmOptions.topP;
+      if (llmOptions?.stopSequences && llmOptions.stopSequences.length > 0) {
+        config.stopSequences = llmOptions.stopSequences;
+      }
+
+      const tools = llmOptions?.tools as FunctionDefinition[] | undefined;
+      if (tools && tools.length > 0) {
+        const toolsRecord: Record<
+          string,
+          { description: string; parameters: ReturnType<typeof jsonSchema> }
+        > = {};
+        for (const tool of tools) {
+          toolsRecord[tool.name] = {
+            description: tool.description,
+            parameters: jsonSchema(tool.parameters as JSONSchema7),
+          };
+        }
+        config.tools = toolsRecord;
+        if (llmOptions?.toolChoice) {
+          const choice = llmOptions.toolChoice as ToolChoice;
+          if (typeof choice === 'string') {
+            config.toolChoice = choice;
+          } else {
+            config.toolChoice = { type: 'tool', toolName: choice.name };
+          }
+        }
+      }
+
+      const result = streamText(config as Parameters<typeof streamText>[0]);
+      for await (const textPart of result.textStream) {
+        yield { text: textPart };
+      }
     },
   };
-
-  return adapter;
 }

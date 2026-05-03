@@ -166,8 +166,15 @@ export class ProviderRegistry {
 }
 
 // ============================================================
-// HTTP Adapter (v1 compatible - for MiMo, DeepSeek, etc.)
+// HTTP Adapter (v1 compatible — uses @ai-sdk/openai-compatible)
 // ============================================================
+
+import { generateText, streamText, jsonSchema } from 'ai';
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
+import type { JSONSchema7 } from 'json-schema';
+import type { FunctionDefinition, ToolChoice } from '../core/interfaces.js';
+import type { ToolCall } from '../core/events.js';
+import { extractText } from '../core/content-utils.js';
 
 export interface HttpAdapterOptions {
   apiKey: string;
@@ -175,134 +182,187 @@ export interface HttpAdapterOptions {
   retryConfig?: RetryConfig;
 }
 
+/**
+ * Convert AgentForge messages to AI SDK format (same pattern as OpenAIAdapter)
+ */
+function convertMessages(messages: Message[]): Array<{
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content:
+    | string
+    | Array<
+        | { type: 'text'; text: string }
+        | { type: 'image_url'; image_url: { url: string; detail?: 'auto' | 'low' | 'high' } }
+        | { type: 'tool-result'; toolCallId: string; toolName: string; output: string }
+      >;
+}> {
+  const result: Array<{
+    role: 'system' | 'user' | 'assistant' | 'tool';
+    content:
+      | string
+      | Array<
+          | { type: 'text'; text: string }
+          | { type: 'image_url'; image_url: { url: string; detail?: 'auto' | 'low' | 'high' } }
+          | { type: 'tool-result'; toolCallId: string; toolName: string; output: string }
+        >;
+  }> = [];
+
+  for (const msg of messages) {
+    if (msg.role === 'tool') {
+      result.push({
+        role: 'tool',
+        content: [
+          {
+            type: 'tool-result',
+            toolCallId: msg.toolCallId ?? '',
+            toolName: msg.name ?? '',
+            output: extractText(msg.content),
+          },
+        ],
+      });
+    } else {
+      result.push({
+        role: msg.role,
+        content: msg.content as
+          | string
+          | Array<
+              | { type: 'text'; text: string }
+              | { type: 'image_url'; image_url: { url: string; detail?: 'auto' | 'low' | 'high' } }
+            >,
+      });
+    }
+  }
+
+  return result;
+}
+
 export function createHttpAdapter(
   provider: string,
   model: string,
   options: HttpAdapterOptions
 ): LLMAdapter {
-  const retryConfig = options.retryConfig ?? DEFAULT_RETRY_CONFIG;
+  const aiProvider = createOpenAICompatible({
+    name: provider,
+    apiKey: options.apiKey,
+    baseURL: options.baseURL,
+  });
+  const aiModel = aiProvider(model);
 
   return {
     name: `${provider}-${model}`,
     provider,
 
     async chat(messages: Message[], llmOptions?: LLMOptions): Promise<LLMResponse> {
-      let lastError: ClassifiedError | null = null;
+      const config: Record<string, unknown> = {
+        model: aiModel,
+        messages: convertMessages(messages),
+      };
 
-      for (let attempt = 1; attempt <= retryConfig.maxRetries; attempt++) {
-        try {
-          const response = await callHTTPAPI(
-            options.baseURL,
-            options.apiKey,
-            model,
-            messages,
-            llmOptions
-          );
-          return response;
-        } catch (error: unknown) {
-          const errorObj = error instanceof Error ? error : new Error(String(error));
-          lastError = classifyError(errorObj);
+      if (llmOptions?.temperature !== undefined) {
+        config.temperature = llmOptions.temperature;
+      }
+      if (llmOptions?.maxTokens !== undefined) {
+        config.maxTokens = llmOptions.maxTokens;
+      }
+      if (llmOptions?.topP !== undefined) {
+        config.topP = llmOptions.topP;
+      }
+      if (llmOptions?.stopSequences && llmOptions.stopSequences.length > 0) {
+        config.stopSequences = llmOptions.stopSequences;
+      }
 
-          // Don't retry non-retryable errors
-          if (!lastError.retryable) {
-            console.error(`[${provider}] Non-retryable error:`, lastError.message);
-            return { content: '', finishReason: 'error' };
-          }
+      const tools = llmOptions?.tools as FunctionDefinition[] | undefined;
+      if (tools && tools.length > 0) {
+        const toolsRecord: Record<
+          string,
+          { description: string; parameters: ReturnType<typeof jsonSchema> }
+        > = {};
+        for (const tool of tools) {
+          toolsRecord[tool.name] = {
+            description: tool.description,
+            parameters: jsonSchema(tool.parameters as JSONSchema7),
+          };
+        }
+        config.tools = toolsRecord;
 
-          // Wait before retry
-          if (attempt < retryConfig.maxRetries) {
-            const delay = calculateRetryDelay(attempt, lastError, retryConfig);
-            console.warn(
-              `[${provider}] Retry ${attempt}/${retryConfig.maxRetries} after ${delay}ms`
-            );
-            await new Promise(r => setTimeout(r, delay));
+        if (llmOptions?.toolChoice) {
+          const choice = llmOptions.toolChoice as ToolChoice;
+          if (typeof choice === 'string') {
+            config.toolChoice = choice;
+          } else {
+            config.toolChoice = { type: 'tool', toolName: choice.name };
           }
         }
       }
 
-      console.error(`[${provider}] All retries exhausted:`, lastError?.message);
-      return { content: '', finishReason: 'error' };
-    },
+      const result = await generateText(config as Parameters<typeof generateText>[0]);
 
-    async *stream(): AsyncGenerator<LLMChunk> {
-      // No streaming support in adapter-system
-    },
-  };
-}
+      const toolCalls: ToolCall[] | undefined =
+        result.toolCalls && result.toolCalls.length > 0
+          ? result.toolCalls.map(tc => ({
+              id: tc.toolCallId,
+              name: tc.toolName,
+              args: (tc as { input?: Record<string, unknown> }).input ?? {},
+            }))
+          : undefined;
 
-async function callHTTPAPI(
-  baseURL: string,
-  apiKey: string,
-  model: string,
-  messages: Message[],
-  options?: LLMOptions
-): Promise<LLMResponse> {
-  const body: Record<string, unknown> = {
-    model,
-    messages: messages.map(m => ({ role: m.role, content: m.content })),
-  };
-
-  if (options?.temperature !== undefined) body.temperature = options.temperature;
-  if (options?.maxTokens !== undefined) body.max_tokens = options.maxTokens;
-
-  const response = await fetch(`${baseURL}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    const errorData = (await response.json().catch(() => ({}))) as Record<string, unknown>;
-    const errorMsg =
-      (errorData as { error?: { message?: string } }).error?.message ?? response.statusText;
-    const error = new Error(`API error ${response.status}: ${errorMsg}`);
-    (error as unknown as Record<string, unknown>).statusCode = response.status;
-    throw error;
-  }
-
-  const data = (await response.json()) as {
-    choices: Array<{
-      message: {
-        content: string;
-        tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
+      const response: LLMResponse = {
+        content: result.text,
+        finishReason: result.finishReason as LLMResponse['finishReason'],
       };
-      finish_reason: string;
-    }>;
-    usage?: { prompt_tokens: number; completion_tokens: number };
+
+      if (toolCalls) response.toolCalls = toolCalls;
+      if (result.usage) {
+        response.usage = {
+          promptTokens: result.usage.inputTokens ?? 0,
+          completionTokens: result.usage.outputTokens ?? 0,
+        };
+      }
+
+      return response;
+    },
+
+    async *stream(messages: Message[], llmOptions?: LLMOptions): AsyncGenerator<LLMChunk> {
+      const config: Record<string, unknown> = {
+        model: aiModel,
+        messages: convertMessages(messages),
+      };
+
+      if (llmOptions?.temperature !== undefined) config.temperature = llmOptions.temperature;
+      if (llmOptions?.maxTokens !== undefined) config.maxTokens = llmOptions.maxTokens;
+      if (llmOptions?.topP !== undefined) config.topP = llmOptions.topP;
+      if (llmOptions?.stopSequences && llmOptions.stopSequences.length > 0) {
+        config.stopSequences = llmOptions.stopSequences;
+      }
+
+      const tools = llmOptions?.tools as FunctionDefinition[] | undefined;
+      if (tools && tools.length > 0) {
+        const toolsRecord: Record<
+          string,
+          { description: string; parameters: ReturnType<typeof jsonSchema> }
+        > = {};
+        for (const tool of tools) {
+          toolsRecord[tool.name] = {
+            description: tool.description,
+            parameters: jsonSchema(tool.parameters as JSONSchema7),
+          };
+        }
+        config.tools = toolsRecord;
+        if (llmOptions?.toolChoice) {
+          const choice = llmOptions.toolChoice as ToolChoice;
+          if (typeof choice === 'string') {
+            config.toolChoice = choice;
+          } else {
+            config.toolChoice = { type: 'tool', toolName: choice.name };
+          }
+        }
+      }
+
+      const result = streamText(config as Parameters<typeof streamText>[0]);
+      for await (const textPart of result.textStream) {
+        yield { text: textPart };
+      }
+    },
   };
-
-  const choice = data.choices[0];
-  if (!choice) throw new Error('No choices in response');
-
-  const result: LLMResponse = {
-    content: choice.message.content ?? '',
-    finishReason:
-      choice.finish_reason === 'stop'
-        ? 'stop'
-        : choice.finish_reason === 'tool_calls'
-          ? 'tool_calls'
-          : 'stop',
-  };
-
-  if (choice.message.tool_calls) {
-    result.toolCalls = choice.message.tool_calls.map(tc => ({
-      id: tc.id,
-      name: tc.function.name,
-      args: JSON.parse(tc.function.arguments) as Record<string, unknown>,
-    }));
-  }
-
-  if (data.usage) {
-    result.usage = {
-      promptTokens: data.usage.prompt_tokens,
-      completionTokens: data.usage.completion_tokens,
-    };
-  }
-
-  return result;
 }
 
 // ============================================================

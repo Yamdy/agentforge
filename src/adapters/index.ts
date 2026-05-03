@@ -9,6 +9,7 @@
 
 import { createRequire } from 'node:module';
 import type { LLMAdapter, LLMResponse } from '../core/interfaces.js';
+import { ProviderRegistry, type ProviderFactory } from './adapter-system.js';
 
 // ============================================================
 // Re-export Adapter System (NEW)
@@ -170,12 +171,15 @@ export const PROVIDER_BASE_URLS: Record<string, string> = {
  * ```
  */
 class LLMAdapterFactoryImpl {
-  private factories: Map<string, AdapterFactoryFn> = new Map();
   private initialized = false;
 
   constructor() {
     // Register built-in adapters lazily to avoid import errors
     // when AI SDK packages are not installed
+  }
+
+  private get registry(): ProviderRegistry {
+    return ProviderRegistry.getInstance();
   }
 
   /**
@@ -187,19 +191,17 @@ class LLMAdapterFactoryImpl {
   private initializeBuiltins(): void {
     if (this.initialized) return;
 
-    // Create a require function that can resolve relative paths in ESM
     const require = createRequire(import.meta.url);
 
     // Try to register OpenAI adapter
     try {
-      // Dynamic import to avoid requiring the package at load time
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const { openaiAdapterFactory } = require('./openai.js') as {
         openaiAdapterFactory: AdapterFactoryFn;
       };
-      this.factories.set('openai', openaiAdapterFactory);
+      this.registry.register('openai', openaiAdapterFactory as ProviderFactory);
     } catch {
-      // @ai-sdk/openai not installed - stub will be used
+      // @ai-sdk/openai not installed
     }
 
     // Try to register Anthropic adapter
@@ -208,9 +210,9 @@ class LLMAdapterFactoryImpl {
       const { anthropicAdapterFactory } = require('./anthropic.js') as {
         anthropicAdapterFactory: AdapterFactoryFn;
       };
-      this.factories.set('anthropic', anthropicAdapterFactory);
+      this.registry.register('anthropic', anthropicAdapterFactory as ProviderFactory);
     } catch {
-      // @ai-sdk/anthropic not installed - stub will be used
+      // @ai-sdk/anthropic not installed
     }
 
     // Try to register Google adapter
@@ -219,9 +221,9 @@ class LLMAdapterFactoryImpl {
       const { googleAdapterFactory } = require('./google.js') as {
         googleAdapterFactory: AdapterFactoryFn;
       };
-      this.factories.set('google', googleAdapterFactory);
+      this.registry.register('google', googleAdapterFactory as ProviderFactory);
     } catch {
-      // @ai-sdk/google not installed - stub will be used
+      // @ai-sdk/google not installed
     }
 
     // Try to register Ollama adapter
@@ -230,9 +232,9 @@ class LLMAdapterFactoryImpl {
       const { ollamaAdapterFactory } = require('./ollama.js') as {
         ollamaAdapterFactory: AdapterFactoryFn;
       };
-      this.factories.set('ollama', ollamaAdapterFactory);
+      this.registry.register('ollama', ollamaAdapterFactory as ProviderFactory);
     } catch {
-      // ai-sdk-ollama not installed - stub will be used
+      // ai-sdk-ollama not installed
     }
 
     this.initialized = true;
@@ -240,47 +242,42 @@ class LLMAdapterFactoryImpl {
 
   /**
    * Create an LLM adapter from model specification
-   *
-   * @param spec - Model specification (e.g., "openai/gpt-4o" or "gpt-4o")
-   * @param options - Provider-specific options
-   * @returns LLMAdapter instance
    */
   create(spec: string, options?: Record<string, unknown>): LLMAdapter {
     this.initializeBuiltins();
 
     const { provider, model } = parseModelSpec(spec);
-    const factory = this.factories.get(provider);
+    const factory = this.registry.get(provider);
 
     if (factory) {
-      return factory(model, options ?? {});
+      return factory(model, options);
     }
 
-    // Return stub adapter for unsupported providers
     return this.createStubAdapter(provider, model);
   }
 
   /**
-   * Register a custom adapter factory
-   *
-   * @param provider - Provider name (e.g., 'openai', 'anthropic', 'custom')
-   * @param factory - Factory function that creates the adapter
+   * Register a custom adapter factory (delegates to ProviderRegistry)
    */
   register(provider: string, factory: AdapterFactoryFn): void {
-    this.factories.set(provider, factory);
+    this.registry.register(provider, factory as ProviderFactory);
   }
 
   /**
-   * List available providers
+   * List available providers (known + registered)
    */
   listProviders(): string[] {
-    return ['openai', 'anthropic', 'google', 'deepseek', 'zhipu', 'ollama'];
+    const known = ['openai', 'anthropic', 'google', 'deepseek', 'zhipu', 'ollama'];
+    const registered = this.registry.list();
+    const merged = new Set([...known, ...registered]);
+    return Array.from(merged);
   }
 
   /**
    * Check if a provider is registered
    */
   hasProvider(provider: string): boolean {
-    return this.factories.has(provider);
+    return this.registry.has(provider);
   }
 
   /**

@@ -127,57 +127,52 @@ export class AnthropicAdapter implements LLMAdapter {
   }
 
   async chat(messages: Message[], options?: LLMOptions): Promise<LLMResponse> {
-    try {
-      const { systemPrompt, filteredMessages } = this.extractSystemPrompt(messages);
-      const tools = this.convertTools(options?.tools as FunctionDefinition[] | undefined);
-      const toolChoice = this.convertToolChoice(options?.toolChoice as ToolChoice | undefined);
+    const { systemPrompt, filteredMessages } = this.extractSystemPrompt(messages);
+    const tools = this.convertTools(options?.tools as FunctionDefinition[] | undefined);
+    const toolChoice = this.convertToolChoice(options?.toolChoice as ToolChoice | undefined);
 
-      const config: Record<string, unknown> = {
-        model: this.model,
-        messages: this.convertMessages(filteredMessages),
-      };
+    const config: Record<string, unknown> = {
+      model: this.model,
+      messages: this.convertMessages(filteredMessages),
+    };
 
-      if (systemPrompt) config.system = systemPrompt;
-      if (options?.temperature !== undefined) config.temperature = options.temperature;
-      if (options?.maxTokens !== undefined) config.maxTokens = options.maxTokens;
-      if (options?.topP !== undefined) config.topP = options.topP;
-      if (options?.stopSequences && options.stopSequences.length > 0) {
-        config.stopSequences = options.stopSequences;
-      }
-      if (tools) {
-        config.tools = tools;
-        if (toolChoice) config.toolChoice = toolChoice;
-      }
-
-      const result = await generateText(config as Parameters<typeof generateText>[0]);
-
-      const toolCalls: ToolCall[] | undefined =
-        result.toolCalls && result.toolCalls.length > 0
-          ? result.toolCalls.map(tc => ({
-              id: tc.toolCallId,
-              name: tc.toolName,
-              args: (tc as unknown as { input?: Record<string, unknown> }).input ?? {},
-            }))
-          : undefined;
-
-      const response: LLMResponse = {
-        content: result.text,
-        finishReason: result.finishReason as LLMResponse['finishReason'],
-      };
-
-      if (toolCalls) response.toolCalls = toolCalls;
-      if (result.usage) {
-        response.usage = {
-          promptTokens: result.usage.inputTokens ?? 0,
-          completionTokens: result.usage.outputTokens ?? 0,
-        };
-      }
-
-      return response;
-    } catch (error) {
-      console.error('[Anthropic Adapter] Chat error:', error);
-      return { content: '', finishReason: 'error' };
+    if (systemPrompt) config.system = systemPrompt;
+    if (options?.temperature !== undefined) config.temperature = options.temperature;
+    if (options?.maxTokens !== undefined) config.maxTokens = options.maxTokens;
+    if (options?.topP !== undefined) config.topP = options.topP;
+    if (options?.stopSequences && options.stopSequences.length > 0) {
+      config.stopSequences = options.stopSequences;
     }
+    if (tools) {
+      config.tools = tools;
+      if (toolChoice) config.toolChoice = toolChoice;
+    }
+
+    const result = await generateText(config as Parameters<typeof generateText>[0]);
+
+    const toolCalls: ToolCall[] | undefined =
+      result.toolCalls && result.toolCalls.length > 0
+        ? result.toolCalls.map(tc => ({
+            id: tc.toolCallId,
+            name: tc.toolName,
+            args: (tc as unknown as { input?: Record<string, unknown> }).input ?? {},
+          }))
+        : undefined;
+
+    const response: LLMResponse = {
+      content: result.text,
+      finishReason: result.finishReason as LLMResponse['finishReason'],
+    };
+
+    if (toolCalls) response.toolCalls = toolCalls;
+    if (result.usage) {
+      response.usage = {
+        promptTokens: result.usage.inputTokens ?? 0,
+        completionTokens: result.usage.outputTokens ?? 0,
+      };
+    }
+
+    return response;
   }
 
   async *stream(messages: Message[], options?: LLMOptions): AsyncGenerator<LLMChunk> {

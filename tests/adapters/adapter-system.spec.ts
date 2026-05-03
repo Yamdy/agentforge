@@ -4,10 +4,53 @@
  * Tests: ProviderRegistry, createLLMAdapterFromSpec, parseModelSpec,
  *        classifyError, createHttpAdapter, OpenAI HTTP adapter, adapter factory.
  *
- * All HTTP calls are mocked via vi.fn() â€?no network access required.
+ * All HTTP calls are mocked via vi.fn() ï¿½?no network access required.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+// ============================================================
+// Mock @ai-sdk/openai-compatible
+// ============================================================
+
+vi.mock('@ai-sdk/openai-compatible', () => ({
+  createOpenAICompatible: vi.fn().mockReturnValue(
+    vi.fn().mockReturnValue('mock-compatible-model')
+  ),
+}));
+
+// ============================================================
+// Mock ai SDK (hoisted for ESM import ordering)
+// ============================================================
+
+const { mockGenerateText, mockStreamText, mockJsonSchema } = vi.hoisted(() => {
+  function makeTextStream(): AsyncGenerator<string> {
+    return (async function* () {
+      yield 'Hello';
+      yield ' from';
+      yield ' test';
+    })();
+  }
+
+  return {
+    mockGenerateText: vi.fn().mockResolvedValue({
+      text: 'Hello from test adapter',
+      finishReason: 'stop',
+      usage: { inputTokens: 5, outputTokens: 3 },
+    }),
+    mockStreamText: vi.fn().mockImplementation(() => ({
+      textStream: makeTextStream(),
+    })),
+    mockJsonSchema: vi.fn().mockReturnValue({ type: 'object' }),
+  };
+});
+
+vi.mock('ai', () => ({
+  generateText: mockGenerateText,
+  streamText: mockStreamText,
+  jsonSchema: mockJsonSchema,
+}));
+
 import {
   ProviderRegistry,
   classifyError,
@@ -403,7 +446,7 @@ describe('calculateRetryDelay', () => {
       maxDelayMs: 5000,
     };
 
-    // attempt=10: 1000 * 2^9 = 512000 â†?capped to 5000
+    // attempt=10: 1000 * 2^9 = 512000 ï¿½?capped to 5000
     expect(calculateRetryDelay(10, error, config)).toBe(5000);
   });
 
@@ -413,7 +456,7 @@ describe('calculateRetryDelay', () => {
       message: 'ECONNRESET',
       retryable: true,
     };
-    // Default: baseDelayMs=2000, attempt=1 â†?2000 * 2^0 = 2000
+    // Default: baseDelayMs=2000, attempt=1 ï¿½?2000 * 2^0 = 2000
     expect(calculateRetryDelay(1, error)).toBe(2000);
   });
 });
@@ -423,10 +466,13 @@ describe('calculateRetryDelay', () => {
 // ============================================================
 
 describe('createHttpAdapter', () => {
-  const originalFetch = globalThis.fetch;
-
-  afterEach(() => {
-    globalThis.fetch = originalFetch;
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGenerateText.mockResolvedValue({
+      text: 'Hello from test adapter',
+      finishReason: 'stop',
+      usage: { inputTokens: 5, outputTokens: 3 },
+    });
   });
 
   it('should create an adapter with correct name and provider', () => {
@@ -439,49 +485,31 @@ describe('createHttpAdapter', () => {
     expect(adapter.provider).toBe('deepseek');
   });
 
-  it('should return empty-like result for stream()', () => {
+  it('should return a stream generator', () => {
     const adapter = createHttpAdapter('test', 'model', {
       apiKey: 'key',
       baseURL: 'https://api.test.com/v1',
     });
 
-    const obs = adapter.stream([]);
-    expect(obs).toBeDefined();
+    const gen = adapter.stream([]);
+    expect(gen).toBeDefined();
+    expect(gen[Symbol.asyncIterator]).toBeDefined();
   });
 
-  it('should call fetch with correct URL, headers, and body', async () => {
-    const fetchMock = mockFetchSuccess({
-      choices: [{ message: { content: 'Hi there!' }, finish_reason: 'stop' }],
-    });
-    globalThis.fetch = fetchMock;
-
+  it('should call generateText via AI SDK', async () => {
     const adapter = createHttpAdapter('test', 'test-model', {
       apiKey: 'sk-test',
       baseURL: 'https://api.test.com/v1',
     });
 
-    await adapter.chat([{ role: 'user', content: 'Hello' }]);
+    const result = await adapter.chat([{ role: 'user', content: 'Hello' }]);
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = (fetchMock as ReturnType<typeof vi.fn>).mock.calls[0] as [
-      string,
-      RequestInit,
-    ];
-    expect(url).toBe('https://api.test.com/v1/chat/completions');
-    expect(init.method).toBe('POST');
-    expect((init.headers as Record<string, string>)['Authorization']).toBe('Bearer sk-test');
-
-    const body = JSON.parse(init.body as string) as Record<string, unknown>;
-    expect(body.model).toBe('test-model');
-    expect(body.messages).toEqual([{ role: 'user', content: 'Hello' }]);
+    expect(mockGenerateText).toHaveBeenCalledTimes(1);
+    expect(result.content).toBe('Hello from test adapter');
+    expect(result.finishReason).toBe('stop');
   });
 
-  it('should pass temperature and maxTokens to the request body', async () => {
-    const fetchMock = mockFetchSuccess({
-      choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
-    });
-    globalThis.fetch = fetchMock;
-
+  it('should pass temperature and maxTokens to generateText', async () => {
     const adapter = createHttpAdapter('test', 'model', {
       apiKey: 'key',
       baseURL: 'https://api.test.com/v1',
@@ -489,17 +517,16 @@ describe('createHttpAdapter', () => {
 
     await adapter.chat(sampleMessages, { temperature: 0.7, maxTokens: 100 });
 
-    const body = JSON.parse(
-      (fetchMock as ReturnType<typeof vi.fn>).mock.calls[0]?.[1]?.body as string
-    ) as Record<string, unknown>;
-    expect(body.temperature).toBe(0.7);
-    expect(body.max_tokens).toBe(100);
+    const callArgs = mockGenerateText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(callArgs.temperature).toBe(0.7);
+    expect(callArgs.maxTokens).toBe(100);
   });
 
-  it('should return a successful response', async () => {
-    globalThis.fetch = mockFetchSuccess({
-      choices: [{ message: { content: 'Hello world' }, finish_reason: 'stop' }],
-      usage: { prompt_tokens: 10, completion_tokens: 5 },
+  it('should return a successful response with usage', async () => {
+    mockGenerateText.mockResolvedValue({
+      text: 'Hello world',
+      finishReason: 'stop',
+      usage: { inputTokens: 10, outputTokens: 5 },
     });
 
     const adapter = createHttpAdapter('test', 'model', {
@@ -513,22 +540,18 @@ describe('createHttpAdapter', () => {
     expect(result.usage).toEqual({ promptTokens: 10, completionTokens: 5 });
   });
 
-  it('should handle tool_calls finish reason', async () => {
-    globalThis.fetch = mockFetchSuccess({
-      choices: [
+  it('should handle tool_calls via AI SDK', async () => {
+    mockGenerateText.mockResolvedValue({
+      text: '',
+      finishReason: 'tool_calls',
+      toolCalls: [
         {
-          message: {
-            content: '',
-            tool_calls: [
-              {
-                id: 'call_1',
-                function: { name: 'read_file', arguments: '{"path":"/tmp"}' },
-              },
-            ],
-          },
-          finish_reason: 'tool_calls',
+          toolCallId: 'call_1',
+          toolName: 'read_file',
+          input: { path: '/tmp' },
         },
       ],
+      usage: { inputTokens: 5, outputTokens: 3 },
     });
 
     const adapter = createHttpAdapter('test', 'model', {
@@ -543,77 +566,31 @@ describe('createHttpAdapter', () => {
     expect(result.toolCalls![0].args).toEqual({ path: '/tmp' });
   });
 
-  it('should return error response on non-retryable error (auth)', async () => {
-    globalThis.fetch = mockFetchError(401, {
-      error: { message: 'Unauthorized: invalid API key' },
-    });
-
-    const adapter = createHttpAdapter('test', 'model', {
-      apiKey: 'bad-key',
-      baseURL: 'https://api.test.com/v1',
-    });
-
-    const result = await adapter.chat(sampleMessages);
-    expect(result.content).toBe('');
-    expect(result.finishReason).toBe('error');
-  });
-
-  it('should retry on retryable errors (server error) up to maxRetries', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 500,
-        statusText: 'Internal Server Error',
-        json: () => Promise.resolve({ error: { message: 'Server error' } }),
-      })
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 503,
-        statusText: 'Service Unavailable',
-        json: () => Promise.resolve({ error: { message: 'Service unavailable' } }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: () =>
-          Promise.resolve({
-            choices: [{ message: { content: 'recovered' }, finish_reason: 'stop' }],
-          }),
-      });
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-
-    // Use tiny retry config so tests don't wait
-    const adapter = createHttpAdapter('test', 'model', {
-      apiKey: 'key',
-      baseURL: 'https://api.test.com/v1',
-      retryConfig: { maxRetries: 3, baseDelayMs: 1, maxDelayMs: 10 },
-    });
-
-    const result = await adapter.chat(sampleMessages);
-    expect(result.content).toBe('recovered');
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-  });
-
-  it('should return error response after all retries exhausted', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 500,
-      statusText: 'Internal Server Error',
-      json: () => Promise.resolve({ error: { message: 'Server error' } }),
-    });
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
+  it('should propagate errors to caller (R1: errors-as-events)', async () => {
+    mockGenerateText.mockRejectedValue(new Error('API rate limit exceeded'));
 
     const adapter = createHttpAdapter('test', 'model', {
       apiKey: 'key',
       baseURL: 'https://api.test.com/v1',
-      retryConfig: { maxRetries: 2, baseDelayMs: 1, maxDelayMs: 10 },
     });
 
-    const result = await adapter.chat(sampleMessages);
-    expect(result.content).toBe('');
-    expect(result.finishReason).toBe('error');
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await expect(adapter.chat(sampleMessages)).rejects.toThrow('API rate limit exceeded');
+    // Adapter makes exactly one attempt â€” retry is handled by agent-loop
+    expect(mockGenerateText).toHaveBeenCalledTimes(1);
+  });
+
+  it('should yield text chunks from stream', async () => {
+    const adapter = createHttpAdapter('test', 'model', {
+      apiKey: 'key',
+      baseURL: 'https://api.test.com/v1',
+    });
+
+    const chunks: string[] = [];
+    for await (const chunk of adapter.stream(sampleMessages)) {
+      chunks.push(chunk.text);
+    }
+
+    expect(chunks).toEqual(['Hello', ' from', ' test']);
   });
 });
 
@@ -622,10 +599,13 @@ describe('createHttpAdapter', () => {
 // ============================================================
 
 describe('OpenAI HTTP Adapter', () => {
-  const originalFetch = globalThis.fetch;
-
-  afterEach(() => {
-    globalThis.fetch = originalFetch;
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGenerateText.mockResolvedValue({
+      text: 'Hello from openai-http',
+      finishReason: 'stop',
+      usage: { inputTokens: 5, outputTokens: 3 },
+    });
   });
 
   it('should create adapter with correct name', () => {
@@ -635,9 +615,10 @@ describe('OpenAI HTTP Adapter', () => {
   });
 
   it('should make a successful chat request', async () => {
-    globalThis.fetch = mockFetchSuccess({
-      choices: [{ message: { content: 'Bonjour!' }, finish_reason: 'stop' }],
-      usage: { prompt_tokens: 5, completion_tokens: 3 },
+    mockGenerateText.mockResolvedValue({
+      text: 'Bonjour!',
+      finishReason: 'stop',
+      usage: { inputTokens: 5, outputTokens: 3 },
     });
 
     const adapter = createOpenAIHttpAdapter('gpt-4o-mini', {
@@ -651,63 +632,41 @@ describe('OpenAI HTTP Adapter', () => {
     expect(result.usage).toEqual({ promptTokens: 5, completionTokens: 3 });
   });
 
-  it('should include max_tokens in request body (default 1024)', async () => {
-    const fetchMock = mockFetchSuccess({
-      choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
-    });
-    globalThis.fetch = fetchMock;
-
+  it('should include maxTokens in generateText config (default 1024)', async () => {
     const adapter = createOpenAIHttpAdapter('gpt-4o', { apiKey: 'key' });
     await adapter.chat(sampleMessages);
 
-    const body = JSON.parse(
-      (fetchMock as ReturnType<typeof vi.fn>).mock.calls[0]?.[1]?.body as string
-    ) as Record<string, unknown>;
-    expect(body.max_tokens).toBe(1024);
+    const callArgs = mockGenerateText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(callArgs.maxTokens).toBe(1024);
   });
 
-  it('should override max_tokens from llmOptions', async () => {
-    const fetchMock = mockFetchSuccess({
-      choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
-    });
-    globalThis.fetch = fetchMock;
-
+  it('should override maxTokens from llmOptions', async () => {
     const adapter = createOpenAIHttpAdapter('gpt-4o', { apiKey: 'key' });
     await adapter.chat(sampleMessages, { maxTokens: 2048 });
 
-    const body = JSON.parse(
-      (fetchMock as ReturnType<typeof vi.fn>).mock.calls[0]?.[1]?.body as string
-    ) as Record<string, unknown>;
-    expect(body.max_tokens).toBe(2048);
+    const callArgs = mockGenerateText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(callArgs.maxTokens).toBe(2048);
   });
 
-  it('should return error response on API failure', async () => {
-    globalThis.fetch = mockFetchError(500, {
-      error: { message: 'Internal Server Error' },
-    });
+  it('should propagate errors to caller (R1: errors-as-events)', async () => {
+    mockGenerateText.mockRejectedValue(new Error('Internal Server Error'));
 
     const adapter = createOpenAIHttpAdapter('gpt-4o', { apiKey: 'key' });
-    const result = await adapter.chat(sampleMessages);
-    expect(result.content).toBe('');
-    expect(result.finishReason).toBe('error');
+    await expect(adapter.chat(sampleMessages)).rejects.toThrow('Internal Server Error');
   });
 
   it('should handle tool_calls in response', async () => {
-    globalThis.fetch = mockFetchSuccess({
-      choices: [
+    mockGenerateText.mockResolvedValue({
+      text: '',
+      finishReason: 'tool_calls',
+      toolCalls: [
         {
-          message: {
-            content: '',
-            tool_calls: [
-              {
-                id: 'call_abc',
-                function: { name: 'search', arguments: '{"query":"test"}' },
-              },
-            ],
-          },
-          finish_reason: 'tool_calls',
+          toolCallId: 'call_abc',
+          toolName: 'search',
+          input: { query: 'test' },
         },
       ],
+      usage: { inputTokens: 5, outputTokens: 3 },
     });
 
     const adapter = createOpenAIHttpAdapter('gpt-4o', { apiKey: 'key' });
@@ -719,18 +678,18 @@ describe('OpenAI HTTP Adapter', () => {
     expect(result.toolCalls![0].args).toEqual({ query: 'test' });
   });
 
-  it('should return EMPTY for stream()', () => {
+  it('should support streaming via streamText', async () => {
     const adapter = createOpenAIHttpAdapter('gpt-4o', { apiKey: 'key' });
-    const obs = adapter.stream([]);
-    expect(obs).toBeDefined();
+
+    const chunks: string[] = [];
+    for await (const chunk of adapter.stream(sampleMessages)) {
+      chunks.push(chunk.text);
+    }
+
+    expect(chunks).toEqual(['Hello', ' from', ' test']);
   });
 
-  it('should send tools in request body when provided in llmOptions', async () => {
-    const fetchMock = mockFetchSuccess({
-      choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
-    });
-    globalThis.fetch = fetchMock;
-
+  it('should send tools when provided in llmOptions', async () => {
     const adapter = createOpenAIHttpAdapter('gpt-4o', { apiKey: 'key' });
     await adapter.chat(sampleMessages, {
       tools: [
@@ -745,67 +704,17 @@ describe('OpenAI HTTP Adapter', () => {
       ],
     });
 
-    const body = JSON.parse(
-      (fetchMock as ReturnType<typeof vi.fn>).mock.calls[0]?.[1]?.body as string
-    ) as Record<string, unknown>;
-    expect(body.tools).toBeDefined();
-    expect((body.tools as unknown[]).length).toBe(1);
-    expect(body.tool_choice).toBe('auto');
+    const callArgs = mockGenerateText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    const tools = callArgs.tools as Record<string, unknown> | undefined;
+    expect(tools).toBeDefined();
+    expect(tools!['get_weather']).toBeDefined();
   });
 
-  it('should retry without tools when API returns tool-related error', async () => {
-    const fetchMock = vi
-      .fn()
-      // First call with tools â†?error about tools
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 400,
-        json: () => Promise.resolve({ error: { message: 'Invalid Param: tool_choice' } }),
-      })
-      // Second call without tools â†?success
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: () =>
-          Promise.resolve({
-            choices: [{ message: { content: 'fallback ok' }, finish_reason: 'stop' }],
-          }),
-      });
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-
-    const adapter = createOpenAIHttpAdapter('gpt-4o', { apiKey: 'key' });
-    const result = await adapter.chat(sampleMessages, {
-      tools: [
-        {
-          name: 'test_tool',
-          description: 'A tool',
-          parameters: { type: 'object', properties: {} },
-        },
-      ],
-    });
-
-    expect(result.content).toBe('fallback ok');
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-
-    // Second call should NOT have tools
-    const secondBody = JSON.parse(fetchMock.mock.calls[1]?.[1]?.body as string) as Record<
-      string,
-      unknown
-    >;
-    expect(secondBody.tools).toBeUndefined();
-  });
-
-  it('should use default baseURL when not provided', async () => {
-    const fetchMock = mockFetchSuccess({
-      choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
-    });
-    globalThis.fetch = fetchMock;
-
+  it('should use AI SDK for chat (no raw fetch)', async () => {
     const adapter = createOpenAIHttpAdapter('gpt-4o', { apiKey: 'key' });
     await adapter.chat(sampleMessages);
 
-    const url = (fetchMock as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as string;
-    expect(url).toBe('https://api.openai.com/v1/chat/completions');
+    expect(mockGenerateText).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -987,30 +896,19 @@ describe('LLM Adapter Factory', () => {
 // ============================================================
 
 describe('Adapter Edge Cases', () => {
-  const originalFetch = globalThis.fetch;
-
-  afterEach(() => {
-    globalThis.fetch = originalFetch;
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGenerateText.mockResolvedValue({
+      text: 'Hello from test adapter',
+      finishReason: 'stop',
+      usage: { inputTokens: 5, outputTokens: 3 },
+    });
   });
 
-  it('should handle empty choices array in HTTP response', async () => {
-    globalThis.fetch = mockFetchSuccess({
-      choices: [],
-    });
-
-    const adapter = createHttpAdapter('test', 'model', {
-      apiKey: 'key',
-      baseURL: 'https://api.test.com/v1',
-    });
-
-    const result = await adapter.chat(sampleMessages);
-    expect(result.content).toBe('');
-    expect(result.finishReason).toBe('error');
-  });
-
-  it('should handle missing usage in HTTP response', async () => {
-    globalThis.fetch = mockFetchSuccess({
-      choices: [{ message: { content: 'no usage' }, finish_reason: 'stop' }],
+  it('should handle missing usage in response', async () => {
+    mockGenerateText.mockResolvedValue({
+      text: 'no usage',
+      finishReason: 'stop',
     });
 
     const adapter = createHttpAdapter('test', 'model', {
@@ -1023,9 +921,10 @@ describe('Adapter Edge Cases', () => {
     expect(result.usage).toBeUndefined();
   });
 
-  it('should handle null content in response message', async () => {
-    globalThis.fetch = mockFetchSuccess({
-      choices: [{ message: { content: null }, finish_reason: 'stop' }],
+  it('should handle empty text in response', async () => {
+    mockGenerateText.mockResolvedValue({
+      text: '',
+      finishReason: 'stop',
     });
 
     const adapter = createHttpAdapter('test', 'model', {
@@ -1037,33 +936,23 @@ describe('Adapter Edge Cases', () => {
     expect(result.content).toBe('');
   });
 
-  it('should handle network errors (fetch rejection) gracefully', async () => {
-    globalThis.fetch = mockFetchNetworkError('ECONNRESET');
+  it('should propagate generateText errors to caller (R1: errors-as-events)', async () => {
+    mockGenerateText.mockRejectedValue(new Error('ECONNRESET'));
 
     const adapter = createHttpAdapter('test', 'model', {
       apiKey: 'key',
       baseURL: 'https://api.test.com/v1',
-      retryConfig: { maxRetries: 1, baseDelayMs: 1, maxDelayMs: 10 },
     });
 
-    const result = await adapter.chat(sampleMessages);
-    expect(result.content).toBe('');
-    expect(result.finishReason).toBe('error');
+    await expect(adapter.chat(sampleMessages)).rejects.toThrow('ECONNRESET');
   });
 
-  it('should classify context overflow as non-retryable in HTTP adapter', async () => {
-    globalThis.fetch = mockFetchError(400, {
-      error: { message: 'context_length_exceeded: maximum context length is 4096' },
-    });
+  it('should classify context overflow errors via classifyError utility', () => {
+    const error = new Error('context_length_exceeded: maximum context length is 4096');
+    (error as unknown as Record<string, unknown>).statusCode = 400;
 
-    const adapter = createHttpAdapter('test', 'model', {
-      apiKey: 'key',
-      baseURL: 'https://api.test.com/v1',
-      retryConfig: { maxRetries: 3, baseDelayMs: 1, maxDelayMs: 10 },
-    });
-
-    const result = await adapter.chat(sampleMessages);
-    expect(result.content).toBe('');
-    expect(result.finishReason).toBe('error');
+    const classified = classifyError(error);
+    expect(classified.category).toBe('context_overflow');
+    expect(classified.retryable).toBe(false);
   });
 });

@@ -2,8 +2,8 @@
  * Qdrant Vector Store
  *
  * Adapts Qdrant's official SDK to AgentForge's VectorStore interface.
- * Uses in-memory Map internally for storage; SDK integration is opt-in
- * via graceful fallback when @qdrant/js-client-rest is not installed.
+ * Uses in-memory Map for synchronous read access; SDK is used for persistence
+ * of write operations. Falls back to in-memory-only when SDK is not installed.
  *
  * @module
  */
@@ -16,18 +16,30 @@ import { cosineSimilarity } from '../vector-store.js';
 // Graceful SDK Import
 // ============================================================
 
-let QdrantSDK: unknown = null;
+interface QdrantClient {
+  upsert: (
+    collectionName: string,
+    opts: { points: Array<{ id: string; vector: number[]; payload?: Record<string, unknown> }> }
+  ) => Promise<unknown>;
+  delete: (collectionName: string, opts: { points: string[] }) => Promise<unknown>;
+  deleteCollection: (collectionName: string) => Promise<unknown>;
+}
+
+type QdrantSDKConstructor = new (config: { url: string; apiKey?: string }) => QdrantClient;
+
+let QdrantSDK: QdrantSDKConstructor | null = null;
 let sdkAvailable = false;
 
 try {
   const _require = createRequire(import.meta.url);
   const mod = _require('@qdrant/js-client-rest') as Record<string, unknown>;
-  QdrantSDK = (mod as { QdrantClient?: unknown }).QdrantClient ?? null;
-  sdkAvailable = QdrantSDK !== null;
+  const QC = (mod as { QdrantClient?: QdrantSDKConstructor }).QdrantClient;
+  if (QC) {
+    QdrantSDK = QC;
+    sdkAvailable = true;
+  }
 } catch {
-  console.warn(
-    '@qdrant/js-client-rest not installed. QdrantVectorStore will use in-memory fallback.'
-  );
+  // @qdrant/js-client-rest not installed — in-memory fallback only
 }
 
 // ============================================================
@@ -58,10 +70,13 @@ export interface QdrantVectorStoreConfig {
 export class QdrantVectorStore implements VectorStore {
   readonly name: string;
 
-  /** In-memory storage (always used; SDK integration is opt-in) */
+  /** In-memory storage for synchronous read access */
   private storage: Map<string, VectorDocument>;
 
-  /** Config preserved for future SDK connection */
+  /** Qdrant client instance (null when SDK unavailable) */
+  private client: QdrantClient | null = null;
+
+  /** Config preserved for reconnection */
   readonly config: QdrantVectorStoreConfig;
 
   constructor(config: QdrantVectorStoreConfig) {
@@ -69,11 +84,16 @@ export class QdrantVectorStore implements VectorStore {
     this.name = config.name ?? 'qdrant';
     this.storage = new Map();
 
-    if (sdkAvailable) {
-      // SDK installed but no real connection established here.
-      // Placeholder: collections would be accessed via:
-      //   const client = new (QdrantSDK as ...)({ url, apiKey });
-      //   await client.getCollection(collectionName);
+    if (sdkAvailable && QdrantSDK) {
+      try {
+        const clientConfig: Record<string, unknown> = { url: config.url };
+        if (config.apiKey !== undefined) {
+          clientConfig.apiKey = config.apiKey;
+        }
+        this.client = new QdrantSDK(clientConfig as { url: string; apiKey?: string });
+      } catch {
+        // SDK instantiation failed — continue with in-memory only
+      }
     }
   }
 
@@ -83,11 +103,31 @@ export class QdrantVectorStore implements VectorStore {
 
   insert(doc: VectorDocument): void {
     this.storage.set(doc.id, doc);
+    if (this.client) {
+      const payload: Record<string, unknown> | undefined = doc.metadata;
+      const point =
+        payload !== undefined
+          ? { id: doc.id, vector: doc.embedding, payload }
+          : { id: doc.id, vector: doc.embedding };
+      this.client.upsert(this.config.collectionName, { points: [point] }).catch(() => {
+        // Fire-and-forget: in-memory is the source of truth for sync reads
+      });
+    }
   }
 
   insertBatch(docs: VectorDocument[]): void {
     for (const doc of docs) {
       this.storage.set(doc.id, doc);
+    }
+    if (this.client && docs.length > 0) {
+      const points = docs.map(doc => {
+        const payload: Record<string, unknown> | undefined = doc.metadata;
+        const base = { id: doc.id, vector: doc.embedding };
+        return payload !== undefined ? { ...base, payload } : base;
+      });
+      this.client.upsert(this.config.collectionName, { points }).catch(() => {
+        // Fire-and-forget
+      });
     }
   }
 
@@ -111,10 +151,16 @@ export class QdrantVectorStore implements VectorStore {
 
   delete(id: string): void {
     this.storage.delete(id);
+    if (this.client) {
+      this.client.delete(this.config.collectionName, { points: [id] }).catch(() => {});
+    }
   }
 
   clear(): void {
     this.storage.clear();
+    if (this.client) {
+      this.client.deleteCollection(this.config.collectionName).catch(() => {});
+    }
   }
 
   count(): number {
@@ -123,5 +169,6 @@ export class QdrantVectorStore implements VectorStore {
 
   close(): void {
     this.storage.clear();
+    this.client = null;
   }
 }

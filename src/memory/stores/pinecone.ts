@@ -2,8 +2,8 @@
  * Pinecone Vector Store
  *
  * Adapts Pinecone's official SDK to AgentForge's VectorStore interface.
- * Uses in-memory Map internally for storage; SDK integration is opt-in
- * via graceful fallback when @pinecone-database/pinecone is not installed.
+ * Uses in-memory Map for synchronous read access; SDK is used for persistence
+ * of write operations. Falls back to in-memory-only when SDK is not installed.
  *
  * @module
  */
@@ -16,18 +16,36 @@ import { cosineSimilarity } from '../vector-store.js';
 // Graceful SDK Import
 // ============================================================
 
-let PineconeSDK: unknown = null;
+interface PineconeClient {
+  Index: (name: string) => PineconeIndex;
+}
+
+interface PineconeIndex {
+  upsert: (
+    vectors: Array<{ id: string; values: number[]; metadata?: Record<string, unknown> }>
+  ) => Promise<unknown>;
+  deleteMany: (ids: string[]) => Promise<unknown>;
+  deleteAll: () => Promise<unknown>;
+}
+
+type PineconeSDKConstructor = new (config: {
+  apiKey: string;
+  environment: string;
+}) => PineconeClient;
+
+let PineconeSDK: PineconeSDKConstructor | null = null;
 let sdkAvailable = false;
 
 try {
   const _require = createRequire(import.meta.url);
   const mod = _require('@pinecone-database/pinecone') as Record<string, unknown>;
-  PineconeSDK = (mod as { Pinecone?: unknown }).Pinecone ?? null;
-  sdkAvailable = PineconeSDK !== null;
+  const PC = (mod as { Pinecone?: PineconeSDKConstructor }).Pinecone;
+  if (PC) {
+    PineconeSDK = PC;
+    sdkAvailable = true;
+  }
 } catch {
-  console.warn(
-    '@pinecone-database/pinecone not installed. PineconeVectorStore will use in-memory fallback.'
-  );
+  // @pinecone-database/pinecone not installed — in-memory fallback only
 }
 
 // ============================================================
@@ -58,10 +76,13 @@ export interface PineconeVectorStoreConfig {
 export class PineconeVectorStore implements VectorStore {
   readonly name: string;
 
-  /** In-memory storage (always used; SDK integration is opt-in) */
+  /** In-memory storage for synchronous read access */
   private storage: Map<string, VectorDocument>;
 
-  /** Config preserved for future SDK connection */
+  /** Pinecone index instance (null when SDK unavailable) */
+  private index: PineconeIndex | null = null;
+
+  /** Config preserved for reconnection */
   readonly config: PineconeVectorStoreConfig;
 
   constructor(config: PineconeVectorStoreConfig) {
@@ -69,11 +90,16 @@ export class PineconeVectorStore implements VectorStore {
     this.name = config.name ?? 'pinecone';
     this.storage = new Map();
 
-    if (sdkAvailable) {
-      // SDK installed but no real connection established here.
-      // Placeholder: indexes would be accessed via:
-      //   const pinecone = new (PineconeSDK as ...)({ apiKey, environment });
-      //   const index = pinecone.index(indexName);
+    if (sdkAvailable && PineconeSDK) {
+      try {
+        const client: PineconeClient = new PineconeSDK({
+          apiKey: config.apiKey,
+          environment: config.environment,
+        });
+        this.index = client.Index(config.indexName);
+      } catch {
+        // SDK instantiation failed — continue with in-memory only
+      }
     }
   }
 
@@ -83,11 +109,31 @@ export class PineconeVectorStore implements VectorStore {
 
   insert(doc: VectorDocument): void {
     this.storage.set(doc.id, doc);
+    if (this.index) {
+      const metadata: Record<string, unknown> | undefined = doc.metadata;
+      const vectors =
+        metadata !== undefined
+          ? [{ id: doc.id, values: doc.embedding, metadata }]
+          : [{ id: doc.id, values: doc.embedding }];
+      this.index.upsert(vectors).catch(() => {
+        // Fire-and-forget: in-memory is the source of truth for sync reads
+      });
+    }
   }
 
   insertBatch(docs: VectorDocument[]): void {
     for (const doc of docs) {
       this.storage.set(doc.id, doc);
+    }
+    if (this.index && docs.length > 0) {
+      const vectors = docs.map(doc => {
+        const base = { id: doc.id, values: doc.embedding };
+        const metadata: Record<string, unknown> | undefined = doc.metadata;
+        return metadata !== undefined ? { ...base, metadata } : base;
+      });
+      this.index.upsert(vectors).catch(() => {
+        // Fire-and-forget
+      });
     }
   }
 
@@ -111,10 +157,16 @@ export class PineconeVectorStore implements VectorStore {
 
   delete(id: string): void {
     this.storage.delete(id);
+    if (this.index) {
+      this.index.deleteMany([id]).catch(() => {});
+    }
   }
 
   clear(): void {
     this.storage.clear();
+    if (this.index) {
+      this.index.deleteAll().catch(() => {});
+    }
   }
 
   count(): number {
@@ -123,5 +175,6 @@ export class PineconeVectorStore implements VectorStore {
 
   close(): void {
     this.storage.clear();
+    this.index = null;
   }
 }
