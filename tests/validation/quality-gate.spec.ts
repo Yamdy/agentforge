@@ -12,13 +12,13 @@ import {
   type QualityGateConfig,
   type QualityGateCheck,
 } from '../../src/validation/quality-gate.js';
-import type { AgentLoopState } from '../../src/core/state.js';
+import type { AgentState } from '../../src/core/state.js';
 
 // ============================================================
 // Test Helpers
 // ============================================================
 
-function createMockState(): AgentLoopState {
+function createMockState(): AgentState {
   return {
     sessionId: 'test-session',
     agentName: 'test-agent',
@@ -28,13 +28,14 @@ function createMockState(): AgentLoopState {
     maxSteps: 10,
     tokens: { prompt: 0, completion: 0 },
     output: '',
+    pendingToolCalls: [],
     recovery: {
       outputTokenEscalationCount: 0,
       recoveryMessageCount: 0,
       fallbackSwitchCount: 0,
       compactionRetryCount: 0,
     },
-  } as AgentLoopState;
+  };
 }
 
 // ============================================================
@@ -43,7 +44,7 @@ function createMockState(): AgentLoopState {
 
 describe('QualityGate', () => {
   let gate: QualityGate;
-  let state: AgentLoopState;
+  let state: AgentState;
 
   beforeEach(() => {
     gate = new QualityGate();

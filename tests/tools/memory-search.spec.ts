@@ -8,7 +8,7 @@
  * TDD: Write tests FIRST, watch them fail, then implement.
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeAll } from 'vitest';
 import type { ToolDefinition } from '../../src/core/interfaces.js';
 import type { EmbeddingModel } from '../../src/memory/embedding.js';
 import type {
@@ -17,6 +17,14 @@ import type {
   VectorSearchResult,
 } from '../../src/memory/vector-store.js';
 import { cosineSimilarity } from '../../src/memory/vector-store.js';
+
+// Cached factory — imported once in beforeAll
+let createMemorySearchTool: (vectorStore: VectorStore, embeddingModel: EmbeddingModel) => ToolDefinition[];
+
+beforeAll(async () => {
+  const mod = await import('../../src/tools/memory-search.js');
+  createMemorySearchTool = mod.createMemorySearchTool;
+});
 
 // ============================================================
 // Constants
@@ -147,9 +155,6 @@ describe('MemorySearchTool', () => {
   // ============================================================
 
   it('should return formatted results for valid query', async () => {
-    const { createMemorySearchTool } = await import(
-      '../../src/tools/memory-search.js'
-    );
 
     const docs = [
       createMatchingDoc('1', 'TypeScript is a strongly typed programming language'),
@@ -179,9 +184,6 @@ describe('MemorySearchTool', () => {
   // ============================================================
 
   it('should reject empty query string', async () => {
-    const { createMemorySearchTool } = await import(
-      '../../src/tools/memory-search.js'
-    );
 
     const vectorStore = createMockVectorStore();
     const embeddingModel = createMockEmbeddingModel();
@@ -200,9 +202,6 @@ describe('MemorySearchTool', () => {
   // ============================================================
 
   it('should reject missing query field', async () => {
-    const { createMemorySearchTool } = await import(
-      '../../src/tools/memory-search.js'
-    );
 
     const vectorStore = createMockVectorStore();
     const embeddingModel = createMockEmbeddingModel();
@@ -221,9 +220,6 @@ describe('MemorySearchTool', () => {
   // ============================================================
 
   it('should accept custom limit and threshold parameters', async () => {
-    const { createMemorySearchTool } = await import(
-      '../../src/tools/memory-search.js'
-    );
 
     // Create 5 matching docs and 1 non-matching
     const docs = [
@@ -260,9 +256,6 @@ describe('MemorySearchTool', () => {
   // ============================================================
 
   it('should return empty message when no results above threshold', async () => {
-    const { createMemorySearchTool } = await import(
-      '../../src/tools/memory-search.js'
-    );
 
     // All docs are orthogonal (cosine ~0), below default threshold of 0.7
     const docs = [
@@ -286,9 +279,6 @@ describe('MemorySearchTool', () => {
   // ============================================================
 
   it('should return error string when embedding model fails', async () => {
-    const { createMemorySearchTool } = await import(
-      '../../src/tools/memory-search.js'
-    );
 
     const vectorStore = createMockVectorStore();
     const embeddingModel = createMockEmbeddingModel(true);
@@ -308,9 +298,6 @@ describe('MemorySearchTool', () => {
   // ============================================================
 
   it('should return error string when vector store fails', async () => {
-    const { createMemorySearchTool } = await import(
-      '../../src/tools/memory-search.js'
-    );
 
     const vectorStore = createMockVectorStore([], true);
     const embeddingModel = createMockEmbeddingModel();
@@ -330,9 +317,6 @@ describe('MemorySearchTool', () => {
   // ============================================================
 
   it('should accept limit boundary value 1', async () => {
-    const { createMemorySearchTool } = await import(
-      '../../src/tools/memory-search.js'
-    );
 
     const docs = [
       createMatchingDoc('a', 'First result'),
@@ -357,9 +341,6 @@ describe('MemorySearchTool', () => {
   // ============================================================
 
   it('should accept limit boundary value 50', async () => {
-    const { createMemorySearchTool } = await import(
-      '../../src/tools/memory-search.js'
-    );
 
     // Create 55 matching docs to verify limit=50 caps results
     const docs: VectorDocument[] = [];

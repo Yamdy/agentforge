@@ -342,9 +342,7 @@ export { AgentEventEmitter } from './core/events.js';
 // New State Types
 // ============================================================
 
-export type { RecoveryState, TokenBudgetState, AgentLoopState } from './core/state.js';
-
-export { createInitialLoopState } from './core/state.js';
+export type { RecoveryState } from './core/state.js';
 
 // ============================================================
 // Subsystems - Skill System

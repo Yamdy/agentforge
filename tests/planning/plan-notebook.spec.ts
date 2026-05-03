@@ -22,8 +22,8 @@ import type {
   ToolContext,
 } from '../../src/core/interfaces.js';
 import type { Message } from '../../src/core/events.js';
-import type { AgentLoopState } from '../../src/core/state.js';
-import { createInitialLoopState } from '../../src/core/state.js';
+import type { AgentState } from '../../src/core/state.js';
+import { createInitialState } from '../../src/core/state.js';
 
 // ============================================================
 // Helpers
@@ -45,12 +45,12 @@ function makePlan(
   return { id, steps, createdAt: Date.now() };
 }
 
-function makeState(): AgentLoopState {
-  return createInitialLoopState({
+function makeState(): AgentState {
+  return createInitialState({
     sessionId: 'test-session',
     agentName: 'test-agent',
     model: { provider: 'openai', model: 'gpt-4o' },
-    messages: [],
+    initialMessages: [],
     maxSteps: 10,
   });
 }

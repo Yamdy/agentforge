@@ -52,7 +52,7 @@ run() → Promise<string>
            └── AgentEventEmitter.emit() for observability
 ```
 
-**Key**: `AgentLoopState` is mutable, passed by reference through the loop.
+**Key**: `AgentState` is mutable, passed by reference through the loop.
 
 ### 2. Errors-as-Events (Never throw through event channel)
 ```typescript
@@ -91,7 +91,7 @@ if (isTerminalEvent(event)) return EMPTY; // 'done', 'agent.error', 'cancel'
 | `src/loop/agent-loop.ts` | Core agent loop (~1080 lines, expand recursion) |
 | `src/contracts/` | Tier 1 validation with graceful degradation |
 | `src/core/hooks.ts` | HookRegistry (RequestHook/ToolHook/LifecycleHook) |
-| `src/core/state.ts` | AgentLoopState (imperative loop state) |
+| `src/core/state.ts` | AgentState (imperative loop state) |
 | `src/core/state-machine.ts` | 6-state lifecycle (pending→running→paused/completed/error/cancelled) |
 | `src/l1/` | **L1 API** - Zero-code config layer (JSON/JSONC → Agent) |
 | `src/token-counter.ts` | **Token counting** - js-tiktoken BPE + CJK heuristic fallback |

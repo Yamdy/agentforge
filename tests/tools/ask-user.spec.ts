@@ -5,8 +5,16 @@
  * with optional choices and multi-select support.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import type { ToolDefinition } from '../../src/core/interfaces.js';
+
+// Cached factory — imported once in beforeAll
+let createAskUserQuestionTool: () => ToolDefinition;
+
+beforeAll(async () => {
+  const mod = await import('../../src/tools/ask-user.js');
+  createAskUserQuestionTool = mod.createAskUserQuestionTool;
+});
 
 describe('AskUserQuestionTool', () => {
   let askTool: ToolDefinition;
@@ -17,29 +25,20 @@ describe('AskUserQuestionTool', () => {
 
   describe('tool metadata', () => {
     it('should have correct name', async () => {
-      const { createAskUserQuestionTool } = await import(
-        '../../src/tools/ask-user.js'
-      );
-      askTool = createAskUserQuestionTool();
+askTool = createAskUserQuestionTool();
 
       expect(askTool.name).toBe('ask_user_question');
     });
 
     it('should have a description', async () => {
-      const { createAskUserQuestionTool } = await import(
-        '../../src/tools/ask-user.js'
-      );
-      askTool = createAskUserQuestionTool();
+askTool = createAskUserQuestionTool();
 
       expect(askTool.description).toBeTruthy();
       expect(askTool.description.length).toBeGreaterThan(0);
     });
 
     it('should have Zod schema for parameters', async () => {
-      const { createAskUserQuestionTool } = await import(
-        '../../src/tools/ask-user.js'
-      );
-      askTool = createAskUserQuestionTool();
+askTool = createAskUserQuestionTool();
 
       expect(askTool.parameters).toBeDefined();
       expect(
@@ -48,10 +47,7 @@ describe('AskUserQuestionTool', () => {
     });
 
     it('should have requiresApproval set to false', async () => {
-      const { createAskUserQuestionTool } = await import(
-        '../../src/tools/ask-user.js'
-      );
-      askTool = createAskUserQuestionTool();
+askTool = createAskUserQuestionTool();
 
       expect(askTool.requiresApproval).toBe(false);
     });
@@ -63,10 +59,7 @@ describe('AskUserQuestionTool', () => {
 
   describe('question with options', () => {
     it('should format question with single-choice options', async () => {
-      const { createAskUserQuestionTool } = await import(
-        '../../src/tools/ask-user.js'
-      );
-      askTool = createAskUserQuestionTool();
+askTool = createAskUserQuestionTool();
 
       const result = await askTool.execute({
         question: 'What color do you prefer?',
@@ -81,10 +74,7 @@ describe('AskUserQuestionTool', () => {
     });
 
     it('should format question with many options', async () => {
-      const { createAskUserQuestionTool } = await import(
-        '../../src/tools/ask-user.js'
-      );
-      askTool = createAskUserQuestionTool();
+askTool = createAskUserQuestionTool();
 
       const result = await askTool.execute({
         question: 'Pick a framework:',
@@ -105,10 +95,7 @@ describe('AskUserQuestionTool', () => {
 
   describe('question without options', () => {
     it('should format a free-text question', async () => {
-      const { createAskUserQuestionTool } = await import(
-        '../../src/tools/ask-user.js'
-      );
-      askTool = createAskUserQuestionTool();
+askTool = createAskUserQuestionTool();
 
       const result = await askTool.execute({
         question: 'What is your name?',
@@ -118,10 +105,7 @@ describe('AskUserQuestionTool', () => {
     });
 
     it('should not include options list when none provided', async () => {
-      const { createAskUserQuestionTool } = await import(
-        '../../src/tools/ask-user.js'
-      );
-      askTool = createAskUserQuestionTool();
+askTool = createAskUserQuestionTool();
 
       const result = await askTool.execute({
         question: 'Simple question?',
@@ -138,10 +122,7 @@ describe('AskUserQuestionTool', () => {
 
   describe('multiSelect', () => {
     it('should indicate multi-select when enabled', async () => {
-      const { createAskUserQuestionTool } = await import(
-        '../../src/tools/ask-user.js'
-      );
-      askTool = createAskUserQuestionTool();
+askTool = createAskUserQuestionTool();
 
       const result = await askTool.execute({
         question: 'Select all that apply:',
@@ -157,10 +138,7 @@ describe('AskUserQuestionTool', () => {
     });
 
     it('should default to single-select when multiSelect is false', async () => {
-      const { createAskUserQuestionTool } = await import(
-        '../../src/tools/ask-user.js'
-      );
-      askTool = createAskUserQuestionTool();
+askTool = createAskUserQuestionTool();
 
       const result = await askTool.execute({
         question: 'Choose one:',
@@ -184,10 +162,7 @@ describe('AskUserQuestionTool', () => {
 
   describe('HITL context', () => {
     it('should format question when context has parentSessionId', async () => {
-      const { createAskUserQuestionTool } = await import(
-        '../../src/tools/ask-user.js'
-      );
-      askTool = createAskUserQuestionTool();
+askTool = createAskUserQuestionTool();
 
       const result = await askTool.execute(
         {
@@ -207,10 +182,7 @@ describe('AskUserQuestionTool', () => {
     });
 
     it('should return interactive placeholder when no context', async () => {
-      const { createAskUserQuestionTool } = await import(
-        '../../src/tools/ask-user.js'
-      );
-      askTool = createAskUserQuestionTool();
+askTool = createAskUserQuestionTool();
 
       const result = await askTool.execute({
         question: 'Do you approve?',
@@ -221,10 +193,7 @@ describe('AskUserQuestionTool', () => {
     });
 
     it('should return interactive placeholder when context has no parentSessionId', async () => {
-      const { createAskUserQuestionTool } = await import(
-        '../../src/tools/ask-user.js'
-      );
-      askTool = createAskUserQuestionTool();
+askTool = createAskUserQuestionTool();
 
       const result = await askTool.execute(
         {
@@ -247,10 +216,7 @@ describe('AskUserQuestionTool', () => {
 
   describe('input validation', () => {
     it('should reject missing question field', async () => {
-      const { createAskUserQuestionTool } = await import(
-        '../../src/tools/ask-user.js'
-      );
-      askTool = createAskUserQuestionTool();
+askTool = createAskUserQuestionTool();
 
       const result = await askTool.execute({});
 
@@ -258,10 +224,7 @@ describe('AskUserQuestionTool', () => {
     });
 
     it('should handle empty question string gracefully', async () => {
-      const { createAskUserQuestionTool } = await import(
-        '../../src/tools/ask-user.js'
-      );
-      askTool = createAskUserQuestionTool();
+askTool = createAskUserQuestionTool();
 
       const result = await askTool.execute({ question: '' });
 
@@ -271,10 +234,7 @@ describe('AskUserQuestionTool', () => {
     });
 
     it('should handle empty options array', async () => {
-      const { createAskUserQuestionTool } = await import(
-        '../../src/tools/ask-user.js'
-      );
-      askTool = createAskUserQuestionTool();
+askTool = createAskUserQuestionTool();
 
       const result = await askTool.execute({
         question: 'What do you think?',

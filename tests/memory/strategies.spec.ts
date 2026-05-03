@@ -16,8 +16,7 @@ import {
   type PointerIndexedConfig,
   CompactionStrategySchema,
 } from '../../src/memory/strategies.js';
-import type { VectorStore, VectorDocument } from '../../src/memory/vector-store.js';
-import type { EmbeddingModel } from '../../src/memory/embedding.js';
+import { InMemoryVectorStore, MockEmbeddingModel, FailingEmbeddingModel } from '../fixtures/vector-store-mocks.js';
 
 // ============================================================
 // Test Helpers
@@ -418,57 +417,6 @@ describe('snipCompaction', () => {
 // ============================================================
 
 describe('pointerIndexed', () => {
-  /** In-memory vector store for testing */
-  class InMemoryVectorStore implements VectorStore {
-    readonly name = 'test-store';
-    private docs = new Map<string, VectorDocument>();
-
-    insert(doc: VectorDocument): void {
-      this.docs.set(doc.id, doc);
-    }
-
-    insertBatch(docs: VectorDocument[]): void {
-      for (const doc of docs) this.insert(doc);
-    }
-
-    search(_embedding: number[], limit = 5, _threshold = 0.7) {
-      return Array.from(this.docs.values())
-        .slice(0, limit)
-        .map(doc => ({ document: doc, score: 0.95 }));
-    }
-
-    get(id: string) { return this.docs.get(id) ?? null; }
-    delete(id: string) { this.docs.delete(id); }
-    clear() { this.docs.clear(); }
-    count() { return this.docs.size; }
-    close() { this.docs.clear(); }
-  }
-
-  /** Mock embedding model that returns fixed-size vectors */
-  class MockEmbeddingModel implements EmbeddingModel {
-    async embed(_text: string): Promise<number[]> {
-      return new Array(128).fill(0.1);
-    }
-
-    async embedBatch(texts: string[]): Promise<number[][]> {
-      return texts.map(() => new Array(128).fill(0.1));
-    }
-  }
-
-  /** Embedding model that always fails — for testing fallback */
-  class FailingEmbeddingModel implements EmbeddingModel {
-    async embed(): Promise<number[]> { throw new Error('embed failed'); }
-    async embedBatch(): Promise<number[][]> { throw new Error('batch embed failed'); }
-  }
-
-  function makeMessages(count: number): Message[] {
-    const msgs: Message[] = [];
-    for (let i = 0; i < count; i++) {
-      msgs.push({ role: i % 2 === 0 ? 'user' : 'assistant', content: `Message ${i}` });
-    }
-    return msgs;
-  }
-
   const config: PointerIndexedConfig = {
     preserveRecent: 3,
     sessionId: 'test-session-1',
@@ -478,7 +426,7 @@ describe('pointerIndexed', () => {
   it('should index messages into vector store', async () => {
     const store = new InMemoryVectorStore();
     const embedder = new MockEmbeddingModel();
-    const messages = makeMessages(10);
+    const messages = createTestMessages(10);
 
     const result = await pointerIndexed(messages, config, store, embedder);
 
@@ -497,7 +445,7 @@ describe('pointerIndexed', () => {
   });
 
   it('should fall back to truncate-oldest when no vector store', async () => {
-    const messages = makeMessages(10);
+    const messages = createTestMessages(10);
     const result = await pointerIndexed(messages, config, undefined, new MockEmbeddingModel());
 
     expect(result.strategy).toBe('truncate-oldest');
@@ -506,7 +454,7 @@ describe('pointerIndexed', () => {
 
   it('should fall back to truncate-oldest when no embedding model', async () => {
     const store = new InMemoryVectorStore();
-    const messages = makeMessages(10);
+    const messages = createTestMessages(10);
     const result = await pointerIndexed(messages, config, store, undefined);
 
     expect(result.strategy).toBe('truncate-oldest');
@@ -516,7 +464,7 @@ describe('pointerIndexed', () => {
   it('should fall back to truncate-oldest when all embeddings fail', async () => {
     const store = new InMemoryVectorStore();
     const embedder = new FailingEmbeddingModel();
-    const messages = makeMessages(10);
+    const messages = createTestMessages(10);
 
     const result = await pointerIndexed(messages, config, store, embedder);
 
@@ -532,7 +480,7 @@ describe('pointerIndexed', () => {
     // Spy on embedBatch
     const batchSpy = vi.spyOn(embedder, 'embedBatch');
 
-    const messages = makeMessages(10);
+    const messages = createTestMessages(10);
     await pointerIndexed(messages, config, store, embedder);
 
     // embedBatch should have been called (not embed)
@@ -542,7 +490,7 @@ describe('pointerIndexed', () => {
   it('should return no-op when messages <= preserveRecent', async () => {
     const store = new InMemoryVectorStore();
     const embedder = new MockEmbeddingModel();
-    const messages = makeMessages(2); // 2 <= 3 preserveRecent
+    const messages = createTestMessages(2); // 2 <= 3 preserveRecent
 
     const result = await pointerIndexed(messages, config, store, embedder);
 
@@ -554,7 +502,7 @@ describe('pointerIndexed', () => {
   it('should respect maxIndexCount', async () => {
     const store = new InMemoryVectorStore();
     const embedder = new MockEmbeddingModel();
-    const messages = makeMessages(20);
+    const messages = createTestMessages(20);
 
     const result = await pointerIndexed(
       messages,

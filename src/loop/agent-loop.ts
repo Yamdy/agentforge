@@ -26,10 +26,10 @@ import {
   serializeError,
   generateId,
 } from '../core/index.js';
-import type { AgentContext, AgentLoopState } from '../core/index.js';
+import type { AgentContext, AgentState } from '../core/index.js';
 import { extractText } from '../core/content-utils.js';
 import { HookRegistry, type HookName, RequestHookPriority } from '../core/hooks.js';
-import { createInitialLoopState } from '../core/state.js';
+import { createInitialState } from '../core/state.js';
 import { CheckpointRegistry } from '../core/checkpoint-registry.js';
 import type { LLMOptions } from '../core/interfaces.js';
 import { checkTokenBudget, createBudgetTracker, shouldCompact } from './token-budget.js';
@@ -76,7 +76,7 @@ export interface AgentLoop {
   /** Resume execution */
   resume(): void;
   /** Get current loop state (null if not started) */
-  getState(): AgentLoopState | null;
+  getState(): AgentState | null;
   /** Get current lifecycle status from state machine */
   getStatus(): string;
   /** Subscribe to lifecycle state changes */
@@ -94,7 +94,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
   const hooks = ctx.hookRegistry ?? new HookRegistry();
   let abortController: AbortController | null = null;
   let onExternalAbort: (() => void) | null = null;
-  let state: AgentLoopState | null = null;
+  let state: AgentState | null = null;
   let isRunning = false;
 
   // ── State Machine ──
@@ -306,53 +306,80 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
   // Tool Execution
   // ============================================================
 
-  async function executeToolBatch(
-    batch: { calls: ToolCall[]; isConcurrencySafe: boolean },
-    signal: AbortSignal
-  ): Promise<Message[]> {
-    const results: Message[] = [];
+  /**
+   * Execute a single tool call with full safety pipeline:
+   * ToolHook → PermissionController → SecurityGuard → Sandbox/Tool execution.
+   * Extracted from the serial loop so both serial and parallel paths reuse it.
+   */
+  async function executeSingleTool(tc: ToolCall, signal: AbortSignal): Promise<Message> {
+    // Emit tool.call
+    void emitter.emit({
+      type: 'tool.call',
+      timestamp: Date.now(),
+      sessionId: ctx.sessionId,
+      toolCallId: tc.id,
+      toolName: tc.name,
+      args: tc.args,
+    });
 
-    for (const tc of batch.calls) {
-      if (signal.aborted) break;
+    // ── MPU M5: Audit tool call ──
+    ctx.auditLogger?.append({
+      sessionId: ctx.sessionId,
+      agentName: ctx.agentName,
+      eventType: 'tool.call',
+      action: 'tool.call',
+      resource: tc.name,
+      result: 'success',
+      details: { toolCallId: tc.id },
+    });
 
-      // Emit tool.call
+    // ── ToolHook: permission check ──
+    let blocked = false;
+    for (const h of hooks.getToolHooks()) {
+      if (!(await h.beforeExecute(tc, state!))) {
+        blocked = true;
+        break;
+      }
+    }
+
+    if (blocked) {
+      const deniedMsg: Message = {
+        role: 'tool',
+        content: `Permission denied for tool: ${tc.name}`,
+        toolCallId: tc.id,
+        name: tc.name,
+      };
       void emitter.emit({
-        type: 'tool.call',
+        type: 'tool.result',
         timestamp: Date.now(),
         sessionId: ctx.sessionId,
         toolCallId: tc.id,
         toolName: tc.name,
-        args: tc.args,
+        result: extractText(deniedMsg.content),
+        isError: true,
       });
+      return deniedMsg;
+    }
 
-      // ── MPU M5: Audit tool call ──
-      ctx.auditLogger?.append({
-        sessionId: ctx.sessionId,
-        agentName: ctx.agentName,
-        eventType: 'tool.call',
-        action: 'tool.call',
-        resource: tc.name,
-        result: 'success',
-        details: { toolCallId: tc.id },
-      });
+    // Get tool definition for subsequent checks
+    const toolDef = ctx.tools.get(tc.name);
 
-      // ── ToolHook: permission check ──
-      let blocked = false;
-      for (const h of hooks.getToolHooks()) {
-        if (!(await h.beforeExecute(tc, state!))) {
-          blocked = true;
-          break;
-        }
-      }
+    // ── HITL PermissionController: primary gate (A2 iron law) ──
+    // Inserted between ToolHook (secondary check) and SecurityGuard.
+    // Uses evaluatePermission() for policy-based routing:
+    //   deny → block immediately
+    //   allow → proceed
+    //   ask  → human-in-the-loop via PermissionController (with rejection isolation)
+    if (toolDef && ctx.permissionController && ctx.permissionPolicy) {
+      const policyDecision = evaluatePermission(toolDef, ctx.permissionPolicy);
 
-      if (blocked) {
+      if (policyDecision === 'deny') {
         const deniedMsg: Message = {
           role: 'tool',
-          content: `Permission denied for tool: ${tc.name}`,
+          content: `Permission denied for tool: ${tc.name} (policy: deny)`,
           toolCallId: tc.id,
           name: tc.name,
         };
-        results.push(deniedMsg);
         void emitter.emit({
           type: 'tool.result',
           timestamp: Date.now(),
@@ -362,29 +389,81 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           result: extractText(deniedMsg.content),
           isError: true,
         });
-        continue;
+        ctx.auditLogger?.append({
+          sessionId: ctx.sessionId,
+          agentName: ctx.agentName,
+          eventType: 'tool.call',
+          action: 'tool.call',
+          resource: tc.name,
+          result: 'denied',
+          details: { toolCallId: tc.id, reason: 'permission_policy_deny' },
+        });
+        return deniedMsg;
       }
 
-      // Get tool definition for subsequent checks
-      const toolDef = ctx.tools.get(tc.name);
+      if (policyDecision === 'ask') {
+        const promptId = `perm-${tc.id}`;
+        void emitter.emit({
+          type: 'permission.prompt',
+          timestamp: Date.now(),
+          sessionId: ctx.sessionId,
+          promptId,
+          permission: tc.name,
+          context: {
+            riskLevel: toolDef.riskLevel,
+            approvalMessage: toolDef.approvalMessage,
+            toolArgs: tc.args,
+          },
+        });
 
-      // ── HITL PermissionController: primary gate (A2 iron law) ──
-      // Inserted between ToolHook (secondary check) and SecurityGuard.
-      // Uses evaluatePermission() for policy-based routing:
-      //   deny → block immediately
-      //   allow → proceed
-      //   ask  → human-in-the-loop via PermissionController (with rejection isolation)
-      if (toolDef && ctx.permissionController && ctx.permissionPolicy) {
-        const policyDecision = evaluatePermission(toolDef, ctx.permissionPolicy);
+        // ── Isolate permission ask from batch abort ──
+        // Treat controller rejection as per-tool deny, not loop crash.
+        let permDecision: 'allow' | 'deny' | 'allow_always';
+        try {
+          permDecision = await ctx.permissionController.ask({
+            promptId,
+            permission: tc.name,
+            toolName: tc.name,
+            toolArgs: tc.args,
+            context: {
+              riskLevel: toolDef.riskLevel,
+              approvalMessage: toolDef.approvalMessage,
+            },
+          });
+        } catch {
+          // Permission system failure → deny the tool, don't crash the loop
+          permDecision = 'deny';
+        }
 
-        if (policyDecision === 'deny') {
+        void emitter.emit({
+          type: 'permission.decision',
+          timestamp: Date.now(),
+          sessionId: ctx.sessionId,
+          promptId,
+          decision: permDecision,
+        });
+
+        // Audit the HITL decision regardless of outcome
+        ctx.auditLogger?.append({
+          sessionId: ctx.sessionId,
+          agentName: ctx.agentName,
+          eventType: 'tool.call',
+          action: 'tool.call',
+          resource: tc.name,
+          result: permDecision === 'deny' ? 'denied' : 'success',
+          details: {
+            toolCallId: tc.id,
+            reason: permDecision === 'deny' ? 'HITL rejection' : `HITL ${permDecision}`,
+          },
+        });
+
+        if (permDecision === 'deny') {
           const deniedMsg: Message = {
             role: 'tool',
-            content: `Permission denied for tool: ${tc.name} (policy: deny)`,
+            content: `Permission denied for tool: ${tc.name} (HITL rejection)`,
             toolCallId: tc.id,
             name: tc.name,
           };
-          results.push(deniedMsg);
           void emitter.emit({
             type: 'tool.result',
             timestamp: Date.now(),
@@ -394,180 +473,50 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             result: extractText(deniedMsg.content),
             isError: true,
           });
-          ctx.auditLogger?.append({
-            sessionId: ctx.sessionId,
-            agentName: ctx.agentName,
-            eventType: 'tool.call',
-            action: 'tool.call',
-            resource: tc.name,
-            result: 'denied',
-            details: { toolCallId: tc.id, reason: 'permission_policy_deny' },
-          });
-          continue;
+          return deniedMsg;
         }
-
-        if (policyDecision === 'ask') {
-          const promptId = `perm-${tc.id}`;
-          void emitter.emit({
-            type: 'permission.prompt',
-            timestamp: Date.now(),
-            sessionId: ctx.sessionId,
-            promptId,
-            permission: tc.name,
-            context: {
-              riskLevel: toolDef.riskLevel,
-              approvalMessage: toolDef.approvalMessage,
-              toolArgs: tc.args,
-            },
-          });
-
-          // ── Isolate permission ask from batch abort ──
-          // Treat controller rejection as per-tool deny, not loop crash.
-          let permDecision: 'allow' | 'deny' | 'allow_always';
-          try {
-            permDecision = await ctx.permissionController.ask({
-              promptId,
-              permission: tc.name,
-              toolName: tc.name,
-              toolArgs: tc.args,
-              context: {
-                riskLevel: toolDef.riskLevel,
-                approvalMessage: toolDef.approvalMessage,
-              },
-            });
-          } catch {
-            // Permission system failure → deny the tool, don't crash the loop
-            permDecision = 'deny';
-          }
-
-          void emitter.emit({
-            type: 'permission.decision',
-            timestamp: Date.now(),
-            sessionId: ctx.sessionId,
-            promptId,
-            decision: permDecision,
-          });
-
-          // Audit the HITL decision regardless of outcome
-          ctx.auditLogger?.append({
-            sessionId: ctx.sessionId,
-            agentName: ctx.agentName,
-            eventType: 'tool.call',
-            action: 'tool.call',
-            resource: tc.name,
-            result: permDecision === 'deny' ? 'denied' : 'success',
-            details: {
-              toolCallId: tc.id,
-              reason: permDecision === 'deny' ? 'HITL rejection' : `HITL ${permDecision}`,
-            },
-          });
-
-          if (permDecision === 'deny') {
-            const deniedMsg: Message = {
-              role: 'tool',
-              content: `Permission denied for tool: ${tc.name} (HITL rejection)`,
-              toolCallId: tc.id,
-              name: tc.name,
-            };
-            results.push(deniedMsg);
-            void emitter.emit({
-              type: 'tool.result',
-              timestamp: Date.now(),
-              sessionId: ctx.sessionId,
-              toolCallId: tc.id,
-              toolName: tc.name,
-              result: extractText(deniedMsg.content),
-              isError: true,
-            });
-            continue;
-          }
-          // 'allow' or 'allow_always' → proceed to SecurityGuard
-        }
-        // policyDecision === 'allow' → proceed to SecurityGuard
+        // 'allow' or 'allow_always' → proceed to SecurityGuard
       }
+      // policyDecision === 'allow' → proceed to SecurityGuard
+    }
 
-      // ── MPU M6: Security check before tool execution ──
+    // ── MPU M6: Security check before tool execution ──
 
-      // Check command/path/network blocklist
-      if (toolDef && ctx.securityGuard) {
-        const cmdCheck = ctx.securityGuard.checkCommand(tc.name);
-        if (!cmdCheck.allowed) {
-          const blockedMsg: Message = {
-            role: 'tool',
-            content: `Tool "${tc.name}" blocked by security guard: ${cmdCheck.reason}`,
-            toolCallId: tc.id,
-            name: tc.name,
-          };
-          results.push(blockedMsg);
-          void emitter.emit({
-            type: 'tool.result',
-            timestamp: Date.now(),
-            sessionId: ctx.sessionId,
-            toolCallId: tc.id,
-            toolName: tc.name,
-            result: `Blocked: ${cmdCheck.reason}`,
-            isError: true,
-          });
-          // ── MPU M5: Audit blocked tool call ──
-          ctx.auditLogger?.append({
-            sessionId: ctx.sessionId,
-            agentName: ctx.agentName,
-            eventType: 'tool.call',
-            action: 'tool.call',
-            resource: tc.name,
-            result: 'denied',
-            details: { toolCallId: tc.id, reason: cmdCheck.reason },
-          });
-          continue;
-        }
-      }
-
-      // Sandbox routing
-      if (toolDef?.sandboxRequired && ctx.sandboxExecutor) {
-        void emitter.emit({
-          type: 'tool.execute',
-          timestamp: Date.now(),
-          sessionId: ctx.sessionId,
-          toolCallId: tc.id,
-          toolName: tc.name,
-        });
-        const sandboxResult = await ctx.sandboxExecutor.execute(
-          { toolName: tc.name, args: tc.args },
-          { sessionId: ctx.sessionId, signal, timeoutMs: 30000 }
-        );
-        const sbResultStr = sandboxResult.success
-          ? (sandboxResult.result ?? '')
-          : `Sandbox error: ${sandboxResult.error?.message ?? 'Unknown error'}`;
-        results.push({
+    // Check command/path/network blocklist
+    if (toolDef && ctx.securityGuard) {
+      const cmdCheck = ctx.securityGuard.checkCommand(tc.name);
+      if (!cmdCheck.allowed) {
+        const blockedMsg: Message = {
           role: 'tool',
-          content: sbResultStr,
+          content: `Tool "${tc.name}" blocked by security guard: ${cmdCheck.reason}`,
           toolCallId: tc.id,
           name: tc.name,
-        });
+        };
         void emitter.emit({
           type: 'tool.result',
           timestamp: Date.now(),
           sessionId: ctx.sessionId,
           toolCallId: tc.id,
           toolName: tc.name,
-          result: sbResultStr,
-          isError: !sandboxResult.success,
+          result: `Blocked: ${cmdCheck.reason}`,
+          isError: true,
         });
-        continue;
-      }
-
-      // ── Execute tool ──
-      await runLifecycleHook(
-        'tool.execute.before',
-        {
+        // ── MPU M5: Audit blocked tool call ──
+        ctx.auditLogger?.append({
           sessionId: ctx.sessionId,
-          toolName: tc.name,
-          callId: tc.id,
-          args: tc.args,
-        },
-        {}
-      );
+          agentName: ctx.agentName,
+          eventType: 'tool.call',
+          action: 'tool.call',
+          resource: tc.name,
+          result: 'denied',
+          details: { toolCallId: tc.id, reason: cmdCheck.reason },
+        });
+        return blockedMsg;
+      }
+    }
 
+    // Sandbox routing
+    if (toolDef?.sandboxRequired && ctx.sandboxExecutor) {
       void emitter.emit({
         type: 'tool.execute',
         timestamp: Date.now(),
@@ -575,134 +524,237 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         toolCallId: tc.id,
         toolName: tc.name,
       });
+      const sandboxResult = await ctx.sandboxExecutor.execute(
+        { toolName: tc.name, args: tc.args },
+        { sessionId: ctx.sessionId, signal, timeoutMs: 30000 }
+      );
+      const sbResultStr = sandboxResult.success
+        ? (sandboxResult.result ?? '')
+        : `Sandbox error: ${sandboxResult.error?.message ?? 'Unknown error'}`;
+      void emitter.emit({
+        type: 'tool.result',
+        timestamp: Date.now(),
+        sessionId: ctx.sessionId,
+        toolCallId: tc.id,
+        toolName: tc.name,
+        result: sbResultStr,
+        isError: !sandboxResult.success,
+      });
+      return {
+        role: 'tool',
+        content: sbResultStr,
+        toolCallId: tc.id,
+        name: tc.name,
+      };
+    }
 
-      // ── MPU M5: Audit tool execution ──
+    // ── Execute tool ──
+    await runLifecycleHook(
+      'tool.execute.before',
+      {
+        sessionId: ctx.sessionId,
+        toolName: tc.name,
+        callId: tc.id,
+        args: tc.args,
+      },
+      {}
+    );
+
+    void emitter.emit({
+      type: 'tool.execute',
+      timestamp: Date.now(),
+      sessionId: ctx.sessionId,
+      toolCallId: tc.id,
+      toolName: tc.name,
+    });
+
+    // ── MPU M5: Audit tool execution ──
+    ctx.auditLogger?.append({
+      sessionId: ctx.sessionId,
+      agentName: ctx.agentName,
+      eventType: 'tool.execute',
+      action: 'tool.execute',
+      resource: tc.name,
+      result: 'success',
+      details: { toolCallId: tc.id },
+    });
+
+    try {
+      const result = await ctx.tools.execute(tc.name, tc.args, {
+        toolCallId: tc.id,
+        parentSessionId: ctx.sessionId,
+      });
+
+      await runLifecycleHook(
+        'tool.execute.after',
+        {
+          sessionId: ctx.sessionId,
+          toolName: tc.name,
+          callId: tc.id,
+          args: tc.args,
+        },
+        { result }
+      );
+
+      const resultStr = typeof result === 'string' ? result : JSON.stringify(result);
+      void emitter.emit({
+        type: 'tool.result',
+        timestamp: Date.now(),
+        sessionId: ctx.sessionId,
+        toolCallId: tc.id,
+        toolName: tc.name,
+        result: resultStr,
+        isError: false,
+      });
+
+      // ── MPU M5: Audit tool result (success) ──
       ctx.auditLogger?.append({
         sessionId: ctx.sessionId,
         agentName: ctx.agentName,
-        eventType: 'tool.execute',
-        action: 'tool.execute',
+        eventType: 'tool.result',
+        action: 'tool.result',
         resource: tc.name,
         result: 'success',
         details: { toolCallId: tc.id },
       });
 
-      try {
-        const result = await ctx.tools.execute(tc.name, tc.args, {
-          toolCallId: tc.id,
-          parentSessionId: ctx.sessionId,
-        });
-
-        await runLifecycleHook(
-          'tool.execute.after',
-          {
-            sessionId: ctx.sessionId,
-            toolName: tc.name,
-            callId: tc.id,
-            args: tc.args,
-          },
-          { result }
-        );
-
-        const resultStr = typeof result === 'string' ? result : JSON.stringify(result);
-        results.push({
-          role: 'tool',
-          content: resultStr,
-          toolCallId: tc.id,
-          name: tc.name,
-        });
-
-        void emitter.emit({
-          type: 'tool.result',
-          timestamp: Date.now(),
-          sessionId: ctx.sessionId,
-          toolCallId: tc.id,
-          toolName: tc.name,
-          result: resultStr,
-          isError: false,
-        });
-
-        // ── MPU M5: Audit tool result (success) ──
-        ctx.auditLogger?.append({
-          sessionId: ctx.sessionId,
-          agentName: ctx.agentName,
-          eventType: 'tool.result',
-          action: 'tool.result',
-          resource: tc.name,
-          result: 'success',
-          details: { toolCallId: tc.id },
-        });
-
-        // ── MPU M10: Result validation ──
-        if (ctx.services.resultValidator) {
-          try {
-            const validation = ctx.services.resultValidator.validate(tc.name, resultStr);
-            if (!validation.valid) {
-              ctx.logger?.warn(`Tool result validation failed for ${tc.name}:`, {
-                errors: validation.errors,
-              });
-            }
-          } catch {
-            /* isolate */
-          }
-        }
-      } catch (err) {
-        const errStr = err instanceof Error ? err.message : String(err);
-
-        await runLifecycleHook(
-          'tool.execute.error',
-          {
-            sessionId: ctx.sessionId,
-            toolName: tc.name,
-            callId: tc.id,
-            error: err,
-          },
-          { retry: false }
-        );
-
-        results.push({
-          role: 'tool',
-          content: `Error: ${errStr}`,
-          toolCallId: tc.id,
-          name: tc.name,
-        });
-
-        void emitter.emit({
-          type: 'tool.result',
-          timestamp: Date.now(),
-          sessionId: ctx.sessionId,
-          toolCallId: tc.id,
-          toolName: tc.name,
-          result: errStr,
-          isError: true,
-        });
-
-        // ── MPU M5 + M4: Audit + circuit breaker on tool error ──
-        ctx.auditLogger?.append({
-          sessionId: ctx.sessionId,
-          agentName: ctx.agentName,
-          eventType: 'tool.result',
-          action: 'tool.result',
-          resource: tc.name,
-          result: 'error',
-          details: { toolCallId: tc.id, error: errStr },
-        });
-
-        if (ctx.errorClassifier && ctx.circuitBreaker) {
-          try {
-            const severity = ctx.errorClassifier.classify({
-              name: 'ToolExecutionError',
-              message: errStr,
-              stack: undefined,
+      // ── MPU M10: Result validation ──
+      if (ctx.services.resultValidator) {
+        try {
+          const validation = ctx.services.resultValidator.validate(tc.name, resultStr);
+          if (!validation.valid) {
+            ctx.logger?.warn(`Tool result validation failed for ${tc.name}:`, {
+              errors: validation.errors,
             });
-            ctx.circuitBreaker.recordFailure(severity);
-          } catch {
-            /* isolate */
           }
+        } catch {
+          /* isolate */
         }
       }
+
+      return {
+        role: 'tool',
+        content: resultStr,
+        toolCallId: tc.id,
+        name: tc.name,
+      };
+    } catch (err) {
+      const errStr = err instanceof Error ? err.message : String(err);
+
+      await runLifecycleHook(
+        'tool.execute.error',
+        {
+          sessionId: ctx.sessionId,
+          toolName: tc.name,
+          callId: tc.id,
+          error: err,
+        },
+        { retry: false }
+      );
+
+      void emitter.emit({
+        type: 'tool.result',
+        timestamp: Date.now(),
+        sessionId: ctx.sessionId,
+        toolCallId: tc.id,
+        toolName: tc.name,
+        result: errStr,
+        isError: true,
+      });
+
+      // ── MPU M5 + M4: Audit + circuit breaker on tool error ──
+      ctx.auditLogger?.append({
+        sessionId: ctx.sessionId,
+        agentName: ctx.agentName,
+        eventType: 'tool.result',
+        action: 'tool.result',
+        resource: tc.name,
+        result: 'error',
+        details: { toolCallId: tc.id, error: errStr },
+      });
+
+      if (ctx.errorClassifier && ctx.circuitBreaker) {
+        try {
+          const severity = ctx.errorClassifier.classify({
+            name: 'ToolExecutionError',
+            message: errStr,
+            stack: undefined,
+          });
+          ctx.circuitBreaker.recordFailure(severity);
+        } catch {
+          /* isolate */
+        }
+      }
+
+      return {
+        role: 'tool',
+        content: `Error: ${errStr}`,
+        toolCallId: tc.id,
+        name: tc.name,
+      };
+    }
+  }
+
+  /**
+   * Execute a batch of concurrency-safe tools in parallel via Promise.all.
+   * Emits tool.batch.start/tool.batch.complete events for observability.
+   */
+  async function executeToolBatchParallel(
+    batch: { calls: ToolCall[]; isConcurrencySafe: boolean },
+    signal: AbortSignal
+  ): Promise<Message[]> {
+    const batchId = generateId('batch');
+    const startedAt = Date.now();
+
+    // Emit batch start event
+    void emitter.emit({
+      type: 'tool.batch.start',
+      timestamp: Date.now(),
+      sessionId: ctx.sessionId,
+      batchId,
+      totalCalls: batch.calls.length,
+    });
+
+    // Execute all tools in parallel — each tool emits its own tool.call via executeSingleTool
+    const settled = await Promise.all(batch.calls.map(tc => executeSingleTool(tc, signal)));
+
+    // Count results
+    const successCount = settled.filter(
+      m => !m.content?.toString().includes('Permission denied')
+    ).length;
+    const errorCount = settled.length - successCount;
+
+    // Emit batch complete event
+    void emitter.emit({
+      type: 'tool.batch.complete',
+      timestamp: Date.now(),
+      sessionId: ctx.sessionId,
+      batchId,
+      totalCalls: batch.calls.length,
+      successCount,
+      errorCount,
+      durationMs: Date.now() - startedAt,
+    });
+
+    return settled;
+  }
+
+  async function executeToolBatch(
+    batch: { calls: ToolCall[]; isConcurrencySafe: boolean },
+    signal: AbortSignal
+  ): Promise<Message[]> {
+    // Parallel path for concurrency-safe batches
+    if (batch.isConcurrencySafe && config.parallelToolCalls && batch.calls.length > 1) {
+      return executeToolBatchParallel(batch, signal);
     }
 
+    // Serial path (unchanged behavior)
+    const results: Message[] = [];
+    for (const tc of batch.calls) {
+      if (signal.aborted) break;
+      const result = await executeSingleTool(tc, signal);
+      results.push(result);
+    }
     return results;
   }
 
@@ -765,11 +817,11 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
     const sanitizedInput = ctx.inputSanitizer ? ctx.inputSanitizer.sanitize(input) : input;
     messages.push({ role: 'user', content: sanitizedInput });
 
-    state = createInitialLoopState({
+    state = createInitialState({
       sessionId: ctx.sessionId,
       agentName: ctx.agentName,
       model: config.model,
-      messages,
+      initialMessages: messages,
       maxSteps: config.maxSteps ?? 10,
     });
 
@@ -1171,16 +1223,18 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
               state: state,
             } as AgentEvent);
             // Fire-and-forget: never block the loop on checkpoint save
-            // Note: CheckpointSchema expects AgentState, but we store AgentLoopState.
-            // This is a known type mismatch pending checkpoint schema alignment.
             ctx.checkpoint
               ?.save({
                 id: cpId,
                 sessionId: ctx.sessionId,
                 position: 'after_llm',
-                state: state as unknown as Record<string, unknown>,
+                state,
                 timestamp: Date.now(),
-              } as unknown as Parameters<NonNullable<typeof ctx.checkpoint.save>>[0])
+                pendingA2A: [],
+                executedTools: [],
+                recoveryMetadata: { recoveryCount: 0 },
+                compactionHistory: [],
+              })
               .catch(() => {});
           }
           if (ctx.services.costTracker && response.usage) {
@@ -1288,9 +1342,13 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
                 id: cpId2,
                 sessionId: ctx.sessionId,
                 position: 'after_tool',
-                state: state as unknown as Record<string, unknown>,
+                state,
                 timestamp: Date.now(),
-              } as unknown as Parameters<NonNullable<typeof ctx.checkpoint.save>>[0])
+                pendingA2A: [],
+                executedTools: [],
+                recoveryMetadata: { recoveryCount: 0 },
+                compactionHistory: [],
+              })
               .catch(() => {});
           }
 
@@ -1443,7 +1501,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       resumeResolve = null;
       resumePromise = null;
     },
-    getState: (): AgentLoopState | null => state,
+    getState: (): AgentState | null => state,
     getStatus: (): string => stateMachine.state,
     onStateChange: (fn: (from: string, to: string) => void): (() => void) =>
       stateMachine.onChange((from, to) => fn(from, to)),

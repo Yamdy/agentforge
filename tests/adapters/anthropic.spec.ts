@@ -5,7 +5,7 @@
  * message conversion, error propagation (R1 Iron Law).
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeAll } from 'vitest';
 import type { Message } from '../../src/core/interfaces.js';
 
 // ============================================================
@@ -41,6 +41,16 @@ vi.mock('ai', () => ({
 
 import { AnthropicAdapter, createAnthropicAdapter, anthropicAdapterFactory } from '../../src/adapters/anthropic.js';
 import type { FunctionDefinition } from '../../src/core/interfaces.js';
+
+// ============================================================
+// Shared dynamic imports (cached once in beforeAll)
+// ============================================================
+
+let mockGenerateText: ReturnType<typeof vi.fn>;
+
+beforeAll(async () => {
+  mockGenerateText = (await import('ai')).generateText as ReturnType<typeof vi.fn>;
+});
 
 // ============================================================
 // Test Data
@@ -100,7 +110,6 @@ describe('AnthropicAdapter', () => {
     });
 
     it('should extract and pass system prompt separately', async () => {
-      const { generateText } = await import('ai');
       const adapter = new AnthropicAdapter('claude-3-5-sonnet-20241022');
 
       const messagesWithSystem: Message[] = [
@@ -110,7 +119,7 @@ describe('AnthropicAdapter', () => {
 
       await adapter.chat(messagesWithSystem);
 
-      const callArgs = (generateText as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      const callArgs = mockGenerateText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
       expect(callArgs.system).toBe('You are a helpful assistant.');
 
       const callMessages = callArgs.messages as Array<Record<string, unknown>>;
@@ -119,55 +128,49 @@ describe('AnthropicAdapter', () => {
     });
 
     it('should pass temperature when provided', async () => {
-      const { generateText } = await import('ai');
       const adapter = new AnthropicAdapter('claude-3-5-sonnet-20241022');
       await adapter.chat(sampleMessages, { temperature: 0.5 });
 
-      const callArgs = (generateText as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      const callArgs = mockGenerateText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
       expect(callArgs.temperature).toBe(0.5);
     });
 
     it('should pass maxTokens when provided', async () => {
-      const { generateText } = await import('ai');
       const adapter = new AnthropicAdapter('claude-3-5-sonnet-20241022');
       await adapter.chat(sampleMessages, { maxTokens: 4096 });
 
-      const callArgs = (generateText as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      const callArgs = mockGenerateText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
       expect(callArgs.maxTokens).toBe(4096);
     });
 
     it('should pass tools when provided', async () => {
-      const { generateText } = await import('ai');
       const adapter = new AnthropicAdapter('claude-3-5-sonnet-20241022');
       await adapter.chat(sampleMessages, { tools: sampleTools });
 
-      const callArgs = (generateText as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      const callArgs = mockGenerateText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
       const callTools = callArgs.tools as Record<string, unknown> | undefined;
       expect(callTools).toBeDefined();
       expect(callTools!['get_weather']).toBeDefined();
     });
 
     it('should convert required toolChoice to any for Anthropic', async () => {
-      const { generateText } = await import('ai');
       const adapter = new AnthropicAdapter('claude-3-5-sonnet-20241022');
       await adapter.chat(sampleMessages, { tools: sampleTools, toolChoice: 'required' });
 
-      const callArgs = (generateText as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      const callArgs = mockGenerateText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
       expect(callArgs.toolChoice).toBe('any');
     });
 
     it('should pass stopSequences when provided', async () => {
-      const { generateText } = await import('ai');
       const adapter = new AnthropicAdapter('claude-3-5-sonnet-20241022');
       await adapter.chat(sampleMessages, { stopSequences: ['\n\nHuman:', '\n\nAssistant:'] });
 
-      const callArgs = (generateText as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      const callArgs = mockGenerateText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
       expect(callArgs.stopSequences).toEqual(['\n\nHuman:', '\n\nAssistant:']);
     });
 
     it('should propagate generateText errors (R1: errors-as-events)', async () => {
-      const { generateText } = await import('ai');
-      (generateText as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      mockGenerateText.mockRejectedValueOnce(
         new Error('Rate limit exceeded')
       );
 

@@ -10,7 +10,7 @@ import type {
   AgentEvent,
   Message,
   ModelConfig,
-  AgentLoopState,
+  AgentState,
   Tracer,
   Metrics,
   ModelSpec,
@@ -455,7 +455,7 @@ export interface Agent {
   // ----- State -----
 
   /** Get current agent loop state (null if not started) */
-  getState(): AgentLoopState | null;
+  getState(): AgentState | null;
 
   /** Get current lifecycle status from state machine */
   getStatus(): string;

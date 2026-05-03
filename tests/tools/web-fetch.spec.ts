@@ -5,34 +5,20 @@
  * timeout handling, and response truncation.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, beforeAll } from 'vitest';
 import type { ToolDefinition } from '../../src/core/interfaces.js';
-
-// We import the factory after defining it, but first we need to know the interface.
-// We'll import after writing the implementation file.
 
 // Stub global fetch for testing
 const mockFetch = vi.fn<typeof fetch>();
 vi.stubGlobal('fetch', mockFetch);
 
-// We'll import the actual factory inline — but first we need the file to exist.
-// For TDD: we declare what we expect, then watch it fail.
+// Cached factory — imported once in beforeAll
+let createWebFetchTool: (options?: Record<string, unknown>) => ToolDefinition;
 
-// Since the module doesn't exist yet, we need to handle that. Let's use a
-// dynamic import approach, or simply declare the interface and test contract.
-
-// Actually, for true TDD we should create a minimal stub file first,
-// then write tests, then implement. Let's create a minimal module that exports
-// the factory with correct types but throws not-implemented.
-
-// For now, let's define the type we expect and test against the real module.
-// We'll import from the source once it exists.
-
-// ============================================================
-// Test Setup: We need a way to create the tool for testing.
-// Until the implementation exists, we use a helper that will
-// dynamically import.
-// ============================================================
+beforeAll(async () => {
+  const mod = await import('../../src/tools/web-fetch.js');
+  createWebFetchTool = mod.createWebFetchTool;
+});
 
 describe('WebFetchTool', () => {
   let fetchTool: ToolDefinition;
@@ -76,9 +62,6 @@ describe('WebFetchTool', () => {
 
   describe('parameter validation', () => {
     it('should reject non-URL strings', async () => {
-      const { createWebFetchTool } = await import(
-        '../../src/tools/web-fetch.js'
-      );
       fetchTool = createWebFetchTool({});
 
       const result = await fetchTool.execute({ url: 'not-a-url' });
@@ -87,9 +70,6 @@ describe('WebFetchTool', () => {
     });
 
     it('should reject missing url field', async () => {
-      const { createWebFetchTool } = await import(
-        '../../src/tools/web-fetch.js'
-      );
       fetchTool = createWebFetchTool({});
 
       const result = await fetchTool.execute({ method: 'GET' });
@@ -97,9 +77,6 @@ describe('WebFetchTool', () => {
     });
 
     it('should reject invalid method', async () => {
-      const { createWebFetchTool } = await import(
-        '../../src/tools/web-fetch.js'
-      );
       fetchTool = createWebFetchTool({});
 
       const result = await fetchTool.execute({
@@ -110,9 +87,6 @@ describe('WebFetchTool', () => {
     });
 
     it('should default method to GET', async () => {
-      const { createWebFetchTool } = await import(
-        '../../src/tools/web-fetch.js'
-      );
       fetchTool = createWebFetchTool({});
 
       await fetchTool.execute({ url: 'https://example.com' });
@@ -131,9 +105,6 @@ describe('WebFetchTool', () => {
 
   describe('successful GET request', () => {
     it('should fetch a URL and return formatted response', async () => {
-      const { createWebFetchTool } = await import(
-        '../../src/tools/web-fetch.js'
-      );
       fetchTool = createWebFetchTool({});
 
       const result = await fetchTool.execute({
@@ -146,9 +117,6 @@ describe('WebFetchTool', () => {
     });
 
     it('should include status code in output', async () => {
-      const { createWebFetchTool } = await import(
-        '../../src/tools/web-fetch.js'
-      );
       fetchTool = createWebFetchTool({});
 
       const result = await fetchTool.execute({
@@ -169,9 +137,6 @@ describe('WebFetchTool', () => {
       } as unknown as Response;
       mockFetch.mockResolvedValue(mockResponse);
 
-      const { createWebFetchTool } = await import(
-        '../../src/tools/web-fetch.js'
-      );
       fetchTool = createWebFetchTool({});
 
       const result = await fetchTool.execute({
@@ -185,9 +150,6 @@ describe('WebFetchTool', () => {
     it('should handle fetch errors gracefully', async () => {
       mockFetch.mockRejectedValue(new Error('Network failure'));
 
-      const { createWebFetchTool } = await import(
-        '../../src/tools/web-fetch.js'
-      );
       fetchTool = createWebFetchTool({});
 
       const result = await fetchTool.execute({
@@ -205,9 +167,6 @@ describe('WebFetchTool', () => {
 
   describe('POST with body', () => {
     it('should send POST request with body', async () => {
-      const { createWebFetchTool } = await import(
-        '../../src/tools/web-fetch.js'
-      );
       fetchTool = createWebFetchTool({});
 
       await fetchTool.execute({
@@ -224,9 +183,6 @@ describe('WebFetchTool', () => {
     });
 
     it('should include custom headers in POST request', async () => {
-      const { createWebFetchTool } = await import(
-        '../../src/tools/web-fetch.js'
-      );
       fetchTool = createWebFetchTool({});
 
       await fetchTool.execute({
@@ -272,9 +228,6 @@ describe('WebFetchTool', () => {
           })
       );
 
-      const { createWebFetchTool } = await import(
-        '../../src/tools/web-fetch.js'
-      );
       fetchTool = createWebFetchTool({ defaultTimeout: 100 });
 
       const result = await fetchTool.execute({
@@ -286,9 +239,6 @@ describe('WebFetchTool', () => {
     });
 
     it('should use default timeout from config', async () => {
-      const { createWebFetchTool } = await import(
-        '../../src/tools/web-fetch.js'
-      );
       fetchTool = createWebFetchTool({ defaultTimeout: 5000 });
 
       await fetchTool.execute({ url: 'https://example.com' });
@@ -311,9 +261,6 @@ describe('WebFetchTool', () => {
           })
       );
 
-      const { createWebFetchTool } = await import(
-        '../../src/tools/web-fetch.js'
-      );
       fetchTool = createWebFetchTool({ defaultTimeout: 5000 });
 
       // Use ctx timeout instead
@@ -337,9 +284,6 @@ describe('WebFetchTool', () => {
 
   describe('domain blocking', () => {
     it('should block requests to blocked domains', async () => {
-      const { createWebFetchTool } = await import(
-        '../../src/tools/web-fetch.js'
-      );
       fetchTool = createWebFetchTool({
         blockedDomains: ['evil.com', 'malware.org'],
       });
@@ -354,9 +298,6 @@ describe('WebFetchTool', () => {
     });
 
     it('should block subdomains of blocked domains', async () => {
-      const { createWebFetchTool } = await import(
-        '../../src/tools/web-fetch.js'
-      );
       fetchTool = createWebFetchTool({
         blockedDomains: ['evil.com'],
       });
@@ -373,9 +314,6 @@ describe('WebFetchTool', () => {
 
   describe('domain allowlisting', () => {
     it('should block requests to non-allowed domains when allowlist is set', async () => {
-      const { createWebFetchTool } = await import(
-        '../../src/tools/web-fetch.js'
-      );
       fetchTool = createWebFetchTool({
         allowedDomains: ['example.com', 'api.example.com'],
       });
@@ -390,9 +328,6 @@ describe('WebFetchTool', () => {
     });
 
     it('should allow requests to allowed domains', async () => {
-      const { createWebFetchTool } = await import(
-        '../../src/tools/web-fetch.js'
-      );
       fetchTool = createWebFetchTool({
         allowedDomains: ['example.com'],
       });
@@ -407,9 +342,6 @@ describe('WebFetchTool', () => {
     });
 
     it('should handle subdomains correctly with allowlist', async () => {
-      const { createWebFetchTool } = await import(
-        '../../src/tools/web-fetch.js'
-      );
       fetchTool = createWebFetchTool({
         allowedDomains: ['example.com'],
       });
@@ -437,9 +369,6 @@ describe('WebFetchTool', () => {
       } as unknown as Response;
       mockFetch.mockResolvedValue(mockResponse);
 
-      const { createWebFetchTool } = await import(
-        '../../src/tools/web-fetch.js'
-      );
       fetchTool = createWebFetchTool({ maxResponseSize: 100 });
 
       const result = await fetchTool.execute({
@@ -460,9 +389,6 @@ describe('WebFetchTool', () => {
       } as unknown as Response;
       mockFetch.mockResolvedValue(mockResponse);
 
-      const { createWebFetchTool } = await import(
-        '../../src/tools/web-fetch.js'
-      );
       fetchTool = createWebFetchTool({ maxResponseSize: 1000 });
 
       const result = await fetchTool.execute({
@@ -474,9 +400,6 @@ describe('WebFetchTool', () => {
     });
 
     it('should use default maxResponseSize of 100K', async () => {
-      const { createWebFetchTool } = await import(
-        '../../src/tools/web-fetch.js'
-      );
       fetchTool = createWebFetchTool({});
 
       const result = await fetchTool.execute({
@@ -494,18 +417,12 @@ describe('WebFetchTool', () => {
 
   describe('tool metadata', () => {
     it('should have correct name', async () => {
-      const { createWebFetchTool } = await import(
-        '../../src/tools/web-fetch.js'
-      );
       fetchTool = createWebFetchTool({});
 
       expect(fetchTool.name).toBe('web_fetch');
     });
 
     it('should have Zod schema for parameters', async () => {
-      const { createWebFetchTool } = await import(
-        '../../src/tools/web-fetch.js'
-      );
       fetchTool = createWebFetchTool({});
 
       expect(fetchTool.parameters).toBeDefined();
@@ -515,9 +432,6 @@ describe('WebFetchTool', () => {
     });
 
     it('should have a description', async () => {
-      const { createWebFetchTool } = await import(
-        '../../src/tools/web-fetch.js'
-      );
       fetchTool = createWebFetchTool({});
 
       expect(fetchTool.description).toBeTruthy();
@@ -525,9 +439,6 @@ describe('WebFetchTool', () => {
     });
 
     it('should not require approval by default', async () => {
-      const { createWebFetchTool } = await import(
-        '../../src/tools/web-fetch.js'
-      );
       fetchTool = createWebFetchTool({});
 
       expect(fetchTool.requiresApproval).toBeUndefined();

@@ -77,7 +77,7 @@ export {
 export {
   AgentLoop,
   type AgentLoopOptions,
-  type AgentLoopState,
+  type LoopStatus,
   type AgentLoopInstance,
 } from './agent-loop.js';
 
@@ -103,13 +103,7 @@ export type { ModelConfig } from './context-builder.js';
 // Core Types (re-export for convenience)
 // ============================================================
 
-export type {
-  AgentEvent,
-  AgentEventType,
-  Message,
-  MessageRole,
-  ToolCall,
-} from '../core/events.js';
+export type { AgentEvent, AgentEventType, Message, MessageRole, ToolCall } from '../core/events.js';
 
 export type { AgentContext, ApplicationServices } from '../core/context.js';
 

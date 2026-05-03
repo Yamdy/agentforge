@@ -28,7 +28,7 @@ export interface AgentLoopOptions {
   systemPrompt?: string;
 }
 
-export type AgentLoopState = 'idle' | 'running' | 'completed' | 'error' | 'cancelled';
+export type LoopStatus = 'idle' | 'running' | 'completed' | 'error' | 'cancelled';
 
 export interface AgentLoopInstance {
   run$(input: string): Promise<string>;
@@ -38,7 +38,7 @@ export interface AgentLoopInstance {
   ): () => void;
   onAny(fn: (e: AgentEvent) => void): () => void;
   cancel(reason?: string): void;
-  getState(): AgentLoopState;
+  getState(): LoopStatus;
   onDestroy(): { unsubscribe: () => void };
   pause(): void;
   resume(): void;
@@ -65,7 +65,7 @@ export function AgentLoop(ctx: AgentContext, options: AgentLoopOptions): AgentLo
 
   const loop: AgentLoop = createAgentLoop(ctx, loopConfig);
 
-  let currentState: AgentLoopState = 'idle';
+  let currentState: LoopStatus = 'idle';
 
   return {
     async run$(input: string): Promise<string> {

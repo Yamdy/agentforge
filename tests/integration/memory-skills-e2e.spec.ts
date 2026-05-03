@@ -1,36 +1,29 @@
 /**
- * End-to-End Integration Test
+ * Integration Test — Memory/Skills/Summarization Plugin Wiring
  *
- * Verifies that createAgent() properly creates and registers
- * MemoryPlugin and SkillsPlugin from config, and that the
- * plugin pipeline intercepts events correctly.
+ * Verifies that createAgent() correctly creates and wires
+ * MemoryPlugin, SkillsPlugin, and SummarizationPlugin into
+ * the HookRegistry via the plugin pipeline.
+ *
+ * Uses real FileBasedMemory, SkillRegistry, and HookRegistry.
+ * Only LLM adapter and agent loop are mocked.
  */
 
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { writeFile, mkdir, rm } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import type { AgentEvent } from '../../src/core/index.js';
 
 // ============================================================
-// Mocks (same pattern as create-agent.spec.ts)
+// Mocks — isolate config wiring from external dependencies
 // ============================================================
-
-vi.mock('../../src/loop/index.js', () => ({
-  createAgentLoop: () => ({
-    run: async (_input: string) =>
-      ({ type: 'done', reason: 'completed', timestamp: Date.now(), sessionId: 'test' } as AgentEvent),
-    getCurrentState: () => null,
-    _destroy: { subscribe: (obs: any) => { obs.next(); obs.complete(); return { unsubscribe() {} }; } },
-  }),
-}));
 
 vi.mock('../../src/adapters/index.js', () => ({
   createLLMAdapter: () => ({
     name: 'mock',
     provider: 'mock',
     chat: async () => ({ content: 'ok', finishReason: 'stop' }),
-    stream: async function* () { yield { type: 'text', delta: 'ok' } as any; },
+    stream: async function* () { yield { type: 'text', delta: 'ok' }; },
   }),
   parseModelSpec: (spec: string) => {
     const parts = spec.split('/');
@@ -38,59 +31,84 @@ vi.mock('../../src/adapters/index.js', () => ({
   },
 }));
 
-vi.mock('../../src/operators/index.js', () => ({
-  debugPreset: () => (source: any) => source,
-  testPreset: () => (source: any) => source,
-  productionPreset: () => (source: any) => source,
-  timeoutOnEventType: () => (source: any) => source,
-  retryOnEventType: () => (source: any) => source,
+vi.mock('../../src/loop/agent-loop.js', () => ({
+  createAgentLoop: () => ({
+    run: async () => 'ok',
+    on: () => () => {},
+    onAny: () => () => {},
+    cancel: () => {},
+    pause: () => {},
+    resume: () => {},
+    getState: () => null,
+    getStatus: () => 'pending',
+    onStateChange: () => () => {},
+    destroy: () => {},
+  }),
 }));
 
-// Import AFTER mocks
 import { createAgent } from '../../src/api/create-agent.js';
+import { HookRegistry } from '../../src/core/hooks.js';
 
 // ============================================================
 // Test Setup
 // ============================================================
 
-const TEST_DIR = join(tmpdir(), 'agentforge-e2e-wiring');
+const TEST_DIR = join(tmpdir(), 'agentforge-memory-skills-e2e');
 const AGENTS_MD = join(TEST_DIR, 'AGENTS.md');
 const SKILL_DIR = join(TEST_DIR, 'skills', 'test-skill');
 const SKILL_MD = join(SKILL_DIR, 'SKILL.md');
 
-describe('createAgent() — Memory/Skills config wiring', () => {
+describe('createAgent() — Memory/Skills/Summarization plugin wiring', () => {
   beforeAll(async () => {
     await mkdir(TEST_DIR, { recursive: true });
     await mkdir(SKILL_DIR, { recursive: true });
 
-    await writeFile(AGENTS_MD, `# Test Memory\nUser prefers TypeScript.\n`, 'utf-8');
+    await writeFile(AGENTS_MD, '# Test Memory\nUser prefers TypeScript.\n', 'utf-8');
 
-    await writeFile(SKILL_MD, `---
+    await writeFile(
+      SKILL_MD,
+      `---
 name: test-skill
 description: A test skill for verification
 ---
 
 # Test Skill
-`, 'utf-8');
+`,
+      'utf-8',
+    );
   });
 
   afterAll(async () => {
     await rm(TEST_DIR, { recursive: true, force: true });
   });
 
-  it('should create agent without memory/skills (no plugins)', () => {
+  // ==========================================================
+  // Baseline — no plugins
+  // ==========================================================
+
+  it('should create agent with no auto-plugins when memory/skills are absent', () => {
     const agent = createAgent({
-      name: 'test-agent',
+      name: 'bare-agent',
       model: { provider: 'mock', model: 'mock-model' },
       maxSteps: 1,
     });
 
-    expect(agent).toBeDefined();
+    expect(agent.ctx.sessionId).toBeDefined();
+    expect(agent.ctx.agentName).toBe('bare-agent');
+    expect(agent.getStatus()).toBe('pending');
+
+    const hooks = agent.ctx.hookRegistry as HookRegistry;
+    expect(hooks).toBeInstanceOf(HookRegistry);
+    expect(hooks.getRequestHooks()).toHaveLength(0);
   });
 
-  it('should create agent with memory config', () => {
+  // ==========================================================
+  // Memory Plugin
+  // ==========================================================
+
+  it('should wire MemoryPlugin into HookRegistry as a request hook', () => {
     const agent = createAgent({
-      name: 'test-agent',
+      name: 'memory-agent',
       model: { provider: 'mock', model: 'mock-model' },
       maxSteps: 1,
       memory: {
@@ -99,12 +117,39 @@ description: A test skill for verification
       },
     });
 
-    expect(agent).toBeDefined();
+    expect(agent.ctx.agentName).toBe('memory-agent');
+    expect(agent.getStatus()).toBe('pending');
+
+    const hooks = agent.ctx.hookRegistry as HookRegistry;
+    const requestHooks = hooks.getRequestHooks();
+    const memoryHook = requestHooks.find(h => h.name === 'memory-intercept');
+    expect(memoryHook).toBeDefined();
+    expect(memoryHook!.priority).toBe(10);
   });
 
-  it('should create agent with skills config', () => {
+  it('should register memory lifecycle hook for agent.start bridging', () => {
     const agent = createAgent({
-      name: 'test-agent',
+      name: 'memory-lifecycle',
+      model: { provider: 'mock', model: 'mock-model' },
+      maxSteps: 1,
+      memory: {
+        enabled: true,
+        sources: [AGENTS_MD],
+      },
+    });
+
+    const hooks = agent.ctx.hookRegistry as HookRegistry;
+    const lifecycleFns = hooks.getLifecycleHooks('session.start');
+    expect(lifecycleFns.length).toBeGreaterThanOrEqual(1);
+  });
+
+  // ==========================================================
+  // Skills Plugin
+  // ==========================================================
+
+  it('should wire SkillsPlugin into HookRegistry as a request hook', () => {
+    const agent = createAgent({
+      name: 'skills-agent',
       model: { provider: 'mock', model: 'mock-model' },
       maxSteps: 1,
       skills: {
@@ -112,12 +157,72 @@ description: A test skill for verification
       },
     });
 
-    expect(agent).toBeDefined();
+    expect(agent.ctx.agentName).toBe('skills-agent');
+
+    const hooks = agent.ctx.hookRegistry as HookRegistry;
+    const requestHooks = hooks.getRequestHooks();
+    const skillsHook = requestHooks.find(h => h.name === 'skills-intercept');
+    expect(skillsHook).toBeDefined();
+    expect(skillsHook!.priority).toBe(5);
   });
 
-  it('should create agent with memory + skills + summarization', () => {
+  it('should register skills lifecycle hook for agent.start bridging', () => {
     const agent = createAgent({
-      name: 'test-agent',
+      name: 'skills-lifecycle',
+      model: { provider: 'mock', model: 'mock-model' },
+      maxSteps: 1,
+      skills: {
+        sources: [join(TEST_DIR, 'skills')],
+      },
+    });
+
+    const hooks = agent.ctx.hookRegistry as HookRegistry;
+    const lifecycleFns = hooks.getLifecycleHooks('session.start');
+    expect(lifecycleFns.length).toBeGreaterThanOrEqual(1);
+  });
+
+  // ==========================================================
+  // Memory + Skills combined
+  // ==========================================================
+
+  it('should wire both memory and skills hooks with correct priority ordering', () => {
+    const agent = createAgent({
+      name: 'combined-agent',
+      model: { provider: 'mock', model: 'mock-model' },
+      maxSteps: 1,
+      memory: {
+        enabled: true,
+        sources: [AGENTS_MD],
+      },
+      skills: {
+        sources: [join(TEST_DIR, 'skills')],
+      },
+    });
+
+    const hooks = agent.ctx.hookRegistry as HookRegistry;
+    const requestHooks = hooks.getRequestHooks();
+
+    expect(requestHooks.length).toBeGreaterThanOrEqual(2);
+
+    const skillsHook = requestHooks.find(h => h.name === 'skills-intercept');
+    const memoryHook = requestHooks.find(h => h.name === 'memory-intercept');
+
+    expect(skillsHook).toBeDefined();
+    expect(memoryHook).toBeDefined();
+
+    // Skills (priority 5) should come before Memory (priority 10)
+    const skillsIdx = requestHooks.indexOf(skillsHook!);
+    const memoryIdx = requestHooks.indexOf(memoryHook!);
+    expect(skillsIdx).toBeLessThan(memoryIdx);
+  });
+
+  // ==========================================================
+  // Memory + Skills + Summarization
+  // ==========================================================
+
+  it('should wire summarization hook alongside memory and skills', () => {
+    const agent = createAgent({
+      name: 'full-agent',
       model: { provider: 'mock', model: 'mock-model' },
       maxSteps: 1,
       memory: {
@@ -133,12 +238,30 @@ description: A test skill for verification
       },
     });
 
-    expect(agent).toBeDefined();
+    const hooks = agent.ctx.hookRegistry as HookRegistry;
+    const requestHooks = hooks.getRequestHooks();
+
+    expect(requestHooks.length).toBeGreaterThanOrEqual(3);
+
+    const summarizationHook = requestHooks.find(h => h.name === 'summarization-intercept');
+    expect(summarizationHook).toBeDefined();
+    expect(summarizationHook!.priority).toBe(20);
+
+    // Verify order: skills(5) < memory(10) < summarization(20)
+    const skillsIdx = requestHooks.findIndex(h => h.name === 'skills-intercept');
+    const memoryIdx = requestHooks.findIndex(h => h.name === 'memory-intercept');
+    const summIdx = requestHooks.findIndex(h => h.name === 'summarization-intercept');
+    expect(skillsIdx).toBeLessThan(memoryIdx);
+    expect(memoryIdx).toBeLessThan(summIdx);
   });
 
-  it('should create agent with explicit plugins + auto-created plugins', () => {
+  // ==========================================================
+  // Custom + auto-created plugins coexist
+  // ==========================================================
+
+  it('should coexist custom observer plugin with auto-created memory plugin', () => {
     const agent = createAgent({
-      name: 'test-agent',
+      name: 'hybrid-agent',
       model: { provider: 'mock', model: 'mock-model' },
       maxSteps: 1,
       plugins: [
@@ -157,8 +280,26 @@ description: A test skill for verification
       },
     });
 
-    expect(agent).toBeDefined();
+    expect(agent.ctx.agentName).toBe('hybrid-agent');
+
+    const hooks = agent.ctx.hookRegistry as HookRegistry;
+    const requestHooks = hooks.getRequestHooks();
+
+    // Should have the auto-created memory hook
+    const memoryHook = requestHooks.find(h => h.name === 'memory-intercept');
+    expect(memoryHook).toBeDefined();
+  });
+
+  // ==========================================================
+  // Session uniqueness
+  // ==========================================================
+
+  it('should produce unique session IDs across agents', () => {
+    const a1 = createAgent({ name: 'u1', model: { provider: 'mock', model: 'm' }, maxSteps: 1 });
+    const a2 = createAgent({ name: 'u2', model: { provider: 'mock', model: 'm' }, maxSteps: 1 });
+
+    expect(a1.ctx.sessionId).not.toBe(a2.ctx.sessionId);
+    expect(typeof a1.ctx.sessionId).toBe('string');
+    expect(a1.ctx.sessionId.length).toBeGreaterThan(0);
   });
 });
-
-

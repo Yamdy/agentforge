@@ -7,6 +7,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Message } from '../../src/core/events.js';
 import type { LLMAdapter, LLMResponse } from '../../src/core/interfaces.js';
+import { InMemoryVectorStore, MockEmbeddingModel, createTestMessages as makeMessages } from '../fixtures/vector-store-mocks.js';
 import {
   CompactionManager,
   CompactionConfigSchema,
@@ -18,8 +19,6 @@ import {
   createPointerIndexedCompactionManager,
   createDisabledCompactionManager,
 } from '../../src/memory/compaction.js';
-import type { VectorStore, VectorDocument } from '../../src/memory/vector-store.js';
-import type { EmbeddingModel } from '../../src/memory/embedding.js';
 
 // ============================================================
 // Test Helpers
@@ -647,41 +646,6 @@ describe('Aggressive compaction mode', () => {
 // ============================================================
 
 describe('createPointerIndexedCompactionManager', () => {
-  class InMemoryVectorStore implements VectorStore {
-    readonly name = 'test-store';
-    private docs = new Map<string, VectorDocument>();
-
-    insert(doc: VectorDocument): void { this.docs.set(doc.id, doc); }
-    insertBatch(docs: VectorDocument[]): void {
-      for (const doc of docs) this.insert(doc);
-    }
-    search(_embedding: number[], limit = 5) {
-      return Array.from(this.docs.values())
-        .slice(0, limit)
-        .map(doc => ({ document: doc, score: 0.95 }));
-    }
-    get(id: string) { return this.docs.get(id) ?? null; }
-    delete(id: string) { this.docs.delete(id); }
-    clear() { this.docs.clear(); }
-    count() { return this.docs.size; }
-    close() { this.docs.clear(); }
-  }
-
-  class MockEmbeddingModel implements EmbeddingModel {
-    async embed(): Promise<number[]> { return new Array(128).fill(0.2); }
-    async embedBatch(texts: string[]): Promise<number[][]> {
-      return texts.map(() => new Array(128).fill(0.2));
-    }
-  }
-
-  function createTestMessages(count: number): Message[] {
-    const msgs: Message[] = [];
-    for (let i = 0; i < count; i++) {
-      msgs.push({ role: i % 2 === 0 ? 'user' : 'assistant', content: `Test message ${i}` });
-    }
-    return msgs;
-  }
-
   it('should create a compaction manager with pointer-indexed strategy', () => {
     const store = new InMemoryVectorStore();
     const embedder = new MockEmbeddingModel();
@@ -696,7 +660,7 @@ describe('createPointerIndexedCompactionManager', () => {
     const embedder = new MockEmbeddingModel();
     const manager = createPointerIndexedCompactionManager(store, embedder, 3);
 
-    const messages = createTestMessages(10);
+    const messages = makeMessages(10);
     const context = {
       sessionId: 'test-session-1',
       messages,
@@ -727,7 +691,7 @@ describe('createPointerIndexedCompactionManager', () => {
       embedder,
     );
 
-    const messages = createTestMessages(10);
+    const messages = makeMessages(10);
     const context = {
       sessionId: 's1',
       messages,

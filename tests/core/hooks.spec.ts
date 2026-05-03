@@ -17,13 +17,13 @@ import {
 } from '../../src/core/hooks.js';
 import type { Message, ToolCall } from '../../src/core/events.js';
 import type { FunctionDefinition } from '../../src/core/interfaces.js';
-import type { AgentLoopState } from '../../src/core/state.js';
+import type { AgentState } from '../../src/core/state.js';
 
 // ============================================================
 // Test Helpers
 // ============================================================
 
-function createMockState(): AgentLoopState {
+function createMockState(): AgentState {
   return {
     sessionId: 'test',
     agentName: 'test',
@@ -33,13 +33,14 @@ function createMockState(): AgentLoopState {
     maxSteps: 10,
     tokens: { prompt: 0, completion: 0 },
     output: '',
+    pendingToolCalls: [],
     recovery: {
       outputTokenEscalationCount: 0,
       recoveryMessageCount: 0,
       fallbackSwitchCount: 0,
       compactionRetryCount: 0,
     },
-  } as AgentLoopState;
+  };
 }
 
 function createMessages(): Message[] {

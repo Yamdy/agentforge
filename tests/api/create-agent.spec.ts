@@ -2,7 +2,7 @@
  * Tests for createAgent preset activation
  *
  * Verifies that the correct services are configured based on preset name.
- * Presets use callback-based operator pattern.
+ * Uses MockLLMAdapter via services.llm instead of module-level vi.mock.
  */
 
 import { vi, describe, it, expect, beforeEach } from 'vitest';
@@ -34,27 +34,15 @@ vi.mock('../../src/loop/agent-loop.js', () => ({
   }),
 }));
 
-// Mock the adapters module
-vi.mock('../../src/adapters/index.js', () => ({
-  createLLMAdapter: () => ({
-    name: 'mock',
-    chat: async () => ({ content: 'mock', finishReason: 'stop' }),
-    stream: async function* () { yield { text: 'mock' }; },
-  }),
-  parseModelSpec: (spec: string) => {
-    const parts = spec.split('/');
-    return { provider: parts[0] ?? 'openai', model: parts[1] ?? spec };
-  },
-}));
-
-// Import AFTER mocks are set up
 import { createAgent } from '../../src/api/create-agent.js';
+import type { AgentConfig } from '../../src/api/types.js';
+import { MockLLMAdapter } from '../fixtures/llm-mocks.js';
 
 // ============================================================
 // Helpers
 // ============================================================
 
-function makeAgentConfig(preset?: 'production' | 'debug' | 'test') {
+function makeAgentConfig(preset?: 'production' | 'debug' | 'test'): AgentConfig {
   return {
     name: 'test-agent',
     model: { provider: 'mock', model: 'mock-model' },
@@ -63,7 +51,7 @@ function makeAgentConfig(preset?: 'production' | 'debug' | 'test') {
     tracing: true,
     metrics: true,
     checkpoint: true,
-  };
+  } as AgentConfig;
 }
 
 // ============================================================
@@ -77,7 +65,7 @@ describe('createAgent — preset activation', () => {
   });
 
   it('applies debugPreset when preset is "debug"', async () => {
-    const agent = createAgent(makeAgentConfig('debug'));
+    const agent = createAgent(makeAgentConfig('debug'), { llm: new MockLLMAdapter() });
     const result = await agent.run('hello');
     expect(result).toBe('test output');
     expect(agent.ctx).toBeDefined();
@@ -85,35 +73,33 @@ describe('createAgent — preset activation', () => {
   });
 
   it('applies testPreset when preset is "test"', async () => {
-    const agent = createAgent(makeAgentConfig('test'));
+    const agent = createAgent(makeAgentConfig('test'), { llm: new MockLLMAdapter() });
     const result = await agent.run('hello');
     expect(result).toBe('test output');
     expect(agent.ctx).toBeDefined();
   });
 
   it('applies productionPreset when preset is "production" and services are configured', async () => {
-    const agent = createAgent(makeAgentConfig('production'));
+    const agent = createAgent(makeAgentConfig('production'), { llm: new MockLLMAdapter() });
     const result = await agent.run('hello');
     expect(result).toBe('test output');
     expect(agent.ctx).toBeDefined();
   });
 
   it('does not apply any preset when preset is undefined', async () => {
-    const agent = createAgent(makeAgentConfig(undefined));
+    const agent = createAgent(makeAgentConfig(undefined), { llm: new MockLLMAdapter() });
     await agent.run('hello');
-    // No preset → default services still created
     expect(agent.ctx.services.tracer).toBeDefined();
   });
 
   it('passes correct config to productionPreset', async () => {
-    const agent = createAgent(makeAgentConfig('production'));
+    const agent = createAgent(makeAgentConfig('production'), { llm: new MockLLMAdapter() });
     await agent.run('hello');
-    // verify agent was created with correct name
     expect(agent.ctx.agentName).toBe('test-agent');
   });
 
   it('wires streaming handlers — onToken receives stream chunks via agent.run()', async () => {
-    const agent = createAgent(makeAgentConfig('production'));
+    const agent = createAgent(makeAgentConfig('production'), { llm: new MockLLMAdapter() });
 
     let tokenReceived = '';
     let toolCallReceived: unknown = null;
@@ -149,7 +135,7 @@ describe('createAgent — preset activation', () => {
   });
 
   it('wires onToolResult and onEvent handlers via agent.run()', async () => {
-    const agent = createAgent(makeAgentConfig('production'));
+    const agent = createAgent(makeAgentConfig('production'), { llm: new MockLLMAdapter() });
 
     let toolResultReceived: unknown = null;
     const allEvents: string[] = [];
@@ -170,18 +156,15 @@ describe('createAgent — preset activation', () => {
   });
 
   it('configures services based on tracing and metrics flags', async () => {
-    // Verify that tracing: true wires services (without preset)
     const agent = createAgent({
       name: 'svc-agent',
       model: { provider: 'mock', model: 'mock-model' },
       maxSteps: 1,
       tracing: true,
       metrics: true,
-    });
+    }, { llm: new MockLLMAdapter() });
 
     expect(agent.ctx.services.tracer).toBeDefined();
     expect(agent.ctx.services.metrics).toBeDefined();
   });
 });
-
-

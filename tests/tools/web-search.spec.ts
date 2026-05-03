@@ -7,12 +7,20 @@
  * TDD: Write tests FIRST, watch them fail, then implement.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, beforeAll } from 'vitest';
 import type { ToolDefinition } from '../../src/core/interfaces.js';
 
 // Stub global fetch for testing
 const mockFetch = vi.fn<typeof fetch>();
 vi.stubGlobal('fetch', mockFetch);
+
+// Cached factory — imported once in beforeAll
+let createWebSearchTool: () => ToolDefinition[];
+
+beforeAll(async () => {
+  const mod = await import('../../src/tools/web-search.js');
+  createWebSearchTool = mod.createWebSearchTool;
+});
 
 describe('WebSearchTool', () => {
   let searchTools: ToolDefinition[];
@@ -31,9 +39,6 @@ describe('WebSearchTool', () => {
 
   describe('tool creation', () => {
     it('should return an array of tool definitions', async () => {
-      const { createWebSearchTool } = await import(
-        '../../src/tools/web-search.js'
-      );
       searchTools = createWebSearchTool();
 
       expect(Array.isArray(searchTools)).toBe(true);
@@ -41,9 +46,6 @@ describe('WebSearchTool', () => {
     });
 
     it('should have correct tool name', async () => {
-      const { createWebSearchTool } = await import(
-        '../../src/tools/web-search.js'
-      );
       searchTools = createWebSearchTool();
 
       const tool = searchTools[0]!;
@@ -51,9 +53,6 @@ describe('WebSearchTool', () => {
     });
 
     it('should have a non-empty description', async () => {
-      const { createWebSearchTool } = await import(
-        '../../src/tools/web-search.js'
-      );
       searchTools = createWebSearchTool();
 
       const tool = searchTools[0]!;
@@ -62,9 +61,6 @@ describe('WebSearchTool', () => {
     });
 
     it('should have Zod schema for parameters', async () => {
-      const { createWebSearchTool } = await import(
-        '../../src/tools/web-search.js'
-      );
       searchTools = createWebSearchTool();
 
       const tool = searchTools[0]!;
@@ -75,9 +71,6 @@ describe('WebSearchTool', () => {
     });
 
     it('should not require approval by default', async () => {
-      const { createWebSearchTool } = await import(
-        '../../src/tools/web-search.js'
-      );
       searchTools = createWebSearchTool();
 
       const tool = searchTools[0]!;
@@ -91,9 +84,6 @@ describe('WebSearchTool', () => {
 
   describe('parameter validation', () => {
     it('should accept valid query with default numResults', async () => {
-      const { createWebSearchTool } = await import(
-        '../../src/tools/web-search.js'
-      );
       searchTools = createWebSearchTool();
 
       const tool = searchTools[0]!;
@@ -104,9 +94,6 @@ describe('WebSearchTool', () => {
     });
 
     it('should reject missing query field', async () => {
-      const { createWebSearchTool } = await import(
-        '../../src/tools/web-search.js'
-      );
       searchTools = createWebSearchTool();
 
       const tool = searchTools[0]!;
@@ -117,9 +104,6 @@ describe('WebSearchTool', () => {
     });
 
     it('should reject empty query string', async () => {
-      const { createWebSearchTool } = await import(
-        '../../src/tools/web-search.js'
-      );
       searchTools = createWebSearchTool();
 
       const tool = searchTools[0]!;
@@ -130,9 +114,6 @@ describe('WebSearchTool', () => {
     });
 
     it('should reject numResults below 1', async () => {
-      const { createWebSearchTool } = await import(
-        '../../src/tools/web-search.js'
-      );
       searchTools = createWebSearchTool();
 
       const tool = searchTools[0]!;
@@ -145,9 +126,6 @@ describe('WebSearchTool', () => {
     });
 
     it('should reject numResults above 20', async () => {
-      const { createWebSearchTool } = await import(
-        '../../src/tools/web-search.js'
-      );
       searchTools = createWebSearchTool();
 
       const tool = searchTools[0]!;
@@ -160,9 +138,6 @@ describe('WebSearchTool', () => {
     });
 
     it('should accept numResults within valid range', async () => {
-      const { createWebSearchTool } = await import(
-        '../../src/tools/web-search.js'
-      );
       searchTools = createWebSearchTool();
 
       const tool = searchTools[0]!;
@@ -213,9 +188,6 @@ describe('WebSearchTool', () => {
 
   describe('mock mode', () => {
     it('should return placeholder when no API key configured', async () => {
-      const { createWebSearchTool } = await import(
-        '../../src/tools/web-search.js'
-      );
       searchTools = createWebSearchTool();
 
       const tool = searchTools[0]!;
@@ -226,9 +198,6 @@ describe('WebSearchTool', () => {
     });
 
     it('should NOT make real HTTP calls in mock mode', async () => {
-      const { createWebSearchTool } = await import(
-        '../../src/tools/web-search.js'
-      );
       searchTools = createWebSearchTool();
 
       const tool = searchTools[0]!;
@@ -238,9 +207,6 @@ describe('WebSearchTool', () => {
     });
 
     it('should still validate input in mock mode', async () => {
-      const { createWebSearchTool } = await import(
-        '../../src/tools/web-search.js'
-      );
       searchTools = createWebSearchTool();
 
       const tool = searchTools[0]!;

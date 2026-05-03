@@ -136,6 +136,12 @@ describe('AgentStateSchema', () => {
       pendingToolCalls: [],
       output: '',
       tokens: { prompt: 0, completion: 0 },
+      recovery: {
+        outputTokenEscalationCount: 0,
+        recoveryMessageCount: 0,
+        fallbackSwitchCount: 0,
+        compactionRetryCount: 0,
+      },
     };
     expect(AgentStateSchema.safeParse(state).success).toBe(true);
   });
@@ -154,6 +160,12 @@ describe('AgentStateSchema', () => {
       pendingToolCalls: [],
       output: 'Hi!',
       tokens: { prompt: 10, completion: 5 },
+      recovery: {
+        outputTokenEscalationCount: 0,
+        recoveryMessageCount: 0,
+        fallbackSwitchCount: 0,
+        compactionRetryCount: 0,
+      },
       batchContext: {
         batchId: 'batch-1',
         totalCalls: 2,

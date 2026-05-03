@@ -11,7 +11,7 @@
 import { z } from 'zod';
 import type { ToolRegistry, ToolDefinition } from '../core/interfaces.js';
 import type { RequestHook } from '../core/hooks.js';
-import type { AgentLoopState } from '../core/state.js';
+import type { AgentState } from '../core/state.js';
 import type { Message } from '../core/events.js';
 import { extractText } from '../core/content-utils.js';
 import type { Planner, PlannerContext, ExecutionPlan, PlanStep, StepResult } from './types.js';
@@ -64,7 +64,7 @@ export class PlanNotebook {
   readonly planHintHook: RequestHook = {
     name: 'plan-notebook-hint',
     priority: HINT_PRIORITY,
-    apply: (messages: Message[], _state: AgentLoopState): Message[] => {
+    apply: (messages: Message[], _state: AgentState): Message[] => {
       return this.applyHint(messages);
     },
   };

@@ -1,12 +1,13 @@
 /**
  * Unit tests for Ollama Adapter
  *
- * Tests: OllamaAdapter class, factory functions, error handling.
+ * Tests: OllamaAdapter class, factory functions, tool conversion,
+ * stream with tool calls, option passing, error handling.
  * All API calls are mocked via vi.fn() — no network access required.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { Message } from '../../src/core/interfaces.js';
+import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
+import type { Message, FunctionDefinition } from '../../src/core/interfaces.js';
 
 // ============================================================
 // Mock ai-sdk-ollama
@@ -23,7 +24,7 @@ vi.mock('ai', () => ({
   generateText: vi.fn().mockResolvedValue({
     text: 'Hello from Ollama',
     finishReason: 'stop',
-    usage: { inputTokens: 10, completionTokens: 5 },
+    usage: { inputTokens: 10, outputTokens: 5 },
   }),
   streamText: vi.fn().mockReturnValue({
     textStream: (async function* () {
@@ -41,6 +42,15 @@ vi.mock('ai', () => ({
 
 import { OllamaAdapter, createOllamaAdapter, ollamaAdapterFactory } from '../../src/adapters/ollama.js';
 
+// Cached mock references
+let mockGenerateText: ReturnType<typeof vi.fn>;
+let mockStreamText: ReturnType<typeof vi.fn>;
+
+beforeAll(async () => {
+  mockGenerateText = (await import('ai')).generateText as ReturnType<typeof vi.fn>;
+  mockStreamText = (await import('ai')).streamText as ReturnType<typeof vi.fn>;
+});
+
 // ============================================================
 // Test Data
 // ============================================================
@@ -52,6 +62,18 @@ const sampleMessages: Message[] = [
 const messagesWithSystem: Message[] = [
   { role: 'system', content: 'You are a helpful assistant.' },
   { role: 'user', content: 'Hello' },
+];
+
+const sampleTools: FunctionDefinition[] = [
+  {
+    name: 'get_weather',
+    description: 'Get weather for a city',
+    parameters: {
+      type: 'object',
+      properties: { city: { type: 'string' } },
+      required: ['city'],
+    },
+  },
 ];
 
 // ============================================================
@@ -66,10 +88,31 @@ describe('OllamaAdapter', () => {
     adapter = new OllamaAdapter('llama3');
   });
 
+  // ----------------------------------------------------------
+  // Constructor & Metadata
+  // ----------------------------------------------------------
+
   it('should have correct name and provider', () => {
     expect(adapter.name).toBe('ollama-llama3');
     expect(adapter.provider).toBe('ollama');
   });
+
+  it('should use custom baseURL when provided', () => {
+    const customAdapter = new OllamaAdapter('llama3', { baseURL: 'http://custom:8080' });
+    expect(customAdapter.name).toBe('ollama-llama3');
+    expect(customAdapter.provider).toBe('ollama');
+  });
+
+  it('should default baseURL to localhost:11434', () => {
+    // Re-create adapter without baseURL option — baseURL defaults to http://localhost:11434
+    const defaultAdapter = new OllamaAdapter('llama3');
+    expect(defaultAdapter.name).toBe('ollama-llama3');
+    expect(defaultAdapter.provider).toBe('ollama');
+  });
+
+  // ----------------------------------------------------------
+  // chat() — Basic
+  // ----------------------------------------------------------
 
   describe('chat()', () => {
     it('should return response with content', async () => {
@@ -79,23 +122,104 @@ describe('OllamaAdapter', () => {
     });
 
     it('should extract system prompt from messages', async () => {
-      const { generateText } = await import('ai');
       await adapter.chat(messagesWithSystem);
-      
-      expect(generateText).toHaveBeenCalledWith(
+
+      expect(mockGenerateText).toHaveBeenCalledWith(
         expect.objectContaining({
           system: 'You are a helpful assistant.',
         })
       );
     });
 
+    it('should pass temperature option', async () => {
+      await adapter.chat(sampleMessages, { temperature: 0.7 });
+      expect(mockGenerateText).toHaveBeenCalledWith(
+        expect.objectContaining({ temperature: 0.7 })
+      );
+    });
+
+    it('should pass maxTokens option', async () => {
+      await adapter.chat(sampleMessages, { maxTokens: 4096 });
+      expect(mockGenerateText).toHaveBeenCalledWith(
+        expect.objectContaining({ maxTokens: 4096 })
+      );
+    });
+
+    it('should pass topP option', async () => {
+      await adapter.chat(sampleMessages, { topP: 0.9 });
+      expect(mockGenerateText).toHaveBeenCalledWith(
+        expect.objectContaining({ topP: 0.9 })
+      );
+    });
+
+    it('should pass stopSequences option', async () => {
+      await adapter.chat(sampleMessages, { stopSequences: ['\n\n'] });
+      expect(mockGenerateText).toHaveBeenCalledWith(
+        expect.objectContaining({ stopSequences: ['\n\n'] })
+      );
+    });
+
+    it('should skip stopSequences when empty array', async () => {
+      await adapter.chat(sampleMessages, { stopSequences: [] });
+      const callArgs = mockGenerateText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      expect(callArgs.stopSequences).toBeUndefined();
+    });
+
     it('should not catch errors (let agent-loop handle)', async () => {
-      const { generateText } = await import('ai');
-      vi.mocked(generateText).mockRejectedValueOnce(new Error('Ollama Error'));
-      
+      mockGenerateText.mockRejectedValueOnce(new Error('Ollama Error'));
       await expect(adapter.chat(sampleMessages)).rejects.toThrow('Ollama Error');
     });
+
+    // ----------------------------------------------------------
+    // chat() — Tools
+    // ----------------------------------------------------------
+
+    it('should pass tools converted via jsonSchema', async () => {
+      await adapter.chat(sampleMessages, { tools: sampleTools });
+
+      const callArgs = mockGenerateText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      const tools = callArgs.tools as Record<string, unknown> | undefined;
+      expect(tools).toBeDefined();
+      expect(tools!['get_weather']).toBeDefined();
+      expect((tools!['get_weather'] as Record<string, unknown>).description).toBe(
+        'Get weather for a city'
+      );
+    });
+
+    it('should skip tools when empty array', async () => {
+      await adapter.chat(sampleMessages, { tools: [] });
+      const callArgs = mockGenerateText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      expect(callArgs.tools).toBeUndefined();
+    });
+
+    it('should return toolCalls from generateText result', async () => {
+      mockGenerateText.mockResolvedValueOnce({
+        text: '',
+        finishReason: 'tool_calls',
+        toolCalls: [
+          { toolCallId: 'tc-1', toolName: 'get_weather', input: { city: 'Berlin' } },
+        ],
+        usage: { inputTokens: 10, outputTokens: 5 },
+      });
+
+      const result = await adapter.chat(sampleMessages);
+      expect(result.toolCalls).toBeDefined();
+      expect(result.toolCalls).toHaveLength(1);
+      expect(result.toolCalls![0]!.name).toBe('get_weather');
+      expect(result.toolCalls![0]!.args).toEqual({ city: 'Berlin' });
+    });
+
+    it('should return usage from generateText result', async () => {
+      const result = await adapter.chat(sampleMessages);
+      expect(result.usage).toBeDefined();
+      expect(result.usage!.promptTokens).toBe(10);
+      expect(result.usage!.completionTokens).toBe(5);
+    });
   });
+
+  // ----------------------------------------------------------
+  // stream()
+  // ----------------------------------------------------------
 
   describe('stream()', () => {
     it('should yield chunks via AsyncGenerator', async () => {
@@ -104,6 +228,72 @@ describe('OllamaAdapter', () => {
         if (chunk.text) chunks.push(chunk.text);
       }
       expect(chunks).toEqual(['Hello', ' from', ' Ollama']);
+    });
+
+    it('should pass system prompt to streamText', async () => {
+      await adapter.stream(messagesWithSystem).next();
+
+      expect(mockStreamText).toHaveBeenCalledWith(
+        expect.objectContaining({
+          system: 'You are a helpful assistant.',
+        })
+      );
+    });
+
+    it('should pass tools to streamText when provided', async () => {
+      await adapter.stream(sampleMessages, { tools: sampleTools }).next();
+
+      const callArgs = mockStreamText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      const tools = callArgs.tools as Record<string, unknown> | undefined;
+      expect(tools).toBeDefined();
+      expect(tools!['get_weather']).toBeDefined();
+    });
+  });
+
+  // ----------------------------------------------------------
+  // formatTools / normalizeMessages / formatToolChoice
+  // ----------------------------------------------------------
+
+  describe('formatTools()', () => {
+    it('should format tools in OpenAI function style', () => {
+      const formatted = adapter.formatTools(sampleTools) as Array<Record<string, unknown>>;
+      expect(formatted).toHaveLength(1);
+      expect(formatted[0]!.type).toBe('function');
+      expect((formatted[0]!.function as Record<string, unknown>).name).toBe('get_weather');
+    });
+  });
+
+  describe('normalizeMessages()', () => {
+    it('should convert messages array', () => {
+      const normalized = adapter.normalizeMessages(sampleMessages) as Array<Record<string, unknown>>;
+      expect(normalized).toHaveLength(1);
+      expect(normalized[0]!.role).toBe('user');
+    });
+
+    it('should handle tool messages', () => {
+      const toolMessages: Message[] = [
+        { role: 'tool', content: 'result text', toolCallId: 'tc-1', name: 'get_weather' },
+      ];
+      const normalized = adapter.normalizeMessages(toolMessages) as Array<Record<string, unknown>>;
+      expect(normalized).toHaveLength(1);
+      expect(normalized[0]!.role).toBe('tool');
+    });
+  });
+
+  describe('formatToolChoice()', () => {
+    it('should convert "required" to { type: "function" }', () => {
+      const result = adapter.formatToolChoice('required') as Record<string, unknown>;
+      expect(result.type).toBe('function');
+    });
+
+    it('should pass string choices through', () => {
+      expect(adapter.formatToolChoice('auto')).toBe('auto');
+    });
+
+    it('should format named tool choice', () => {
+      const result = adapter.formatToolChoice({ name: 'get_weather' }) as Record<string, unknown>;
+      expect(result.type).toBe('function');
+      expect((result.function as Record<string, unknown>).name).toBe('get_weather');
     });
   });
 });

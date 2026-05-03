@@ -10,7 +10,7 @@
  * @module
  */
 
-import type { AgentContext, AgentLoopState } from '../core/index.js';
+import type { AgentContext, AgentState } from '../core/index.js';
 import type { LLMAdapter } from '../core/interfaces.js';
 import { SimpleToolRegistry, createApplicationServices } from '../core/context-builder.js';
 import { ConsoleTracer, ConsoleMetrics, NoopTracer, NoopMetrics } from '../core/defaults.js';
@@ -354,7 +354,7 @@ export function createAgent(config: AgentConfig, services?: Partial<AgentContext
       return Promise.resolve();
     },
     resume: loop.resume.bind(loop),
-    getState: (): AgentLoopState | null => loop.getState(),
+    getState: (): AgentState | null => loop.getState(),
     getStatus: (): string => loop.getStatus(),
     onStateChange: (fn: (from: string, to: string) => void): (() => void) => loop.onStateChange(fn),
 

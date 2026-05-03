@@ -5,8 +5,8 @@
  * tool formatting, error propagation (R1 Iron Law).
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { Message, LLMOptions } from '../../src/core/interfaces.js';
+import { describe, it, expect, vi, beforeAll } from 'vitest';
+import type { Message } from '../../src/core/interfaces.js';
 
 // ============================================================
 // Mock @ai-sdk/openai
@@ -41,6 +41,16 @@ vi.mock('ai', () => ({
 
 import { OpenAIAdapter, createOpenAIAdapter, openaiAdapterFactory } from '../../src/adapters/openai.js';
 import type { FunctionDefinition } from '../../src/core/interfaces.js';
+
+// ============================================================
+// Shared dynamic imports (cached once in beforeAll)
+// ============================================================
+
+let mockGenerateText: ReturnType<typeof vi.fn>;
+
+beforeAll(async () => {
+  mockGenerateText = (await import('ai')).generateText as ReturnType<typeof vi.fn>;
+});
 
 // ============================================================
 // Test Data
@@ -105,66 +115,59 @@ describe('OpenAIAdapter', () => {
     });
 
     it('should pass temperature when provided', async () => {
-      const { generateText } = await import('ai');
       const adapter = new OpenAIAdapter('gpt-4o');
       await adapter.chat(sampleMessages, { temperature: 0.7 });
 
-      const callArgs = (generateText as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      const callArgs = mockGenerateText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
       expect(callArgs.temperature).toBe(0.7);
     });
 
     it('should pass maxTokens when provided', async () => {
-      const { generateText } = await import('ai');
       const adapter = new OpenAIAdapter('gpt-4o');
       await adapter.chat(sampleMessages, { maxTokens: 2048 });
 
-      const callArgs = (generateText as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      const callArgs = mockGenerateText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
       expect(callArgs.maxTokens).toBe(2048);
     });
 
     it('should pass stopSequences when provided', async () => {
-      const { generateText } = await import('ai');
       const adapter = new OpenAIAdapter('gpt-4o');
       await adapter.chat(sampleMessages, { stopSequences: ['END', 'STOP'] });
 
-      const callArgs = (generateText as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      const callArgs = mockGenerateText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
       expect(callArgs.stopSequences).toEqual(['END', 'STOP']);
     });
 
     it('should pass tools as Record when provided', async () => {
-      const { generateText } = await import('ai');
       const adapter = new OpenAIAdapter('gpt-4o');
       await adapter.chat(sampleMessages, { tools: sampleTools });
 
-      const callArgs = (generateText as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      const callArgs = mockGenerateText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
       const callTools = callArgs.tools as Record<string, unknown> | undefined;
       expect(callTools).toBeDefined();
       expect(callTools!['get_weather']).toBeDefined();
     });
 
     it('should pass toolChoice when tools are provided', async () => {
-      const { generateText } = await import('ai');
       const adapter = new OpenAIAdapter('gpt-4o');
       await adapter.chat(sampleMessages, { tools: sampleTools, toolChoice: 'required' });
 
-      const callArgs = (generateText as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      const callArgs = mockGenerateText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
       expect(callArgs.toolChoice).toBe('required');
     });
 
     it('should handle toolChoice as object', async () => {
-      const { generateText } = await import('ai');
       const adapter = new OpenAIAdapter('gpt-4o');
       await adapter.chat(sampleMessages, { tools: sampleTools, toolChoice: { name: 'get_weather' } });
 
-      const callArgs = (generateText as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      const callArgs = mockGenerateText.mock.calls.at(-1)?.[0] as Record<string, unknown>;
       const tc = callArgs.toolChoice as Record<string, unknown>;
       expect(tc.type).toBe('tool');
       expect(tc.toolName).toBe('get_weather');
     });
 
     it('should propagate generateText errors (R1: errors-as-events)', async () => {
-      const { generateText } = await import('ai');
-      (generateText as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      mockGenerateText.mockRejectedValueOnce(
         new Error('API rate limit exceeded')
       );
 
@@ -173,8 +176,7 @@ describe('OpenAIAdapter', () => {
     });
 
     it('should handle tool_calls in response', async () => {
-      const { generateText } = await import('ai');
-      (generateText as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      mockGenerateText.mockResolvedValueOnce({
         text: '',
         finishReason: 'tool_calls',
         toolCalls: [

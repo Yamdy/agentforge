@@ -14,7 +14,7 @@
  */
 
 import type { Message, ToolCall } from './events.js';
-import type { AgentLoopState } from './state.js';
+import type { AgentState } from './state.js';
 import type { FunctionDefinition } from './interfaces.js';
 
 // ============================================================================
@@ -168,7 +168,7 @@ export interface RequestHook {
    * @param state    - Current agent loop state (read-only reference)
    * @returns Modified message list
    */
-  apply(messages: Message[], state: AgentLoopState): Message[] | Promise<Message[]>;
+  apply(messages: Message[], state: AgentState): Message[] | Promise<Message[]>;
 }
 
 // ============================================================================
@@ -198,7 +198,7 @@ export interface ToolHook {
    * @param state    - Current agent loop state
    * @returns true to allow, false to block
    */
-  beforeExecute(toolCall: ToolCall, state: AgentLoopState): boolean | Promise<boolean>;
+  beforeExecute(toolCall: ToolCall, state: AgentState): boolean | Promise<boolean>;
 }
 
 // ============================================================================
@@ -249,7 +249,7 @@ export interface ToolProviderHook {
    */
   filter(
     tools: FunctionDefinition[],
-    state: AgentLoopState
+    state: AgentState
   ): FunctionDefinition[] | Promise<FunctionDefinition[]>;
 }
 

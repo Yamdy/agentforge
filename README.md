@@ -249,7 +249,7 @@ npx tsx examples/05-real-llm.ts
 src/
 ├── core/           # 核心类型和接口
 │   ├── events.ts   # AgentEventEmitter + Zod 事件 Schema
-│   ├── state.ts    # AgentLoopState 状态定义
+│   ├── state.ts    # AgentState 状态定义
 │   ├── checkpoint.ts # 检查点系统
 │   ├── hooks.ts    # HookRegistry（RequestHook/ToolHook/LifecycleHook）
 │   ├── interfaces.ts # DI 接口定义

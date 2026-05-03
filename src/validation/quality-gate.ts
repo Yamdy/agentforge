@@ -14,7 +14,7 @@
  * @see docs/design/harness.md — V-评估接口 section
  */
 
-import type { AgentLoopState } from '../core/state.js';
+import type { AgentState } from '../core/state.js';
 
 // ============================================================
 // Types
@@ -171,10 +171,7 @@ export class QualityGate {
    * @param _state       - Agent loop state (reserved for future use, e.g. task goal alignment)
    * @returns Check result — .passed indicates whether output is acceptable
    */
-  check(
-    content: string,
-    _state: AgentLoopState,
-  ): QualityGateCheck {
+  check(content: string, _state: AgentState): QualityGateCheck {
     const reasons: QualityGateReason[] = [];
     let feedback: string | undefined;
 
@@ -221,7 +218,7 @@ export class QualityGate {
       // Check if all recent hashes are the same (stuck in a loop)
       if (
         this.recentHashes.length >= this.config.maxLoopSimilarity &&
-        this.recentHashes.every((h) => h === currentHash)
+        this.recentHashes.every(h => h === currentHash)
       ) {
         reasons.push('loop_detected');
         feedback =
@@ -248,7 +245,7 @@ export class QualityGate {
     }
 
     // ── Determine if passed ──
-    const blocked = reasons.some((r) => this.config.blockedReasons.includes(r));
+    const blocked = reasons.some(r => this.config.blockedReasons.includes(r));
     const passed = !blocked;
 
     return {

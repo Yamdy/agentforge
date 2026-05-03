@@ -824,12 +824,16 @@ describe('Phase 2a: Agent Loop', () => {
       ctx.pauseController.pause();
 
       // Start the loop - it should block
+      vi.useFakeTimers();
       const eventsPromise = runAndCollect(agent, 'Hello');
 
       // Resume after a short delay
       setTimeout(() => {
         ctx.pauseController.resume();
       }, 50);
+
+      await vi.advanceTimersByTimeAsync(50);
+      vi.useRealTimers();
 
       const events = await eventsPromise;
 
@@ -1789,10 +1793,13 @@ describe('State Machine Integration', () => {
 
     const ctx = createTestContext(llm, toolRegistry);
     const agent = createAgentLoop(ctx, createTestConfig({ parallelToolCalls: false }));
+
+    vi.useFakeTimers();
     const runPromise = agent.run('Hello');
 
     // Wait for tool invocation — the loop blocks in executeToolBatch
-    await new Promise(r => setTimeout(r, 20));
+    await vi.advanceTimersByTimeAsync(20);
+    vi.useRealTimers();
 
     agent.pause();
     expect(agent.getStatus()).toBe('paused');
@@ -1826,10 +1833,13 @@ describe('State Machine Integration', () => {
 
     const ctx = createTestContext(llm, toolRegistry);
     const agent = createAgentLoop(ctx, createTestConfig({ parallelToolCalls: false }));
+
+    vi.useFakeTimers();
     const runPromise = agent.run('Hello');
 
     // Wait for the loop to enter the tool execution
-    await new Promise(r => setTimeout(r, 20));
+    await vi.advanceTimersByTimeAsync(20);
+    vi.useRealTimers();
 
     agent.cancel();
     expect(agent.getStatus()).toBe('cancelled');

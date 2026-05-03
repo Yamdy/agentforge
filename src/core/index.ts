@@ -62,6 +62,8 @@ export {
   type TokenStats,
   AgentStateSchema,
   type AgentState,
+  RecoveryStateSchema,
+  type RecoveryState,
   type CreateInitialStateOptions,
   createInitialState,
   updateState,
@@ -79,10 +81,6 @@ export {
   initContextManagement,
   recordCompaction as recordStateCompaction,
 } from './state.js';
-
-export type { RecoveryState, TokenBudgetState, AgentLoopState } from './state.js';
-
-export { createInitialLoopState } from './state.js';
 
 // ============================================================
 // Checkpoint

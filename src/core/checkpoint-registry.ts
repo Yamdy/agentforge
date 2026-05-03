@@ -14,7 +14,7 @@
  */
 
 import type { AgentContext } from './context.js';
-import type { AgentLoopState } from './state.js';
+import type { AgentState } from './state.js';
 
 // ============================================================
 // Types
@@ -62,7 +62,7 @@ export type CheckpointResult = { action: 'continue' } | { action: 'block'; reaso
  */
 export type CheckpointFn = (
   ctx: AgentContext,
-  state: AgentLoopState,
+  state: AgentState,
   ...args: unknown[]
 ) => CheckpointResult | Promise<CheckpointResult>;
 
@@ -141,7 +141,7 @@ export class CheckpointRegistry {
   async run(
     phase: LifecyclePhase,
     ctx: AgentContext,
-    state: AgentLoopState,
+    state: AgentState,
     ...args: unknown[]
   ): Promise<CheckpointResult> {
     const entries = this._registrations.get(phase);
