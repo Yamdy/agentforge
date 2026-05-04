@@ -51,21 +51,19 @@ describe('SqliteAuditStore', () => {
   });
 
   // ----------------------------------------------------------
-  // TC-001: append() should add audit entries
-  // ----------------------------------------------------------
+    // ----------------------------------------------------------
 
   describe('append', () => {
-    it('TC-001: should add audit entries', async () => {
+    it('should add audit entries', async () => {
       await store.append(createTestEntry());
       const count = await store.count();
       expect(count).toBe(1);
     });
 
     // ----------------------------------------------------------
-    // TC-002: append() should auto-generate ID and hash
-    // ----------------------------------------------------------
+        // ----------------------------------------------------------
 
-    it('TC-002: should auto-generate ID and hash', async () => {
+    it('should auto-generate ID and hash', async () => {
       await store.append(createTestEntry());
       const entries = await store.query({});
       expect(entries).toHaveLength(1);
@@ -77,10 +75,9 @@ describe('SqliteAuditStore', () => {
     });
 
     // ----------------------------------------------------------
-    // TC-003: append() should build hash chain
-    // ----------------------------------------------------------
+        // ----------------------------------------------------------
 
-    it('TC-003: should build hash chain', async () => {
+    it('should build hash chain', async () => {
       await store.append(createTestEntry({ action: 'first' }));
       await store.append(createTestEntry({ action: 'second' }));
       await store.append(createTestEntry({ action: 'third' }));
@@ -100,11 +97,10 @@ describe('SqliteAuditStore', () => {
   });
 
   // ----------------------------------------------------------
-  // TC-004: query() should filter by criteria
-  // ----------------------------------------------------------
+    // ----------------------------------------------------------
 
   describe('query', () => {
-    it('TC-004: should filter by criteria', async () => {
+    it('should filter by criteria', async () => {
       await store.append(createTestEntry({
         sessionId: 'session-a',
         eventType: 'tool.execute',
@@ -147,11 +143,10 @@ describe('SqliteAuditStore', () => {
   });
 
   // ----------------------------------------------------------
-  // TC-005: verifyIntegrity() valid chain should return true
-  // ----------------------------------------------------------
+    // ----------------------------------------------------------
 
   describe('verifyIntegrity', () => {
-    it('TC-005: valid chain should return valid=true', async () => {
+    it('valid chain should return valid=true', async () => {
       await store.append(createTestEntry({ action: 'first' }));
       await store.append(createTestEntry({ action: 'second' }));
       await store.append(createTestEntry({ action: 'third' }));
@@ -163,10 +158,9 @@ describe('SqliteAuditStore', () => {
     });
 
     // ----------------------------------------------------------
-    // TC-006: verifyIntegrity() broken chain should return false
-    // ----------------------------------------------------------
+        // ----------------------------------------------------------
 
-    it('TC-006: broken chain should return valid=false', async () => {
+    it('broken chain should return valid=false', async () => {
       await store.append(createTestEntry({ action: 'first' }));
       await store.append(createTestEntry({ action: 'second' }));
       await store.append(createTestEntry({ action: 'third' }));
@@ -182,11 +176,10 @@ describe('SqliteAuditStore', () => {
   });
 
   // ----------------------------------------------------------
-  // TC-007: export() JSON format
-  // ----------------------------------------------------------
+    // ----------------------------------------------------------
 
   describe('export', () => {
-    it('TC-007: JSON format should be correct', async () => {
+    it('JSON format should be correct', async () => {
       await store.append(createTestEntry({ action: 'read' }));
       await store.append(createTestEntry({ action: 'write' }));
 
@@ -200,10 +193,9 @@ describe('SqliteAuditStore', () => {
     });
 
     // ----------------------------------------------------------
-    // TC-008: export() CSV format
-    // ----------------------------------------------------------
+        // ----------------------------------------------------------
 
-    it('TC-008: CSV format should be correct', async () => {
+    it('CSV format should be correct', async () => {
       await store.append(createTestEntry({
         action: 'read',
         resource: '/file.txt',
@@ -223,11 +215,10 @@ describe('SqliteAuditStore', () => {
   });
 
   // ----------------------------------------------------------
-  // TC-009: count() should return correct count
-  // ----------------------------------------------------------
+    // ----------------------------------------------------------
 
   describe('count', () => {
-    it('TC-009: should return correct count', async () => {
+    it('should return correct count', async () => {
       expect(await store.count()).toBe(0);
 
       await store.append(createTestEntry());

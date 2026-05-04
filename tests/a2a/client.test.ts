@@ -574,10 +574,6 @@ describe('A2AClient Request', () => {
     await client.start();
     await vi.advanceTimersByTimeAsync(100);
 
-    // Switch to real timers for Promise rejection test
-    // (fake timers don't properly handle microtask queue for Promise rejection)
-    vi.useRealTimers();
-
     const requestPromise = client.requestAsync('target-agent', {});
 
     // Attach catch handler immediately to prevent unhandled rejection warning
@@ -588,8 +584,8 @@ describe('A2AClient Request', () => {
       (error) => error // Catch rejection and return error
     );
 
-    // Small delay to ensure request is sent
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    // Advance time to ensure request is sent
+    await vi.advanceTimersByTimeAsync(10);
 
     const requestMsg = transport.sentMessagesList.find((m) => m.type === 'request');
     transport.simulateMessage(
@@ -597,14 +593,11 @@ describe('A2AClient Request', () => {
     );
 
     // Allow microtasks to settle
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await vi.advanceTimersByTimeAsync(10);
 
     const error = await errorPromise;
     expect(error).toBeInstanceOf(TransportError);
     expect((error as Error).message).toBe('Failed');
-
-    // Restore fake timers for afterEach cleanup
-    vi.useFakeTimers();
   });
 });
 

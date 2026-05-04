@@ -184,6 +184,7 @@ describe('Compiled/Async Subagent', () => {
         },
       ];
 
+      vi.useFakeTimers();
       const agent = createMockAgent({ events: mockEvents, delay: 50 });
 
       registry.register({
@@ -202,13 +203,14 @@ describe('Compiled/Async Subagent', () => {
       const sessionId =
         startEvent.type === 'subagent.start' ? startEvent.sessionId : '';
 
-      // Should have handle (agent still running with 50ms delay)
+      // Should have handle (agent still running — timers not yet advanced)
       const handle = registry.getAsyncHandle(sessionId);
       expect(handle).toBeDefined();
       expect(handle?.sessionId).toBe(sessionId);
 
-      // Wait for completion (agent has 50ms delay, so 150ms is safe)
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      // Advance timers through agent delay + onComplete callback
+      await vi.runAllTimersAsync();
+      vi.useRealTimers();
     });
 
     it('should call onComplete callback', async () => {
@@ -242,15 +244,15 @@ describe('Compiled/Async Subagent', () => {
         asyncConfig: { onComplete },
       });
 
+      vi.useFakeTimers();
       const events: AgentEvent[] = [];
       await registry.run('async-agent', 'input', (e) => events.push(e));
 
-      // Wait for async completion (agent has no delay, but .then() is microtask)
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      // Flush all timers — onComplete fires via .then() chain
+      await vi.runAllTimersAsync();
+      vi.useRealTimers();
 
-      expect(onComplete).toHaveBeenCalled();
-      const result = onComplete.mock.calls[0]![0];
-      expect(result.status).toBe('completed');
+      expect(onComplete).toHaveBeenCalledWith(expect.objectContaining({ status: 'completed' }));
     });
 
     it('should call onError callback on failure', async () => {
@@ -267,11 +269,13 @@ describe('Compiled/Async Subagent', () => {
         asyncConfig: { onError },
       });
 
+      vi.useFakeTimers();
       const events: AgentEvent[] = [];
       await registry.run('error-agent', 'input', (e) => events.push(e));
 
-      // Wait for async completion (error is synchronous reject, .then() rejection is microtask)
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      // Flush all timers — onError fires via .catch() chain
+      await vi.runAllTimersAsync();
+      vi.useRealTimers();
 
       // onError should have been called since agent.run() rejects
       expect(onError).toHaveBeenCalled();

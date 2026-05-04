@@ -5,7 +5,7 @@
  * Uses :memory: database for isolation.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { SqliteCheckpointStorage } from '../../src/storage/sqlite-checkpoint-storage.js';
 import type { Checkpoint } from '../../src/core/checkpoint.js';
 import { createCheckpoint } from '../../src/core/checkpoint.js';
@@ -189,12 +189,14 @@ describe('SqliteCheckpointStorage', () => {
     });
 
     it('should respect limit parameter', async () => {
+      vi.useFakeTimers();
       for (let i = 1; i <= 5; i++) {
         await storage.save(createTestCheckpoint(`cp-${i}`, 'session-1'));
-        await new Promise(resolve => setTimeout(resolve, 5));
+        await vi.advanceTimersByTimeAsync(5);
       }
 
       const list = await storage.list('session-1', 2);
+      vi.useRealTimers();
       expect(list).toHaveLength(2);
     });
 

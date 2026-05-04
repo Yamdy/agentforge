@@ -6,7 +6,7 @@
  * TDD RED phase - tests written before implementation.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { PlanExecutorImpl } from '../../src/planning/plan-executor.js';
 import type {
   ExecutionPlan,
@@ -134,10 +134,9 @@ describe('PlanExecutor', () => {
   });
 
   // --------------------------------------------------------
-  // TC-009: execute() 应按顺序执行步骤
-  // --------------------------------------------------------
+    // --------------------------------------------------------
 
-  describe('TC-009: execute() should execute steps in order', () => {
+  describe('execute() should execute steps in order', () => {
     it('should execute sequential steps and return completed status', async () => {
       toolRegistry.register(createSuccessTool('read'));
       toolRegistry.register(createSuccessTool('write'));
@@ -176,13 +175,14 @@ describe('PlanExecutor', () => {
   });
 
   // --------------------------------------------------------
-  // TC-010: execute() 无依赖步骤可并行执行
-  // --------------------------------------------------------
+    // --------------------------------------------------------
 
-  describe('TC-010: execute() should run independent steps concurrently', () => {
+  describe('execute() should run independent steps concurrently', () => {
     it('should execute independent steps concurrently', async () => {
       const startTimes: Record<string, number> = {};
       const endTimes: Record<string, number> = {};
+
+      vi.useFakeTimers();
 
       toolRegistry.register({
         ...createSlowTool('read', 50),
@@ -207,7 +207,10 @@ describe('PlanExecutor', () => {
         createdAt: Date.now(),
       };
 
-      const result = await executor.execute(parallelPlan, toolRegistry);
+      const resultPromise = executor.execute(parallelPlan, toolRegistry);
+      await vi.advanceTimersByTimeAsync(50);
+      const result = await resultPromise;
+      vi.useRealTimers();
 
       expect(result.status).toBe('completed');
       expect(result.stepResults.size).toBe(2);
@@ -215,10 +218,9 @@ describe('PlanExecutor', () => {
   });
 
   // --------------------------------------------------------
-  // TC-011: executeStep() 成功应返回成功结果
-  // --------------------------------------------------------
+    // --------------------------------------------------------
 
-  describe('TC-011: executeStep() should return success result', () => {
+  describe('executeStep() should return success result', () => {
     it('should return success result for successful tool execution', async () => {
       toolRegistry.register(createSuccessTool('read', 'file contents'));
 
@@ -239,10 +241,9 @@ describe('PlanExecutor', () => {
   });
 
   // --------------------------------------------------------
-  // TC-012: executeStep() 失败应返回失败结果
-  // --------------------------------------------------------
+    // --------------------------------------------------------
 
-  describe('TC-012: executeStep() should return failure result', () => {
+  describe('executeStep() should return failure result', () => {
     it('should return failure result when tool throws', async () => {
       toolRegistry.register(createFailTool('write', 'disk full'));
 
@@ -278,10 +279,9 @@ describe('PlanExecutor', () => {
   });
 
   // --------------------------------------------------------
-  // TC-013: getProgress() 应返回正确进度
-  // --------------------------------------------------------
+    // --------------------------------------------------------
 
-  describe('TC-013: getProgress() should return correct progress', () => {
+  describe('getProgress() should return correct progress', () => {
     it('should return initial progress with zero completed', () => {
       const progress = executor.getProgress();
 
@@ -318,10 +318,9 @@ describe('PlanExecutor', () => {
   });
 
   // --------------------------------------------------------
-  // TC-014: execute() 步骤失败应停止执行
-  // --------------------------------------------------------
+    // --------------------------------------------------------
 
-  describe('TC-014: execute() should stop on step failure', () => {
+  describe('execute() should stop on step failure', () => {
     it('should stop execution when a step fails', async () => {
       const executedSteps: string[] = [];
 
@@ -363,10 +362,9 @@ describe('PlanExecutor', () => {
   });
 
   // --------------------------------------------------------
-  // TC-015: execute() 应支持断点续跑
-  // --------------------------------------------------------
+    // --------------------------------------------------------
 
-  describe('TC-015: execute() should support checkpoint resume', () => {
+  describe('execute() should support checkpoint resume', () => {
     it('should resume from checkpoint - skip already completed steps', async () => {
       const executedSteps: string[] = [];
 

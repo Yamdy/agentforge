@@ -5,12 +5,12 @@
  * in the agent loop event stream.
  *
  * Test Cases:
- * - TC-001: Checkpoint should auto-save after each step
- * - TC-002: Audit log should record on LLM request
- * - TC-003: Audit log should record on tool execution
- * - TC-004: Audit log should record on error
- * - TC-005: Audit log should contain correct sessionId
- * - TC-006: Audit log should contain correct eventType
+ * - Checkpoint should auto-save after each step
+ * - Audit log should record on LLM request
+ * - Audit log should record on tool execution
+ * - Audit log should record on error
+ * - Audit log should contain correct sessionId
+ * - Audit log should contain correct eventType
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -284,9 +284,8 @@ describe('Integration: Persistence + Audit Logging', () => {
   });
 
   // ========================================
-  // TC-001: Checkpoint should auto-save after each step
-  // ========================================
-  describe('TC-001: Checkpoint auto-save', () => {
+    // ========================================
+  describe('Checkpoint auto-save', () => {
     it('should save checkpoint after LLM response when enabled', async () => {
       llm.setResponses([
         {
@@ -346,9 +345,8 @@ describe('Integration: Persistence + Audit Logging', () => {
   });
 
   // ========================================
-  // TC-002: Audit log on LLM request
-  // ========================================
-  describe('TC-002: Audit log on LLM request', () => {
+    // ========================================
+  describe('Audit log on LLM request', () => {
     it('should record audit entry when LLM request is made', async () => {
       llm.setResponses([
         { content: 'Hello!', finishReason: 'stop' },
@@ -372,9 +370,8 @@ describe('Integration: Persistence + Audit Logging', () => {
   });
 
   // ========================================
-  // TC-003: Audit log on tool execution
-  // ========================================
-  describe('TC-003: Audit log on tool execution', () => {
+    // ========================================
+  describe('Audit log on tool execution', () => {
     it('should record audit entry when tool is executed', async () => {
       llm.setResponses([
         {
@@ -437,9 +434,8 @@ describe('Integration: Persistence + Audit Logging', () => {
   });
 
   // ========================================
-  // TC-004: Audit log on error
-  // ========================================
-  describe('TC-004: Audit log on error', () => {
+    // ========================================
+  describe('Audit log on error', () => {
     it('should record audit entry when LLM error occurs', async () => {
       llm.setShouldFail(true);
 
@@ -460,9 +456,8 @@ describe('Integration: Persistence + Audit Logging', () => {
   });
 
   // ========================================
-  // TC-005: Audit log contains correct sessionId
-  // ========================================
-  describe('TC-005: Audit log sessionId', () => {
+    // ========================================
+  describe('Audit log sessionId', () => {
     it('should include correct sessionId in all audit entries', async () => {
       llm.setResponses([
         {
@@ -490,9 +485,8 @@ describe('Integration: Persistence + Audit Logging', () => {
   });
 
   // ========================================
-  // TC-006: Audit log contains correct eventType
-  // ========================================
-  describe('TC-006: Audit log eventType', () => {
+    // ========================================
+  describe('Audit log eventType', () => {
     it('should record llm.response audit with correct eventType and token usage', async () => {
       llm.setResponses([
         {

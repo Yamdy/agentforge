@@ -92,10 +92,10 @@ describe('WebFetchTool', () => {
       await fetchTool.execute({ url: 'https://example.com' });
 
       // Verify fetch was called with GET method
-      const fetchCall = mockFetch.mock.calls[0];
-      expect(fetchCall).toBeDefined();
-      const init = fetchCall?.[1] as RequestInit | undefined;
-      expect(init?.method || 'GET').toBe('GET');
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ method: 'GET' })
+      );
     });
   });
 
@@ -175,11 +175,10 @@ describe('WebFetchTool', () => {
         body: JSON.stringify({ key: 'value' }),
       });
 
-      const fetchCall = mockFetch.mock.calls[0];
-      expect(fetchCall).toBeDefined();
-      const init = fetchCall?.[1] as RequestInit | undefined;
-      expect(init?.method).toBe('POST');
-      expect(init?.body).toBe(JSON.stringify({ key: 'value' }));
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ method: 'POST', body: JSON.stringify({ key: 'value' }) })
+      );
     });
 
     it('should include custom headers in POST request', async () => {
@@ -192,8 +191,7 @@ describe('WebFetchTool', () => {
         body: '{"data":1}',
       });
 
-      const fetchCall = mockFetch.mock.calls[0];
-      const init = fetchCall?.[1] as RequestInit | undefined;
+      const init = mockFetch.mock.lastCall?.[1] as RequestInit | undefined;
       expect(init?.headers).toBeDefined();
       // Headers object should contain Content-Type and Authorization
       const headers = init?.headers as Headers | Record<string, string> | undefined;
@@ -243,9 +241,10 @@ describe('WebFetchTool', () => {
 
       await fetchTool.execute({ url: 'https://example.com' });
 
-      const fetchCall = mockFetch.mock.calls[0];
-      const init = fetchCall?.[1] as RequestInit | undefined;
-      expect(init?.signal).toBeDefined();
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ signal: expect.any(AbortSignal) })
+      );
     });
 
     it('should respect context timeout over default', async () => {

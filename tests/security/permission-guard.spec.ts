@@ -219,7 +219,7 @@ describe('handlePermissionAsk', () => {
 
     // Yield to allow handlePermissionAsk's internal await (safeClassify)
     // to complete and reach permissionController.ask() which fires channel onAsk
-    await new Promise((r) => setTimeout(r, 0));
+    await Promise.resolve();
 
     // Answer to resolve the permission prompt
     controller.answer(capturedPromptId, 'allow');
@@ -256,7 +256,7 @@ describe('handlePermissionAsk', () => {
     );
 
     // Yield to allow handlePermissionAsk's internal await to reach channel.ask()
-    await new Promise((r) => setTimeout(r, 0));
+    await Promise.resolve();
 
     controller.answer(capturedPromptId, 'deny');
     const results = await resultPromise;
@@ -315,7 +315,7 @@ describe('handlePermissionAsk', () => {
     );
 
     // Yield to allow handlePermissionAsk's internal await to reach channel.ask()
-    await new Promise((r) => setTimeout(r, 0));
+    await Promise.resolve();
 
     controller.answer(capturedPromptId, 'allow');
     const results = await resultPromise;

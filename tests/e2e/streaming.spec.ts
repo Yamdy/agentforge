@@ -16,11 +16,27 @@
  * 5. Error handling - stream interruption, graceful degradation
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-// Using local Subscribable helpers for testing
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import { streamText, generateText, tool } from 'ai';
-import { z } from 'zod';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import type {
+  AgentEvent,
+  LLMAdapter,
+  LLMChunk,
+  ToolDefinition,
+  ToolRegistry,
+} from '../../src/core/index.js';
+import {
+  InMemoryStore,
+  DefaultPauseController,
+  SimpleSchemaRegistry,
+} from '../../src/core/index.js';
+import {
+  resolveApiConfig,
+  shouldRunE2E,
+  RealLLMAdapter,
+  SimpleToolRegistry,
+  createAgentLoop,
+} from '../fixtures/e2e-adapters.js';
+import type { AgentLoopConfig } from '../../src/loop/agent-loop.js';
 
 // ============================================================
 // Lightweight Subscribable factories (for testing)
@@ -63,7 +79,6 @@ function createSubject<T>() {
   };
 }
 
-/** Collect all events from a subscribable until completion or cancel signal */
 async function collectUntil<T>(src: Subscribable<T>, cancel$?: { subscribe: (obs: any) => any }): Promise<T[]> {
   return new Promise((resolve) => {
     const events: T[] = [];
@@ -79,265 +94,19 @@ async function collectUntil<T>(src: Subscribable<T>, cancel$?: { subscribe: (obs
   });
 }
 
-import {
-  createAgentLoop,
-  type AgentLoopConfig,
-} from '../../src/loop/agent-loop.js';
-import {
-  type AgentContext,
-  type AgentState,
-  type AgentEvent,
-  type LLMAdapter,
-  type LLMResponse,
-  type LLMChunk,
-  type LLMOptions,
-  type ToolDefinition,
-  type ToolRegistry,
-  type FunctionDefinition,
-  type Message,
-  InMemoryStore,
-  DefaultPauseController,
-  DefaultHITLController,
-  SimpleSchemaRegistry,
-} from '../../src/core/index.js';
-
 // ============================================================
 // API Configuration
 // ============================================================
 
-const API_CONFIG = {
-  apiKey: process.env.LLM_API_KEY ?? '',
-  baseURL: process.env.LLM_BASE_URL ?? 'https://token-plan-cn.xiaomimimo.com/v1',
-  model: process.env.LLM_MODEL ?? 'mimo-v2.5',
-};
-
-// Skip tests if API key is not provided
-const shouldRunE2E = API_CONFIG.apiKey.length > 0;
-
-// ============================================================
-// Real LLM Adapter Implementation
-// ============================================================
-
-/**
- * OpenAI-compatible LLM Adapter for real API calls.
- * Uses @ai-sdk/openai-compatible for HTTP communication.
- */
-class RealLLMAdapter implements LLMAdapter {
-  readonly name = 'real-llm-adapter';
-  readonly provider = 'openai-compatible';
-
-  private model: ReturnType<ReturnType<typeof createOpenAICompatible>>;
-
-  constructor(config: { apiKey: string; baseURL: string; model: string }) {
-    const provider = createOpenAICompatible({
-      name: 'openai-compatible',
-      baseURL: config.baseURL,
-      apiKey: config.apiKey,
-    });
-    this.model = provider(config.model);
-  }
-
-  /**
-   * Convert AgentForge Message[] to AI SDK format
-   */
-  private convertMessages(messages: Message[]): Array<
-    | { role: 'system'; content: string }
-    | { role: 'user'; content: string }
-    | { role: 'assistant'; content: string | Array<{ type: 'tool-call'; toolCallId: string; toolName: string; args: Record<string, unknown> }> }
-    | { role: 'tool'; content: Array<{ type: 'tool-result'; toolCallId: string; toolName: string; output: unknown }> }
-  > {
-    const result: Array<{
-      role: 'system' | 'user' | 'assistant' | 'tool';
-      content: string | unknown[];
-    }> = [];
-
-    for (let i = 0; i < messages.length; i++) {
-      const msg = messages[i]!;
-      const content = typeof msg.content === 'string'
-        ? msg.content
-        : JSON.stringify(msg.content);
-
-      if (msg.role === 'tool') {
-        const toolMsg = msg as unknown as Record<string, unknown>;
-        const toolCallId = (toolMsg['toolCallId'] as string) ?? '';
-        const toolName = (toolMsg['name'] as string) ?? '';
-
-        const prevMsg = result[result.length - 1];
-        const needsAssistant = !prevMsg ||
-          prevMsg.role !== 'assistant' ||
-          !Array.isArray(prevMsg.content) ||
-          !(prevMsg.content as Array<unknown>).some(
-            (c: unknown) => (c as { type?: string })?.type === 'tool-call'
-          );
-
-        if (needsAssistant) {
-          result.push({
-            role: 'assistant' as const,
-            content: [{
-              type: 'tool-call',
-              toolCallId,
-              toolName,
-              args: {},
-            }],
-          });
-        }
-
-        result.push({
-          role: 'tool' as const,
-          content: [{
-            type: 'tool-result',
-            toolCallId,
-            toolName,
-            output: { type: 'text' as const, value: content },
-          }],
-        });
-      } else {
-        result.push({
-          role: msg.role as 'system' | 'user' | 'assistant',
-          content,
-        });
-      }
-    }
-
-    return result as Array<
-      | { role: 'system'; content: string }
-      | { role: 'user'; content: string }
-      | { role: 'assistant'; content: string | Array<{ type: 'tool-call'; toolCallId: string; toolName: string; args: Record<string, unknown> }> }
-      | { role: 'tool'; content: Array<{ type: 'tool-result'; toolCallId: string; toolName: string; output: unknown }> }
-    >;
-  }
-
-  /**
-   * Convert FunctionDefinition[] to AI SDK tools format
-   */
-  private convertTools(tools: FunctionDefinition[] | undefined): Record<string, ReturnType<typeof tool>> | undefined {
-    if (!tools || tools.length === 0) {
-      return undefined;
-    }
-
-    const result: Record<string, ReturnType<typeof tool>> = {};
-    for (const t of tools) {
-      // Create a minimal Zod schema that AI SDK can handle
-      const schema = z.object({}).passthrough();
-
-      result[t.name] = tool({
-        description: t.description,
-        parameters: schema,
-        execute: async (args: unknown) => JSON.stringify(args),
-      });
-    }
-    return result;
-  }
-
-  /**
-   * Non-streaming chat completion
-   */
-  async chat(messages: Message[], options?: LLMOptions): Promise<LLMResponse> {
-    const tools = this.convertTools(options?.tools as FunctionDefinition[] | undefined);
-    const convertedMessages = this.convertMessages(messages);
-
-    const result = await generateText({
-      model: this.model,
-      messages: convertedMessages,
-      temperature: options?.temperature ?? 0.7,
-      ...(tools ? { tools } : {}),
-    });
-
-    const toolCalls = result.toolCalls?.map(tc => ({
-      id: tc.toolCallId,
-      name: tc.toolName,
-      args: (tc as { input?: Record<string, unknown> }).input ?? {},
-    }));
-
-    return {
-      content: result.text,
-      toolCalls: toolCalls && toolCalls.length > 0 ? toolCalls : undefined,
-      finishReason: result.finishReason as 'stop' | 'tool_calls' | 'length' | 'error' | 'cancelled',
-      usage: result.usage ? {
-        promptTokens: (result.usage as { promptTokens?: number }).promptTokens ?? 0,
-        completionTokens: (result.usage as { completionTokens?: number }).completionTokens ?? 0,
-      } : undefined,
-    };
-  }
-
-  /**
-   * Streaming chat completion
-   * Returns AsyncGenerator<LLMChunk> for AgentForge streaming
-   */
-  async *stream(messages: Message[], options?: LLMOptions): AsyncGenerator<LLMChunk> {
-    const tools = this.convertTools(options?.tools as FunctionDefinition[] | undefined);
-    const { fullStream } = streamText({
-      model: this.model,
-      messages: this.convertMessages(messages),
-      temperature: options?.temperature ?? 0.7,
-      ...(tools ? { tools } : {}),
-    });
-
-    for await (const chunk of fullStream) {
-      if (chunk.type === 'text-delta') {
-        const textDelta = (chunk as { text?: string }).text;
-        if (textDelta) yield { text: textDelta };
-      } else if (chunk.type === 'tool-call') {
-        const tcc = chunk as { toolCallId: string; toolName: string; input?: unknown };
-        yield { toolCallId: tcc.toolCallId, toolName: tcc.toolName, argsDelta: JSON.stringify(tcc.input ?? {}) };
-      }
-    }
-  }
-}
-
-// ============================================================
-// Mock Tool Registry
-// ============================================================
-
-class SimpleToolRegistry implements ToolRegistry {
-  private tools = new Map<string, ToolDefinition>();
-
-  register(tool: ToolDefinition): void {
-    this.tools.set(tool.name, tool);
-  }
-
-  list(): string[] {
-    return Array.from(this.tools.keys());
-  }
-
-  has(name: string): boolean {
-    return this.tools.has(name);
-  }
-
-  get(name: string): ToolDefinition | undefined {
-    return this.tools.get(name);
-  }
-
-  getFunctionDef(name: string): FunctionDefinition | undefined {
-    const tool = this.tools.get(name);
-    if (!tool) return undefined;
-    return {
-      name: tool.name,
-      description: tool.description,
-      parameters: tool.parameters as { type: 'object'; properties: Record<string, unknown>; required?: string[] },
-    };
-  }
-
-  getFunctionDefs(): FunctionDefinition[] {
-    return this.list().map(n => this.getFunctionDef(n)!);
-  }
-
-  async execute(name: string, args: Record<string, unknown>): Promise<string> {
-    const tool = this.tools.get(name);
-    if (!tool) throw new Error(`Tool "${name}" not found`);
-    return tool.execute(args);
-  }
-
-  registerAll(tools: ToolDefinition[]): void {
-    for (const t of tools) this.register(t);
-  }
-}
+// Inline env check to avoid fixture-side-effect timing issues with dotenv
+const API_CONFIG = resolveApiConfig();
+const HAS_API_KEY = (process.env.LLM_API_KEY?.length ?? 0) > 0;
 
 // ============================================================
 // Test Helpers
 // ============================================================
 
-function createTestContext(llm: LLMAdapter, toolRegistry: ToolRegistry): AgentContext {
+function createTestContext(llm: LLMAdapter, toolRegistry: ToolRegistry) {
   return {
     sessionId: `e2e-streaming-${Date.now()}`,
     agentName: 'e2e-test-agent',
@@ -350,7 +119,7 @@ function createTestContext(llm: LLMAdapter, toolRegistry: ToolRegistry): AgentCo
     },
     llm,
     tools: toolRegistry,
-  };
+  } as any;
 }
 
 function createTestConfig(overrides: Partial<AgentLoopConfig> = {}): AgentLoopConfig {
@@ -376,7 +145,7 @@ async function runAndCollect(agent: any, input: string): Promise<any[]> {
 // E2E Tests
 // ============================================================
 
-describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
+describe.skipIf(!HAS_API_KEY)('E2E Streaming Tests', () => {
   let llm: RealLLMAdapter;
   let toolRegistry: SimpleToolRegistry;
 
@@ -577,16 +346,21 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
 
       const eventsPromise = collectUntil(agent.run$('Write a long story about a cat.'), cancel$);
 
-      // Cancel after 500ms
-      setTimeout(() => cancel$.next(), 500);
+      // Event-driven: cancel after first stream text event
+      const unsub = agent.onAny((e: any) => {
+        if (e.type === 'llm.stream.text') {
+          cancel$.next();
+        }
+      });
 
       const events = await eventsPromise;
+      unsub();
 
       // Should have received some events before cancellation
       expect(events.length).toBeGreaterThan(0);
 
       // Stream events should be present (partial streaming)
-      const streamEvents = events.filter(e =>
+      const streamEvents = events.filter((e: any) =>
         e.type.startsWith('llm.stream.')
       );
       expect(streamEvents.length).toBeGreaterThan(0);
@@ -601,17 +375,20 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
       // First subscription - cancelled
       const cancel$ = createSubject<void>();
 
-      // Start and immediately cancel
-      setTimeout(() => cancel$.next(), 100);
-      await collectUntil(agent.run$('Say hello.'), cancel$).catch(() => {});
+      // Start and immediately cancel (event-driven)
+      const firstRunPromise = collectUntil(agent.run$('Say hello.'), cancel$).catch(() => {});
+      cancel$.next(); // Cancel synchronously after subscription is set up
+      await firstRunPromise;
 
-      // Wait a bit for cleanup
-      await new Promise(resolve => setTimeout(resolve, 200));
+      // Wait for cleanup using fake timers
+      vi.useFakeTimers();
+      await vi.advanceTimersByTimeAsync(200);
+      vi.useRealTimers();
 
       // Second subscription should work
       const events = await runAndCollect(agent, 'Say goodbye.');
 
-      expect(events.find(e => e.type === 'agent.complete')).toBeDefined();
+      expect(events.find((e: any) => e.type === 'agent.complete')).toBeDefined();
     }, 30000);
   });
 
@@ -699,16 +476,20 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
-      const events = await runAndCollect(agent, 'Hello.');
+      vi.useFakeTimers();
+      const eventsPromise = runAndCollect(agent, 'Hello.');
+      await vi.advanceTimersByTimeAsync(50);
+      const events = await eventsPromise;
+      vi.useRealTimers();
 
       // Should have some text before error
-      expect(events.find(e => e.type === 'llm.stream.text')).toBeDefined();
+      expect(events.find((e: any) => e.type === 'llm.stream.text')).toBeDefined();
 
       // Should emit error events
-      expect(events.find(e => e.type === 'agent.error')).toBeDefined();
-      expect(events.find(e => e.type === 'done')).toBeDefined();
+      expect(events.find((e: any) => e.type === 'agent.error')).toBeDefined();
+      expect(events.find((e: any) => e.type === 'done')).toBeDefined();
 
-      const doneEvent = events.find(e => e.type === 'done');
+      const doneEvent = events.find((e: any) => e.type === 'done');
       if (doneEvent?.type === 'done') {
         expect(doneEvent.reason).toBe('error');
       }
@@ -732,13 +513,17 @@ describe.skipIf(!shouldRunE2E)('E2E Streaming Tests', () => {
 
       const agent = createAgentLoop(ctx, config);
 
-      // Use a timeout to ensure test doesn't hang
+      // Use fake timers to ensure test doesn't hang
       const timeoutCancel$ = createSubject<void>();
+
+      vi.useFakeTimers();
       setTimeout(() => { timeoutCancel$.next(); }, 2000);
-      
+
       const eventsPromise = collectUntil(agent.run$('Hello.'), timeoutCancel$);
+      await vi.advanceTimersByTimeAsync(2000);
 
       const events = await eventsPromise;
+      vi.useRealTimers();
 
       // Should have received some events before timeout
       expect(events.length).toBeGreaterThan(0);

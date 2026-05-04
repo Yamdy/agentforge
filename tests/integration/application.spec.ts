@@ -34,11 +34,10 @@ function createTestApp(config: Partial<AppConfig> = {}): {
 }
 
 // ============================================================
-// TC-001: Health check should return component status
 // ============================================================
 
 describe('Application', () => {
-  describe('TC-001: health check should return component status', () => {
+  describe('health check should return component status', () => {
     it('should return healthy status with component checks', async () => {
       const { app } = createTestApp();
 
@@ -88,10 +87,9 @@ describe('Application', () => {
   });
 
   // ============================================================
-  // TC-002: Readiness check should return true
-  // ============================================================
+    // ============================================================
 
-  describe('TC-002: readiness check should return true', () => {
+  describe('readiness check should return true', () => {
     it('should return ready when all checks are healthy', async () => {
       const { app } = createTestApp();
 
@@ -118,10 +116,9 @@ describe('Application', () => {
   });
 
   // ============================================================
-  // TC-003: Metrics endpoint should return Prometheus format
-  // ============================================================
+    // ============================================================
 
-  describe('TC-003: metrics endpoint should return Prometheus format', () => {
+  describe('metrics endpoint should return Prometheus format', () => {
     it('should return Prometheus text format', async () => {
       const { app } = createTestApp();
 
@@ -163,10 +160,9 @@ describe('Application', () => {
   });
 
   // ============================================================
-  // TC-004: SIGTERM should trigger graceful shutdown
-  // ============================================================
+    // ============================================================
 
-  describe('TC-004: SIGTERM should trigger graceful shutdown', () => {
+  describe('SIGTERM should trigger graceful shutdown', () => {
     it('should execute shutdown and exit with code 0 on clean shutdown', async () => {
       const { app, exitCalls } = createTestApp();
 
@@ -194,10 +190,9 @@ describe('Application', () => {
   });
 
   // ============================================================
-  // TC-005: Cleanup functions should execute in order
-  // ============================================================
+    // ============================================================
 
-  describe('TC-005: cleanup functions should execute in order', () => {
+  describe('cleanup functions should execute in order', () => {
     it('should execute registered cleanups sequentially', async () => {
       const { app } = createTestApp();
       const order: string[] = [];
@@ -255,19 +250,23 @@ describe('Application', () => {
   });
 
   // ============================================================
-  // TC-006: Timeout should force exit
-  // ============================================================
+    // ============================================================
 
-  describe('TC-006: timeout should force exit', () => {
+  describe('timeout should force exit', () => {
     it('should force exit with code 1 when shutdown times out', async () => {
       const { app, exitCalls } = createTestApp({ shutdownTimeoutMs: 50 });
 
       // Register a cleanup that takes too long
+      vi.useFakeTimers();
       app.gracefulShutdown.registerCleanup('slow', async () => {
         await new Promise((resolve) => setTimeout(resolve, 200));
       });
 
-      await app.shutdown();
+      const shutdownPromise = app.shutdown();
+      await vi.advanceTimersByTimeAsync(50);
+      await shutdownPromise;
+      await vi.runAllTimersAsync();
+      vi.useRealTimers();
 
       expect(exitCalls).toHaveLength(1);
       expect(exitCalls[0]).toBe(1);
@@ -280,7 +279,11 @@ describe('Application', () => {
         // Instant cleanup
       });
 
-      await app.shutdown();
+      vi.useFakeTimers();
+      const shutdownPromise = app.shutdown();
+      await vi.advanceTimersByTimeAsync(0);
+      await shutdownPromise;
+      vi.useRealTimers();
 
       expect(exitCalls).toHaveLength(1);
       expect(exitCalls[0]).toBe(0);
@@ -288,10 +291,9 @@ describe('Application', () => {
   });
 
   // ============================================================
-  // TC-007: Result validation failure should return warnings
-  // ============================================================
+    // ============================================================
 
-  describe('TC-007: result validation failure should return warnings', () => {
+  describe('result validation failure should return warnings', () => {
     it('should return warnings when validation fails', () => {
       const { app } = createTestApp();
 

@@ -19,11 +19,10 @@ describe('GracefulShutdown', () => {
   });
 
   // ----------------------------------------------------------
-  // TC-016: registerCleanup() should register cleanup function
-  // ----------------------------------------------------------
+    // ----------------------------------------------------------
 
   describe('registerCleanup', () => {
-    it('TC-016: should register cleanup function', () => {
+    it('should register cleanup function', () => {
       const handler = async () => {};
       shutdown.registerCleanup('cleanup-1', handler);
       // No error means registration succeeded
@@ -40,11 +39,10 @@ describe('GracefulShutdown', () => {
   });
 
   // ----------------------------------------------------------
-  // TC-017: shutdown() should execute all cleanup functions
-  // ----------------------------------------------------------
+    // ----------------------------------------------------------
 
   describe('shutdown', () => {
-    it('TC-017: should execute all cleanup functions', async () => {
+    it('should execute all cleanup functions', async () => {
       const order: string[] = [];
 
       shutdown.registerCleanup('first', async () => {
@@ -80,10 +78,9 @@ describe('GracefulShutdown', () => {
     });
 
     // ----------------------------------------------------------
-    // TC-018: shutdown() should force exit on timeout
-    // ----------------------------------------------------------
+        // ----------------------------------------------------------
 
-    it('TC-018: should force exit on timeout', async () => {
+    it('should force exit on timeout', async () => {
       vi.useFakeTimers();
 
       shutdown.registerCleanup('fast', async () => {});
@@ -107,11 +104,10 @@ describe('GracefulShutdown', () => {
   });
 
   // ----------------------------------------------------------
-  // TC-019: isShuttingDown() should return true during shutdown
-  // ----------------------------------------------------------
+    // ----------------------------------------------------------
 
   describe('isShuttingDown', () => {
-    it('TC-019: should return true when shutting down', async () => {
+    it('should return true when shutting down', async () => {
       expect(shutdown.isShuttingDown()).toBe(false);
 
       shutdown.registerCleanup('blocker', async () => {
@@ -125,11 +121,10 @@ describe('GracefulShutdown', () => {
   });
 
   // ----------------------------------------------------------
-  // TC-020: onShutdown() should register shutdown callback
-  // ----------------------------------------------------------
+    // ----------------------------------------------------------
 
   describe('onShutdown', () => {
-    it('TC-020: should register shutdown callback', async () => {
+    it('should register shutdown callback', async () => {
       let callbackCalled = false;
 
       shutdown.onShutdown(() => {

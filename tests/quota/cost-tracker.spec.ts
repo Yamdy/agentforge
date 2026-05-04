@@ -31,11 +31,10 @@ describe('MemoryCostTracker', () => {
   });
 
   // ----------------------------------------------------------
-  // TC-010: record() should record cost
-  // ----------------------------------------------------------
+    // ----------------------------------------------------------
 
   describe('record', () => {
-    it('TC-010: should record cost', async () => {
+    it('should record cost', async () => {
       await tracker.record('session-1', 'gpt-4o', createUsage());
 
       const usage = await tracker.getUsage('session-1');
@@ -48,11 +47,10 @@ describe('MemoryCostTracker', () => {
   });
 
   // ----------------------------------------------------------
-  // TC-011: getUsage() should return cost breakdown
-  // ----------------------------------------------------------
+    // ----------------------------------------------------------
 
   describe('getUsage', () => {
-    it('TC-011: should return cost breakdown', async () => {
+    it('should return cost breakdown', async () => {
       await tracker.record('session-1', 'gpt-4o', createUsage({ promptTokens: 1000, completionTokens: 500 }));
       await tracker.record('session-1', 'gpt-4o', createUsage({ promptTokens: 2000, completionTokens: 1000 }));
       await tracker.record('session-1', 'claude-3-5-sonnet', createUsage({ promptTokens: 500, completionTokens: 300 }));
@@ -80,11 +78,10 @@ describe('MemoryCostTracker', () => {
   });
 
   // ----------------------------------------------------------
-  // TC-012: checkLimit() within limit should return true
-  // ----------------------------------------------------------
+    // ----------------------------------------------------------
 
   describe('checkLimit', () => {
-    it('TC-012: within limit should return withinLimit=true', async () => {
+    it('within limit should return withinLimit=true', async () => {
       await tracker.setLimit('session-1', { maxTokens: 10000, maxCost: 1.0, maxRequests: 100 });
       await tracker.record('session-1', 'gpt-4o', createUsage({ promptTokens: 100, completionTokens: 50 }));
 
@@ -94,10 +91,9 @@ describe('MemoryCostTracker', () => {
     });
 
     // ----------------------------------------------------------
-    // TC-013: checkLimit() exceeding limit should return false
-    // ----------------------------------------------------------
+        // ----------------------------------------------------------
 
-    it('TC-013: exceeding limit should return withinLimit=false', async () => {
+    it('exceeding limit should return withinLimit=false', async () => {
       await tracker.setLimit('session-1', { maxTokens: 100 });
       await tracker.record('session-1', 'gpt-4o', createUsage({ promptTokens: 200, completionTokens: 50 }));
 
@@ -115,11 +111,10 @@ describe('MemoryCostTracker', () => {
   });
 
   // ----------------------------------------------------------
-  // TC-014: setLimit() should set limit
-  // ----------------------------------------------------------
+    // ----------------------------------------------------------
 
   describe('setLimit', () => {
-    it('TC-014: should set limit', async () => {
+    it('should set limit', async () => {
       await tracker.setLimit('session-1', { maxTokens: 5000, maxCost: 0.5, maxRequests: 50 });
 
       const limit = await tracker.getLimit('session-1');
@@ -136,11 +131,10 @@ describe('MemoryCostTracker', () => {
   });
 
   // ----------------------------------------------------------
-  // TC-015: reset() should reset usage
-  // ----------------------------------------------------------
+    // ----------------------------------------------------------
 
   describe('reset', () => {
-    it('TC-015: should reset usage', async () => {
+    it('should reset usage', async () => {
       await tracker.record('session-1', 'gpt-4o', createUsage());
       const before = await tracker.getUsage('session-1');
       expect(before.totalCost).toBeGreaterThan(0);

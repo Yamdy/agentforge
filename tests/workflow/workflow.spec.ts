@@ -7,7 +7,7 @@
  * Uses callback-based API.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi, beforeAll } from 'vitest';
 import {
   Workflow,
   createWorkflow,
@@ -34,6 +34,16 @@ import {
   SimpleSchemaRegistry,
   serializeError,
 } from '../../src/core/index.js';
+
+// Cached executor helpers — imported once in beforeAll
+let createPromptGenerator: (template: string) => (input: unknown) => string;
+let createJsonPromptGenerator: (template: string) => (input: unknown) => string;
+
+beforeAll(async () => {
+  const execMod = await import('../../src/workflow/executor.js');
+  createPromptGenerator = execMod.createPromptGenerator;
+  createJsonPromptGenerator = execMod.createJsonPromptGenerator;
+});
 
 // ============================================================
 // Mock LLM Adapter
@@ -412,8 +422,6 @@ describe('Workflow Subsystem', () => {
     });
 
     it('should use createPromptGenerator helper', async () => {
-      const { createPromptGenerator } = await import('../../src/workflow/executor.js');
-
       const generator = createPromptGenerator('Input is: {{input}}');
       const prompt = generator('hello');
 
@@ -421,8 +429,6 @@ describe('Workflow Subsystem', () => {
     });
 
     it('should use createJsonPromptGenerator helper', async () => {
-      const { createJsonPromptGenerator } = await import('../../src/workflow/executor.js');
-
       const generator = createJsonPromptGenerator('Data: {{input}}');
       const prompt = generator({ key: 'value' });
 
@@ -571,6 +577,8 @@ describe('Workflow Subsystem', () => {
       let maxConcurrent = 0;
 
       const originalChat = llm.chat.bind(llm);
+
+      vi.useFakeTimers();
       llm.chat = async function () {
         concurrentCount++;
         maxConcurrent = Math.max(maxConcurrent, concurrentCount);
@@ -587,7 +595,13 @@ describe('Workflow Subsystem', () => {
       ];
 
       const pipeline = new ParallelPipeline(steps, ctx, { maxConcurrency: 2 });
-      await collectEvents(listener => pipeline.run('input', listener));
+      const pipelinePromise = collectEvents(listener => pipeline.run('input', listener));
+
+      // Advance time to let all batches complete (2 batches of 2)
+      await vi.advanceTimersByTimeAsync(10);
+      await vi.advanceTimersByTimeAsync(10);
+      await pipelinePromise;
+      vi.useRealTimers();
 
       // Max concurrent should be at most 2
       expect(maxConcurrent).toBeLessThanOrEqual(2);

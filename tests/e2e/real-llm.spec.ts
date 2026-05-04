@@ -14,90 +14,37 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import type { ToolDefinition } from '../../src/core/index.js';
 import {
+  resolveApiConfig,
+  shouldRunE2E,
+  RealLLMAdapter,
+  SimpleToolRegistry,
+  createTestContext,
+  createTestConfig,
+  runAndCollect,
   createAgentLoop,
-  type AgentLoopConfig,
-} from '../../src/loop/agent-loop.js';
-import {
-  type AgentContext,
-  type AgentEvent,
-  type ToolDefinition,
-  InMemoryStore,
-  DefaultPauseController,
-  SimpleSchemaRegistry,
-  ContextBuilder,
-  generateSessionId,
-} from '../../src/core/index.js';
-import { OpenAIAdapter } from '../../src/adapters/openai.js';
+} from '../fixtures/e2e-adapters.js';
+import type { AgentLoopConfig } from '../../src/loop/agent-loop.js';
 
 // ============================================================
 // Configuration
 // ============================================================
 
-const skipIfNoLLM = !process.env.LLM_API_KEY;
-
-const API_KEY = process.env.LLM_API_KEY ?? '';
-const BASE_URL = process.env.LLM_BASE_URL ?? 'https://token-plan-cn.xiaomimimo.com/v1';
-const MODEL = process.env.LLM_MODEL ?? 'mimo-v2.5';
-
-// Test timeout (60s for real API calls)
+const HAS_API_KEY = (process.env.LLM_API_KEY?.length ?? 0) > 0;
+const API_CONFIG = resolveApiConfig();
 const TEST_TIMEOUT = 60000;
-
-// ============================================================
-// Helper Functions
-// ============================================================
-
-function createLLMAdapter(): OpenAIAdapter {
-  return new OpenAIAdapter(MODEL, {
-    apiKey: API_KEY,
-    baseURL: BASE_URL,
-  });
-}
-
-function createTestContext(
-  llm: OpenAIAdapter,
-  tools: ToolDefinition[] = [],
-): AgentContext {
-  const sessionId = `e2e-session-${generateSessionId()}`;
-
-  const builder = ContextBuilder.create()
-    .withSessionId(sessionId)
-    .withAgentName('e2e-test-agent')
-    .withLLM(llm)
-    .withTools(tools);
-
-  return builder.build();
-}
-
-function createTestConfig(overrides: Partial<AgentLoopConfig> = {}): AgentLoopConfig {
-  return {
-    model: { provider: 'openai-compatible', model: MODEL },
-    maxSteps: 10,
-    maxLLMRepairAttempts: 3,
-    parallelToolCalls: false,
-    streaming: false,
-    ...overrides,
-  };
-}
-
-async function runAndCollect(agent: any, input: string): Promise<any[]> {
-  const events: any[] = [];
-  const unsub = agent.onAny((e: any) => events.push(e));
-  try { await agent.run(input); } catch {}
-  unsub();
-  return events;
-}
 
 // ============================================================
 // Tests
 // ============================================================
 
-describe.skipIf(skipIfNoLLM)('E2E: Real LLM Tests', () => {
-  let llm: OpenAIAdapter;
+describe.skipIf(!HAS_API_KEY)('E2E: Real LLM Tests', () => {
+  let llm: RealLLMAdapter;
   let subscriptions: any[];
 
   beforeEach(() => {
-    llm = createLLMAdapter();
+    llm = new RealLLMAdapter(API_CONFIG);
     subscriptions = [];
   });
 
@@ -572,17 +519,17 @@ describe.skipIf(skipIfNoLLM)('E2E: Real LLM Tests', () => {
 
         const agent = createAgentLoop(ctx, config);
 
-        // Subscribe and track
+        // Subscribe and wait for first event (event-driven)
         let eventCount = 0;
-        const sub = agent.run$('Long response requested.').subscribe({
-          next: () => {
-            eventCount++;
-          },
+        await new Promise<void>(resolve => {
+          const sub = agent.run$('Long response requested.').subscribe({
+            next: () => {
+              eventCount++;
+              resolve();
+            },
+          });
+          subscriptions.push(sub);
         });
-        subscriptions.push(sub);
-
-        // Wait briefly then check
-        await new Promise(resolve => setTimeout(resolve, 100));
 
         // Should have received some events
         expect(eventCount).toBeGreaterThan(0);

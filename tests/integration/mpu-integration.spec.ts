@@ -162,18 +162,15 @@ function createMockResultValidator(): ResultValidator {
 }
 
 // ============================================================
-// TC-001: ContextBuilder 应支持 withSecurityGuard
 // ============================================================
 
 describe('MPU Integration', () => {
-  describe('TC-001: ContextBuilder should support withSecurityGuard', () => {
+  describe('ContextBuilder should support withSecurityGuard', () => {
     it('should accept a SecurityGuard and include it in the built context', () => {
       const guard = new SecurityGuard();
 
       const ctx = AgentContextBuilder.create()
-        .withLLM(createMockLLMAdapter() as any)
-        .withTools([])
-        .withSecurityGuard(guard)
+        .with({ llm: createMockLLMAdapter() as any, tools: [], securityGuard: guard })
         .build();
 
       expect(ctx.securityGuard).toBe(guard);
@@ -181,17 +178,14 @@ describe('MPU Integration', () => {
   });
 
   // ============================================================
-  // TC-002: ContextBuilder 应支持 withErrorClassifier
-  // ============================================================
+    // ============================================================
 
-  describe('TC-002: ContextBuilder should support withErrorClassifier', () => {
+  describe('ContextBuilder should support withErrorClassifier', () => {
     it('should accept an ErrorClassifier and include it in the built context', () => {
       const classifier = createMockErrorClassifier();
 
       const ctx = AgentContextBuilder.create()
-        .withLLM(createMockLLMAdapter() as any)
-        .withTools([])
-        .withErrorClassifier(classifier)
+        .with({ llm: createMockLLMAdapter() as any, tools: [], errorClassifier: classifier })
         .build();
 
       expect(ctx.errorClassifier).toBe(classifier);
@@ -199,17 +193,14 @@ describe('MPU Integration', () => {
   });
 
   // ============================================================
-  // TC-003: ContextBuilder 应支持 withCircuitBreaker
-  // ============================================================
+    // ============================================================
 
-  describe('TC-003: ContextBuilder should support withCircuitBreaker', () => {
+  describe('ContextBuilder should support withCircuitBreaker', () => {
     it('should accept a CircuitBreaker and include it in the built context', () => {
       const breaker = createMockCircuitBreaker();
 
       const ctx = AgentContextBuilder.create()
-        .withLLM(createMockLLMAdapter() as any)
-        .withTools([])
-        .withCircuitBreaker(breaker)
+        .with({ llm: createMockLLMAdapter() as any, tools: [], circuitBreaker: breaker })
         .build();
 
       expect(ctx.circuitBreaker).toBe(breaker);
@@ -217,17 +208,14 @@ describe('MPU Integration', () => {
   });
 
   // ============================================================
-  // TC-004: ContextBuilder 应支持 withPlanner
-  // ============================================================
+    // ============================================================
 
-  describe('TC-004: ContextBuilder should support withPlanner', () => {
+  describe('ContextBuilder should support withPlanner', () => {
     it('should accept a Planner and include it in the built context', () => {
       const planner = createMockPlanner();
 
       const ctx = AgentContextBuilder.create()
-        .withLLM(createMockLLMAdapter() as any)
-        .withTools([])
-        .withPlanner(planner)
+        .with({ llm: createMockLLMAdapter() as any, tools: [], planner })
         .build();
 
       expect(ctx.planner).toBe(planner);
@@ -235,14 +223,12 @@ describe('MPU Integration', () => {
   });
 
   // ============================================================
-  // TC-005: 未配置时依赖应为 undefined
-  // ============================================================
+    // ============================================================
 
-  describe('TC-005: dependencies should be undefined when not configured', () => {
+  describe('dependencies should be undefined when not configured', () => {
     it('should leave all MPU fields undefined when not set', () => {
       const ctx = AgentContextBuilder.create()
-        .withLLM(createMockLLMAdapter() as any)
-        .withTools([])
+        .with({ llm: createMockLLMAdapter() as any, tools: [] })
         .build();
 
       expect(ctx.securityGuard).toBeUndefined();
@@ -253,10 +239,9 @@ describe('MPU Integration', () => {
   });
 
   // ============================================================
-  // TC-006: createMPUServices 应根据配置创建服务
-  // ============================================================
+    // ============================================================
 
-  describe('TC-006: createMPUServices should create services based on config', () => {
+  describe('createMPUServices should create services based on config', () => {
     it('should create health checker when enableHealthCheck is true', () => {
       const result = createMPUServices({ enableHealthCheck: true });
 
@@ -329,10 +314,9 @@ describe('MPU Integration', () => {
   });
 
   // ============================================================
-  // TC-007: createMPUServices 禁用时不应创建服务
-  // ============================================================
+    // ============================================================
 
-  describe('TC-007: createMPUServices should not create services when disabled', () => {
+  describe('createMPUServices should not create services when disabled', () => {
     it('should return empty services and context when all flags are false', () => {
       const result = createMPUServices({
         enableHealthCheck: false,
@@ -371,10 +355,9 @@ describe('MPU Integration', () => {
   });
 
   // ============================================================
-  // TC-008: ApplicationServices 应支持健康检查器
-  // ============================================================
+    // ============================================================
 
-  describe('TC-008: ApplicationServices should support health checker', () => {
+  describe('ApplicationServices should support health checker', () => {
     it('should allow setting healthChecker on ApplicationServices', () => {
       const mockHealthChecker = createMockHealthChecker();
       const result = createMPUServices({ enableHealthCheck: true });
@@ -390,10 +373,9 @@ describe('MPU Integration', () => {
   });
 
   // ============================================================
-  // TC-009: ApplicationServices 应支持审计存储
-  // ============================================================
+    // ============================================================
 
-  describe('TC-009: ApplicationServices should support audit store', () => {
+  describe('ApplicationServices should support audit store', () => {
     it('should allow setting auditStore on ApplicationServices', () => {
       const result = createMPUServices({ enableAudit: true });
 
@@ -410,10 +392,9 @@ describe('MPU Integration', () => {
   });
 
   // ============================================================
-  // TC-010: ApplicationServices 应支持成本追踪
-  // ============================================================
+    // ============================================================
 
-  describe('TC-010: ApplicationServices should support cost tracking', () => {
+  describe('ApplicationServices should support cost tracking', () => {
     it('should allow setting costTracker on ApplicationServices', () => {
       const result = createMPUServices({ enableCostTracking: true });
 
@@ -442,12 +423,14 @@ describe('MPU Integration', () => {
       const planner = createMockPlanner();
 
       const ctx = AgentContextBuilder.create()
-        .withLLM(createMockLLMAdapter() as any)
-        .withTools([])
-        .withSecurityGuard(guard)
-        .withErrorClassifier(classifier)
-        .withCircuitBreaker(breaker)
-        .withPlanner(planner)
+        .with({
+          llm: createMockLLMAdapter() as any,
+          tools: [],
+          securityGuard: guard,
+          errorClassifier: classifier,
+          circuitBreaker: breaker,
+          planner,
+        })
         .build();
 
       expect(ctx.securityGuard).toBe(guard);
@@ -470,12 +453,14 @@ describe('MPU Integration', () => {
       });
 
       const ctx = AgentContextBuilder.create()
-        .withLLM(createMockLLMAdapter() as any)
-        .withTools([])
-        .withSecurityGuard(mpu.context.securityGuard!)
-        .withErrorClassifier(mpu.context.errorClassifier!)
-        .withCircuitBreaker(mpu.context.circuitBreaker!)
-        .withPlanner(mpu.context.planner!)
+        .with({
+          llm: createMockLLMAdapter() as any,
+          tools: [],
+          securityGuard: mpu.context.securityGuard!,
+          errorClassifier: mpu.context.errorClassifier!,
+          circuitBreaker: mpu.context.circuitBreaker!,
+          planner: mpu.context.planner!,
+        })
         .build();
 
       expect(ctx.securityGuard).toBeDefined();

@@ -5,7 +5,7 @@
  * readiness checks, and status derivation logic.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   HealthCheckerImpl,
   type HealthCheckerOptions,
@@ -168,7 +168,12 @@ describe('HealthCheckerImpl', () => {
         return { name: 'slow', status: 'healthy' as const };
       });
 
-      const status = await checker.check();
+      vi.useFakeTimers();
+      const statusPromise = checker.check();
+      await vi.advanceTimersByTimeAsync(50);
+      const status = await statusPromise;
+      vi.useRealTimers();
+
       expect(status.checks).toHaveLength(2);
 
       const slowCheck = status.checks.find((c) => c.name === 'slow');
@@ -229,8 +234,6 @@ describe('HealthCheckerImpl', () => {
     });
 
     it('should run checks concurrently (not sequentially)', async () => {
-      const start = Date.now();
-
       checker.registerCheck('a', async () => {
         await new Promise((r) => setTimeout(r, 100));
         return { name: 'a', status: 'healthy' as const };
@@ -240,8 +243,14 @@ describe('HealthCheckerImpl', () => {
         return { name: 'b', status: 'healthy' as const };
       });
 
-      await checker.check();
+      vi.useFakeTimers();
+      const start = Date.now();
+      const checkPromise = checker.check();
+      await vi.advanceTimersByTimeAsync(100);
+      await checkPromise;
       const elapsed = Date.now() - start;
+      vi.useRealTimers();
+
       // If truly concurrent, ~100ms; if sequential, ~200ms
       expect(elapsed).toBeLessThan(180);
     });

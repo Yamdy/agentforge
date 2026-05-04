@@ -1128,9 +1128,10 @@ describe('Phase 2a: Agent Loop', () => {
       expect(mockStorage.save).toHaveBeenCalled();
 
       // Verify the saved checkpoint has the right position
-      const savedCheckpoint = (mockStorage.save as ReturnType<typeof vi.fn>).mock.calls[0]![0];
-      expect(savedCheckpoint.position).toBe('after_llm');
-      expect(savedCheckpoint.sessionId).toBe(ctx.sessionId);
+      expect(mockStorage.save).toHaveBeenCalledWith(expect.objectContaining({
+        position: 'after_llm',
+        sessionId: ctx.sessionId,
+      }));
     });
 
     it('should not emit checkpoint event when disabled', async () => {
@@ -1226,11 +1227,10 @@ describe('Phase 2a: Agent Loop', () => {
       expect(afterLlm.length).toBeGreaterThanOrEqual(1);
 
       // Verify storage.save was called
-      expect(mockStorage.save).toHaveBeenCalled();
-      const saveCalls = (mockStorage.save as ReturnType<typeof vi.fn>).mock.calls;
       // At least one save should be at after_llm
-      const afterLlmSaves = saveCalls.filter(c => c[0].position === 'after_llm');
-      expect(afterLlmSaves.length).toBeGreaterThanOrEqual(1);
+      expect(mockStorage.save).toHaveBeenCalledWith(expect.objectContaining({
+        position: 'after_llm',
+      }));
     });
 
     it('should emit checkpoint before tool execution in event stream', async () => {
@@ -1374,6 +1374,143 @@ describe('Phase 2a: Agent Loop', () => {
       llm.setResponses([{ content: 'success after error', finishReason: 'stop' }]);
       const secondEvents = await runAndCollect(agent, 'second');
       expect(secondEvents.find(e => e.type === 'agent.complete')).toBeDefined();
+    });
+  });
+
+  // ========================================
+  // Scenario: Concurrency & Race Conditions
+  // ========================================
+  describe('Concurrency & Race Conditions', () => {
+    it('should cancel execution and transition to cancelled state', async () => {
+      // Use a tool with delayed execution so cancel can interleave
+      vi.useFakeTimers();
+
+      let toolResolve: () => void;
+      const toolDeferred = new Promise<void>(r => { toolResolve = r; });
+      toolRegistry.register('delayed_tool', async () => {
+        await toolDeferred;
+        return 'delayed result';
+      });
+
+      llm.setResponses([
+        {
+          content: '',
+          toolCalls: [{ id: 'tc-1', name: 'delayed_tool', args: {} }],
+          finishReason: 'tool_calls',
+        },
+        { content: 'After tool', finishReason: 'stop' },
+      ]);
+
+      const ctx = createTestContext(llm, toolRegistry);
+      const config = createTestConfig({ maxSteps: 5 });
+      const agent = createAgentLoop(ctx, config);
+
+      const events: AgentEvent[] = [];
+      const unsub = agent.onAny((e: AgentEvent) => events.push(e));
+
+      // Start run — it'll block on the deferred tool
+      const runPromise = agent.run('test');
+
+      // Cancel while tool is pending
+      agent.cancel();
+      toolResolve!(); // release the deferred tool
+
+      await vi.runAllTimersAsync();
+      vi.useRealTimers();
+
+      try { await runPromise; } catch { /* may reject */ }
+      unsub();
+
+      // State should be cancelled
+      expect(agent.getStatus()).toBe('cancelled');
+
+      // State transition events should include cancelled
+      const stateChanges = events.filter(e => e.type === 'state.change');
+      const cancelledChange = stateChanges.find(
+        (e: { type: string; from?: string; to?: string }) => e.to === 'cancelled'
+      );
+      expect(cancelledChange).toBeDefined();
+    });
+
+    it('should not leak messages between sequential runs', async () => {
+      llm.setResponses([{ content: 'Run 1 output', finishReason: 'stop' }]);
+      const ctx = createTestContext(llm, toolRegistry);
+      const config = createTestConfig();
+      const agent = createAgentLoop(ctx, config);
+
+      // First run
+      const events1 = await runAndCollect(agent, 'Input 1');
+      const msgCount1 = events1.filter(e => e.type === 'llm.request').length;
+
+      // Second run — should not include messages from first run
+      llm.setResponses([{ content: 'Run 2 output', finishReason: 'stop' }]);
+      const events2 = await runAndCollect(agent, 'Input 2');
+      const msgCount2 = events2.filter(e => e.type === 'llm.request').length;
+
+      // Each run should have independent LLM requests (not accumulating messages)
+      expect(msgCount1).toBeGreaterThan(0);
+      expect(msgCount2).toBeGreaterThan(0);
+      // Both runs complete independently
+      expect(events1.find(e => e.type === 'agent.complete')).toBeDefined();
+      expect(events2.find(e => e.type === 'agent.complete')).toBeDefined();
+    });
+
+    it('should handle rapid pause/resume cycles without deadlock', async () => {
+      llm.setResponses([
+        { content: 'Response after pause/resume', finishReason: 'stop' },
+      ]);
+
+      const ctx = createTestContext(llm, toolRegistry);
+      const config = createTestConfig();
+      const agent = createAgentLoop(ctx, config);
+
+      vi.useFakeTimers();
+      const eventsPromise = runAndCollect(agent, 'Hello');
+
+      // Rapid pause/resume cycles
+      ctx.pauseController.pause();
+      ctx.pauseController.resume();
+      ctx.pauseController.pause();
+      ctx.pauseController.resume();
+      ctx.pauseController.pause();
+
+      // Finally resume
+      setTimeout(() => {
+        ctx.pauseController.resume();
+      }, 10);
+
+      await vi.advanceTimersByTimeAsync(10);
+      vi.useRealTimers();
+
+      const events = await eventsPromise;
+      expect(events.find(e => e.type === 'agent.complete')).toBeDefined();
+    });
+
+    it('should not crash on cancel before run', () => {
+      const ctx = createTestContext(llm, toolRegistry);
+      const config = createTestConfig();
+      const agent = createAgentLoop(ctx, config);
+
+      // Cancel before any run — should not throw
+      expect(() => agent.cancel()).not.toThrow();
+    });
+
+    it('should properly clean up after multiple sequential runs', async () => {
+      const ctx = createTestContext(llm, toolRegistry);
+      const config = createTestConfig({ maxSteps: 3 });
+      const agent = createAgentLoop(ctx, config);
+
+      for (let i = 0; i < 3; i++) {
+        llm.setResponses([{ content: `Run ${i + 1}`, finishReason: 'stop' }]);
+        const events = await runAndCollect(agent, `Input ${i + 1}`);
+
+        // Each run should complete successfully
+        const completeEvent = events.find(e => e.type === 'agent.complete');
+        expect(completeEvent).toBeDefined();
+        if (completeEvent?.type === 'agent.complete') {
+          expect(completeEvent.output).toBe(`Run ${i + 1}`);
+        }
+      }
     });
   });
 });

@@ -7,6 +7,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { platform } from 'os';
+import { spawn } from 'child_process';
 import { taskRegistry } from '../../src/tools/task-registry.js';
 import { createTaskKillTool } from '../../src/tools/task-kill.js';
 import type { ToolDefinition } from '../../src/core/interfaces.js';
@@ -111,7 +112,6 @@ describe('TaskRegistry', () => {
 
   it('should kill a running background process (real process)', async () => {
     // Spawn a long-running process via the registry kill method
-    const { spawn } = await import('child_process');
     const child = spawn('node', ['-e', 'setTimeout(()=>{},60000)'], {
       stdio: 'ignore',
       detached: false,
@@ -217,7 +217,6 @@ describe('createTaskKillTool', () => {
   });
 
   it('should kill a registered task and return success message', async () => {
-    const { spawn } = await import('child_process');
     const child = spawn('node', ['-e', 'setTimeout(()=>{},60000)'], {
       stdio: 'ignore',
       detached: false,
@@ -238,7 +237,6 @@ describe('createTaskKillTool', () => {
   it('should handle killing an already-dead task gracefully', async () => {
     // Register a task with a known-good entry, but we'll verify the tool
     // handles the case where the process is already gone
-    const { spawn } = await import('child_process');
     const child = spawn('node', ['-e', 'process.exit(0)'], {
       stdio: 'ignore',
       detached: false,
@@ -278,7 +276,6 @@ describe('TaskRegistry + TaskKillTool integration', () => {
   });
 
   it('should support full lifecycle: register → list → kill', async () => {
-    const { spawn } = await import('child_process');
     const child = spawn('node', ['-e', 'setTimeout(()=>{},60000)'], {
       stdio: 'ignore',
       detached: false,

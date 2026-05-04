@@ -15,7 +15,7 @@ const mockFetch = vi.fn<typeof fetch>();
 vi.stubGlobal('fetch', mockFetch);
 
 // Cached factory — imported once in beforeAll
-let createWebSearchTool: () => ToolDefinition[];
+let createWebSearchTool: (options?: Record<string, unknown>) => ToolDefinition[];
 
 beforeAll(async () => {
   const mod = await import('../../src/tools/web-search.js');
@@ -150,9 +150,6 @@ describe('WebSearchTool', () => {
     });
 
     it('should default numResults to 5 when omitted', async () => {
-      const { createWebSearchTool } = await import(
-        '../../src/tools/web-search.js'
-      );
       searchTools = createWebSearchTool({ apiKey: 'test-key' });
 
       const tool = searchTools[0]!;
@@ -174,7 +171,7 @@ describe('WebSearchTool', () => {
       await tool.execute({ query: 'test' });
 
       // Verify the body sent to Exa has numResults: 5 (default)
-      const fetchCall = mockFetch.mock.calls[0];
+      const fetchCall = mockFetch.mock.lastCall;
       const body = fetchCall?.[1]?.body as string | undefined;
       expect(body).toBeDefined();
       const parsed = JSON.parse(body!);
@@ -216,9 +213,6 @@ describe('WebSearchTool', () => {
     });
 
     it('should use mock mode when provider is explicitly mock', async () => {
-      const { createWebSearchTool } = await import(
-        '../../src/tools/web-search.js'
-      );
       searchTools = createWebSearchTool({ provider: 'mock' });
 
       const tool = searchTools[0]!;
@@ -235,9 +229,6 @@ describe('WebSearchTool', () => {
 
   describe('config handling', () => {
     it('should store API key from config', async () => {
-      const { createWebSearchTool } = await import(
-        '../../src/tools/web-search.js'
-      );
       // The tool should work with an API key (i.e., not fall to mock)
       searchTools = createWebSearchTool({ apiKey: 'exa-key-123' });
 
@@ -257,9 +248,6 @@ describe('WebSearchTool', () => {
     });
 
     it('should use Exa API when provider is exa and API key provided', async () => {
-      const { createWebSearchTool } = await import(
-        '../../src/tools/web-search.js'
-      );
       searchTools = createWebSearchTool({
         provider: 'exa',
         apiKey: 'exa-key-456',
@@ -278,18 +266,16 @@ describe('WebSearchTool', () => {
 
       // Verify correct Exa API call
       expect(mockFetch).toHaveBeenCalledTimes(1);
-      const [url, init] = mockFetch.mock.calls[0]!;
-      expect(url).toBe('https://api.exa.ai/search');
-      expect(init!.method).toBe('POST');
-      const headers = init!.headers as Record<string, string>;
-      expect(headers['x-api-key']).toBe('exa-key-456');
-      expect(headers['Content-Type']).toBe('application/json');
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://api.exa.ai/search',
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({ 'x-api-key': 'exa-key-456', 'Content-Type': 'application/json' }),
+        })
+      );
     });
 
     it('should fall back to mock when provider is exa but no API key', async () => {
-      const { createWebSearchTool } = await import(
-        '../../src/tools/web-search.js'
-      );
       searchTools = createWebSearchTool({ provider: 'exa' });
 
       const tool = searchTools[0]!;
@@ -306,9 +292,6 @@ describe('WebSearchTool', () => {
 
   describe('response formatting', () => {
     it('should format Exa results as [N] Title\\nURL\\nSnippet', async () => {
-      const { createWebSearchTool } = await import(
-        '../../src/tools/web-search.js'
-      );
       searchTools = createWebSearchTool({ apiKey: 'key' });
 
       const tool = searchTools[0]!;
@@ -347,9 +330,6 @@ describe('WebSearchTool', () => {
     });
 
     it('should handle results with missing fields gracefully', async () => {
-      const { createWebSearchTool } = await import(
-        '../../src/tools/web-search.js'
-      );
       searchTools = createWebSearchTool({ apiKey: 'key' });
 
       const tool = searchTools[0]!;
@@ -370,9 +350,6 @@ describe('WebSearchTool', () => {
     });
 
     it('should return empty results message when no results', async () => {
-      const { createWebSearchTool } = await import(
-        '../../src/tools/web-search.js'
-      );
       searchTools = createWebSearchTool({ apiKey: 'key' });
 
       const tool = searchTools[0]!;
@@ -395,9 +372,6 @@ describe('WebSearchTool', () => {
 
   describe('error handling', () => {
     it('should return error when API response is not ok', async () => {
-      const { createWebSearchTool } = await import(
-        '../../src/tools/web-search.js'
-      );
       searchTools = createWebSearchTool({ apiKey: 'key' });
 
       const tool = searchTools[0]!;
@@ -415,9 +389,6 @@ describe('WebSearchTool', () => {
     });
 
     it('should return error on network failure', async () => {
-      const { createWebSearchTool } = await import(
-        '../../src/tools/web-search.js'
-      );
       searchTools = createWebSearchTool({ apiKey: 'key' });
 
       const tool = searchTools[0]!;
@@ -430,9 +401,6 @@ describe('WebSearchTool', () => {
     });
 
     it('should handle invalid JSON response', async () => {
-      const { createWebSearchTool } = await import(
-        '../../src/tools/web-search.js'
-      );
       searchTools = createWebSearchTool({ apiKey: 'key' });
 
       const tool = searchTools[0]!;
@@ -447,9 +415,6 @@ describe('WebSearchTool', () => {
     });
 
     it('should return error when API response missing results field', async () => {
-      const { createWebSearchTool } = await import(
-        '../../src/tools/web-search.js'
-      );
       searchTools = createWebSearchTool({ apiKey: 'key' });
 
       const tool = searchTools[0]!;
@@ -470,9 +435,6 @@ describe('WebSearchTool', () => {
 
   describe('timeout handling', () => {
     it('should abort request after configured timeout', async () => {
-      const { createWebSearchTool } = await import(
-        '../../src/tools/web-search.js'
-      );
       searchTools = createWebSearchTool({
         apiKey: 'key',
         timeout: 100,
@@ -500,9 +462,6 @@ describe('WebSearchTool', () => {
     });
 
     it('should use default timeout when not configured', async () => {
-      const { createWebSearchTool } = await import(
-        '../../src/tools/web-search.js'
-      );
       searchTools = createWebSearchTool({ apiKey: 'key' });
 
       const tool = searchTools[0]!;
@@ -516,9 +475,10 @@ describe('WebSearchTool', () => {
 
       await tool.execute({ query: 'test' });
 
-      const fetchCall = mockFetch.mock.calls[0];
-      const init = fetchCall?.[1] as RequestInit | undefined;
-      expect(init?.signal).toBeDefined();
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ signal: expect.any(AbortSignal) })
+      );
     });
   });
 });

@@ -26,10 +26,9 @@ describe('Planner', () => {
   });
 
   // --------------------------------------------------------
-  // TC-001: plan() 应生成执行计划
-  // --------------------------------------------------------
+    // --------------------------------------------------------
 
-  describe('TC-001: plan() should generate an execution plan', () => {
+  describe('plan() should generate an execution plan', () => {
     it('should return an ExecutionPlan object', async () => {
       const plan = await planner.plan('Read the file config.json', context);
 
@@ -60,10 +59,9 @@ describe('Planner', () => {
   });
 
   // --------------------------------------------------------
-  // TC-002: plan() 应包含步骤列表
-  // --------------------------------------------------------
+    // --------------------------------------------------------
 
-  describe('TC-002: plan() should contain a steps list', () => {
+  describe('plan() should contain a steps list', () => {
     it('should return non-empty steps for valid input', async () => {
       const plan = await planner.plan('Read config.json and write result to output.txt', context);
 
@@ -79,10 +77,9 @@ describe('Planner', () => {
   });
 
   // --------------------------------------------------------
-  // TC-003: plan() 每个步骤应有工具名称
-  // --------------------------------------------------------
+    // --------------------------------------------------------
 
-  describe('TC-003: plan() each step should have a tool name', () => {
+  describe('plan() each step should have a tool name', () => {
     it('should have toolName on each step', async () => {
       const plan = await planner.plan('Read config.json and write output.txt', context);
 
@@ -103,10 +100,9 @@ describe('Planner', () => {
   });
 
   // --------------------------------------------------------
-  // TC-004: plan() 步骤应有唯一 ID
-  // --------------------------------------------------------
+    // --------------------------------------------------------
 
-  describe('TC-004: plan() steps should have unique IDs', () => {
+  describe('plan() steps should have unique IDs', () => {
     it('should assign unique IDs to all steps', async () => {
       const plan = await planner.plan('Read config.json, search for patterns, and write results', context);
 
@@ -128,10 +124,9 @@ describe('Planner', () => {
   });
 
   // --------------------------------------------------------
-  // TC-005: validate() 有效计划应返回 true
-  // --------------------------------------------------------
+    // --------------------------------------------------------
 
-  describe('TC-005: validate() should return valid for valid plan', () => {
+  describe('validate() should return valid for valid plan', () => {
     it('should return valid for a well-formed plan', async () => {
       const plan = await planner.plan('Read config.json', context);
       const result = await planner.validate(plan);
@@ -149,10 +144,9 @@ describe('Planner', () => {
   });
 
   // --------------------------------------------------------
-  // TC-006: validate() 空计划应返回 false
-  // --------------------------------------------------------
+    // --------------------------------------------------------
 
-  describe('TC-006: validate() should return invalid for empty plan', () => {
+  describe('validate() should return invalid for empty plan', () => {
     it('should return invalid for plan with no steps', async () => {
       const emptyPlan: ExecutionPlan = {
         id: 'empty-plan',
@@ -168,10 +162,9 @@ describe('Planner', () => {
   });
 
   // --------------------------------------------------------
-  // TC-007: validate() 步骤数超过 maxSteps 应返回 false
-  // --------------------------------------------------------
+    // --------------------------------------------------------
 
-  describe('TC-007: validate() should reject plan exceeding maxSteps', () => {
+  describe('validate() should reject plan exceeding maxSteps', () => {
     it('should return invalid when steps exceed maxSteps', async () => {
       const smallContext: PlannerContext = {
         availableTools: ['read', 'write', 'bash'],
@@ -203,10 +196,9 @@ describe('Planner', () => {
   });
 
   // --------------------------------------------------------
-  // TC-008: validate() 依赖不存在的步骤应返回 false
-  // --------------------------------------------------------
+    // --------------------------------------------------------
 
-  describe('TC-008: validate() should reject plan with invalid dependencies', () => {
+  describe('validate() should reject plan with invalid dependencies', () => {
     it('should return invalid when step depends on non-existent step', () => {
       const badPlan: ExecutionPlan = {
         id: 'bad-deps',

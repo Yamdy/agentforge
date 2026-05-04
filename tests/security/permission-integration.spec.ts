@@ -87,7 +87,7 @@ describe('ApprovalChannel → PermissionController → handlePermissionAsk pipel
     );
 
     // Yield to allow handlePermissionAsk's internal await to reach channel.ask()
-    await new Promise((r) => setTimeout(r, 0));
+    await Promise.resolve();
 
     // Approve the request through the channel (simulating UI answer)
     controller.answer(capturedPromptId, 'allow');
@@ -131,7 +131,7 @@ describe('ApprovalChannel → PermissionController → handlePermissionAsk pipel
     );
 
     // Yield to allow handlePermissionAsk's internal await to reach channel.ask()
-    await new Promise((r) => setTimeout(r, 0));
+    await Promise.resolve();
 
     // Deny the request
     controller.answer(capturedPromptId, 'deny');
@@ -182,7 +182,7 @@ describe('ApprovalChannel → PermissionController → handlePermissionAsk pipel
     );
 
     // Yield to allow handlePermissionAsk's internal await to reach channel.ask()
-    await new Promise((r) => setTimeout(r, 0));
+    await Promise.resolve();
 
     controller.answer(capturedPromptId, 'allow_always');
     const results1 = await resultPromise1;
