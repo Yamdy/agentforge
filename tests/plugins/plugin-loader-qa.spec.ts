@@ -1,5 +1,5 @@
 /**
- * PluginLoader Integration Tests — End-to-end loading with real fixtures
+ * PluginLoader Integration Tests — End-to-end loading with real test doubles
  *
  * Creates temporary plugin packages on disk, loads them via PluginLoader,
  * and verifies hook registration and execution.
@@ -73,7 +73,52 @@ describe('PluginLoader Integration (E2E)', () => {
     emitter = new AgentEventEmitter();
   });
 
-  // ── Tests ──
+  // ── parsePluginSpec ──
+
+  describe('parsePluginSpec', () => {
+    it('should parse a file-source spec (relative path)', () => {
+      const result = parsePluginSpec('./local-dir');
+      expect(result.source).toBe('file');
+      expect(result.pkg).toBe('./local-dir');
+      expect(result.version).toBe('');
+    });
+
+    it('should parse a file-source spec (file:// prefix)', () => {
+      const result = parsePluginSpec('file://./local');
+      expect(result.source).toBe('file');
+      expect(result.pkg).toBe('./local');
+      expect(result.version).toBe('');
+    });
+
+    it('should parse a file-source spec (absolute path)', () => {
+      const result = parsePluginSpec('/absolute/path/to/plugin');
+      expect(result.source).toBe('file');
+      expect(result.pkg).toBe('/absolute/path/to/plugin');
+    });
+
+    it('should detect npm spec as source=npm (version parsing removed)', () => {
+      const result = parsePluginSpec('my-plugin@^1.0.0');
+      expect(result.source).toBe('npm');
+      expect(result.pkg).toBe('my-plugin@^1.0.0');
+      expect(result.version).toBe('');
+    });
+
+    it('should detect npm spec without version as source=npm', () => {
+      const result = parsePluginSpec('my-plugin');
+      expect(result.source).toBe('npm');
+      expect(result.pkg).toBe('my-plugin');
+      expect(result.version).toBe('');
+    });
+
+    it('should detect scoped npm package as source=npm', () => {
+      const result = parsePluginSpec('@scope/pkg@2.0.0');
+      expect(result.source).toBe('npm');
+      expect(result.pkg).toBe('@scope/pkg@2.0.0');
+      expect(result.version).toBe('');
+    });
+  });
+
+  // ── Plugin Loading Tests ──
 
   it('should parse a file-source spec', () => {
     const result = parsePluginSpec(FIXTURE_DIR);

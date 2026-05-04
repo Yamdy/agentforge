@@ -16,7 +16,7 @@ import {
   type PointerIndexedConfig,
   CompactionStrategySchema,
 } from '../../src/memory/strategies.js';
-import { InMemoryVectorStore, MockEmbeddingModel, FailingEmbeddingModel } from '../fixtures/vector-store-mocks.js';
+import { InMemoryVectorStore, MockEmbeddingModel, FailingEmbeddingModel } from '../helpers/vector-store-mocks.js';
 
 // ============================================================
 // Test Helpers

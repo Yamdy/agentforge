@@ -12,7 +12,7 @@ import { describe, it, expect } from 'vitest';
 import { createAgent } from '../../src/api/create-agent.js';
 import type { AgentConfig } from '../../src/api/types.js';
 import { NoopTracer, ConsoleTracer, NoopMetrics, ConsoleMetrics } from '../../src/core/defaults.js';
-import { MockLLMAdapter } from '../fixtures/llm-mocks.js';
+import { MockLLMAdapter } from '../helpers/llm-mocks.js';
 
 // ============================================================
 // Helper: Create minimal agent config

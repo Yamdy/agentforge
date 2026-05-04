@@ -24,7 +24,7 @@ import {
   createTestConfig,
   runAndCollect,
   createAgentLoop,
-} from '../fixtures/e2e-adapters.js';
+} from '../helpers/e2e-adapters.js';
 import type { AgentLoopConfig } from '../../src/loop/agent-loop.js';
 
 // ============================================================

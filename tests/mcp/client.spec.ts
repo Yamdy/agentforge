@@ -15,7 +15,7 @@ import {
   createJSONRPCResponse,
   createJSONRPCError,
   createJSONRPCRequest,
-} from '../fixtures/mcp-transport-mocks.js';
+} from '../helpers/mcp-transport-mocks.js';
 
 // ============================================================
 // Factory Test

@@ -7,7 +7,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Message } from '../../src/core/events.js';
 import type { LLMAdapter, LLMResponse } from '../../src/core/interfaces.js';
-import { InMemoryVectorStore, MockEmbeddingModel, createTestMessages as makeMessages } from '../fixtures/vector-store-mocks.js';
+import { InMemoryVectorStore, MockEmbeddingModel, createTestMessages as makeMessages } from '../helpers/vector-store-mocks.js';
 import {
   CompactionManager,
   CompactionConfigSchema,
