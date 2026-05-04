@@ -48,11 +48,21 @@ describe('BatchContextSchema', () => {
       completedCalls: 0,
       startedAt: Date.now(),
     };
-    expect(BatchContextSchema.safeParse(ctx).success).toBe(true);
+    const result = BatchContextSchema.safeParse(ctx);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.batchId).toBe('batch-1');
+      expect(result.data.totalCalls).toBe(3);
+      expect(result.data.completedCalls).toBe(0);
+    }
   });
 
   it('should reject missing fields', () => {
-    expect(BatchContextSchema.safeParse({ batchId: 'b1' }).success).toBe(false);
+    const result = BatchContextSchema.safeParse({ batchId: 'b1' });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.length).toBeGreaterThan(0);
+    }
   });
 });
 
@@ -63,7 +73,12 @@ describe('ContextManagementSchema', () => {
       compactionCount: 2,
       lastCompactionAt: Date.now(),
     };
-    expect(ContextManagementSchema.safeParse(ctx).success).toBe(true);
+    const result = ContextManagementSchema.safeParse(ctx);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.totalTokens).toBe(1000);
+      expect(result.data.compactionCount).toBe(2);
+    }
   });
 
   it('should use defaults', () => {
@@ -79,7 +94,12 @@ describe('CheckpointReferenceSchema', () => {
       timestamp: Date.now(),
       position: 'after_llm',
     };
-    expect(CheckpointReferenceSchema.safeParse(ref).success).toBe(true);
+    const result = CheckpointReferenceSchema.safeParse(ref);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.id).toBe('cp-1');
+      expect(result.data.position).toBe('after_llm');
+    }
   });
 
   it('should validate all positions', () => {
@@ -91,7 +111,12 @@ describe('CheckpointReferenceSchema', () => {
     ];
     for (const pos of positions) {
       const ref = { id: 'cp-1', timestamp: Date.now(), position: pos };
-      expect(CheckpointReferenceSchema.safeParse(ref).success).toBe(true);
+      const result = CheckpointReferenceSchema.safeParse(ref);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.id).toBe('cp-1');
+        expect(result.data.position).toBe(pos);
+      }
     }
   });
 });
@@ -102,11 +127,20 @@ describe('ModelConfigSchema', () => {
       provider: 'openai',
       model: 'gpt-4',
     };
-    expect(ModelConfigSchema.safeParse(config).success).toBe(true);
+    const result = ModelConfigSchema.safeParse(config);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.provider).toBe('openai');
+      expect(result.data.model).toBe('gpt-4');
+    }
   });
 
   it('should reject missing fields', () => {
-    expect(ModelConfigSchema.safeParse({ provider: 'openai' }).success).toBe(false);
+    const result = ModelConfigSchema.safeParse({ provider: 'openai' });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.length).toBeGreaterThan(0);
+    }
   });
 });
 
@@ -116,7 +150,12 @@ describe('TokenStatsSchema', () => {
       prompt: 100,
       completion: 50,
     };
-    expect(TokenStatsSchema.safeParse(stats).success).toBe(true);
+    const result = TokenStatsSchema.safeParse(stats);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.prompt).toBe(100);
+      expect(result.data.completion).toBe(50);
+    }
   });
 });
 
@@ -143,7 +182,16 @@ describe('AgentStateSchema', () => {
         compactionRetryCount: 0,
       },
     };
-    expect(AgentStateSchema.safeParse(state).success).toBe(true);
+    const result = AgentStateSchema.safeParse(state);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.sessionId).toBe('session-1');
+      expect(result.data.agentName).toBe('assistant');
+      expect(result.data.model.provider).toBe('openai');
+      expect(result.data.model.model).toBe('gpt-4');
+      expect(result.data.step).toBe(0);
+      expect(result.data.maxSteps).toBe(10);
+    }
   });
 
   it('should validate full agent state', () => {
@@ -182,12 +230,29 @@ describe('AgentStateSchema', () => {
         position: 'after_llm',
       },
     };
-    expect(AgentStateSchema.safeParse(state).success).toBe(true);
+    const result = AgentStateSchema.safeParse(state);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.sessionId).toBe('session-1');
+      expect(result.data.messages).toHaveLength(2);
+      expect(result.data.output).toBe('Hi!');
+      expect(result.data.batchContext?.batchId).toBe('batch-1');
+      expect(result.data.contextManagement?.totalTokens).toBe(1000);
+      expect(result.data.lastCheckpoint?.id).toBe('cp-1');
+    }
   });
 
   it('should reject missing required fields', () => {
-    expect(AgentStateSchema.safeParse({}).success).toBe(false);
-    expect(AgentStateSchema.safeParse({ sessionId: 's1' }).success).toBe(false);
+    const r1 = AgentStateSchema.safeParse({});
+    expect(r1.success).toBe(false);
+    if (!r1.success) {
+      expect(r1.error.issues.length).toBeGreaterThan(0);
+    }
+    const r2 = AgentStateSchema.safeParse({ sessionId: 's1' });
+    expect(r2.success).toBe(false);
+    if (!r2.success) {
+      expect(r2.error.issues.length).toBeGreaterThan(0);
+    }
   });
 });
 

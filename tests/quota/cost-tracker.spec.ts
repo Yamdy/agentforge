@@ -151,4 +151,165 @@ describe('MemoryCostTracker', () => {
       expect(Object.keys(after.byModel)).toHaveLength(0);
     });
   });
+
+  // ----------------------------------------------------------
+  // Multiple sessions + limits
+  // ----------------------------------------------------------
+
+  describe('multiple sessions', () => {
+    it('should track sessions independently', async () => {
+      await tracker.record('session-1', 'gpt-4o', createUsage({ promptTokens: 100, completionTokens: 50 }));
+      await tracker.record('session-2', 'gpt-4o', createUsage({ promptTokens: 500, completionTokens: 200 }));
+
+      const usage1 = await tracker.getUsage('session-1');
+      const usage2 = await tracker.getUsage('session-2');
+
+      expect(usage1.totalCost).toBeGreaterThan(0);
+      expect(usage2.totalCost).toBeGreaterThan(0);
+      expect(usage1.totalCost).not.toBe(usage2.totalCost);
+      expect(usage1.byModel['gpt-4o']!.tokens.promptTokens).toBe(100);
+      expect(usage2.byModel['gpt-4o']!.tokens.promptTokens).toBe(500);
+    });
+
+    it('should independently enforce limits per session', async () => {
+      await tracker.setLimit('session-1', { maxTokens: 100 });
+      await tracker.setLimit('session-2', { maxTokens: 1000 });
+
+      await tracker.record('session-1', 'gpt-4o', createUsage({ promptTokens: 200, completionTokens: 0 }));
+      await tracker.record('session-2', 'gpt-4o', createUsage({ promptTokens: 200, completionTokens: 0 }));
+
+      const check1 = await tracker.checkLimit('session-1');
+      const check2 = await tracker.checkLimit('session-2');
+
+      expect(check1.withinLimit).toBe(false);
+      expect(check2.withinLimit).toBe(true);
+    });
+  });
+
+  describe('cost limit only', () => {
+    it('should detect when cost exceeds limit', async () => {
+      // Use large tokens to trigger high cost
+      await tracker.setLimit('session-1', { maxCost: 0.001 });
+      await tracker.record('session-1', 'gpt-4o', createUsage({ promptTokens: 50000, completionTokens: 50000 }));
+
+      const result = await tracker.checkLimit('session-1');
+      expect(result.withinLimit).toBe(false);
+      expect(result.exceeded!.some((e) => e.includes('cost'))).toBe(true);
+    });
+
+    it('should detect when requests exceed limit', async () => {
+      await tracker.setLimit('session-1', { maxRequests: 2 });
+      await tracker.record('session-1', 'gpt-4o', createUsage());
+      await tracker.record('session-1', 'gpt-4o', createUsage());
+      await tracker.record('session-1', 'gpt-4o', createUsage());
+
+      const result = await tracker.checkLimit('session-1');
+      expect(result.withinLimit).toBe(false);
+      expect(result.exceeded!.some((e) => e.includes('requests'))).toBe(true);
+    });
+  });
+
+  describe('time range', () => {
+    it('should set startTime and endTime on usage', async () => {
+      await tracker.record('session-1', 'gpt-4o', createUsage());
+      const usage = await tracker.getUsage('session-1');
+
+      expect(usage.timeRange).toBeDefined();
+      expect(usage.timeRange.start).toBeTruthy();
+      expect(usage.timeRange.end).toBeTruthy();
+      // ISO 8601 format
+      expect(usage.timeRange.start).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    });
+  });
+
+  describe('concurrency', () => {
+    it('should sum costs correctly under concurrent record calls to same session', async () => {
+      const usages = Array.from({ length: 20 }, () =>
+        createUsage({ promptTokens: 100, completionTokens: 50 })
+      );
+
+      await Promise.all(
+        usages.map((usage) => tracker.record('concurrent-session', 'gpt-4o', usage))
+      );
+
+      const result = await tracker.getUsage('concurrent-session');
+      expect(result.byModel['gpt-4o']).toBeDefined();
+      expect(result.byModel['gpt-4o']!.requests).toBe(20);
+      expect(result.byModel['gpt-4o']!.tokens.promptTokens).toBe(20 * 100);
+      expect(result.byModel['gpt-4o']!.tokens.completionTokens).toBe(20 * 50);
+      expect(result.totalCost).toBeGreaterThan(0);
+    });
+
+    it('should handle concurrent record across different sessions without interference', async () => {
+      const sessions = ['s1', 's2', 's3', 's4', 's5'];
+
+      // 5 sessions x 4 concurrent records each = 20 total
+      await Promise.all(
+        sessions.flatMap((sid) =>
+          Array.from({ length: 4 }, () =>
+            tracker.record(sid, 'gpt-4o', createUsage({ promptTokens: 100, completionTokens: 50 }))
+          )
+        )
+      );
+
+      // Each session should have exactly 4 requests
+      for (const sid of sessions) {
+        const usage = await tracker.getUsage(sid);
+        expect(usage.byModel['gpt-4o']).toBeDefined();
+        expect(usage.byModel['gpt-4o']!.requests).toBe(4);
+        expect(usage.byModel['gpt-4o']!.tokens.promptTokens).toBe(400);
+      }
+    });
+
+    it('should return consistent snapshot when getUsage called concurrently with record', async () => {
+      // Seed initial record
+      await tracker.record('rw-session', 'gpt-4o', createUsage({ promptTokens: 100, completionTokens: 50 }));
+
+      // Concurrent: record more + read usage
+      const [_, usageSnapshot] = await Promise.all([
+        tracker.record('rw-session', 'gpt-4o', createUsage({ promptTokens: 200, completionTokens: 100 })),
+        tracker.getUsage('rw-session'),
+      ]);
+
+      // Snapshot may include concurrent record or not — either is valid
+      expect(usageSnapshot.sessionId).toBe('rw-session');
+      expect(usageSnapshot.byModel['gpt-4o']).toBeDefined();
+      expect([1, 2]).toContain(usageSnapshot.byModel['gpt-4o']!.requests);
+      // No crash, no corruption
+    });
+
+    it('should handle concurrent record and reset without data corruption', async () => {
+      await tracker.record('reset-session', 'gpt-4o', createUsage({ promptTokens: 100, completionTokens: 50 }));
+
+      await Promise.all([
+        tracker.reset('reset-session'),
+        tracker.record('reset-session', 'gpt-4o', createUsage({ promptTokens: 200, completionTokens: 100 })),
+      ]);
+
+      // After concurrent reset+record, session has 1 record (from the concurrent record call)
+      const usage = await tracker.getUsage('reset-session');
+      expect(usage.byModel['gpt-4o']).toBeDefined();
+      expect(usage.byModel['gpt-4o']!.requests).toBe(1);
+    });
+
+    it('should handle concurrent checkLimit and record without error', async () => {
+      await tracker.setLimit('limit-session', { maxRequests: 5 });
+
+      // Record 4 times + check limit concurrently
+      const promises: Promise<unknown>[] = [
+        ...Array.from({ length: 4 }, () =>
+          tracker.record('limit-session', 'gpt-4o', createUsage({ promptTokens: 100, completionTokens: 50 }))
+        ),
+      ];
+      const checkPromise = tracker.checkLimit('limit-session');
+      promises.push(checkPromise);
+
+      await Promise.all(promises);
+
+      const result = await checkPromise;
+      // Limit result should be well-defined regardless of interleaving
+      expect(result.withinLimit).toBeDefined();
+      expect(result.current).toBeDefined();
+    });
+  });
 });

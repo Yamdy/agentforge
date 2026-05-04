@@ -10,9 +10,17 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
-import { writeFile, mkdir, rm } from 'fs/promises';
-import { join } from 'path';
-import { tmpdir } from 'os';
+import { fs as memfsModule, vol } from 'memfs';
+
+// ============================================================
+// Mocks — replace real filesystem with memfs (in-memory)
+// Must be at TOP — before any imports that trigger real fs I/O
+// ============================================================
+
+vi.mock('node:fs/promises', () => memfsModule.promises);
+vi.mock('node:fs', () => memfsModule);
+vi.mock('fs/promises', () => memfsModule.promises);
+vi.mock('fs', () => memfsModule);
 
 // ============================================================
 // Mocks — isolate config wiring from external dependencies
@@ -53,33 +61,30 @@ import { HookRegistry } from '../../src/core/hooks.js';
 // Test Setup
 // ============================================================
 
-const TEST_DIR = join(tmpdir(), 'agentforge-memory-skills-e2e');
-const AGENTS_MD = join(TEST_DIR, 'AGENTS.md');
-const SKILL_DIR = join(TEST_DIR, 'skills', 'test-skill');
-const SKILL_MD = join(SKILL_DIR, 'SKILL.md');
+const TEST_DIR = '/test/memory-skills-e2e';
+const AGENTS_MD = `${TEST_DIR}/AGENTS.md`;
+const SKILL_DIR = `${TEST_DIR}/skills/test-skill`;
+const SKILL_MD = `${SKILL_DIR}/SKILL.md`;
 
 describe('createAgent() — Memory/Skills/Summarization plugin wiring', () => {
-  beforeAll(async () => {
-    await mkdir(TEST_DIR, { recursive: true });
-    await mkdir(SKILL_DIR, { recursive: true });
-
-    await writeFile(AGENTS_MD, '# Test Memory\nUser prefers TypeScript.\n', 'utf-8');
-
-    await writeFile(
-      SKILL_MD,
-      `---
+  beforeAll(() => {
+    vol.fromJSON(
+      {
+        './AGENTS.md': '# Test Memory\nUser prefers TypeScript.\n',
+        './skills/test-skill/SKILL.md': `---
 name: test-skill
 description: A test skill for verification
 ---
 
 # Test Skill
 `,
-      'utf-8',
+      },
+      TEST_DIR,
     );
   });
 
-  afterAll(async () => {
-    await rm(TEST_DIR, { recursive: true, force: true });
+  afterAll(() => {
+    vol.reset();
   });
 
   // ==========================================================
@@ -123,9 +128,9 @@ description: A test skill for verification
 
     const hooks = agent.ctx.hookRegistry as HookRegistry;
     const requestHooks = hooks.getRequestHooks();
-    const memoryHook = requestHooks.find(h => h.name === 'memory-intercept');
+    const memoryHook = requestHooks.find(h => h.name === 'memory-context');
     expect(memoryHook).toBeDefined();
-    expect(memoryHook!.priority).toBe(10);
+    expect(memoryHook!.priority).toBe(20);
   });
 
   it('should register memory lifecycle hook for agent.start bridging', () => {
@@ -154,7 +159,7 @@ description: A test skill for verification
       model: { provider: 'mock', model: 'mock-model' },
       maxSteps: 1,
       skills: {
-        sources: [join(TEST_DIR, 'skills')],
+        sources: [`${TEST_DIR}/skills`],
       },
     });
 
@@ -162,9 +167,9 @@ description: A test skill for verification
 
     const hooks = agent.ctx.hookRegistry as HookRegistry;
     const requestHooks = hooks.getRequestHooks();
-    const skillsHook = requestHooks.find(h => h.name === 'skills-intercept');
+    const skillsHook = requestHooks.find(h => h.name === 'skills-context');
     expect(skillsHook).toBeDefined();
-    expect(skillsHook!.priority).toBe(5);
+    expect(skillsHook!.priority).toBe(30);
   });
 
   it('should register skills lifecycle hook for agent.start bridging', () => {
@@ -173,7 +178,7 @@ description: A test skill for verification
       model: { provider: 'mock', model: 'mock-model' },
       maxSteps: 1,
       skills: {
-        sources: [join(TEST_DIR, 'skills')],
+        sources: [`${TEST_DIR}/skills`],
       },
     });
 
@@ -196,7 +201,7 @@ description: A test skill for verification
         sources: [AGENTS_MD],
       },
       skills: {
-        sources: [join(TEST_DIR, 'skills')],
+        sources: [`${TEST_DIR}/skills`],
       },
     });
 
@@ -205,16 +210,16 @@ description: A test skill for verification
 
     expect(requestHooks.length).toBeGreaterThanOrEqual(2);
 
-    const skillsHook = requestHooks.find(h => h.name === 'skills-intercept');
-    const memoryHook = requestHooks.find(h => h.name === 'memory-intercept');
+    const skillsHook = requestHooks.find(h => h.name === 'skills-context');
+    const memoryHook = requestHooks.find(h => h.name === 'memory-context');
 
     expect(skillsHook).toBeDefined();
     expect(memoryHook).toBeDefined();
 
-    // Skills (priority 5) should come before Memory (priority 10)
+    // Memory (priority 20) should come before Skills (priority 30)
     const skillsIdx = requestHooks.indexOf(skillsHook!);
     const memoryIdx = requestHooks.indexOf(memoryHook!);
-    expect(skillsIdx).toBeLessThan(memoryIdx);
+    expect(memoryIdx).toBeLessThan(skillsIdx);
   });
 
   // ==========================================================
@@ -231,7 +236,7 @@ description: A test skill for verification
         sources: [AGENTS_MD],
       },
       skills: {
-        sources: [join(TEST_DIR, 'skills')],
+        sources: [`${TEST_DIR}/skills`],
       },
       summarization: {
         tokenThreshold: 100000,
@@ -244,16 +249,16 @@ description: A test skill for verification
 
     expect(requestHooks.length).toBeGreaterThanOrEqual(3);
 
-    const summarizationHook = requestHooks.find(h => h.name === 'summarization-intercept');
+    const summarizationHook = requestHooks.find(h => h.name === 'summarization-compact');
     expect(summarizationHook).toBeDefined();
     expect(summarizationHook!.priority).toBe(20);
 
-    // Verify order: skills(5) < memory(10) < summarization(20)
-    const skillsIdx = requestHooks.findIndex(h => h.name === 'skills-intercept');
-    const memoryIdx = requestHooks.findIndex(h => h.name === 'memory-intercept');
-    const summIdx = requestHooks.findIndex(h => h.name === 'summarization-intercept');
-    expect(skillsIdx).toBeLessThan(memoryIdx);
-    expect(memoryIdx).toBeLessThan(summIdx);
+    // Verify order: todo(15) < memory(20) ≤ summarization(20) < skills(30)
+    const skillsIdx = requestHooks.findIndex(h => h.name === 'skills-context');
+    const memoryIdx = requestHooks.findIndex(h => h.name === 'memory-context');
+    const summIdx = requestHooks.findIndex(h => h.name === 'summarization-compact');
+    expect(memoryIdx).toBeLessThan(skillsIdx);
+    expect(summIdx).toBeLessThan(skillsIdx);
   });
 
   // ==========================================================
@@ -268,11 +273,13 @@ description: A test skill for verification
       plugins: [
         {
           name: 'custom-observer',
-          type: 'observer',
-          priority: 100,
-          eventTypes: [],
           enabled: true,
-          observe() {},
+          eventSubscriptions: [
+            {
+              event: 'agent.start' as const,
+              handler: () => {},
+            },
+          ],
         },
       ],
       memory: {
@@ -287,7 +294,7 @@ description: A test skill for verification
     const requestHooks = hooks.getRequestHooks();
 
     // Should have the auto-created memory hook
-    const memoryHook = requestHooks.find(h => h.name === 'memory-intercept');
+    const memoryHook = requestHooks.find(h => h.name === 'memory-context');
     expect(memoryHook).toBeDefined();
   });
 

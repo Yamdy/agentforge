@@ -21,7 +21,14 @@ describe('MCPToolResponseSchema', () => {
       content: [{ type: 'text' as const, text: 'Hello' }],
       isError: false,
     };
-    expect(MCPToolResponseSchema.safeParse(response).success).toBe(true);
+    const result = MCPToolResponseSchema.safeParse(response);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.content).toHaveLength(1);
+      expect(result.data.content[0]?.type).toBe('text');
+      expect(result.data.content[0]?.text).toBe('Hello');
+      expect(result.data.isError).toBe(false);
+    }
   });
 
   it('should validate response with image content', () => {
@@ -29,7 +36,14 @@ describe('MCPToolResponseSchema', () => {
       content: [{ type: 'image' as const, data: 'base64data', mimeType: 'image/png' }],
       isError: false,
     };
-    expect(MCPToolResponseSchema.safeParse(response).success).toBe(true);
+    const result = MCPToolResponseSchema.safeParse(response);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.content).toHaveLength(1);
+      expect(result.data.content[0]?.type).toBe('image');
+      expect(result.data.content[0]?.data).toBe('base64data');
+      expect(result.data.content[0]?.mimeType).toBe('image/png');
+    }
   });
 
   it('should validate response with resource content', () => {
@@ -37,7 +51,13 @@ describe('MCPToolResponseSchema', () => {
       content: [{ type: 'resource' as const, text: 'resource content' }],
       isError: false,
     };
-    expect(MCPToolResponseSchema.safeParse(response).success).toBe(true);
+    const result = MCPToolResponseSchema.safeParse(response);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.content).toHaveLength(1);
+      expect(result.data.content[0]?.type).toBe('resource');
+      expect(result.data.content[0]?.text).toBe('resource content');
+    }
   });
 
   it('should default missing isError to false', () => {
@@ -56,7 +76,12 @@ describe('MCPToolResponseSchema', () => {
       content: [{ type: 'audio' }],
       isError: false,
     };
-    expect(MCPToolResponseSchema.safeParse(response).success).toBe(false);
+    const result = MCPToolResponseSchema.safeParse(response);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.length).toBeGreaterThan(0);
+      expect(result.error.issues.some(i => i.message.toLowerCase().includes('type') || i.path.includes('type'))).toBe(true);
+    }
   });
 });
 

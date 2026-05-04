@@ -7,7 +7,7 @@
  * - Severe: triggers immediately
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { DefaultCircuitBreaker } from '../../src/resilience/circuit-breaker.js';
 
 describe('DefaultCircuitBreaker', () => {
@@ -163,6 +163,132 @@ describe('DefaultCircuitBreaker', () => {
       // Only 2 moderate failures, threshold is 3
       expect(cb.getState()).toBe('closed');
       expect(cb.shouldTrip()).toBe(false);
+    });
+  });
+
+  // ============================================================
+  // Concurrency
+  // ============================================================
+
+  describe('concurrency', () => {
+    it('should trip at exact threshold under concurrent moderate failures', async () => {
+      const cb = new DefaultCircuitBreaker({
+        failureThreshold: 5,
+        resetTimeoutMs: 60000,
+        halfOpenMaxAttempts: 2,
+      });
+
+      const results = await Promise.all(
+        Array.from({ length: 20 }, () => Promise.resolve(cb.recordFailure('moderate')))
+      );
+
+      // First 4 calls: failureCount 1..4, below threshold, return false.
+      // Call 5: failureCount reaches 5, trips to open, returns true.
+      // Calls 6-20: failureCount keeps incrementing, condition failureCount>=threshold
+      //   remains true, so they also return true (circuit already open).
+      const trippedCount = results.filter((r) => r === true).length;
+      expect(trippedCount).toBeGreaterThanOrEqual(1);
+      expect(cb.getState()).toBe('open');
+      expect(cb.shouldTrip()).toBe(true);
+      // All 20 moderate failures increment failureCount
+      expect(cb.getFailureCount()).toBe(20);
+    });
+
+    it('should transition half-open to closed under concurrent successes', async () => {
+      vi.useFakeTimers();
+
+      const cb = new DefaultCircuitBreaker({
+        failureThreshold: 2,
+        resetTimeoutMs: 1000,
+        halfOpenMaxAttempts: 3,
+      });
+
+      // Trip to open
+      cb.recordFailure('severe');
+      expect(cb.getState()).toBe('open');
+
+      // Advance time past reset timeout to auto-transition to half-open
+      vi.advanceTimersByTime(1001);
+      expect(cb.getState()).toBe('half-open');
+
+      // Concurrent successes in half-open state
+      const results = await Promise.all(
+        Array.from({ length: 10 }, () => Promise.resolve(cb.recordSuccess()))
+      );
+
+      // With halfOpenMaxAttempts=3: calls 1-2 increment counter (return false),
+      // call 3 increments to 3, transitions to closed (returns true),
+      // calls 4-10 are in closed state (return false).
+      const closedTransitions = results.filter((r) => r === true).length;
+      expect(closedTransitions).toBe(1);
+      expect(cb.getState()).toBe('closed');
+      expect(cb.getFailureCount()).toBe(0);
+      expect(cb.shouldTrip()).toBe(false);
+
+      vi.useRealTimers();
+    });
+
+    it('should not trip before threshold even under concurrent access', async () => {
+      const cb = new DefaultCircuitBreaker({
+        failureThreshold: 10,
+        resetTimeoutMs: 60000,
+        halfOpenMaxAttempts: 2,
+      });
+
+      await Promise.all(
+        Array.from({ length: 7 }, () => Promise.resolve(cb.recordFailure('moderate')))
+      );
+
+      expect(cb.getState()).toBe('closed');
+      expect(cb.shouldTrip()).toBe(false);
+      expect(cb.getFailureCount()).toBe(7);
+    });
+
+    it('should handle concurrent severe errors — every one trips', async () => {
+      const cb = new DefaultCircuitBreaker({
+        failureThreshold: 10,
+        resetTimeoutMs: 60000,
+        halfOpenMaxAttempts: 2,
+      });
+
+      const results = await Promise.all(
+        Array.from({ length: 15 }, () => Promise.resolve(cb.recordFailure('severe')))
+      );
+
+      // First severe error trips immediately. Subsequent severe errors in open
+      // state also increment failureCount and call transitionTo('open') which is no-op.
+      const trippedCount = results.filter((r) => r === true).length;
+      expect(trippedCount).toBeGreaterThanOrEqual(1);
+      expect(cb.getState()).toBe('open');
+      expect(cb.getFailureCount()).toBe(15);
+    });
+
+    it('should handle concurrent failure and state queries without inconsistency', async () => {
+      const cb = new DefaultCircuitBreaker({
+        failureThreshold: 3,
+        resetTimeoutMs: 60000,
+        halfOpenMaxAttempts: 1,
+      });
+
+      // Interleave failures with state queries
+      const operations = Array.from({ length: 15 }, (_, i) => {
+        if (i % 3 === 0) {
+          return Promise.resolve({ type: 'state' as const, value: cb.getState() });
+        }
+        return Promise.resolve({ type: 'result' as const, value: cb.recordFailure('moderate') });
+      });
+
+      const results = await Promise.all(operations);
+
+      // State should only be one of three valid values
+      for (const r of results) {
+        if (r.type === 'state') {
+          expect(['closed', 'open', 'half-open']).toContain(r.value);
+        }
+      }
+
+      // Should end in open state (10 moderate failures > threshold of 3)
+      expect(cb.getState()).toBe('open');
     });
   });
 });

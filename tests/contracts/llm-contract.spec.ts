@@ -24,7 +24,14 @@ describe('LLMResponseContractSchema', () => {
       finishReason: 'stop' as const,
       usage: { promptTokens: 100, completionTokens: 50 },
     };
-    expect(LLMResponseContractSchema.safeParse(response).success).toBe(true);
+    const result = LLMResponseContractSchema.safeParse(response);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.content).toBe('Hello, world!');
+      expect(result.data.finishReason).toBe('stop');
+      expect(result.data.usage?.promptTokens).toBe(100);
+      expect(result.data.usage?.completionTokens).toBe(50);
+    }
   });
 
   it('should validate minimal LLM response', () => {
@@ -32,14 +39,24 @@ describe('LLMResponseContractSchema', () => {
       content: 'Hello',
       finishReason: 'stop' as const,
     };
-    expect(LLMResponseContractSchema.safeParse(response).success).toBe(true);
+    const result = LLMResponseContractSchema.safeParse(response);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.content).toBe('Hello');
+      expect(result.data.finishReason).toBe('stop');
+    }
   });
 
   it('should reject response without content', () => {
     const response = {
       finishReason: 'stop' as const,
     };
-    expect(LLMResponseContractSchema.safeParse(response).success).toBe(false);
+    const result = LLMResponseContractSchema.safeParse(response);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.length).toBeGreaterThan(0);
+      expect(result.error.issues.some(i => i.path.includes('content'))).toBe(true);
+    }
   });
 
   it('should reject invalid finish reason', () => {
@@ -47,7 +64,11 @@ describe('LLMResponseContractSchema', () => {
       content: 'Hello',
       finishReason: 'invalid',
     };
-    expect(LLMResponseContractSchema.safeParse(response).success).toBe(false);
+    const result = LLMResponseContractSchema.safeParse(response);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.length).toBeGreaterThan(0);
+    }
   });
 });
 

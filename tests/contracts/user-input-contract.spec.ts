@@ -17,12 +17,22 @@ import {
 describe('UserInputSchema', () => {
   it('should validate valid input object', () => {
     const input = { content: 'Hello', metadata: { source: 'cli' } };
-    expect(UserInputSchema.safeParse(input).success).toBe(true);
+    const result = UserInputSchema.safeParse(input);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.content).toBe('Hello');
+      expect(result.data.metadata.source).toBe('cli');
+    }
   });
 
   it('should validate input with minimal content', () => {
     const input = { content: 'Hello' };
-    expect(UserInputSchema.safeParse(input).success).toBe(true);
+    const result = UserInputSchema.safeParse(input);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.content).toBe('Hello');
+      expect(result.data.metadata).toEqual({});
+    }
   });
 
   it('should default metadata to empty object', () => {
@@ -36,12 +46,20 @@ describe('UserInputSchema', () => {
 
   it('should reject empty content string', () => {
     const input = { content: '' };
-    expect(UserInputSchema.safeParse(input).success).toBe(false);
+    const result = UserInputSchema.safeParse(input);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.length).toBeGreaterThan(0);
+    }
   });
 
   it('should reject missing content', () => {
     const input = { metadata: {} };
-    expect(UserInputSchema.safeParse(input).success).toBe(false);
+    const result = UserInputSchema.safeParse(input);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some(i => i.path.includes('content'))).toBe(true);
+    }
   });
 });
 
