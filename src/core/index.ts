@@ -32,7 +32,6 @@ export {
   isAgentEvent,
   isLLMEvent,
   isToolEvent,
-  isHITLEvent,
   isAgentLifecycleEvent,
   isTerminalEvent,
   isSubagentEvent,
@@ -168,7 +167,6 @@ export type {
   ApplicationServices,
   AgentContext,
   AgentModelConfig,
-  AgentConfig,
   StepContext,
 } from './context.js';
 
@@ -287,12 +285,6 @@ export type {
 export { DefaultApprovalChannel } from './approval-channel.js';
 
 // ============================================================
-// Checkpoint Registry (R6 iron law)
-// ============================================================
-
-export type { LifecyclePhase, CheckpointResult, CheckpointFn } from './checkpoint-registry.js';
-export { CheckpointRegistry } from './checkpoint-registry.js';
-
 // ============================================================
 // Content Utilities (Multimodal message content access)
 // ============================================================

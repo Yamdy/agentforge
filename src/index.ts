@@ -54,7 +54,6 @@ export {
   isAgentEvent,
   isLLMEvent,
   isToolEvent,
-  isHITLEvent,
   isAgentLifecycleEvent,
   isTerminalEvent,
   // Helpers
@@ -179,9 +178,11 @@ export type {
   ApplicationServices,
   AgentContext,
   AgentModelConfig,
-  AgentConfig,
   StepContext as CoreStepContext,
 } from './core/context.js';
+
+// AgentConfig is the primary public config type, exported from the API layer
+export type { AgentConfig, NormalizedAgentConfig } from './api/types.js';
 
 export {
   InMemoryStore,
@@ -325,18 +326,17 @@ export { type AgentLoopConfig, type AgentLoop, createAgentLoop } from './loop/in
 
 export {
   HookName,
+  RequestHookPriority,
   type HookFn,
   type LifecycleHookEntry,
   type RequestHook,
   type ToolHook,
-  HookRegistry,
+  type ToolProviderHook,
+  type CheckpointHook,
+  type CheckpointResult,
+  type CheckpointFn,
+  type LifecyclePhase,
 } from './core/hooks.js';
-
-// ============================================================
-// Event Emitter
-// ============================================================
-
-export { AgentEventEmitter } from './core/events.js';
 
 // ============================================================
 // New State Types
@@ -554,11 +554,6 @@ export {
   // Core
   type PluginContext,
   type Plugin,
-  type InterceptorPlugin,
-  type ObserverPlugin,
-  validatePlugin,
-  isInterceptorPlugin,
-  isObserverPlugin,
   type CreatePluginContextOptions,
   createPluginContext,
   // Manager
@@ -820,8 +815,8 @@ export {
   type AnthropicAdapterOptions,
   parseModelSpec,
   detectProviderFromModel,
+  LLMAdapterFactoryImpl,
   getLLMAdapterFactory,
-  resetLLMAdapterFactory,
   createLLMAdapter,
   createOpenAICompatibleAdapter,
   createGoogleAdapter,
@@ -854,10 +849,12 @@ export {
  * });
  *
  * const ctx = AgentContextBuilder.create()
- *   .withLLM(myLLM)
- *   .withTools(myTools)
- *   .withSecurityGuard(mpu.context.securityGuard!)
- *   .withCircuitBreaker(mpu.context.circuitBreaker!)
+ *   .with({
+ *     llm: myLLM,
+ *     tools: myTools,
+ *     securityGuard: mpu.context.securityGuard!,
+ *     circuitBreaker: mpu.context.circuitBreaker!,
+ *   })
  *   .build();
  * ```
  */
