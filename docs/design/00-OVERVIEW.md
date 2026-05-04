@@ -1,6 +1,6 @@
 # AgentForge 架构铁律
 
-> 设计日期: 2026-04-24 | 最后修订: 2026-05-03
+> 设计日期: 2026-04-24 | 最后修订: 2026-05-04
 > 核心理念: 命令式 while(true) 事件循环 + Zod 类型安全 + Harness 硬管控
 > 铁律总数: 15 条（5 架构 + 6 运行时 + 4 实现）
 
@@ -45,7 +45,7 @@ Agent = LLM（认知决策核心）+ Harness（工程管控基座）
 | **R3** | **工具调用必经注册表** | 所有外部交互（读写文件、执行命令、网络请求）必须通过 `ToolRegistry` 以 Zod 工具形式注册。不可在 loop 内直接 `exec()` 或 `fetch()`。 | ✅ 已执行 |
 | **R4** | **主流程串行，副作用并行** | `while(true)` 内 LLM→工具→检查点 严格串行。独立工具调用可 `Promise.all` 并行。不可在串行路径中写同步阻塞。 | ✅ 已执行 |
 | **R5** | **状态外部化，可中断恢复** | 长任务状态通过 Checkpoint 持久化。暂停/恢复通过 `AbortController` + `pause/resume` Promise 模式。不可依赖内存状态存活。 | ✅ 基本执行 |
-| **R6** | **检查点声明式接线** | 所有 Harness 跨切面关注点（安全、配额、熔断、限流、压缩、审计）必须通过统一的 CheckpointRegistry 注册到生命周期阶段（pre-llm / post-llm / pre-tool / post-tool / on-error）。loop 在每个阶段自动执行已注册的所有检查点。禁止在各阶段内独立硬编码 `if (ctx.X)` 门控。未注册的模块=未接线，注册表为编译时可验证的完整清单。 | 🔧 部分落地 — 核心检查点（quota/rateLimiter/qualityGate/circuitBreaker）已声明式注册，其余待迁移 |
+| **R6** | **检查点声明式接线** | 所有 Harness 跨切面关注点（安全、配额、熔断、限流、压缩、审计）必须通过 Plugin.checkpointHooks 注册到生命周期阶段（pre-llm / post-llm / pre-tool / post-tool / on-error）。loop 在每个阶段自动执行所有已注册的检查点钩子。禁止在各阶段内独立硬编码 `if (ctx.X)` 门控。Plugin 是唯一的扩展 API，CheckpointRegistry 已内部化。 | ✅ 已执行 — P1-9 完成，4 个内置检查点（quota/rateLimiter/qualityGate/circuitBreaker）已抽取为 Plugin 工厂函数 |
 
 ---
 
@@ -92,7 +92,7 @@ P2（设计指导 — 违反则长期维护成本增加）:
 | R1 错误即事件 | 双报、调用方崩溃 | `grep "throw error" src/loop/` 无结果 | 禁止 emit error 后又 throw |
 | R2 Hook 隔离 | 主循环崩溃 | 每个 Hook 包裹 try/catch | 禁止未捕获的 Hook 异常 |
 | R3 工具注册表 | 不可观测的外部调用 | 所有外部 IO 经 ToolRegistry | 禁止 loop 内直接 exec/fetch/readFile |
-| R6 检查点声明式接线 | 接线遗漏、功能空洞 | `grep "if (ctx\." src/loop/agent-loop.ts` 计数递减 | 禁止硬编码 `if (ctx.X)` 门控，必须通过 CheckpointRegistry |
+| R6 检查点声明式接线 | 接线遗漏、功能空洞 | `grep "if (ctx\." src/loop/agent-loop.ts` 计数递减 | 禁止硬编码 `if (ctx.X)` 门控，必须通过 Plugin.checkpointHooks |
 | I1 类型安全 | 类型系统信任破裂 | `as any` 计数 ≤ 0 | 禁止 @ts-ignore、@ts-expect-error |
 
 ---
@@ -105,3 +105,4 @@ P2（设计指导 — 违反则长期维护成本增加）:
 | v2 | 2026-04-30 | 移除 RxJS，切换到命令式 while(true) + AgentEventEmitter |
 | v3 | 2026-05-02 | 重写铁律体系。14 条（5A+5R+4I）+ 分级 + 约束矩阵。消灭所有 RxJS 术语。 |
 | **v4** | **2026-05-02** | **架构审计 + 文档追认。新增 R6 检查点声明式接线（5A+6R+4I=15 条）。修正行号/计数/状态描述。** |
+| **v5** | **2026-05-04** | **P1 架构重构。R6 从 CheckpointRegistry 迁移到 Plugin.checkpointHooks（P1-9）。Plugin 成为唯一公共扩展 API。AgentContext 重组为 8 个子对象（P1-10）。公共 API 策展至 ~69 符号（P1-11）。** |
