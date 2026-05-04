@@ -43,6 +43,17 @@ export {
 } from './summarization-plugin.js';
 
 // ============================================================
+// Built-in Checkpoint Plugins
+// ============================================================
+
+export {
+  createQuotaPlugin,
+  createRateLimitPlugin,
+  createQualityGatePlugin,
+  createCircuitBreakerPlugin,
+} from './builtin-checkpoints.js';
+
+// ============================================================
 // TodoList Plugin (re-exported from tools for convenience)
 // ============================================================
 
