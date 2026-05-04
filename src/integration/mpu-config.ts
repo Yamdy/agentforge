@@ -180,9 +180,15 @@ class SimpleAuditStore implements AuditStore {
  * });
  *
  * const ctx = AgentContextBuilder.create()
- *   .withLLM(myLLM)
- *   .withTools(myTools)
- *   .withSecurityGuard(mpu.context.securityGuard!)
+ *   .with({
+ *     llm: myLLM,
+ *     tools: myTools,
+ *     securityGuard: mpu.context.security?.securityGuard!,
+ *     circuitBreaker: mpu.context.resilience?.circuitBreaker!,
+ *     errorClassifier: mpu.context.resilience?.errorClassifier!,
+ *     planner: mpu.context.extensions?.planner!,
+ *     healthChecker: mpu.services.healthChecker!,
+ *   })
  *   .build();
  * ```
  */
@@ -213,22 +219,25 @@ export function createMPUServices(config: MPUConfig): MPUServiceResult {
 
   // Security guard
   if (config.enableSecurity) {
-    context.securityGuard = new SecurityGuard();
+    context.security = { ...context.security, securityGuard: new SecurityGuard() };
   }
 
   // Circuit breaker + error classifier
   if (config.enableCircuitBreaker) {
-    context.errorClassifier = new DefaultErrorClassifier();
-    context.circuitBreaker = new DefaultCircuitBreaker({
-      failureThreshold: 3,
-      resetTimeoutMs: 60000,
-      halfOpenMaxAttempts: 1,
-    });
+    context.resilience = {
+      ...context.resilience,
+      errorClassifier: new DefaultErrorClassifier(),
+      circuitBreaker: new DefaultCircuitBreaker({
+        failureThreshold: 3,
+        resetTimeoutMs: 60000,
+        halfOpenMaxAttempts: 1,
+      }),
+    };
   }
 
   // Planning
   if (config.enablePlanning) {
-    context.planner = new PlannerImpl();
+    context.extensions = { ...context.extensions, planner: new PlannerImpl() };
   }
 
   return { services, context };

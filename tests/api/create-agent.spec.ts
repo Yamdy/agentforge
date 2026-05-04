@@ -41,7 +41,7 @@ describe('createAgent — preset activation', () => {
     const result = await agent.run('hello');
     expect(result).toBe('Default response');
     expect(agent.ctx).toBeDefined();
-    expect(agent.ctx.agentName).toBe('test-agent');
+    expect(agent.ctx.identity.agentName).toBe('test-agent');
   });
 
   it('applies testPreset when preset is "test"', async () => {
@@ -61,13 +61,13 @@ describe('createAgent — preset activation', () => {
   it('does not apply any preset when preset is undefined', async () => {
     const agent = createAgent(makeConfig({ tracing: true }), { llm });
     await agent.run('hello');
-    expect(agent.ctx.services.tracer).toBeDefined();
+    expect(agent.ctx.core.services.tracer).toBeDefined();
   });
 
   it('passes correct config to productionPreset', async () => {
     const agent = createAgent(makeConfig({ preset: 'production' }), { llm });
     await agent.run('hello');
-    expect(agent.ctx.agentName).toBe('test-agent');
+    expect(agent.ctx.identity.agentName).toBe('test-agent');
   });
 
   it('wires streaming handlers — onToken receives stream chunks via agent.run()', async () => {
@@ -118,7 +118,79 @@ describe('createAgent — preset activation', () => {
   it('configures services based on tracing and metrics flags', async () => {
     const agent = createAgent(makeConfig({ tracing: true, metrics: true }), { llm });
 
-    expect(agent.ctx.services.tracer).toBeDefined();
-    expect(agent.ctx.services.metrics).toBeDefined();
+    expect(agent.ctx.core.services.tracer).toBeDefined();
+    expect(agent.ctx.core.services.metrics).toBeDefined();
+  });
+});
+
+// ============================================================
+// New grouped format
+// ============================================================
+
+describe('createAgent — grouped config format', () => {
+  let llm: MockLLMAdapter;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    llm = new MockLLMAdapter();
+  });
+
+  it('accepts execution group', async () => {
+    const agent = createAgent(
+      makeConfig({
+        execution: { parallelToolCalls: false, streaming: false, executionMode: 'react' },
+      }),
+      { llm }
+    );
+    const result = await agent.run('hello');
+    expect(result).toBe('Default response');
+  });
+
+  it('accepts controls group', async () => {
+    const agent = createAgent(
+      makeConfig({
+        controls: { timeout: 30000, maxLLMRepairAttempts: 1, retry: 0, retryDelay: 100 },
+      }),
+      { llm }
+    );
+    const result = await agent.run('hello');
+    expect(result).toBe('Default response');
+  });
+
+  it('accepts observability group with tracing and metrics', async () => {
+    const agent = createAgent(
+      makeConfig({
+        observability: { tracing: { exporter: 'console' }, metrics: true, preset: 'production' },
+      }),
+      { llm }
+    );
+    await agent.run('hello');
+    expect(agent.ctx.core.services.tracer).toBeDefined();
+    expect(agent.ctx.core.services.metrics).toBeDefined();
+  });
+
+  it('grouped fields override legacy flat fields', async () => {
+    const agent = createAgent(
+      makeConfig({
+        tracing: false as unknown as undefined, // flat: no tracing
+        observability: { tracing: { exporter: 'console' } }, // grouped: enable
+      }),
+      { llm }
+    );
+    await agent.run('hello');
+    // Grouped takes precedence — tracing should be enabled
+    expect(agent.ctx.core.services.tracer).toBeDefined();
+  });
+
+  it('execution group overrides legacy flat streaming', async () => {
+    const agent = createAgent(
+      makeConfig({
+        streaming: true, // flat
+        execution: { streaming: false }, // grouped overrides
+      }),
+      { llm }
+    );
+    const result = await agent.run('hello');
+    expect(result).toBe('Default response');
   });
 });

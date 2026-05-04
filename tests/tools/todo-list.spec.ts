@@ -2,16 +2,15 @@
  * TodoList Tool & Plugin Tests
  *
  * Tests for createTodoListTool and createTodoListPlugin.
- * Follows TDD: write tests first, then implement.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import type { AgentEvent, Message } from '../../src/core/events.js';
-import type { InterceptorPlugin, PluginContext } from '../../src/plugins/plugin.js';
+import type { Message } from '../../src/core/events.js';
+import type { PluginContext } from '../../src/plugins/plugin.js';
+import type { AgentState } from '../../src/core/state.js';
 import {
   createTodoListTool,
   createTodoListPlugin,
-  type TodoItem,
   type TodoListState,
   type TodoStatus,
 } from '../../src/tools/todo-list.js';
@@ -24,49 +23,36 @@ function createPluginContext(): PluginContext {
   return { sessionId: 'test-session', agentName: 'test-agent' };
 }
 
-function createLLMRequestEvent(messages: Message[]): AgentEvent {
+function createMockState(): AgentState {
   return {
-    type: 'llm.request',
-    timestamp: Date.now(),
-    sessionId: 'test-session',
-    messages,
-    model: { provider: 'openai', model: 'gpt-4o' },
-  };
-}
-
-function createAgentStepEvent(): AgentEvent {
-  return {
-    type: 'agent.step',
-    timestamp: Date.now(),
     sessionId: 'test-session',
     step: 1,
     maxSteps: 10,
+    status: 'running',
+    messages: [],
+    output: '',
+    tokens: { input: 0, output: 0 },
   };
 }
 
 // ============================================================
-// Plugin Test Helper
+// Plugin Test Helper — uses new requestHooks API
 // ============================================================
 
 /**
- * Run an InterceptorPlugin against events and collect the results.
- * Replaces the old buildPluginPipeline pattern.
+ * Run a Plugin's requestHooks against messages and return modified messages.
  */
-async function runPluginIntercept(
-  plugin: InterceptorPlugin,
-  ctx: PluginContext,
-  ...events: AgentEvent[]
-): Promise<AgentEvent[]> {
-  const results: AgentEvent[] = [];
-  for (const event of events) {
-    try {
-      const result = await Promise.resolve(plugin.intercept(event, ctx));
-      results.push(result || event);
-    } catch {
-      results.push(event);
-    }
+async function runPluginRequestHook(
+  plugin: ReturnType<typeof createTodoListPlugin>,
+  messages: Message[],
+): Promise<Message[]> {
+  const hook = plugin.requestHooks?.[0];
+  if (!hook) return messages;
+  try {
+    return await hook.apply(messages, createMockState());
+  } catch {
+    return messages;
   }
-  return results;
 }
 
 // ============================================================
@@ -306,12 +292,6 @@ describe('createTodoListTool', () => {
 // ============================================================
 
 describe('TodoListPlugin', () => {
-  let ctx: PluginContext;
-
-  beforeEach(() => {
-    ctx = createPluginContext();
-  });
-
   it('should inject todo state on llm.request when todos exist', async () => {
     const state: TodoListState = {
       items: [
@@ -335,19 +315,13 @@ describe('TodoListPlugin', () => {
     };
 
     const plugin = createTodoListPlugin(state);
-    const events = await runPluginIntercept(
-      plugin,
-      ctx,
-      createLLMRequestEvent([{ role: 'user', content: 'What should I do next?' }]),
-    );
+    const messages: Message[] = [{ role: 'user', content: 'What should I do next?' }];
+    const result = await runPluginRequestHook(plugin, messages);
 
-    const llmRequest = events[0]! as Extract<AgentEvent, { type: 'llm.request' }>;
-
-    expect(llmRequest).toBeDefined();
-    expect(llmRequest.messages.length).toBeGreaterThan(1);
+    expect(result.length).toBeGreaterThan(1);
 
     // First message should be the todo state injection
-    const systemMessage = llmRequest.messages[0]!;
+    const systemMessage = result[0]!;
     expect(systemMessage.role).toBe('system');
     expect(systemMessage.content).toContain('Task Progress');
     expect(systemMessage.content).toContain('Implement feature');
@@ -358,38 +332,12 @@ describe('TodoListPlugin', () => {
     const state: TodoListState = { items: [] };
     const plugin = createTodoListPlugin(state);
 
-    const events = await runPluginIntercept(
-      plugin,
-      ctx,
-      createLLMRequestEvent([{ role: 'user', content: 'Hello' }]),
-    );
-
-    const llmRequest = events[0]! as Extract<AgentEvent, { type: 'llm.request' }>;
+    const messages: Message[] = [{ role: 'user', content: 'Hello' }];
+    const result = await runPluginRequestHook(plugin, messages);
 
     // No injection when empty
-    expect(llmRequest.messages).toHaveLength(1);
-    expect(llmRequest.messages[0]?.role).toBe('user');
-  });
-
-  it('should pass through non-llm.request events unchanged', async () => {
-    const state: TodoListState = {
-      items: [
-        {
-          id: 'todo-1',
-          content: 'Some task',
-          status: 'pending',
-          priority: 'medium',
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        },
-      ],
-    };
-    const plugin = createTodoListPlugin(state);
-
-    const events = await runPluginIntercept(plugin, ctx, createAgentStepEvent());
-
-    expect(events).toHaveLength(1);
-    expect(events[0]?.type).toBe('agent.step');
+    expect(result).toHaveLength(1);
+    expect(result[0]?.role).toBe('user');
   });
 
   it('should format completed todos with checkmark', async () => {
@@ -407,14 +355,10 @@ describe('TodoListPlugin', () => {
     };
     const plugin = createTodoListPlugin(state);
 
-    const events = await runPluginIntercept(
-      plugin,
-      ctx,
-      createLLMRequestEvent([{ role: 'user', content: 'Status?' }]),
-    );
+    const messages: Message[] = [{ role: 'user', content: 'Status?' }];
+    const result = await runPluginRequestHook(plugin, messages);
 
-    const llmRequest = events[0]! as Extract<AgentEvent, { type: 'llm.request' }>;
-    const systemMessage = llmRequest.messages[0]!;
+    const systemMessage = result[0]!;
 
     expect(systemMessage.content).toContain('Completed');
     expect(systemMessage.content).toContain('✓');
@@ -424,10 +368,10 @@ describe('TodoListPlugin', () => {
     const state: TodoListState = { items: [] };
     const plugin = createTodoListPlugin(state);
 
-    expect(plugin.priority).toBe(15);
-    expect(plugin.type).toBe('interceptor');
     expect(plugin.name).toBe('todo-list');
-    expect(plugin.eventTypes).toContain('llm.request');
+    expect(plugin.requestHooks).toBeDefined();
+    expect(plugin.requestHooks![0]!.name).toBe('todo-list-inject');
+    expect(plugin.requestHooks![0]!.priority).toBe(15);
   });
 
   it('should show in_progress items in a separate section', async () => {
@@ -453,14 +397,10 @@ describe('TodoListPlugin', () => {
     };
     const plugin = createTodoListPlugin(state);
 
-    const events = await runPluginIntercept(
-      plugin,
-      ctx,
-      createLLMRequestEvent([{ role: 'user', content: 'What next?' }]),
-    );
+    const messages: Message[] = [{ role: 'user', content: 'What next?' }];
+    const result = await runPluginRequestHook(plugin, messages);
 
-    const llmRequest = events[0]! as Extract<AgentEvent, { type: 'llm.request' }>;
-    const content = llmRequest.messages[0]!.content;
+    const content = result[0]!.content;
 
     expect(content).toContain('In Progress');
     expect(content).toContain('Active task');
@@ -480,14 +420,10 @@ describe('TodoListPlugin', () => {
     };
     const plugin = createTodoListPlugin(state);
 
-    const events = await runPluginIntercept(
-      plugin,
-      ctx,
-      createLLMRequestEvent([{ role: 'user', content: 'Status' }]),
-    );
+    const messages: Message[] = [{ role: 'user', content: 'Status' }];
+    const result = await runPluginRequestHook(plugin, messages);
 
-    const llmRequest = events[0]! as Extract<AgentEvent, { type: 'llm.request' }>;
-    const content = llmRequest.messages[0]!.content;
+    const content = result[0]!.content;
 
     // Should show last 3 completed items
     expect(content).toContain('Completed 3');
@@ -515,15 +451,10 @@ describe('TodoList Tool + Plugin Integration', () => {
     });
 
     // Plugin should see the todo
-    const ctx = createPluginContext();
-    const events = await runPluginIntercept(
-      plugin,
-      ctx,
-      createLLMRequestEvent([{ role: 'user', content: 'What should I do?' }]),
-    );
+    const messages: Message[] = [{ role: 'user', content: 'What should I do?' }];
+    const result = await runPluginRequestHook(plugin, messages);
 
-    const llmRequest = events[0]! as Extract<AgentEvent, { type: 'llm.request' }>;
-    const systemMessage = llmRequest.messages[0]!;
+    const systemMessage = result[0]!;
 
     expect(systemMessage.content).toContain('Integration task');
   });

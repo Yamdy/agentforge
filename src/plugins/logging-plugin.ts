@@ -9,8 +9,8 @@
  * @module
  */
 
-import type { ObserverPlugin, PluginContext } from './plugin.js';
-import type { AgentEvent } from '../core/events.js';
+import type { Plugin, PluginContext } from './plugin.js';
+import type { AgentEvent, AgentEventType } from '../core/events.js';
 
 /**
  * Maximum length for string content before truncation
@@ -28,6 +28,27 @@ const ERROR_EVENT_TYPES = new Set([
   'mcp.error',
   'workflow.error',
 ]);
+
+/**
+ * Event types to subscribe to
+ */
+const SUBSCRIBED_EVENTS: AgentEventType[] = [
+  'agent.start',
+  'agent.complete',
+  'agent.error',
+  'llm.request',
+  'llm.response',
+  'tool.result',
+  'subagent.error',
+  'mcp.error',
+  'workflow.error',
+  'done' as AgentEventType,
+];
+
+/**
+ * Per-session agent name, captured via init().
+ */
+let _agentName = '';
 
 /**
  * Truncate a string to max length with ellipsis
@@ -75,6 +96,23 @@ function truncateEventData(event: AgentEvent): Record<string, unknown> {
 }
 
 /**
+ * Shared event handler — logs any subscribed event.
+ */
+function handleEvent(event: AgentEvent): void {
+  const logEntry = {
+    timestamp: new Date(event.timestamp).toISOString(),
+    sessionId: event.sessionId,
+    agentName: _agentName,
+    type: event.type,
+    data: truncateEventData(event),
+  };
+
+  // Output structured JSON log
+  // eslint-disable-next-line no-console -- Logging plugin intentionally uses console
+  console.log(JSON.stringify(logEntry));
+}
+
+/**
  * Production-grade logging plugin
  *
  * Features:
@@ -89,24 +127,16 @@ function truncateEventData(event: AgentEvent): Record<string, unknown> {
  * manager.register(loggingPlugin);
  * ```
  */
-export const loggingPlugin: ObserverPlugin = {
+export const loggingPlugin: Plugin = {
   name: 'logging',
-  type: 'observer',
-  priority: 10,
-  eventTypes: [], // Subscribe to all events
   enabled: true,
 
-  observe(event: AgentEvent, ctx: PluginContext): void {
-    const logEntry = {
-      timestamp: new Date(event.timestamp).toISOString(),
-      sessionId: event.sessionId,
-      agentName: ctx.agentName,
-      type: event.type,
-      data: truncateEventData(event),
-    };
-
-    // Output structured JSON log
-    // eslint-disable-next-line no-console -- Logging plugin intentionally uses console
-    console.log(JSON.stringify(logEntry));
+  init(ctx: PluginContext): void {
+    _agentName = ctx.agentName;
   },
+
+  eventSubscriptions: SUBSCRIBED_EVENTS.map(evt => ({
+    event: evt,
+    handler: handleEvent,
+  })),
 };

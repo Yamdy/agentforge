@@ -96,7 +96,7 @@ export class SequentialPipeline {
    */
   async run(input: unknown, listener: (event: AgentEvent) => void): Promise<PipelineResult> {
     const workflowId = `pipeline-${generateId()}`;
-    const sessionId = this.agentContext.sessionId;
+    const sessionId = this.agentContext.identity.sessionId;
     const stepOutputs = new Map<string, unknown>();
 
     // Emit workflow.start event
@@ -319,7 +319,7 @@ export class ParallelPipeline {
    */
   async run(input: unknown, listener: (event: AgentEvent) => void): Promise<PipelineResult> {
     const workflowId = `pipeline-${generateId()}`;
-    const sessionId = this.agentContext.sessionId;
+    const sessionId = this.agentContext.identity.sessionId;
 
     // Emit workflow.start event
     listener({

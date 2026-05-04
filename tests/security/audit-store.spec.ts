@@ -13,7 +13,7 @@ describe('InMemoryAuditStore', () => {
     timestamp: '2026-04-26T10:00:00Z',
     sessionId: 'session-1',
     agentName: 'test-agent',
-    eventType: 'tool.execute',
+    eventType: 'tool.call',
     action: 'read_file',
     resource: '/tmp/test.txt',
     result: 'success',
@@ -67,11 +67,11 @@ describe('InMemoryAuditStore', () => {
 
   describe('query()', () => {
     it('should filter by eventType', () => {
-      store.append(makeEntry({ eventType: 'tool.execute' }));
+      store.append(makeEntry({ eventType: 'tool.call' }));
       store.append(makeEntry({ eventType: 'permission.denied' }));
-      store.append(makeEntry({ eventType: 'tool.execute' }));
+      store.append(makeEntry({ eventType: 'tool.call' }));
 
-      const result = store.query({ eventType: 'tool.execute' });
+      const result = store.query({ eventType: 'tool.call' });
       expect(result).toHaveLength(2);
     });
 
@@ -112,11 +112,11 @@ describe('InMemoryAuditStore', () => {
     });
 
     it('should combine multiple filters', () => {
-      store.append(makeEntry({ eventType: 'tool.execute', result: 'success' }));
-      store.append(makeEntry({ eventType: 'tool.execute', result: 'denied' }));
+      store.append(makeEntry({ eventType: 'tool.call', result: 'success' }));
+      store.append(makeEntry({ eventType: 'tool.call', result: 'denied' }));
       store.append(makeEntry({ eventType: 'permission.denied', result: 'denied' }));
 
-      const result = store.query({ eventType: 'tool.execute', result: 'denied' });
+      const result = store.query({ eventType: 'tool.call', result: 'denied' });
       expect(result).toHaveLength(1);
     });
 

@@ -31,29 +31,11 @@ import type { ToolDefinition, ToolContext } from './core/interfaces.js';
 
 // ============================================================
 import { createAgent } from './api/create-agent.js';
-import type {
-  AgentConfig,
-  Agent as AgentInterface,
-} from './api/types.js';
-import {
-  getLLMAdapterFactory,
-  openaiAdapterFactory,
-  anthropicAdapterFactory,
-} from './adapters/index.js';
+import type { AgentConfig, Agent as AgentInterface } from './api/types.js';
 
 // ============================================================
 // Auto-register built-in providers
 // ============================================================
-
-let providersRegistered = false;
-
-function ensureProviders(): void {
-  if (providersRegistered) return;
-  const factory = getLLMAdapterFactory();
-  if (!factory.hasProvider('openai')) factory.register('openai', openaiAdapterFactory);
-  if (!factory.hasProvider('anthropic')) factory.register('anthropic', anthropicAdapterFactory);
-  providersRegistered = true;
-}
 
 // ============================================================
 // Tool Helper
@@ -158,8 +140,6 @@ export class Agent {
     /** Enable parallel tool execution (default: true) */
     parallelToolCalls?: boolean;
   }) {
-    ensureProviders();
-
     // Parse model string (e.g., 'openai/gpt-4o-mini' → { provider: 'openai', model: 'gpt-4o-mini' })
     const slashIndex = config.model.indexOf('/');
     let providerName: string;

@@ -109,132 +109,90 @@ export interface ApplicationServices {
 // Agent Context (Session-Level Instance)
 // ============================================================
 
+// ============================================================
+// Agent Context Sub-Interfaces
+// ============================================================
+
+/** Agent identity — session and agent name */
+export interface AgentIdentity {
+  sessionId: string;
+  agentName: string;
+}
+
+/** Core services — always available */
+export interface AgentCore {
+  llm: LLMAdapter;
+  tools: ToolRegistry;
+  memory: MemoryStore;
+  pauseController: PauseController;
+  services: ApplicationServices;
+  logger?: Logger;
+}
+
+/** Security controls */
+export interface AgentSecurity {
+  permissionPolicy?: PermissionPolicy;
+  permissionController?: PermissionController;
+  sandboxExecutor?: SandboxExecutor;
+  auditLogger?: AuditLogger;
+  inputSanitizer?: InputSanitizer;
+  securityGuard?: SecurityGuard;
+}
+
+/** Flow controls */
+export interface AgentControls {
+  hitl?: HITLController;
+  rateLimiter?: RateLimiter;
+  quota?: QuotaController;
+  checkpoint?: CheckpointStorage;
+  abortSignal?: AbortSignal;
+}
+
+/** Memory management (compaction, working memory, quality gate) */
+export interface AgentMemoryContext {
+  compactionManager?: CompactionManager;
+  workingMemory?: WorkingMemory;
+  workingMemoryProcessor?: WorkingMemoryProcessor;
+  qualityGate?: QualityGate;
+}
+
+/** Resilience (error handling, circuit breaker, auto-repair) */
+export interface AgentResilience {
+  errorClassifier?: ErrorClassifier;
+  circuitBreaker?: CircuitBreaker;
+  autoRepairer?: AutoRepairer;
+  onError?: ErrorHandler;
+}
+
+/** Extensions (MCP, subagents, planning) */
+export interface AgentExtensions {
+  mcpClients?: Map<string, MCPClient>;
+  subagents?: SubagentRegistry;
+  planner?: Planner;
+}
+
+/** Harness runtime — internal plugin wiring */
+export interface AgentHarness {
+  hookRegistry: HookRegistry;
+  pluginManager?: PluginManager;
+  checkpointRegistry?: CheckpointRegistry;
+}
+
 /**
  * Agent Context
  *
  * Created per agent session, contains session-specific state and dependencies.
- * Session-level state is isolated between agents.
- *
- * Scope:
- * - sessionId, agentName: Unique per agent
- * - memory, pauseController: New instance per agent
- * - llm: Created via factory (may share connection pool)
- * - tools: Reference to global registry (or wrapped with agent-specific tools)
- * - services: Reference to ApplicationServices
+ * Grouped into 8 sub-objects by concern.
  */
 export interface AgentContext {
-  // ----- Identity -----
-  /** Unique session ID */
-  sessionId: string;
-
-  /** Agent name */
-  agentName: string;
-
-  // ----- Session-Independent State (New Instance Per Agent) -----
-  /** Session memory store */
-  memory: MemoryStore;
-
-  /** Pause/resume controller */
-  pauseController: PauseController;
-
-  // ----- Reference to Global Services -----
-  /** Application-level services */
-  services: ApplicationServices;
-
-  // ----- Adapter Instances -----
-  /** LLM adapter for this session */
-  llm: LLMAdapter;
-
-  /** Tool registry (usually reference to global + session-specific) */
-  tools: ToolRegistry;
-
-  // ----- Optional Dependencies -----
-  /** Structured logger for replacing console.* calls */
-  logger?: Logger;
-
-  /** Checkpoint storage for resumption */
-  checkpoint?: CheckpointStorage;
-
-  /** HITL controller for human-in-the-loop */
-  hitl?: HITLController;
-
-  // ----- MCP (optional — zero overhead if not configured) -----
-  /** MCP client instances keyed by server name */
-  mcpClients?: Map<string, MCPClient>;
-
-  /** Subagent registry for nested agents */
-  subagents?: SubagentRegistry;
-
-  // ----- Security (optional — zero overhead if not configured) -----
-  /** Permission policy for tool execution control */
-  permissionPolicy?: PermissionPolicy;
-
-  /** Permission controller for human approval flow */
-  permissionController?: PermissionController;
-
-  /** Sandbox executor for isolated tool execution */
-  sandboxExecutor?: SandboxExecutor;
-
-  /** Audit logger for security event recording */
-  auditLogger?: AuditLogger;
-
-  /** Rate limiter for request frequency control */
-  rateLimiter?: RateLimiter;
-
-  /** Input sanitizer for prompt injection detection */
-  inputSanitizer?: InputSanitizer;
-
-  // ----- Memory Management (optional) -----
-  /** Compaction manager for context window management */
-  compactionManager?: CompactionManager;
-
-  /** Working memory — pinned items and scratchpad shared across the session */
-  workingMemory?: WorkingMemory;
-
-  /** Working memory processor — extracts and formats working memory data */
-  workingMemoryProcessor?: WorkingMemoryProcessor;
-
-  /** Quality gate — validates LLM output before it enters context */
-  qualityGate?: QualityGate;
-
-  // ----- Quota (optional) ----
-  /** Quota controller (optional). When set, enables quota checking before LLM calls. */
-  quota?: QuotaController;
-
-  // ----- MPU Session-Level Services (optional — zero overhead if not configured) -----
-  /** Security guard for command/path/network blocklist validation */
-  securityGuard?: SecurityGuard;
-
-  /** Error classifier for error severity classification */
-  errorClassifier?: ErrorClassifier;
-
-  /** Circuit breaker for failure threshold tracking and circuit tripping */
-  circuitBreaker?: CircuitBreaker;
-
-  /** Auto-repairer for automatic error recovery strategies */
-  autoRepairer?: AutoRepairer;
-
-  /** Planner for task planning and plan validation */
-  planner?: Planner;
-
-  // ----- Plugin Pipeline (optional) -----
-  /** Hook registry for lifecycle/request/tool hooks */
-  hookRegistry?: HookRegistry;
-
-  /** Plugin manager — provides plugin lifecycle and checkpoint access */
-  pluginManager?: PluginManager;
-
-  // ----- Checkpoint Registry (R6 iron law) — @deprecated migrated to pluginManager.checkpointHooks -----
-  /** @deprecated Use pluginManager.getCheckpoints() instead */
-  checkpointRegistry?: CheckpointRegistry;
-
-  // ----- Control Signals -----
-  /** Abort signal for cancellation */
-  abortSignal?: AbortSignal;
-
-  // ----- Error Handling -----
-  /** Error callback */
-  onError?: ErrorHandler;
+  identity: AgentIdentity;
+  core: AgentCore;
+  security: AgentSecurity;
+  controls: AgentControls;
+  memory: AgentMemoryContext;
+  resilience: AgentResilience;
+  extensions: AgentExtensions;
+  harness: AgentHarness;
 }
 
 // ============================================================
@@ -566,7 +524,7 @@ export function createToolContext(
     metadata?: Record<string, unknown>;
   } = {
     toolCallId,
-    parentSessionId: agentCtx.sessionId,
+    parentSessionId: agentCtx.identity.sessionId,
   };
 
   if (options?.timeout !== undefined) {
@@ -575,8 +533,8 @@ export function createToolContext(
   if (options?.metadata !== undefined) {
     result.metadata = options.metadata;
   }
-  if (agentCtx.abortSignal) {
-    result.signal = agentCtx.abortSignal;
+  if (agentCtx.controls.abortSignal) {
+    result.signal = agentCtx.controls.abortSignal;
   }
 
   return result;

@@ -5,9 +5,25 @@
  * by validating JSON output against registered Zod schemas.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi, beforeAll } from 'vitest';
 import { z } from 'zod';
 import type { ToolDefinition } from '../../src/core/interfaces.js';
+
+// Cached module exports
+let createSyntheticOutputTool: (schemas?: Record<string, z.ZodType>) => ToolDefinition;
+let SYNTHETIC_OUTPUT_TOOL_NAME: string;
+let clearOutputTypes: () => void;
+let registerOutputType: (name: string, schema: z.ZodType) => void;
+let hasOutputType: (name: string) => boolean;
+
+beforeAll(async () => {
+  const mod = await import('../../src/tools/synthetic-output.js');
+  createSyntheticOutputTool = mod.createSyntheticOutputTool;
+  SYNTHETIC_OUTPUT_TOOL_NAME = mod.SYNTHETIC_OUTPUT_TOOL_NAME;
+  clearOutputTypes = mod.clearOutputTypes;
+  registerOutputType = mod.registerOutputType;
+  hasOutputType = mod.hasOutputType;
+});
 
 // ============================================================
 // Test Schemas
@@ -58,13 +74,10 @@ const primitiveSchema = z.object({
 
 describe('SyntheticOutputTool metadata', () => {
   beforeEach(async () => {
-    const { clearOutputTypes } = await import('../../src/tools/synthetic-output.js');
     clearOutputTypes();
   });
 
   it('should have correct tool name', async () => {
-    const { SYNTHETIC_OUTPUT_TOOL_NAME, createSyntheticOutputTool } =
-      await import('../../src/tools/synthetic-output.js');
 
     const tool = createSyntheticOutputTool();
 
@@ -73,9 +86,6 @@ describe('SyntheticOutputTool metadata', () => {
   });
 
   it('should have a description', async () => {
-    const { createSyntheticOutputTool } = await import(
-      '../../src/tools/synthetic-output.js'
-    );
 
     const tool = createSyntheticOutputTool();
 
@@ -84,9 +94,6 @@ describe('SyntheticOutputTool metadata', () => {
   });
 
   it('should have requiresApproval set to false', async () => {
-    const { createSyntheticOutputTool } = await import(
-      '../../src/tools/synthetic-output.js'
-    );
 
     const tool = createSyntheticOutputTool();
 
@@ -94,9 +101,6 @@ describe('SyntheticOutputTool metadata', () => {
   });
 
   it('should have riskLevel set to low', async () => {
-    const { createSyntheticOutputTool } = await import(
-      '../../src/tools/synthetic-output.js'
-    );
 
     const tool = createSyntheticOutputTool();
 
@@ -104,9 +108,6 @@ describe('SyntheticOutputTool metadata', () => {
   });
 
   it('should have a Zod parameters schema that accepts output field', async () => {
-    const { createSyntheticOutputTool } = await import(
-      '../../src/tools/synthetic-output.js'
-    );
 
     const tool = createSyntheticOutputTool();
 
@@ -126,9 +127,6 @@ describe('SyntheticOutputTool basic passthrough', () => {
   let tool: ToolDefinition;
 
   beforeEach(async () => {
-    const { createSyntheticOutputTool, clearOutputTypes } = await import(
-      '../../src/tools/synthetic-output.js'
-    );
     clearOutputTypes();
     tool = createSyntheticOutputTool();
   });
@@ -187,9 +185,6 @@ describe('SyntheticOutputTool schema validation', () => {
     let tool: ToolDefinition;
 
     beforeEach(async () => {
-      const { createSyntheticOutputTool } = await import(
-        '../../src/tools/synthetic-output.js'
-      );
       tool = createSyntheticOutputTool({ weather: weatherSchema });
     });
 
@@ -235,9 +230,6 @@ describe('SyntheticOutputTool schema validation', () => {
     let tool: ToolDefinition;
 
     beforeEach(async () => {
-      const { createSyntheticOutputTool } = await import(
-        '../../src/tools/synthetic-output.js'
-      );
       tool = createSyntheticOutputTool({
         weather: weatherSchema,
         user: userSchema,
@@ -281,9 +273,6 @@ describe('SyntheticOutputTool complex objects', () => {
   let tool: ToolDefinition;
 
   beforeEach(async () => {
-    const { createSyntheticOutputTool } = await import(
-      '../../src/tools/synthetic-output.js'
-    );
     tool = createSyntheticOutputTool({ result: nestedSchema });
   });
 
@@ -345,9 +334,6 @@ describe('SyntheticOutputTool primitive validation', () => {
   let tool: ToolDefinition;
 
   beforeEach(async () => {
-    const { createSyntheticOutputTool } = await import(
-      '../../src/tools/synthetic-output.js'
-    );
     tool = createSyntheticOutputTool({ prim: primitiveSchema });
   });
 
@@ -379,9 +365,6 @@ describe('SyntheticOutputTool parameter validation', () => {
   let tool: ToolDefinition;
 
   beforeEach(async () => {
-    const { createSyntheticOutputTool, clearOutputTypes } = await import(
-      '../../src/tools/synthetic-output.js'
-    );
     clearOutputTypes();
     tool = createSyntheticOutputTool();
   });
@@ -420,14 +403,10 @@ describe('SyntheticOutputTool parameter validation', () => {
 
 describe('registerOutputType', () => {
   beforeEach(async () => {
-    const { clearOutputTypes } = await import('../../src/tools/synthetic-output.js');
     clearOutputTypes();
   });
 
   it('should allow registering a schema after tool creation', async () => {
-    const { createSyntheticOutputTool, registerOutputType } = await import(
-      '../../src/tools/synthetic-output.js'
-    );
 
     const tool = createSyntheticOutputTool();
 
@@ -455,9 +434,6 @@ describe('registerOutputType', () => {
   });
 
   it('should allow registering multiple schemas', async () => {
-    const { createSyntheticOutputTool, registerOutputType } = await import(
-      '../../src/tools/synthetic-output.js'
-    );
 
     const tool = createSyntheticOutputTool();
 
@@ -484,9 +460,6 @@ describe('registerOutputType', () => {
   });
 
   it('should warn when overwriting a duplicate output type name', async () => {
-    const { registerOutputType } = await import(
-      '../../src/tools/synthetic-output.js'
-    );
 
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
@@ -503,9 +476,6 @@ describe('registerOutputType', () => {
   });
 
   it('should correctly report whether an output type is registered', async () => {
-    const { registerOutputType, hasOutputType } = await import(
-      '../../src/tools/synthetic-output.js'
-    );
 
     expect(hasOutputType('nonexistent')).toBe(false);
 

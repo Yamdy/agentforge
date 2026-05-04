@@ -9,7 +9,7 @@ export type AuditEventType =
   | 'permission.check'
   | 'permission.denied'
   | 'permission.granted'
-  | 'tool.execute'
+  | 'tool.call'
   | 'tool.error'
   | 'injection.detected'
   | 'args.rejected'

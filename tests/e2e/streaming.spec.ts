@@ -321,12 +321,12 @@ describe.skipIf(!HAS_API_KEY)('E2E Streaming Tests', () => {
       const agent = createAgentLoop(ctx, config);
       const events = await runAndCollect(agent, 'Get weather for Shanghai and tell me if it is good for outdoor activities.');
 
-      const toolExecuteEvents = events.filter(e => e.type === 'tool.execute');
+      const toolCallEvents = events.filter(e => e.type === 'tool.call');
       const toolResultEvents = events.filter(e => e.type === 'tool.result');
 
       // If tools were called, verify execution
-      if (toolExecuteEvents.length > 0) {
-        expect(toolResultEvents.length).toBe(toolExecuteEvents.length);
+      if (toolCallEvents.length > 0) {
+        expect(toolResultEvents.length).toBe(toolCallEvents.length);
       }
 
       expect(events.find(e => e.type === 'agent.complete')).toBeDefined();

@@ -13,8 +13,8 @@
 
 import { z } from 'zod';
 import type { ToolDefinition } from '../core/interfaces.js';
-import type { InterceptorPlugin, PluginContext } from '../plugins/plugin.js';
-import type { AgentEvent, Message } from '../core/events.js';
+import type { Plugin } from '../plugins/plugin.js';
+import type { Message } from '../core/events.js';
 import { generateId } from '../core/events.js';
 
 // ============================================================
@@ -207,24 +207,26 @@ export function formatTodoState(state: TodoListState): string {
  * Priority: 15 (after Memory at 10, before Summarization at 20)
  *
  * @param state - Shared TodoListState (same reference as the tool)
- * @returns InterceptorPlugin
+ * @returns Plugin
  */
-export function createTodoListPlugin(state: TodoListState): InterceptorPlugin {
+export function createTodoListPlugin(state: TodoListState): Plugin {
   return {
     name: 'todo-list',
-    type: 'interceptor' as const,
-    priority: 15,
-    eventTypes: ['llm.request'],
     enabled: true,
 
-    intercept(event: AgentEvent, _ctx: PluginContext): AgentEvent {
-      if (event.type !== 'llm.request') return event;
-      if (state.items.length === 0) return event;
+    requestHooks: [
+      {
+        name: 'todo-list-inject',
+        priority: 15,
+        apply(messages: Message[]): Message[] {
+          if (state.items.length === 0) return messages;
 
-      const todoPrompt = formatTodoState(state);
-      const todoMessage: Message = { role: 'system', content: todoPrompt, name: 'todo-list' };
+          const todoPrompt = formatTodoState(state);
+          const todoMessage: Message = { role: 'system', content: todoPrompt, name: 'todo-list' };
 
-      return { ...event, messages: [todoMessage, ...event.messages] };
-    },
+          return [todoMessage, ...messages];
+        },
+      },
+    ],
   };
 }

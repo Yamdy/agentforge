@@ -156,154 +156,270 @@ export interface MCPServerConfig {
 }
 
 // ============================================================
+// Grouped Configuration Sub-Interfaces
+// ============================================================
+
+/**
+ * Execution configuration group.
+ * Controls HOW the agent loop runs — its operational mode and output style.
+ */
+export interface ExecutionConfig {
+  /** Enable parallel tool calls (default: true) */
+  parallelToolCalls?: boolean;
+  /** Enable streaming LLM responses (default: false) */
+  streaming?: boolean;
+  /**
+   * Execution mode for the planner.
+   *
+   * - 'react': ReAct loop only, planner is never invoked (default)
+   * - 'plan-then-execute': Try planner first, fall back to ReAct on failure
+   * - 'plan-then-execute-strict': Planner MUST succeed, otherwise error
+   */
+  executionMode?: 'react' | 'plan-then-execute' | 'plan-then-execute-strict';
+}
+
+/**
+ * Controls configuration group.
+ * Safety and flow control: timeouts, token budgets, retry policy, and HITL.
+ */
+export interface ControlsConfig {
+  /** Total timeout in milliseconds */
+  timeout?: number;
+  /** Token budget cap for the entire session */
+  tokenBudget?: number;
+  /** Retry count for recoverable errors (default: 0) */
+  retry?: number;
+  /** Retry delay in milliseconds (default: 1000) */
+  retryDelay?: number;
+  /** Maximum LLM repair attempts (default: 3) */
+  maxLLMRepairAttempts?: number;
+  /** Human-in-the-loop configuration */
+  hitl?: HITLConfig;
+}
+
+/**
+ * Observability configuration group.
+ * Tracing, metrics, checkpointing, and preset-based defaults.
+ */
+export interface ObservabilityConfig {
+  /** Enable tracing */
+  tracing?: boolean | TracingConfig;
+  /** Enable metrics */
+  metrics?: boolean | MetricsConfig;
+  /** Enable checkpointing */
+  checkpoint?: boolean | CheckpointConfig;
+  /** Preset that adjusts defaults ('production' | 'debug' | 'development' | 'test') */
+  preset?: 'production' | 'debug' | 'development' | 'test';
+}
+
+/**
+ * Extensions configuration group.
+ * Memory, skills, summarization, compaction, subagents, and MCP.
+ */
+export interface ExtensionsConfig {
+  /** Persistent memory configuration (AGENTS.md files) */
+  memory?: {
+    enabled: boolean;
+    sources: string[];
+  };
+  /** Skills configuration (SKILL.md directories) */
+  skills?: {
+    sources: string[];
+  };
+  /** Summarization configuration (auto-compress long conversations) */
+  summarization?: {
+    tokenThreshold: number;
+    preserveRecent: number;
+    offloadDir?: string;
+  };
+  /** Compaction configuration */
+  compaction?: {
+    strategy?: string;
+    vectorStore?: VectorStore;
+    embeddingModel?: EmbeddingModel;
+  };
+  /** Subagent configurations */
+  subagents?: SubagentConfig[];
+  /** MCP server configurations */
+  mcp?: MCPServerConfig[];
+}
+
+/**
+ * Plugin configuration group.
+ */
+export interface PluginConfig {
+  /** Plugin instances for event interception */
+  plugins?: Plugin[];
+  /** Dynamic plugin specifiers for runtime loading */
+  pluginSpecs?: PluginSpec[];
+}
+
+// ============================================================
 // Agent Configuration (Main Entry Point)
 // ============================================================
 
 /**
- * Agent configuration.
+ * Agent configuration passed to createAgent().
  *
- * This is the main configuration object passed to createAgent().
- * All fields have sensible defaults except `model`.
+ * ## Quick start (80% case)
+ *
+ * ```typescript
+ * const agent = createAgent({
+ *   model: 'openai/gpt-4o',
+ *   tools: ['fs', 'bash'],
+ * });
+ * ```
+ *
+ * ## With harness controls
+ *
+ * ```typescript
+ * const agent = createAgent({
+ *   model: 'openai/gpt-4o',
+ *   tools: ['fs', 'bash'],
+ *   controls: { hitl: { autoAllow: ['fs'] } },
+ *   observability: { tracing: { exporter: 'console' } },
+ * });
+ * ```
+ *
+ * ## Legacy flat format (still supported)
+ *
+ * ```typescript
+ * const agent = createAgent({
+ *   model: 'openai/gpt-4o',
+ *   maxSteps: 20,
+ *   tracing: true,        // @deprecated — use observability.tracing
+ *   parallelToolCalls: false, // @deprecated — use execution.parallelToolCalls
+ * });
+ * ```
+ *
+ * Grouped sub-objects (`execution`, `controls`, `observability`, `extensions`,
+ * `pluginsConfig`) take precedence over their flat equivalents when both are provided.
  */
 export interface AgentConfig {
-  // ----- Required -----
+  // ── Core (top-level, 80% use case) ──
+
   /** Agent name (default: 'agent') */
   name?: string;
 
   /**
-   * Model configuration - REQUIRED
-   *
-   * Supports three formats:
-   * 1. String format: "provider/model" (e.g., "openai/gpt-4o")
-   * 2. Auto-detect: "model-name" (e.g., "gpt-4o" → auto-detected as openai)
-   * 3. Object format: { provider: "openai", model: "gpt-4o" } (backward compatible)
+   * Model configuration.
+   * String format: "provider/model" (e.g. "openai/gpt-4o").
+   * Object format: { provider: "openai", model: "gpt-4o" }.
    */
   model: AgentModelConfig | ModelSpec;
 
-  /**
-   * LLM adapter options (optional)
-   * Passed to adapter factory when using string model format
-   */
+  /** LLM adapter options passed to the adapter factory */
   llmOptions?: Record<string, unknown>;
-
-  // ----- Agent Behavior -----
-  /** Maximum steps before termination (default: 10) */
-  maxSteps?: number;
 
   /** System prompt template */
   systemPrompt?: string;
 
-  /**
-   * Conversation history for multi-turn context
-   *
-   * Pass previous messages to maintain conversation context.
-   * Messages should be in chronological order.
-   *
-   * @example
-   * ```typescript
-   * const agent = createAgent({
-   *   model: 'openai/gpt-4o',
-   *   history: [
-   *     { role: 'user', content: 'Hello' },
-   *     { role: 'assistant', content: 'Hi there!' },
-   *   ],
-   * });
-   * ```
-   */
+  /** Conversation history for multi-turn context */
   history?: Message[];
 
-  /** Tool names or definitions */
+  /** Maximum steps before termination (default: 10) */
+  maxSteps?: number;
+
+  /** Tool names or definitions. Prefer string names resolved from a tool registry. */
   tools?: (string | ToolDefinition)[];
 
-  /** Enable parallel tool calls (default: true) */
+  // ── Grouped sub-objects (recommended for advanced config) ──
+
+  /** Execution settings: parallelToolCalls, streaming, executionMode */
+  execution?: ExecutionConfig;
+
+  /** Control flow settings: timeout, tokenBudget, retry, HITL */
+  controls?: ControlsConfig;
+
+  /** Observability settings: tracing, metrics, checkpoint, preset */
+  observability?: ObservabilityConfig;
+
+  /** Extension settings: memory, skills, summarization, compaction, subagents, MCP */
+  extensions?: ExtensionsConfig;
+
+  /** Plugin settings: inline plugins and dynamic plugin specs */
+  pluginsConfig?: PluginConfig;
+
+  // ── @deprecated Legacy flat fields (use grouped equivalents above) ──
+
+  /** @deprecated Use `execution.parallelToolCalls` */
   parallelToolCalls?: boolean;
 
-  /**
-   * Execution mode for the planner.
-   *
-   * - 'react': ReAct loop only, planner is never invoked (default, backward compatible)
-   * - 'plan-then-execute': Try planner first, fall back to ReAct on failure
-   * - 'plan-then-execute-strict': Planner MUST succeed, otherwise error and terminate
-   */
-  executionMode?: 'react' | 'plan-then-execute' | 'plan-then-execute-strict';
-
-  /** Enable streaming LLM responses (default: false) */
+  /** @deprecated Use `execution.streaming` */
   streaming?: boolean;
 
-  // ----- Control Flow -----
-  /** Total timeout in milliseconds (default: no timeout) */
+  /** @deprecated Use `execution.executionMode` */
+  executionMode?: 'react' | 'plan-then-execute' | 'plan-then-execute-strict';
+
+  /** @deprecated Use `controls.timeout` */
   timeout?: number;
 
-  /** Token budget cap for the entire session (default: 200000) */
+  /** @deprecated Use `controls.tokenBudget` */
   tokenBudget?: number;
 
-  /** Retry count for recoverable errors (default: 0) */
+  /** @deprecated Use `controls.retry` */
   retry?: number;
 
-  /** Retry delay in milliseconds (default: 1000) */
+  /** @deprecated Use `controls.retryDelay` */
   retryDelay?: number;
 
-  /** Maximum LLM repair attempts (default: 3) */
+  /** @deprecated Use `controls.maxLLMRepairAttempts` */
   maxLLMRepairAttempts?: number;
 
-  // ----- Observability -----
-  /** Enable tracing */
-  tracing?: boolean | TracingConfig;
-
-  /** Enable metrics */
-  metrics?: boolean | MetricsConfig;
-
-  // ----- Persistence -----
-  /** Enable checkpointing */
-  checkpoint?: boolean | CheckpointConfig;
-
-  // ----- HITL -----
-  /** Human-in-the-loop configuration */
+  /** @deprecated Use `controls.hitl` */
   hitl?: HITLConfig;
 
-  // ----- Subsystems -----
-  /** Subagent configurations */
-  subagents?: SubagentConfig[];
+  /** @deprecated Use `observability.tracing` */
+  tracing?: boolean | TracingConfig;
 
-  /** MCP server configurations */
-  mcp?: MCPServerConfig[];
+  /** @deprecated Use `observability.metrics` */
+  metrics?: boolean | MetricsConfig;
 
-  // ----- Memory & Skills -----
-  /** Persistent memory configuration (AGENTS.md files) */
+  /** @deprecated Use `observability.checkpoint` */
+  checkpoint?: boolean | CheckpointConfig;
+
+  /** @deprecated Use `observability.preset` */
+  preset?: 'production' | 'debug' | 'development' | 'test';
+
+  /** @deprecated Use `extensions.memory` */
   memory?: {
-    /** Whether memory is enabled */
     enabled: boolean;
-    /** AGENTS.md file paths */
     sources: string[];
   };
 
-  /** Skills configuration (SKILL.md directories) */
+  /** @deprecated Use `extensions.skills` */
   skills?: {
-    /** Skill directory paths */
     sources: string[];
   };
 
-  /** Summarization configuration (auto-compress long conversations) */
+  /** @deprecated Use `extensions.summarization` */
   summarization?: {
-    /** Token threshold to trigger compression */
     tokenThreshold: number;
-    /** Number of recent messages to preserve */
     preserveRecent: number;
-    /** Directory for offloaded history files */
     offloadDir?: string;
   };
 
-  /** Compaction configuration for conversation context management */
+  /** @deprecated Use `extensions.compaction` */
   compaction?: {
-    /** Compaction strategy (e.g., 'pointer-indexed') */
     strategy?: string;
-    /** Vector store for semantic search (required for pointer-indexed strategy) */
     vectorStore?: VectorStore;
-    /** Embedding model for query encoding (required for pointer-indexed strategy) */
     embeddingModel?: EmbeddingModel;
   };
 
-  // ----- Advanced -----
+  /** @deprecated Use `extensions.subagents` */
+  subagents?: SubagentConfig[];
+
+  /** @deprecated Use `extensions.mcp` */
+  mcp?: MCPServerConfig[];
+
+  /** @deprecated Use `pluginsConfig.plugins` */
+  plugins?: Plugin[];
+
+  /** @deprecated Use `pluginsConfig.pluginSpecs` */
+  pluginSpecs?: PluginSpec[];
+
+  // ── Truly deprecated (no grouped equivalent) ──
+
   /** @deprecated LLM adapter instance (overrides model config) */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   llmAdapter?: any;
@@ -311,31 +427,6 @@ export interface AgentConfig {
   /** @deprecated Custom operators to apply */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   operators?: any[];
-
-  /** Plugin configurations for event interception and observation */
-  plugins?: Plugin[];
-
-  /**
-   * Dynamic plugin specifiers for runtime installation from npm or local paths.
-   *
-   * Plugins specified here are dynamically installed (npm) or loaded (file)
-   * at runtime, without requiring compile-time imports.
-   *
-   * @example
-   * ```typescript
-   * const agent = createAgent({
-   *   model: 'openai/gpt-4o',
-   *   pluginSpecs: [
-   *     { source: 'agentforge-audit-plugin@^1.0' },
-   *     { source: 'file://./my-local-plugin' },
-   *   ],
-   * });
-   * ```
-   */
-  pluginSpecs?: PluginSpec[];
-
-  /** Preset configuration ('production' | 'debug' | 'development' | 'test') */
-  preset?: 'production' | 'debug' | 'development' | 'test';
 }
 
 // ============================================================
@@ -366,6 +457,7 @@ export const DEFAULT_AGENT_CONFIG: Required<
     | 'maxSteps'
     | 'parallelToolCalls'
     | 'streaming'
+    | 'executionMode'
     | 'retry'
     | 'retryDelay'
     | 'maxLLMRepairAttempts'
@@ -375,6 +467,7 @@ export const DEFAULT_AGENT_CONFIG: Required<
   maxSteps: 10,
   parallelToolCalls: true,
   streaming: false,
+  executionMode: 'react',
   retry: 0,
   retryDelay: 1000,
   maxLLMRepairAttempts: 3,
@@ -418,6 +511,7 @@ export interface StreamHandlers {
  * Callback handlers for agent.run()
  */
 export interface RunHandlers {
+  /** @deprecated Streaming is not yet implemented; this handler will never fire. Reserved for future use. */
   onToken?: (delta: string) => void;
   onToolCall?: (event: AgentEvent) => void;
   onToolResult?: (event: AgentEvent) => void;
@@ -440,6 +534,13 @@ export interface Agent {
 
   /** Run the agent and return the final result */
   run(input: string, handlers?: RunHandlers): Promise<string>;
+
+  /**
+   * AsyncGenerator-based iteration. Yields all emitted events as they occur,
+   * returns the final output string. Use `for await (const event of iterate(...))`
+   * for streaming access to the agent's full event stream.
+   */
+  iterate(input: string): AsyncGenerator<AgentEvent, string, void>;
 
   /** @deprecated wrapper for backward compat */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -481,20 +582,7 @@ export interface Agent {
 }
 
 // ============================================================
-// Create Agent Result
+// Re-exports
 // ============================================================
 
-/**
- * Result from createAgent function
- *
- * Can be used as either:
- * - Agent instance: const agent = createAgent(config); agent.run('hello')
- * - Direct call: createAgent(config).run('hello').then(output => ...)
- */
-export interface CreateAgentResult extends Agent {
-  /** The underlying agent context */
-  readonly context: {
-    readonly sessionId: string;
-    readonly agentName: string;
-  };
-}
+export type { NormalizedAgentConfig } from './config-normalizer.js';

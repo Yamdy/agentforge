@@ -5,8 +5,8 @@
  * All API calls are mocked via vi.fn() — no network access required.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { Message, LLMOptions } from '../../src/core/interfaces.js';
+import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
+import type { Message } from '../../src/core/interfaces.js';
 
 // ============================================================
 // Mock @ai-sdk/google
@@ -45,6 +45,14 @@ import { GoogleAdapter, createGoogleAdapter, googleAdapterFactory } from '../../
 // Test Data
 // ============================================================
 
+let mockGenerateText: ReturnType<typeof vi.fn>;
+let mockStreamText: ReturnType<typeof vi.fn>;
+
+beforeAll(async () => {
+  mockGenerateText = (await import('ai')).generateText as ReturnType<typeof vi.fn>;
+  mockStreamText = (await import('ai')).streamText as ReturnType<typeof vi.fn>;
+});
+
 const sampleMessages: Message[] = [
   { role: 'user', content: 'Hello' },
 ];
@@ -79,10 +87,9 @@ describe('GoogleAdapter', () => {
     });
 
     it('should extract system prompt from messages', async () => {
-      const { generateText } = await import('ai');
       await adapter.chat(messagesWithSystem);
-      
-      expect(generateText).toHaveBeenCalledWith(
+
+      expect(mockGenerateText).toHaveBeenCalledWith(
         expect.objectContaining({
           system: 'You are a helpful assistant.',
         })
@@ -90,10 +97,9 @@ describe('GoogleAdapter', () => {
     });
 
     it('should pass temperature and maxTokens options', async () => {
-      const { generateText } = await import('ai');
       await adapter.chat(sampleMessages, { temperature: 0.7, maxTokens: 100 });
-      
-      expect(generateText).toHaveBeenCalledWith(
+
+      expect(mockGenerateText).toHaveBeenCalledWith(
         expect.objectContaining({
           temperature: 0.7,
           maxTokens: 100,
@@ -102,8 +108,7 @@ describe('GoogleAdapter', () => {
     });
 
     it('should not catch errors (let agent-loop handle)', async () => {
-      const { generateText } = await import('ai');
-      vi.mocked(generateText).mockRejectedValueOnce(new Error('API Error'));
+      vi.mocked(mockGenerateText).mockRejectedValueOnce(new Error('API Error'));
       
       await expect(adapter.chat(sampleMessages)).rejects.toThrow('API Error');
     });
@@ -119,8 +124,7 @@ describe('GoogleAdapter', () => {
     });
 
     it('should throw errors from stream', async () => {
-      const { streamText } = await import('ai');
-      vi.mocked(streamText).mockReturnValueOnce({
+      vi.mocked(mockStreamText).mockReturnValueOnce({
         textStream: (async function* () {
           throw new Error('Stream Error');
         })(),

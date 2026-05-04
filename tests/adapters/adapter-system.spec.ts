@@ -65,7 +65,6 @@ import {
   detectProviderFromModel,
   createLLMAdapter,
   getLLMAdapterFactory,
-  resetLLMAdapterFactory,
 } from '../../src/adapters/index.js';
 import { createOpenAIHttpAdapter } from '../../src/adapters/openai-http.js';
 import type { Message, LLMResponse } from '../../src/core/interfaces.js';
@@ -106,14 +105,7 @@ describe('ProviderRegistry', () => {
   let registry: ProviderRegistry;
 
   beforeEach(() => {
-    // Get fresh instance (singleton, but we can test its methods)
-    registry = ProviderRegistry.getInstance();
-  });
-
-  it('should return the same singleton instance', () => {
-    const a = ProviderRegistry.getInstance();
-    const b = ProviderRegistry.getInstance();
-    expect(a).toBe(b);
+    registry = new ProviderRegistry();
   });
 
   it('should register and retrieve a provider factory', () => {
@@ -736,7 +728,7 @@ describe('createLLMAdapterFromSpec', () => {
   });
 
   it('should use registered factory when available', () => {
-    const registry = ProviderRegistry.getInstance();
+    const registry = new ProviderRegistry();
     const mockFactory = vi.fn().mockReturnValue({
       name: 'mock-adapter',
       provider: 'mock',
@@ -746,16 +738,13 @@ describe('createLLMAdapterFromSpec', () => {
 
     registry.register('mock-registered', mockFactory);
 
-    const adapter = createLLMAdapterFromSpec('mock-registered/my-model');
+    const adapter = createLLMAdapterFromSpec('mock-registered/my-model', undefined, registry);
     expect(mockFactory).toHaveBeenCalledWith('my-model', undefined);
     expect(adapter.name).toBe('mock-adapter');
-
-    // Cleanup
-    // (Can't unregister, but the test is isolated enough)
   });
 
   it('should pass options to the factory', () => {
-    const registry = ProviderRegistry.getInstance();
+    const registry = new ProviderRegistry();
     const mockFactory = vi.fn().mockReturnValue({
       name: 'mock-adapter',
       provider: 'mock',
@@ -766,7 +755,7 @@ describe('createLLMAdapterFromSpec', () => {
     registry.register('mock-opts', mockFactory);
 
     const options = { apiKey: 'test-key', baseURL: 'https://example.com' };
-    createLLMAdapterFromSpec('mock-opts/model', options);
+    createLLMAdapterFromSpec('mock-opts/model', options, registry);
     expect(mockFactory).toHaveBeenCalledWith('model', options);
   });
 
@@ -827,10 +816,6 @@ describe('createLLMAdapterFromSpec', () => {
 // ============================================================
 
 describe('LLM Adapter Factory', () => {
-  beforeEach(() => {
-    resetLLMAdapterFactory();
-  });
-
   it('should create adapter via createLLMAdapter', () => {
     const adapter = createLLMAdapter('openai/gpt-4o');
     expect(adapter).toBeDefined();
@@ -844,7 +829,7 @@ describe('LLM Adapter Factory', () => {
     expect(() => adapter.chat([])).toThrow('LLM adapter not implemented');
   });
 
-  it('should support registering custom factories', () => {
+  it('should support registering custom factories on a shared instance', () => {
     const factory = getLLMAdapterFactory();
     const customAdapter = {
       name: 'custom-adapter',
@@ -858,7 +843,8 @@ describe('LLM Adapter Factory', () => {
 
     factory.register('custom', () => customAdapter);
 
-    const adapter = createLLMAdapter('custom/my-model');
+    // Use the same factory instance to create the adapter
+    const adapter = factory.create('custom/my-model');
     expect(adapter.name).toBe('custom-adapter');
   });
 
@@ -881,9 +867,8 @@ describe('LLM Adapter Factory', () => {
     expect(adapter.provider).toBe('anthropic');
   });
 
-  it('should reset factory singleton', () => {
+  it('should create independent factory instances (no singleton)', () => {
     const factory1 = getLLMAdapterFactory();
-    resetLLMAdapterFactory();
     const factory2 = getLLMAdapterFactory();
     expect(factory1).not.toBe(factory2);
   });

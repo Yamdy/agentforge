@@ -10,10 +10,12 @@ import { runAgent, AgentContextBuilder } from 'agentforge/api';
 import config from '../agentforge.config.js';
 
 // Build context from config
-const ctx = new AgentContextBuilder()
-  .withLLMAdapter(config.llm)
-  .withTools(config.tools)
-  .withCheckpointStorage(config.checkpoint as unknown as import('agentforge').CheckpointStorage)
+const ctx = AgentContextBuilder.create()
+  .with({
+    llm: config.llm,
+    tools: config.tools,
+    checkpoint: config.checkpoint as unknown as import('agentforge').CheckpointStorage,
+  })
   .build();
 
 // Run with L3 API

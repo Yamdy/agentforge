@@ -25,18 +25,8 @@ import type { AgentState } from './state.js';
  *
  * - pre-llm: Before each LLM call (quota, rate-limit)
  * - post-llm: After each LLM response (quality gate, circuit breaker success)
- * - pre-tool: Before tool execution (security guard, permission)
- * - post-tool: After tool result (validation, cost tracking)
- * - on-error: When an error occurs (auto-repair, circuit breaker failure)
- * - on-input: On initial user input (sanitization)
  */
-export type LifecyclePhase =
-  | 'pre-llm'
-  | 'post-llm'
-  | 'pre-tool'
-  | 'post-tool'
-  | 'on-error'
-  | 'on-input';
+export type LifecyclePhase = 'pre-llm' | 'post-llm';
 
 /**
  * Result of a checkpoint execution.
@@ -82,7 +72,7 @@ export type CheckpointFn = (
  * const registry = new CheckpointRegistry();
  *
  * registry.register('pre-llm', 10, async (ctx, state) => {
- *   if (ctx.quota) { ... }
+ *   if (ctx.controls.quota) { ... }
  *   return { action: 'continue' };
  * });
  *

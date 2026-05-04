@@ -22,7 +22,7 @@ describe('DefaultAuditLogger', () => {
   describe('append()', () => {
     it('should add entry with timestamp and session info', () => {
       logger.append({
-        eventType: 'tool.execute',
+        eventType: 'tool.call',
         action: 'read_file',
         resource: '/tmp/test.txt',
         result: 'success',
@@ -33,7 +33,7 @@ describe('DefaultAuditLogger', () => {
       expect(entries).toHaveLength(1);
       expect(entries[0].sessionId).toBe('test-session');
       expect(entries[0].agentName).toBe('test-agent');
-      expect(entries[0].eventType).toBe('tool.execute');
+      expect(entries[0].eventType).toBe('tool.call');
       expect(entries[0].timestamp).toBeDefined();
     });
 
@@ -54,7 +54,7 @@ describe('DefaultAuditLogger', () => {
 
       expect(() => {
         badLogger.append({
-          eventType: 'tool.execute',
+          eventType: 'tool.call',
           action: 'read_file',
           resource: '/tmp/test.txt',
           result: 'success',
@@ -66,10 +66,10 @@ describe('DefaultAuditLogger', () => {
 
   describe('query()', () => {
     it('should delegate to store', () => {
-      logger.append({ eventType: 'tool.execute', action: 'a1', resource: 'r1', result: 'success', details: {} });
+      logger.append({ eventType: 'tool.call', action: 'a1', resource: 'r1', result: 'success', details: {} });
       logger.append({ eventType: 'permission.denied', action: 'a2', resource: 'r2', result: 'denied', details: {} });
 
-      const result = logger.query({ eventType: 'tool.execute' });
+      const result = logger.query({ eventType: 'tool.call' });
       expect(result).toHaveLength(1);
       expect(result[0].action).toBe('a1');
     });
@@ -77,7 +77,7 @@ describe('DefaultAuditLogger', () => {
 
   describe('verifyIntegrity()', () => {
     it('should return true for valid timestamps', () => {
-      logger.append({ eventType: 'tool.execute', action: 'a1', resource: 'r1', result: 'success', details: {} });
+      logger.append({ eventType: 'tool.call', action: 'a1', resource: 'r1', result: 'success', details: {} });
       expect(logger.verifyIntegrity()).toBe(true);
     });
 
@@ -86,7 +86,7 @@ describe('DefaultAuditLogger', () => {
         timestamp: 'invalid-date',
         sessionId: 's1',
         agentName: 'a1',
-        eventType: 'tool.execute',
+        eventType: 'tool.call',
         action: 'a1',
         resource: 'r1',
         result: 'success',
@@ -107,7 +107,7 @@ describe('DefaultAuditLogger', () => {
         timestamp: 'invalid-date',
         sessionId: 's1',
         agentName: 'a1',
-        eventType: 'tool.execute',
+        eventType: 'tool.call',
         action: 'a1',
         resource: 'r1',
         result: 'success',

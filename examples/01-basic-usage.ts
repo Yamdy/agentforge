@@ -33,7 +33,10 @@ import {
   generateSessionId,
 } from '../src/core/index.js';
 
-import type { ToolRegistry as ToolRegistryInterface, FunctionDefinition } from '../src/core/interfaces.js';
+import type {
+  ToolRegistry as ToolRegistryInterface,
+  FunctionDefinition,
+} from '../src/core/interfaces.js';
 
 // ============================================================
 // Mock LLM Adapter
@@ -244,12 +247,12 @@ async function example_L2_createAgent(): Promise<void> {
   // 方式 B: 流式模式 - 回调处理
   console.log('\n--- 方式 B: 流式模式 ---');
   const subscription = agent.stream('告诉我当前时间', {
-    onText: (delta) => process.stdout.write(delta),
+    onText: delta => process.stdout.write(delta),
     onToolCall: (name, args) => console.log(`\n调用工具: ${name}`, args),
     onToolResult: (name, result) => console.log(`工具结果: ${name} -> ${result}`),
     onStep: (step, maxSteps) => console.log(`步骤: ${step}/${maxSteps}`),
-    onComplete: (result) => console.log('\n完成:', result),
-    onError: (error) => console.error('错误:', error),
+    onComplete: result => console.log('\n完成:', result),
+    onError: error => console.error('错误:', error),
   });
 
   // 等待完成
@@ -260,7 +263,7 @@ async function example_L2_createAgent(): Promise<void> {
   const terminalEvents: AgentEvent[] = [];
 
   // 监听所有事件
-  const unsub = agent.onAny((event) => {
+  const unsub = agent.onAny(event => {
     console.log(`[${event.type}]`);
     // 收集终端事件
     if (isTerminalEvent(event)) {
@@ -270,7 +273,7 @@ async function example_L2_createAgent(): Promise<void> {
 
   await agent.run('给我一个简单的问候');
   unsub();
-  
+
   console.log('终端事件数量:', terminalEvents.length);
 }
 
@@ -289,12 +292,14 @@ async function example_L3_createAgentLoop(): Promise<void> {
 
   // 使用 ContextBuilder 构建 AgentContext
   const ctx: AgentContext = ContextBuilder.create()
-    .withSessionId(generateSessionId())
-    .withAgentName('advanced-agent')
-    .withLLM(llmAdapter)
+    .with({
+      sessionId: generateSessionId(),
+      agentName: 'advanced-agent',
+      llm: llmAdapter,
+      memory: new InMemoryStore(),
+      pauseController: new DefaultPauseController(),
+    })
     .withTools([toolRegistry.get('echo')!, toolRegistry.get('get_time')!])
-    .withMemory(new InMemoryStore())
-    .withPauseController(new DefaultPauseController())
     .build();
 
   console.log('Context 构建:', {
@@ -323,7 +328,7 @@ async function example_L3_createAgentLoop(): Promise<void> {
   const allEvents: AgentEvent[] = [];
 
   // 使用 onAny 监听所有事件
-  const unsub = loop.onAny((event) => {
+  const unsub = loop.onAny(event => {
     allEvents.push(event);
     console.log(`事件: ${event.type}`);
 
@@ -384,7 +389,7 @@ async function example_event_stream_patterns(): Promise<void> {
 
   // 模式 1: 使用 on() 方法监听特定事件
   console.log('--- 模式 1: 事件监听 ---');
-  const unsubscribe = agent.on('llm.response', (event) => {
+  const unsubscribe = agent.on('llm.response', event => {
     // 通过类型保护访问特定属性
     if (event.type === 'llm.response' && 'content' in event) {
       console.log('LLM 响应:', event.content?.substring(0, 50));
@@ -397,7 +402,7 @@ async function example_event_stream_patterns(): Promise<void> {
   // 模式 2: 通过 onAny 收集特定类型事件
   console.log('\n--- 模式 2: 收集工具事件 ---');
   const toolEvents: AgentEvent[] = [];
-  const unsub2 = agent.onAny((event) => {
+  const unsub2 = agent.onAny(event => {
     if (event.type.startsWith('tool.')) {
       toolEvents.push(event);
     }

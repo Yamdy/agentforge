@@ -23,7 +23,6 @@ import {
   isAgentEvent,
   isLLMEvent,
   isToolEvent,
-  isHITLEvent,
   isAgentLifecycleEvent,
   isTerminalEvent,
   isSubagentEvent,
@@ -40,9 +39,10 @@ import {
 // ============================================================
 
 describe('AgentEventTypeSchema', () => {
-  it('should have all event types (slimmed per §7.1/7.2)', () => {
+  it('should have all event types (slimmed per P1 cleanup)', () => {
     const types = AgentEventTypeSchema.options;
-    expect(types.length).toBeGreaterThan(24);
+    expect(types.length).toBeGreaterThan(22);
+    expect(types.length).toBeLessThanOrEqual(30);
   });
 
   it('should validate core agent loop events', () => {
@@ -52,16 +52,13 @@ describe('AgentEventTypeSchema', () => {
       'agent.complete',
       'agent.error',
       'llm.request',
-      'llm.stream.text',
       'llm.response',
       'tool.call',
-      'tool.execute',
       'tool.result',
-      'tool.error',
-      'hitl.ask',
-      'hitl.answer',
+      'tool.batch.start',
+      'tool.batch.complete',
+      'state.change',
       'checkpoint',
-      'cancel',
       'done',
     ];
 
@@ -73,13 +70,15 @@ describe('AgentEventTypeSchema', () => {
   it('should validate subsystem lifecycle events', () => {
     const subsystemEvents = [
       'subagent.start',
-      'subagent.step',
       'subagent.complete',
       'subagent.error',
       'mcp.connecting',
       'mcp.connected',
       'mcp.disconnected',
+      'mcp.error',
       'workflow.start',
+      'workflow.step.start',
+      'workflow.step.end',
       'workflow.complete',
       'workflow.error',
     ];
@@ -90,7 +89,12 @@ describe('AgentEventTypeSchema', () => {
   });
 
   it('should validate cross-cutting events', () => {
-    const crossCuttingEvents = ['cancel', 'decision.trace'];
+    const crossCuttingEvents = [
+      'compaction.start',
+      'compaction.complete',
+      'permission.prompt',
+      'permission.decision',
+    ];
 
     for (const event of crossCuttingEvents) {
       expect(AgentEventTypeSchema.safeParse(event).success).toBe(true);
@@ -326,20 +330,6 @@ describe('AgentEventSchema', () => {
     });
   });
 
-  describe('llm.output.invalid', () => {
-    it('should validate llm.output.invalid event', () => {
-      const event = {
-        type: 'llm.output.invalid' as const,
-        timestamp: Date.now(),
-        sessionId: 'session-123',
-        reason: 'Invalid tool name',
-        originalResponse: { content: '' },
-        attempt: 1,
-      };
-      expect(AgentEventSchema.safeParse(event).success).toBe(true);
-    });
-  });
-
   // ----- tool.* -----
   describe('tool.result', () => {
     it('should validate tool.result event', () => {
@@ -381,20 +371,6 @@ describe('AgentEventSchema', () => {
       expect(AgentEventSchema.safeParse(event).success).toBe(true);
     });
 
-    it('should validate tool.batch event', () => {
-      const event = {
-        type: 'tool.batch' as const,
-        timestamp: Date.now(),
-        sessionId: 'session-123',
-        batchId: 'batch-1',
-        calls: [
-          { toolCallId: 'tc-1', toolName: 'weather', args: {} },
-          { toolCallId: 'tc-2', toolName: 'calculator', args: {} },
-        ],
-      };
-      expect(AgentEventSchema.safeParse(event).success).toBe(true);
-    });
-
     it('should validate tool.batch.complete event', () => {
       const event = {
         type: 'tool.batch.complete' as const,
@@ -410,49 +386,6 @@ describe('AgentEventSchema', () => {
     });
   });
 
-  // ----- hitl.* -----
-  describe('hitl events', () => {
-    it('should validate hitl.ask event', () => {
-      const event = {
-        type: 'hitl.ask' as const,
-        timestamp: Date.now(),
-        sessionId: 'session-123',
-        askId: 'ask-1',
-        question: 'Do you want to proceed?',
-        toolCallId: 'tc-1',
-        toolName: 'ask_permission',
-      };
-      expect(AgentEventSchema.safeParse(event).success).toBe(true);
-    });
-
-    it('should validate hitl.ask with options', () => {
-      const event = {
-        type: 'hitl.ask' as const,
-        timestamp: Date.now(),
-        sessionId: 'session-123',
-        askId: 'ask-1',
-        question: 'Choose an option',
-        toolCallId: 'tc-1',
-        toolName: 'ask_permission',
-        options: ['Yes', 'No', 'Cancel'],
-      };
-      expect(AgentEventSchema.safeParse(event).success).toBe(true);
-    });
-
-    it('should validate hitl.answer event', () => {
-      const event = {
-        type: 'hitl.answer' as const,
-        timestamp: Date.now(),
-        sessionId: 'session-123',
-        askId: 'ask-1',
-        answer: 'Yes',
-        toolCallId: 'tc-1',
-        toolName: 'ask_permission',
-      };
-      expect(AgentEventSchema.safeParse(event).success).toBe(true);
-    });
-  });
-
   // ----- control events -----
   describe('control events', () => {
     it('should validate done event', () => {
@@ -461,16 +394,6 @@ describe('AgentEventSchema', () => {
         timestamp: Date.now(),
         sessionId: 'session-123',
         reason: 'stop' as const,
-      };
-      expect(AgentEventSchema.safeParse(event).success).toBe(true);
-    });
-
-    it('should validate cancel event', () => {
-      const event = {
-        type: 'cancel' as const,
-        timestamp: Date.now(),
-        sessionId: 'session-123',
-        reason: 'User requested',
       };
       expect(AgentEventSchema.safeParse(event).success).toBe(true);
     });
@@ -498,16 +421,6 @@ describe('AgentEventSchema', () => {
         parentSessionId: 'session-123',
         subagentName: 'researcher',
         input: 'Search for X',
-      };
-      expect(AgentEventSchema.safeParse(event).success).toBe(true);
-    });
-
-    it('should validate subagent.step event', () => {
-      const event = {
-        type: 'subagent.step' as const,
-        timestamp: Date.now(),
-        sessionId: 'sub-session-1',
-        step: 2,
       };
       expect(AgentEventSchema.safeParse(event).success).toBe(true);
     });
@@ -576,18 +489,6 @@ describe('AgentEventSchema', () => {
       expect(AgentEventSchema.safeParse(event).success).toBe(true);
     });
 
-    it('should validate mcp.tools_changed event', () => {
-      const event = {
-        type: 'mcp.tools_changed' as const,
-        timestamp: Date.now(),
-        sessionId: 'session-123',
-        serverName: 'filesystem',
-        added: ['new_tool'],
-        removed: ['old_tool'],
-      };
-      expect(AgentEventSchema.safeParse(event).success).toBe(true);
-    });
-
     it('should validate mcp.error event', () => {
       const event = {
         type: 'mcp.error' as const,
@@ -632,29 +533,6 @@ describe('AgentEventSchema', () => {
         workflowId: 'wf-1',
         stepId: 'step-1',
         result: 'success' as const,
-      };
-      expect(AgentEventSchema.safeParse(event).success).toBe(true);
-    });
-
-    it('should validate workflow.suspend event', () => {
-      const event = {
-        type: 'workflow.suspend' as const,
-        timestamp: Date.now(),
-        sessionId: 'session-123',
-        workflowId: 'wf-1',
-        reason: 'Waiting for approval',
-        waitingFor: 'user_confirm',
-      };
-      expect(AgentEventSchema.safeParse(event).success).toBe(true);
-    });
-
-    it('should validate workflow.resume event', () => {
-      const event = {
-        type: 'workflow.resume' as const,
-        timestamp: Date.now(),
-        sessionId: 'session-123',
-        workflowId: 'wf-1',
-        resumeFrom: 'step-2',
       };
       expect(AgentEventSchema.safeParse(event).success).toBe(true);
     });
@@ -754,22 +632,6 @@ describe('AgentEventSchema', () => {
       expect(AgentEventSchema.safeParse(event).success).toBe(true);
     });
   });
-
-  describe('context.updated event', () => {
-    it('should validate context.updated event', () => {
-      const event = {
-        type: 'context.updated' as const,
-        timestamp: Date.now(),
-        sessionId: 'session-123',
-        source: 'skill_loaded' as const,
-        changes: {
-          toolsAdded: ['new_tool'],
-          skillsLoaded: ['skill-1'],
-        },
-      };
-      expect(AgentEventSchema.safeParse(event).success).toBe(true);
-    });
-  });
 });
 
 // ============================================================
@@ -830,23 +692,6 @@ describe('Type Guards', () => {
     });
   });
 
-  describe('isHITLEvent', () => {
-    it('should return true for HITL events', () => {
-      const event: AgentEvent = {
-        ...baseEvent,
-        type: 'hitl.ask',
-        askId: 'ask-1',
-        question: 'test?',
-      };
-      expect(isHITLEvent(event)).toBe(true);
-    });
-
-    it('should return false for non-HITL events', () => {
-      const event: AgentEvent = { ...baseEvent, type: 'done', reason: 'stop' };
-      expect(isHITLEvent(event)).toBe(false);
-    });
-  });
-
   describe('isAgentLifecycleEvent', () => {
     it('should return true for agent lifecycle events', () => {
       const event: AgentEvent = {
@@ -873,11 +718,9 @@ describe('Type Guards', () => {
         type: 'agent.error',
         error: { name: 'Error', message: 'test' },
       };
-      const cancelEvent: AgentEvent = { ...baseEvent, type: 'cancel' };
 
       expect(isTerminalEvent(doneEvent)).toBe(true);
       expect(isTerminalEvent(errorEvent)).toBe(true);
-      expect(isTerminalEvent(cancelEvent)).toBe(true);
     });
 
     it('should return false for non-terminal events', () => {

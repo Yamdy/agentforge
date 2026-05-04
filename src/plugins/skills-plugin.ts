@@ -1,17 +1,16 @@
 /**
  * Skills Plugin for AgentForge
  *
- * Intercepts agent.start to scan SKILL.md files,
- * intercepts llm.request to inject skill metadata (progressive disclosure).
- *
- * Uses existing InterceptorPlugin interface - zero new concepts.
+ * Discovers skills on session.start and injects skill metadata
+ * (progressive disclosure) before each LLM request.
  *
  * @module
  */
 
-import type { Plugin, PluginContext } from '../plugins/plugin.js';
-import type { AgentEvent, Message } from '../core/events.js';
+import type { Plugin } from '../plugins/plugin.js';
+import type { Message } from '../core/events.js';
 import { SkillRegistry } from '../skill/loader.js';
+import { RequestHookPriority } from '../core/hooks.js';
 
 /**
  * Skill metadata for progressive disclosure
@@ -28,16 +27,16 @@ export interface SkillMetadata {
 /**
  * Create a Skills Plugin
  *
- * Intercepts:
- * - agent.start: Scans skill directories, parses SKILL.md frontmatter
- * - llm.request: Prepends skill list (name + description only) to messages
+ * Hooks:
+ * - session.start: Scans skill directories, parses SKILL.md frontmatter
+ * - requestHooks: Prepends skill list (name + description only) to messages
  *
- * Priority: 5 (before Memory at 10, but Memory prepends AFTER so appears first)
+ * Priority: SKILL_INSTRUCTIONS (30)
  *
  * Progressive disclosure: Only metadata is injected. Model reads full SKILL.md on demand.
  *
  * @param sources - Skill directory paths
- * @returns InterceptorPlugin
+ * @returns Plugin
  */
 export function createSkillsPlugin(sources: string[]): Plugin {
   const registry = new SkillRegistry();
@@ -45,14 +44,13 @@ export function createSkillsPlugin(sources: string[]): Plugin {
 
   return {
     name: 'skills',
-    type: 'interceptor' as const,
-    priority: 5,
-    eventTypes: ['agent.start', 'llm.request'],
     enabled: true,
 
-    intercept(event: AgentEvent, _ctx: PluginContext): AgentEvent | Promise<AgentEvent> {
-      if (event.type === 'agent.start') {
-        return registry.discover(sources).then(discovered => {
+    lifecycleHooks: [
+      {
+        name: 'session.start',
+        fn: async () => {
+          const discovered = await registry.discover(sources);
           skills = discovered.map(s => {
             const meta: SkillMetadata = {
               name: s.frontmatter.name,
@@ -66,45 +64,47 @@ export function createSkillsPlugin(sources: string[]): Plugin {
               meta.allowedTools = s.frontmatter.allowedTools;
             return meta;
           });
-          return event;
-        });
-      }
+        },
+      },
+    ],
 
-      if (event.type === 'llm.request' && skills.length > 0) {
-        // Inject skill metadata (progressive disclosure)
-        const skillsList = skills
-          .map(s => {
-            let line = `- **${s.name}**: ${s.description}`;
-            if (s.license || s.compatibility) {
-              const ann = [
-                s.license && `License: ${s.license}`,
-                s.compatibility && `Compatibility: ${s.compatibility}`,
-              ]
-                .filter(Boolean)
-                .join(', ');
-              line += ` (${ann})`;
-            }
-            if (s.allowedTools?.length) {
-              line += `\n  -> Allowed tools: ${s.allowedTools.join(', ')}`;
-            }
-            line += `\n  -> Read \`${s.path}\` for full instructions`;
-            return line;
-          })
-          .join('\n');
+    requestHooks: [
+      {
+        name: 'skills-context',
+        priority: RequestHookPriority.SKILL_INSTRUCTIONS,
+        apply(messages: Message[]): Message[] {
+          if (skills.length === 0) return messages;
 
-        const skillsMessage: Message = {
-          role: 'system',
-          content: `## Skills System\n\n**Available Skills:**\n\n${skillsList}`,
-          name: 'skills',
-        };
+          // Inject skill metadata (progressive disclosure)
+          const skillsList = skills
+            .map(s => {
+              let line = `- **${s.name}**: ${s.description}`;
+              if (s.license || s.compatibility) {
+                const ann = [
+                  s.license && `License: ${s.license}`,
+                  s.compatibility && `Compatibility: ${s.compatibility}`,
+                ]
+                  .filter(Boolean)
+                  .join(', ');
+                line += ` (${ann})`;
+              }
+              if (s.allowedTools?.length) {
+                line += `\n  -> Allowed tools: ${s.allowedTools.join(', ')}`;
+              }
+              line += `\n  -> Read \`${s.path}\` for full instructions`;
+              return line;
+            })
+            .join('\n');
 
-        return {
-          ...event,
-          messages: [skillsMessage, ...event.messages],
-        };
-      }
+          const skillsMessage: Message = {
+            role: 'system',
+            content: `## Skills System\n\n**Available Skills:**\n\n${skillsList}`,
+            name: 'skills',
+          };
 
-      return event;
-    },
+          return [skillsMessage, ...messages];
+        },
+      },
+    ],
   };
 }

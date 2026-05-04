@@ -136,17 +136,7 @@ export function calculateRetryDelay(
 export type ProviderFactory = (model: string, options?: Record<string, unknown>) => LLMAdapter;
 
 export class ProviderRegistry {
-  private static instance: ProviderRegistry;
   private factories = new Map<string, ProviderFactory>();
-
-  private constructor() {}
-
-  static getInstance(): ProviderRegistry {
-    if (!ProviderRegistry.instance) {
-      ProviderRegistry.instance = new ProviderRegistry();
-    }
-    return ProviderRegistry.instance;
-  }
 
   register(provider: string, factory: ProviderFactory): void {
     this.factories.set(provider, factory);
@@ -371,7 +361,8 @@ export function createHttpAdapter(
 
 export function createLLMAdapterFromSpec(
   spec: string,
-  options?: Record<string, unknown>
+  options?: Record<string, unknown>,
+  registry?: ProviderRegistry
 ): LLMAdapter {
   const parts = spec.split('/');
   const provider = parts[0];
@@ -382,9 +373,11 @@ export function createLLMAdapterFromSpec(
   }
 
   // Check registered providers
-  const factory = ProviderRegistry.getInstance().get(provider);
-  if (factory) {
-    return factory(model, options);
+  if (registry) {
+    const factory = registry.get(provider);
+    if (factory) {
+      return factory(model, options);
+    }
   }
 
   // Fallback to HTTP adapter

@@ -27,7 +27,7 @@ function createTestEntry(overrides?: Partial<{
     timestamp: overrides?.timestamp ?? new Date().toISOString(),
     sessionId: overrides?.sessionId ?? 'session-1',
     agentName: overrides?.agentName ?? 'assistant',
-    eventType: overrides?.eventType ?? ('tool.execute' as AuditEventType),
+    eventType: overrides?.eventType ?? ('tool.call' as AuditEventType),
     action: overrides?.action ?? 'read_file',
     resource: overrides?.resource ?? '/tmp/test.txt',
     result: overrides?.result ?? ('success' as const),
@@ -103,7 +103,7 @@ describe('SqliteAuditStore', () => {
     it('should filter by criteria', async () => {
       await store.append(createTestEntry({
         sessionId: 'session-a',
-        eventType: 'tool.execute',
+        eventType: 'tool.call',
         result: 'success',
       }));
       await store.append(createTestEntry({
@@ -113,7 +113,7 @@ describe('SqliteAuditStore', () => {
       }));
       await store.append(createTestEntry({
         sessionId: 'session-a',
-        eventType: 'tool.execute',
+        eventType: 'tool.call',
         result: 'error',
       }));
 
@@ -122,7 +122,7 @@ describe('SqliteAuditStore', () => {
       expect(sessionA).toHaveLength(2);
 
       // Filter by eventType
-      const toolEntries = await store.query({ eventType: 'tool.execute' });
+      const toolEntries = await store.query({ eventType: 'tool.call' });
       expect(toolEntries).toHaveLength(2);
 
       // Filter by result
@@ -132,7 +132,7 @@ describe('SqliteAuditStore', () => {
       // Filter by sessionId + eventType
       const combined = await store.query({
         sessionId: 'session-a',
-        eventType: 'tool.execute',
+        eventType: 'tool.call',
       });
       expect(combined).toHaveLength(2);
 

@@ -26,9 +26,9 @@ import type { AgentState } from '../core/state.js';
 export function createQuotaPlugin(): Plugin {
   const check: CheckpointHook['check'] = async (ctx: unknown) => {
     const c = ctx as AgentContext;
-    if (!c.quota) return { action: 'continue' };
-    const currentUsage = c.quota.getUsage(c.sessionId);
-    const allowed = await c.quota.check(c.sessionId, {
+    if (!c.controls.quota) return { action: 'continue' };
+    const currentUsage = c.controls.quota.getUsage(c.identity.sessionId);
+    const allowed = await c.controls.quota.check(c.identity.sessionId, {
       promptTokens: currentUsage.promptTokens,
       completionTokens: currentUsage.completionTokens,
       ...(currentUsage.totalCost !== undefined ? { totalCost: currentUsage.totalCost } : {}),
@@ -53,13 +53,13 @@ export function createQuotaPlugin(): Plugin {
 export function createRateLimitPlugin(): Plugin {
   const check: CheckpointHook['check'] = (ctx: unknown) => {
     const c = ctx as AgentContext;
-    if (!c.rateLimiter) return { action: 'continue' };
-    const rateLimitKey = `llm:${c.sessionId}`;
+    if (!c.controls.rateLimiter) return { action: 'continue' };
+    const rateLimitKey = `llm:${c.identity.sessionId}`;
     const rateLimitConfig = { maxRequests: 60, windowMs: 60_000 };
-    if (!c.rateLimiter.check(rateLimitKey, rateLimitConfig)) {
+    if (!c.controls.rateLimiter.check(rateLimitKey, rateLimitConfig)) {
       return { action: 'block', reason: 'rate_limit_exceeded' };
     }
-    c.rateLimiter.consume(rateLimitKey, rateLimitConfig);
+    c.controls.rateLimiter.consume(rateLimitKey, rateLimitConfig);
     return { action: 'continue' };
   };
 
@@ -82,12 +82,12 @@ export function createQualityGatePlugin(): Plugin {
   const check: CheckpointHook['check'] = (ctx: unknown, state: unknown, ...args: unknown[]) => {
     const c = ctx as AgentContext;
     const s = state as AgentState;
-    if (!c.qualityGate) return { action: 'continue' };
+    if (!c.memory.qualityGate) return { action: 'continue' };
     const response = args[0] as
       | { content?: string | null; toolCalls?: unknown[]; finishReason?: string; usage?: unknown }
       | undefined;
     if (!response?.content) return { action: 'continue' };
-    const gateResult = c.qualityGate.check(response.content, s);
+    const gateResult = c.memory.qualityGate.check(response.content, s);
     if (!gateResult.passed) {
       s.messages.push({
         role: 'user',
@@ -113,7 +113,7 @@ export function createQualityGatePlugin(): Plugin {
 export function createCircuitBreakerPlugin(): Plugin {
   const check: CheckpointHook['check'] = (ctx: unknown) => {
     const c = ctx as AgentContext;
-    c.circuitBreaker?.recordSuccess();
+    c.resilience.circuitBreaker?.recordSuccess();
     return { action: 'continue' };
   };
 

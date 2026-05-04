@@ -1,7 +1,7 @@
 /**
  * Summarization Plugin for AgentForge
  *
- * Intercepts llm.request to check token threshold.
+ * Checks token threshold before each LLM request.
  * If over threshold, compresses messages and offloads old ones.
  *
  * Uses existing CompactionManager strategies + HistoryOffloadManager.
@@ -9,8 +9,9 @@
  * @module
  */
 
-import type { Plugin, PluginContext } from '../plugins/plugin.js';
-import type { AgentEvent } from '../core/events.js';
+import type { Plugin } from '../plugins/plugin.js';
+import type { Message } from '../core/events.js';
+import type { AgentState } from '../core/state.js';
 import { estimateTokens, truncateOldest } from '../memory/strategies.js';
 import { HistoryOffloadManager } from '../memory/history-offload.js';
 
@@ -73,13 +74,13 @@ export interface SummarizationPluginConfig {
 /**
  * Create a Summarization Plugin
  *
- * Intercepts llm.request events and checks token count.
+ * Hooks into llm.request to check token count.
  * If over threshold, truncates oldest messages and offloads them.
  *
- * Priority: 20 (after Skills at 5 and Memory at 10)
+ * Priority: 20 (after Memory at 20 and Skills at 30 — runs between them)
  *
  * @param config - Summarization configuration
- * @returns InterceptorPlugin
+ * @returns Plugin
  */
 export function createSummarizationPlugin(config: SummarizationPluginConfig): Plugin {
   const offloadManager = config.offloadDir
@@ -88,25 +89,27 @@ export function createSummarizationPlugin(config: SummarizationPluginConfig): Pl
 
   return {
     name: 'summarization',
-    type: 'interceptor' as const,
-    priority: 20,
-    eventTypes: ['llm.request'],
     enabled: config.enabled ?? true,
 
-    intercept(event: AgentEvent, _ctx: PluginContext): AgentEvent | Promise<AgentEvent> {
-      if (event.type !== 'llm.request') return event;
-      const tokens = estimateTokens(event.messages);
-      if (!shouldCompact(tokens, config)) return event;
-      const result = truncateOldest(event.messages, config.preserveRecent);
-      if (result.removedCount === 0) return event;
-      if (offloadManager) {
-        const removed = event.messages.slice(0, result.removedCount);
-        return offloadManager
-          .offload(event.sessionId, removed)
-          .then(() => ({ ...event, messages: result.messages }));
-      }
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      return { ...event, messages: result.messages };
-    },
+    requestHooks: [
+      {
+        name: 'summarization-compact',
+        priority: 20,
+        async apply(messages: Message[], state: AgentState): Promise<Message[]> {
+          const tokens = estimateTokens(messages);
+          if (!shouldCompact(tokens, config)) return messages;
+
+          const result = truncateOldest(messages, config.preserveRecent);
+          if (result.removedCount === 0) return messages;
+
+          if (offloadManager) {
+            const removed = messages.slice(0, result.removedCount);
+            await offloadManager.offload(state.sessionId, removed);
+          }
+
+          return result.messages as Message[];
+        },
+      },
+    ],
   };
 }

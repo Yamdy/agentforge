@@ -170,16 +170,16 @@ export const PROVIDER_BASE_URLS: Record<string, string> = {
  * });
  * ```
  */
-class LLMAdapterFactoryImpl {
+export class LLMAdapterFactoryImpl {
   private initialized = false;
+  private _registry: ProviderRegistry;
 
   constructor() {
-    // Register built-in adapters lazily to avoid import errors
-    // when AI SDK packages are not installed
+    this._registry = new ProviderRegistry();
   }
 
   private get registry(): ProviderRegistry {
-    return ProviderRegistry.getInstance();
+    return this._registry;
   }
 
   /**
@@ -301,24 +301,19 @@ class LLMAdapterFactoryImpl {
 }
 
 // ============================================================
-// Singleton Factory
+// Factory Functions (no global singleton — each caller creates its own)
 // ============================================================
 
-let defaultFactory: LLMAdapterFactoryImpl | null = null;
-
 export function getLLMAdapterFactory(): LLMAdapterFactoryImpl {
-  if (!defaultFactory) {
-    defaultFactory = new LLMAdapterFactoryImpl();
-  }
-  return defaultFactory;
+  return new LLMAdapterFactoryImpl();
 }
 
-export function resetLLMAdapterFactory(): void {
-  defaultFactory = null;
-}
-
-export function createLLMAdapter(spec: string, options?: Record<string, unknown>): LLMAdapter {
-  return getLLMAdapterFactory().create(spec, options);
+export function createLLMAdapter(
+  spec: string,
+  options?: Record<string, unknown>,
+  factory?: LLMAdapterFactoryImpl
+): LLMAdapter {
+  return (factory ?? getLLMAdapterFactory()).create(spec, options);
 }
 
 // ============================================================
@@ -333,9 +328,10 @@ export function createLLMAdapter(spec: string, options?: Record<string, unknown>
  */
 export function createOpenAIAdapterFromFactory(
   model: string,
-  options?: Record<string, unknown>
+  options?: Record<string, unknown>,
+  factory?: LLMAdapterFactoryImpl
 ): LLMAdapter {
-  return getLLMAdapterFactory().create(`openai/${model}`, options);
+  return (factory ?? getLLMAdapterFactory()).create(`openai/${model}`, options);
 }
 
 /**
@@ -346,9 +342,10 @@ export function createOpenAIAdapterFromFactory(
  */
 export function createAnthropicAdapterFromFactory(
   model: string,
-  options?: Record<string, unknown>
+  options?: Record<string, unknown>,
+  factory?: LLMAdapterFactoryImpl
 ): LLMAdapter {
-  return getLLMAdapterFactory().create(`anthropic/${model}`, options);
+  return (factory ?? getLLMAdapterFactory()).create(`anthropic/${model}`, options);
 }
 
 /**
@@ -361,7 +358,8 @@ export function createAnthropicAdapterFromFactory(
 export function createOpenAICompatibleAdapter(
   provider: string,
   model: string,
-  options?: Record<string, unknown>
+  options?: Record<string, unknown>,
+  factory?: LLMAdapterFactoryImpl
 ): LLMAdapter {
-  return getLLMAdapterFactory().create(`${provider}/${model}`, options);
+  return (factory ?? getLLMAdapterFactory()).create(`${provider}/${model}`, options);
 }

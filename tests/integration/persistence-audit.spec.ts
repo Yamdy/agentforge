@@ -35,6 +35,7 @@ import {
   DefaultPauseController,
   SimpleSchemaRegistry,
 } from '../../src/core/index.js';
+import { HookRegistry } from '../../src/core/hooks.js';
 
 // ============================================================
 // Mock LLM Adapter
@@ -216,19 +217,24 @@ function createTestContext(
   const sessionId = `test-session-${Date.now()}`;
 
   return {
-    sessionId,
-    agentName: 'test-agent',
-    memory: new InMemoryStore(),
-    pauseController: new DefaultPauseController(),
-    services: {
-      schemaRegistry: new SimpleSchemaRegistry(),
-      llmFactory: { create: () => llm },
-      toolRegistry,
+    identity: { sessionId, agentName: 'test-agent' },
+    core: {
+      llm,
+      tools: toolRegistry,
+      memory: new InMemoryStore(),
+      pauseController: new DefaultPauseController(),
+      services: {
+        schemaRegistry: new SimpleSchemaRegistry(),
+        llmFactory: { create: () => llm },
+        toolRegistry,
+      },
     },
-    llm,
-    tools: toolRegistry,
-    checkpoint: options?.checkpointStorage,
-    auditLogger: options?.auditLogger,
+    security: options?.auditLogger ? { auditLogger: options.auditLogger } : {},
+    controls: options?.checkpointStorage ? { checkpoint: options.checkpointStorage } : {},
+    memory: {},
+    resilience: {},
+    extensions: {},
+    harness: { hookRegistry: new HookRegistry() },
   };
 }
 
@@ -389,12 +395,12 @@ describe('Integration: Persistence + Audit Logging', () => {
       await runAndCollect(agent, 'Weather?');
 
       // Should have tool.execute audit entry
-      const toolExecuteEntries = auditLogger.getEntriesByEventType('tool.execute');
+      const toolExecuteEntries = auditLogger.getEntriesByEventType('tool.call');
       expect(toolExecuteEntries.length).toBeGreaterThan(0);
 
       const execEntry = toolExecuteEntries[0]!;
       expect(execEntry.resource).toBe('weather');
-      expect(execEntry.action).toBe('tool.execute');
+      expect(execEntry.action).toBe('tool.call');
 
       // Should have tool.result audit entry
       const toolResultEntries = auditLogger.getEntriesByEventType('tool.result');
@@ -469,7 +475,7 @@ describe('Integration: Persistence + Audit Logging', () => {
       ]);
 
       const ctx = createTestContext(llm, toolRegistry, { auditLogger });
-      const expectedSessionId = ctx.sessionId;
+      const expectedSessionId = ctx.identity.sessionId;
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
@@ -528,11 +534,11 @@ describe('Integration: Persistence + Audit Logging', () => {
       const agent = createAgentLoop(ctx, config);
       await runAndCollect(agent, 'Calculate 1+2');
 
-      const toolExecuteEntries = auditLogger.getEntriesByEventType('tool.execute');
+      const toolExecuteEntries = auditLogger.getEntriesByEventType('tool.call');
       expect(toolExecuteEntries.length).toBeGreaterThan(0);
 
       const entry = toolExecuteEntries[0]!;
-      expect(entry.eventType).toBe('tool.execute');
+      expect(entry.eventType).toBe('tool.call');
       expect(entry.resource).toBe('calculator');
     });
 
@@ -557,7 +563,7 @@ describe('Integration: Persistence + Audit Logging', () => {
       // Should have both LLM and tool audit entries
       expect(eventTypes.has('llm.request')).toBe(true);
       expect(eventTypes.has('llm.response')).toBe(true);
-      expect(eventTypes.has('tool.execute')).toBe(true);
+      expect(eventTypes.has('tool.call')).toBe(true);
       expect(eventTypes.has('tool.result')).toBe(true);
     });
   });
@@ -595,7 +601,7 @@ describe('Integration: Persistence + Audit Logging', () => {
       // Audit entries recorded
       expect(auditLogger.entries.length).toBeGreaterThan(0);
       expect(auditLogger.getEntriesByEventType('llm.request').length).toBeGreaterThan(0);
-      expect(auditLogger.getEntriesByEventType('tool.execute').length).toBeGreaterThan(0);
+      expect(auditLogger.getEntriesByEventType('tool.call').length).toBeGreaterThan(0);
     });
   });
 });

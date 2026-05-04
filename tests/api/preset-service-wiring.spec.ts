@@ -38,20 +38,20 @@ describe('preset-service wiring', () => {
       const agent = createAgent(makeConfig({ tracing: true }));
       // Access internal context to verify service wiring
       const ctx = (agent as unknown as { ctx: { services: { tracer: unknown } } }).ctx;
-      expect(ctx.services.tracer).toBeInstanceOf(ConsoleTracer);
+      expect(ctx.core.services.tracer).toBeInstanceOf(ConsoleTracer);
     });
 
     it('should wire ConsoleMetrics when metrics: true', () => {
       const agent = createAgent(makeConfig({ metrics: true }));
       const ctx = (agent as unknown as { ctx: { services: { metrics: unknown } } }).ctx;
-      expect(ctx.services.metrics).toBeInstanceOf(ConsoleMetrics);
+      expect(ctx.core.services.metrics).toBeInstanceOf(ConsoleMetrics);
     });
 
     it('should wire both when tracing and metrics are true', () => {
       const agent = createAgent(makeConfig({ tracing: true, metrics: true }));
       const ctx = (agent as unknown as { ctx: { services: { tracer: unknown; metrics: unknown } } }).ctx;
-      expect(ctx.services.tracer).toBeInstanceOf(ConsoleTracer);
-      expect(ctx.services.metrics).toBeInstanceOf(ConsoleMetrics);
+      expect(ctx.core.services.tracer).toBeInstanceOf(ConsoleTracer);
+      expect(ctx.core.services.metrics).toBeInstanceOf(ConsoleMetrics);
     });
 
     it('should wire custom tracer from TracingConfig', () => {
@@ -60,7 +60,7 @@ describe('preset-service wiring', () => {
         tracing: { exporter: 'custom', customTracer },
       }));
       const ctx = (agent as unknown as { ctx: { services: { tracer: unknown } } }).ctx;
-      expect(ctx.services.tracer).toBe(customTracer);
+      expect(ctx.core.services.tracer).toBe(customTracer);
     });
 
     it('should keep NoopTracer when exporter is none', () => {
@@ -68,7 +68,7 @@ describe('preset-service wiring', () => {
         tracing: { exporter: 'none' },
       }));
       const ctx = (agent as unknown as { ctx: { services: { tracer: unknown } } }).ctx;
-      expect(ctx.services.tracer).toBeInstanceOf(NoopTracer);
+      expect(ctx.core.services.tracer).toBeInstanceOf(NoopTracer);
     });
 
     it('should not crash with exporter otel (async init handled by tracerInitPromise)', async () => {
@@ -80,9 +80,9 @@ describe('preset-service wiring', () => {
       const ctx = (agent as unknown as { ctx: { services: { tracer: unknown } } }).ctx;
       // Tracer starts as NoopTracer (default) and is replaced when OTel SDK loads
       // The tracerInitPromise is stored and awaited inside agent.run()
-      expect(ctx.services.tracer).toBeDefined();
+      expect(ctx.core.services.tracer).toBeDefined();
       // Agent was created successfully without crashing
-      expect(agent.ctx.agentName).toBe('test-agent');
+      expect(agent.ctx.identity.agentName).toBe('test-agent');
     });
 
     it('should wire custom metrics from MetricsConfig', () => {
@@ -91,7 +91,7 @@ describe('preset-service wiring', () => {
         metrics: { customMetrics },
       }));
       const ctx = (agent as unknown as { ctx: { services: { metrics: unknown } } }).ctx;
-      expect(ctx.services.metrics).toBe(customMetrics);
+      expect(ctx.core.services.metrics).toBe(customMetrics);
     });
   });
 
@@ -99,32 +99,32 @@ describe('preset-service wiring', () => {
     it('should wire ConsoleTracer with preset: development', () => {
       const agent = createAgent(makeConfig({ preset: 'development' }));
       const ctx = (agent as unknown as { ctx: { services: { tracer: unknown } } }).ctx;
-      expect(ctx.services.tracer).toBeInstanceOf(ConsoleTracer);
+      expect(ctx.core.services.tracer).toBeInstanceOf(ConsoleTracer);
     });
 
     it('should wire ConsoleMetrics with preset: development', () => {
       const agent = createAgent(makeConfig({ preset: 'development' }));
       const ctx = (agent as unknown as { ctx: { services: { metrics: unknown } } }).ctx;
-      expect(ctx.services.metrics).toBeInstanceOf(ConsoleMetrics);
+      expect(ctx.core.services.metrics).toBeInstanceOf(ConsoleMetrics);
     });
 
     it('should NOT wire services for preset: debug', () => {
       const agent = createAgent(makeConfig({ preset: 'debug' }));
       const ctx = (agent as unknown as { ctx: { services: { tracer: unknown } } }).ctx;
       // debug preset does NOT set service defaults
-      expect(ctx.services.tracer).toBeInstanceOf(NoopTracer);
+      expect(ctx.core.services.tracer).toBeInstanceOf(NoopTracer);
     });
 
     it('should NOT wire services for preset: test', () => {
       const agent = createAgent(makeConfig({ preset: 'test' }));
       const ctx = (agent as unknown as { ctx: { services: { tracer: unknown } } }).ctx;
-      expect(ctx.services.tracer).toBeInstanceOf(NoopTracer);
+      expect(ctx.core.services.tracer).toBeInstanceOf(NoopTracer);
     });
 
     it('should NOT wire services for preset: production', () => {
       const agent = createAgent(makeConfig({ preset: 'production' }));
       const ctx = (agent as unknown as { ctx: { services: { tracer: unknown } } }).ctx;
-      expect(ctx.services.tracer).toBeInstanceOf(NoopTracer);
+      expect(ctx.core.services.tracer).toBeInstanceOf(NoopTracer);
     });
   });
 
@@ -140,7 +140,7 @@ describe('preset-service wiring', () => {
       // tracing: false → resolveTracerFromConfig returns undefined → preset default (ConsoleTracer) wins
       // Actually, tracing: false means config exists but boolean=false → resolveTracerFromConfig returns undefined
       // So preset default (ConsoleTracer) wins
-      expect(ctx.services.tracer).toBeInstanceOf(ConsoleTracer);
+      expect(ctx.core.services.tracer).toBeInstanceOf(ConsoleTracer);
     });
 
     it('explicit custom tracer should override preset defaults', () => {
@@ -150,19 +150,19 @@ describe('preset-service wiring', () => {
         tracing: { exporter: 'custom', customTracer },
       }));
       const ctx = (agent as unknown as { ctx: { services: { tracer: unknown } } }).ctx;
-      expect(ctx.services.tracer).toBe(customTracer);
+      expect(ctx.core.services.tracer).toBe(customTracer);
     });
 
     it('no preset and no explicit config should use NoopTracer', () => {
       const agent = createAgent(makeConfig());
       const ctx = (agent as unknown as { ctx: { services: { tracer: unknown } } }).ctx;
-      expect(ctx.services.tracer).toBeInstanceOf(NoopTracer);
+      expect(ctx.core.services.tracer).toBeInstanceOf(NoopTracer);
     });
 
     it('no preset and no explicit config should use NoopMetrics', () => {
       const agent = createAgent(makeConfig());
       const ctx = (agent as unknown as { ctx: { services: { metrics: unknown } } }).ctx;
-      expect(ctx.services.metrics).toBeInstanceOf(NoopMetrics);
+      expect(ctx.core.services.metrics).toBeInstanceOf(NoopMetrics);
     });
   });
 
@@ -170,13 +170,13 @@ describe('preset-service wiring', () => {
     it('default config should use NoopTracer', () => {
       const agent = createAgent(makeConfig());
       const ctx = (agent as unknown as { ctx: { services: { tracer: unknown } } }).ctx;
-      expect(ctx.services.tracer).toBeInstanceOf(NoopTracer);
+      expect(ctx.core.services.tracer).toBeInstanceOf(NoopTracer);
     });
 
     it('default config should use NoopMetrics', () => {
       const agent = createAgent(makeConfig());
       const ctx = (agent as unknown as { ctx: { services: { metrics: unknown } } }).ctx;
-      expect(ctx.services.metrics).toBeInstanceOf(NoopMetrics);
+      expect(ctx.core.services.metrics).toBeInstanceOf(NoopMetrics);
     });
   });
 });

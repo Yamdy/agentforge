@@ -42,32 +42,33 @@ function createMockPlugin(name: string): Plugin {
 // ============================================================
 
 describe('parsePluginSpec', () => {
-  it('should parse npm specifier with version', () => {
+  it('should detect npm specifier (version no longer parsed)', () => {
     const result = parsePluginSpec('my-plugin@^1.0.0');
     expect(result.source).toBe('npm');
-    expect(result.pkg).toBe('my-plugin');
-    expect(result.version).toBe('^1.0.0');
+    expect(result.pkg).toBe('my-plugin@^1.0.0');
+    expect(result.version).toBe('');
   });
 
-  it('should parse npm specifier without version (defaults to latest)', () => {
+  it('should detect npm specifier (no longer parsed — returns raw string)', () => {
     const result = parsePluginSpec('my-plugin');
     expect(result.source).toBe('npm');
     expect(result.pkg).toBe('my-plugin');
-    expect(result.version).toBe('latest');
+    expect(result.version).toBe('');
   });
 
-  it('should parse npm specifier with scope', () => {
+  it('should detect scoped npm specifier as source=npm', () => {
     const result = parsePluginSpec('@scope/my-plugin@2.0.0');
     expect(result.source).toBe('npm');
-    expect(result.pkg).toBe('@scope/my-plugin');
-    expect(result.version).toBe('2.0.0');
+    // NPM version parsing removed — the full spec becomes the pkg
+    expect(result.pkg).toBe('@scope/my-plugin@2.0.0');
+    expect(result.version).toBe('');
   });
 
-  it('should parse scoped npm specifier without version', () => {
+  it('should detect scoped npm specifier without version as source=npm', () => {
     const result = parsePluginSpec('@scope/my-plugin');
     expect(result.source).toBe('npm');
     expect(result.pkg).toBe('@scope/my-plugin');
-    expect(result.version).toBe('latest');
+    expect(result.version).toBe('');
   });
 
   it('should detect file:// prefix as file source', () => {

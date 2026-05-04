@@ -12,6 +12,7 @@ import {
   type AgentLoop,
   type StepContext,
 } from '../../src/loop/agent-loop.js';
+import { createAgent } from '../../src/api/create-agent.js';
 import {
   type AgentContext,
   type AgentState,
@@ -230,17 +231,24 @@ function createTestContext(
   const sessionId = `test-session-${Date.now()}`;
 
   return {
-    sessionId,
-    agentName: 'test-agent',
-    memory: new InMemoryStore(),
-    pauseController: new DefaultPauseController(),
-    services: {
-      schemaRegistry: new SimpleSchemaRegistry(),
-      llmFactory: { create: () => llm },
-      toolRegistry,
+    identity: { sessionId, agentName: 'test-agent' },
+    core: {
+      llm,
+      tools: toolRegistry,
+      memory: new InMemoryStore(),
+      pauseController: new DefaultPauseController(),
+      services: {
+        schemaRegistry: new SimpleSchemaRegistry(),
+        llmFactory: { create: () => llm },
+        toolRegistry,
+      },
     },
-    llm,
-    tools: toolRegistry,
+    security: {},
+    controls: {},
+    memory: {},
+    resilience: {},
+    extensions: {},
+    harness: { hookRegistry: new HookRegistry() },
   };
 }
 
@@ -353,14 +361,14 @@ describe('Phase 2a: Agent Loop', () => {
       const events = await runAndCollect(agent, 'What is the weather in Beijing?');
 
       const types = events.map(e => e.type);
-      expect(types).toContain('tool.execute');
+      expect(types).toContain('tool.call');
       expect(types).toContain('tool.result');
 
-      // Verify event order: tool.execute before tool.result
-      const execIdx = types.indexOf('tool.execute');
+      // Verify event order: tool.call before tool.result
+      const callIdx = types.indexOf('tool.call');
       const resultIdx = types.indexOf('tool.result');
-      expect(execIdx).toBeGreaterThan(-1);
-      expect(resultIdx).toBeGreaterThan(execIdx);
+      expect(callIdx).toBeGreaterThan(-1);
+      expect(resultIdx).toBeGreaterThan(callIdx);
 
       const log = toolRegistry.getExecutionLog();
       expect(log).toHaveLength(1);
@@ -398,12 +406,10 @@ describe('Phase 2a: Agent Loop', () => {
       const agent = createAgentLoop(ctx, config);
       const events = await runAndCollect(agent, 'Check weather and calculate');
 
-      // Each tool emits tool.call → tool.execute → tool.result
+      // Each tool emits tool.call → tool.result
       const callEvents = events.filter(e => e.type === 'tool.call');
-      const execEvents = events.filter(e => e.type === 'tool.execute');
       const resultEvents = events.filter(e => e.type === 'tool.result');
       expect(callEvents.length).toBe(3);
-      expect(execEvents.length).toBe(3);
       expect(resultEvents.length).toBe(3);
 
       const log = toolRegistry.getExecutionLog();
@@ -821,7 +827,7 @@ describe('Phase 2a: Agent Loop', () => {
       const agent = createAgentLoop(ctx, config);
 
       // Pause before running
-      ctx.pauseController.pause();
+      ctx.core.pauseController.pause();
 
       // Start the loop - it should block
       vi.useFakeTimers();
@@ -829,7 +835,7 @@ describe('Phase 2a: Agent Loop', () => {
 
       // Resume after a short delay
       setTimeout(() => {
-        ctx.pauseController.resume();
+        ctx.core.pauseController.resume();
       }, 50);
 
       await vi.advanceTimersByTimeAsync(50);
@@ -973,19 +979,16 @@ describe('Phase 2a: Agent Loop', () => {
 
       const types = events.map(e => e.type);
 
-      // Should have tool.call, tool.execute, tool.result
+      // Should have tool.call, tool.result
       expect(types).toContain('tool.call');
-      expect(types).toContain('tool.execute');
       expect(types).toContain('tool.result');
 
-      // Verify order: tool.call -> tool.execute -> tool.result
+      // Verify order: tool.call -> tool.result
       const callIdx = types.indexOf('tool.call');
-      const execIdx = types.indexOf('tool.execute');
       const resultIdx = types.indexOf('tool.result');
 
       expect(callIdx).toBeGreaterThan(-1);
-      expect(execIdx).toBeGreaterThan(callIdx);
-      expect(resultIdx).toBeGreaterThan(execIdx);
+      expect(resultIdx).toBeGreaterThan(callIdx);
 
       // Verify tool.call has correct fields
       const callEvent = events.find(e => e.type === 'tool.call');
@@ -1101,9 +1104,10 @@ describe('Phase 2a: Agent Loop', () => {
         { content: 'Hello!', finishReason: 'stop' },
       ]);
 
+      const baseCtx = createTestContext(llm, toolRegistry);
       const ctx: AgentContext = {
-        ...createTestContext(llm, toolRegistry),
-        checkpoint: mockStorage,
+        ...baseCtx,
+        controls: { ...baseCtx.controls, checkpoint: mockStorage },
       };
       const config = createTestConfig({
         checkpoint: { enabled: true, interval: 'llm_response' },
@@ -1130,7 +1134,7 @@ describe('Phase 2a: Agent Loop', () => {
       // Verify the saved checkpoint has the right position
       expect(mockStorage.save).toHaveBeenCalledWith(expect.objectContaining({
         position: 'after_llm',
-        sessionId: ctx.sessionId,
+        sessionId: ctx.identity.sessionId,
       }));
     });
 
@@ -1147,9 +1151,10 @@ describe('Phase 2a: Agent Loop', () => {
         { content: 'Hello!', finishReason: 'stop' },
       ]);
 
+      const baseCtx = createTestContext(llm, toolRegistry);
       const ctx: AgentContext = {
-        ...createTestContext(llm, toolRegistry),
-        checkpoint: mockStorage,
+        ...baseCtx,
+        controls: { ...baseCtx.controls, checkpoint: mockStorage },
       };
       // Explicitly disabled
       const config = createTestConfig({
@@ -1204,9 +1209,10 @@ describe('Phase 2a: Agent Loop', () => {
         { content: 'The weather is sunny!', finishReason: 'stop' },
       ]);
 
+      const baseCtx = createTestContext(llm, toolRegistry);
       const ctx: AgentContext = {
-        ...createTestContext(llm, toolRegistry),
-        checkpoint: mockStorage,
+        ...baseCtx,
+        controls: { ...baseCtx.controls, checkpoint: mockStorage },
       };
       const config = createTestConfig({
         parallelToolCalls: false,
@@ -1251,9 +1257,10 @@ describe('Phase 2a: Agent Loop', () => {
         { content: 'Done!', finishReason: 'stop' },
       ]);
 
+      const baseCtx = createTestContext(llm, toolRegistry);
       const ctx: AgentContext = {
-        ...createTestContext(llm, toolRegistry),
-        checkpoint: mockStorage,
+        ...baseCtx,
+        controls: { ...baseCtx.controls, checkpoint: mockStorage },
       };
       const config = createTestConfig({
         parallelToolCalls: false,
@@ -1287,9 +1294,10 @@ describe('Phase 2a: Agent Loop', () => {
         { content: 'Hello!', finishReason: 'stop' },
       ]);
 
+      const baseCtx = createTestContext(llm, toolRegistry);
       const ctx: AgentContext = {
-        ...createTestContext(llm, toolRegistry),
-        checkpoint: mockStorage,
+        ...baseCtx,
+        controls: { ...baseCtx.controls, checkpoint: mockStorage },
       };
       const config = createTestConfig({
         checkpoint: { enabled: true, interval: 'llm_response' },
@@ -1468,15 +1476,15 @@ describe('Phase 2a: Agent Loop', () => {
       const eventsPromise = runAndCollect(agent, 'Hello');
 
       // Rapid pause/resume cycles
-      ctx.pauseController.pause();
-      ctx.pauseController.resume();
-      ctx.pauseController.pause();
-      ctx.pauseController.resume();
-      ctx.pauseController.pause();
+      ctx.core.pauseController.pause();
+      ctx.core.pauseController.resume();
+      ctx.core.pauseController.pause();
+      ctx.core.pauseController.resume();
+      ctx.core.pauseController.pause();
 
       // Finally resume
       setTimeout(() => {
-        ctx.pauseController.resume();
+        ctx.core.pauseController.resume();
       }, 10);
 
       await vi.advanceTimersByTimeAsync(10);
@@ -1622,7 +1630,7 @@ describe('Phase 2c: ToolProviderHook Integration', () => {
 
   function createContextWithHooks(toolProviders: ToolProviderHook[]): AgentContext {
     const ctx = createTestContext(llm, toolRegistry);
-    ctx.hookRegistry = hookRegistry;
+    ctx.harness.hookRegistry = hookRegistry;
     for (const h of toolProviders) {
       hookRegistry.registerToolProvider(h);
     }
@@ -1719,8 +1727,8 @@ describe('Scenario 15: HITL PermissionController integration', () => {
 
   function createContextWithPermission(): AgentContext {
     const ctx = createTestContext(llm, toolRegistry);
-    ctx.permissionController = permController;
-    ctx.permissionPolicy = TEST_PERMISSION_POLICY;
+    ctx.security.permissionController = permController;
+    ctx.security.permissionPolicy = TEST_PERMISSION_POLICY;
     return ctx;
   }
 
@@ -1856,8 +1864,8 @@ describe('Scenario 15b: Critical-risk tool blocked at policy layer', () => {
     // Create context with both permissionController and permissionPolicy
     // (both are needed for the if-guard to enter the permission logic path)
     const ctx = createTestContext(llm, toolRegistry);
-    ctx.permissionController = permController;
-    ctx.permissionPolicy = TEST_PERMISSION_POLICY;
+    ctx.security.permissionController = permController;
+    ctx.security.permissionPolicy = TEST_PERMISSION_POLICY;
 
     const agent = createAgentLoop(ctx, createTestConfig());
     const events = await runAndCollect(agent, 'Do something dangerous');
@@ -2049,5 +2057,246 @@ describe('State Machine Integration', () => {
     // Attempt to pause from completed — should be rejected
     agent.pause();
     expect(agent.getStatus()).toBe('completed');
+  });
+});
+
+describe('AsyncGenerator iterate()', () => {
+  it('should yield loop-level events and return final output', async () => {
+    const llm = new MockLLMAdapter();
+    llm.setResponses([{ content: 'Hello!', finishReason: 'stop' }]);
+
+    const tools = new MockToolRegistry();
+    const ctx = createTestContext(llm, tools);
+    const config = createTestConfig();
+
+    const agent = createAgentLoop(ctx, config);
+    const events: AgentEvent[] = [];
+
+    const iter = agent.iterate('Hi');
+    for await (const event of iter) {
+      events.push(event);
+    }
+    const types = events.map(e => e.type);
+    expect(types).toContain('agent.start');
+    expect(types).toContain('llm.response');
+    expect(types).toContain('agent.complete');
+    expect(types).toContain('done');
+  });
+
+  it('should return the final output string from the generator', async () => {
+    const llm = new MockLLMAdapter();
+    llm.setResponses([{ content: 'Bonjour!', finishReason: 'stop' }]);
+
+    const ctx = createTestContext(llm, new MockToolRegistry());
+    const config = createTestConfig();
+
+    const agent = createAgentLoop(ctx, config);
+    const iter = agent.iterate('Hi');
+
+    let result: IteratorResult<AgentEvent, string> = await iter.next();
+    while (!result.done) {
+      result = await iter.next();
+    }
+    expect(result.value).toBe('Bonjour!');
+  });
+
+  it('should emit events to both generator and emitter subscribers', async () => {
+    const llm = new MockLLMAdapter();
+    llm.setResponses([{ content: 'Test', finishReason: 'stop' }]);
+
+    const ctx = createTestContext(llm, new MockToolRegistry());
+    const config = createTestConfig();
+
+    const agent = createAgentLoop(ctx, config);
+    const emitterEvents: AgentEvent[] = [];
+    const unsub = agent.onAny(e => emitterEvents.push(e));
+
+    const iter = agent.iterate('Hi');
+    const genEvents: AgentEvent[] = [];
+    let result: IteratorResult<AgentEvent, string> = await iter.next();
+    while (!result.done) {
+      genEvents.push(result.value);
+      result = await iter.next();
+    }
+
+    unsub();
+
+    expect(genEvents.length).toBeGreaterThan(0);
+    expect(emitterEvents.length).toBeGreaterThan(0);
+    // Both channels receive the same events
+    expect(genEvents.length).toBe(emitterEvents.length);
+  });
+
+  it('should be callable via createAgent API', async () => {
+    const llm = new MockLLMAdapter();
+    llm.setResponses([{ content: 'API test', finishReason: 'stop' }]);
+
+    const agent = createAgent({
+      name: 'test',
+      model: { provider: 'mock', model: 'mock' },
+      maxSteps: 3,
+    }, { llm });
+
+    const events: AgentEvent[] = [];
+    const iter = agent.iterate('test');
+    let result: IteratorResult<AgentEvent, string> = await iter.next();
+    while (!result.done) {
+      events.push(result.value);
+      result = await iter.next();
+    }
+
+    expect(result.value).toBe('API test');
+    expect(events.some(e => e.type === 'agent.start')).toBe(true);
+    expect(events.some(e => e.type === 'done')).toBe(true);
+  });
+
+  it('should terminate at maxSteps without deadlocking', async () => {
+    const llm = new MockLLMAdapter();
+    // LLM always returns a tool call, causing the loop to keep going until maxSteps
+    llm.setResponses([
+      { content: '', toolCalls: [{ id: 't1', name: 'weather', args: { city: 'X' } }], finishReason: 'tool_calls' },
+      { content: '', toolCalls: [{ id: 't2', name: 'weather', args: { city: 'X' } }], finishReason: 'tool_calls' },
+      { content: '', toolCalls: [{ id: 't3', name: 'weather', args: { city: 'X' } }], finishReason: 'tool_calls' },
+      { content: '', toolCalls: [{ id: 't4', name: 'weather', args: { city: 'X' } }], finishReason: 'tool_calls' },
+      { content: '', toolCalls: [{ id: 't5', name: 'weather', args: { city: 'X' } }], finishReason: 'tool_calls' },
+    ]);
+
+    const tools = new MockToolRegistry();
+    tools.register('weather', async () => JSON.stringify({ temp: 25 }));
+
+    const ctx = createTestContext(llm, tools);
+    const config = createTestConfig({ maxSteps: 2, parallelToolCalls: false });
+
+    const agent = createAgentLoop(ctx, config);
+    const iter = agent.iterate('Hi');
+
+    let result: IteratorResult<AgentEvent, string> = await iter.next();
+    while (!result.done) {
+      result = await iter.next();
+    }
+    // Must complete — if deadlocked, this test hangs forever
+    expect(result.done).toBe(true);
+    expect(typeof result.value).toBe('string');
+  });
+
+  it('should yield error events when LLM fails unrecoverably', async () => {
+    const llm = new MockLLMAdapter();
+    llm.setFailNTimes(99); // Fail all calls
+
+    const tools = new MockToolRegistry();
+    const ctx = createTestContext(llm, tools);
+    const config = createTestConfig({ maxLLMRepairAttempts: 1 });
+
+    const agent = createAgentLoop(ctx, config);
+    const iter = agent.iterate('Hi');
+
+    const events: AgentEvent[] = [];
+    let result: IteratorResult<AgentEvent, string> = await iter.next();
+    while (!result.done) {
+      events.push(result.value);
+      result = await iter.next();
+    }
+
+    expect(events.some(e => e.type === 'agent.error')).toBe(true);
+    expect(events.some(e => e.type === 'done' && e.reason === 'error')).toBe(true);
+  });
+
+  it('should reject re-entrant iterate() calls', async () => {
+    const llm = new MockLLMAdapter();
+    // Long-running: LLM returns tool call, so the loop keeps going
+    llm.setResponses([
+      { content: '', toolCalls: [{ id: 't1', name: 'slow', args: {} }], finishReason: 'tool_calls' },
+      { content: 'Done', finishReason: 'stop' },
+    ]);
+
+    const tools = new MockToolRegistry();
+    tools.register('slow', async () => {
+      // Simulate a slow tool so the first iterate stays running
+      await new Promise(r => setTimeout(r, 50));
+      return 'done';
+    });
+
+    const ctx = createTestContext(llm, tools);
+    const config = createTestConfig({ parallelToolCalls: false });
+
+    const agent = createAgentLoop(ctx, config);
+
+    // Start first iteration and wait for it to actually begin
+    const iter1 = agent.iterate('First');
+    const p1 = iter1.next(); // starts the agent, emits first event
+    await p1; // wait for at least one event so isRunning is set
+
+    // Second iteration should reject immediately
+    const iter2 = agent.iterate('Second');
+    const r2_1 = await iter2.next(); // agent.error
+    const r2_2 = await iter2.next(); // done(error)
+
+    expect(r2_1.value.type).toBe('agent.error');
+    expect(r2_2.value.type).toBe('done');
+    expect(r2_2.done).toBe(false);
+
+    const r2_3 = await iter2.next();
+    expect(r2_3.done).toBe(true);
+    expect(r2_3.value).toBe('');
+
+    // Clean up first iteration
+    agent.cancel();
+  });
+
+  it('should cancel agent when consumer breaks early', async () => {
+    const llm = new MockLLMAdapter();
+    llm.setResponses([
+      { content: '', toolCalls: [{ id: 't1', name: 'weather', args: { city: 'X' } }], finishReason: 'tool_calls' },
+      { content: 'Done', finishReason: 'stop' },
+    ]);
+
+    const tools = new MockToolRegistry();
+    tools.register('weather', async () => JSON.stringify({ temp: 25 }));
+
+    const ctx = createTestContext(llm, tools);
+    const config = createTestConfig({ parallelToolCalls: false });
+
+    const agent = createAgentLoop(ctx, config);
+    const iter = agent.iterate('Hi');
+
+    // Consume first event (could be state.change or agent.start depending on timing)
+    const r1 = await iter.next();
+    expect(r1.done).toBe(false);
+
+    // Early return — should trigger cancelLoop in finally
+    await iter.return?.(undefined);
+    // The status after cancel should be 'cancelled'
+    expect(agent.getStatus()).toBe('cancelled');
+  });
+
+  it('should yield events for tool-calling conversations', async () => {
+    const llm = new MockLLMAdapter();
+    llm.setResponses([
+      { content: '', toolCalls: [{ id: 't1', name: 'weather', args: { city: 'Beijing' } }], finishReason: 'tool_calls' },
+      { content: 'Weather is sunny!', finishReason: 'stop' },
+    ]);
+
+    const tools = new MockToolRegistry();
+    tools.register('weather', async () => JSON.stringify({ temp: 25 }));
+
+    const ctx = createTestContext(llm, tools);
+    const config = createTestConfig({ parallelToolCalls: false });
+
+    const agent = createAgentLoop(ctx, config);
+    const iter = agent.iterate('Weather?');
+
+    const events: AgentEvent[] = [];
+    let result: IteratorResult<AgentEvent, string> = await iter.next();
+    while (!result.done) {
+      events.push(result.value);
+      result = await iter.next();
+    }
+
+    const types = events.map(e => e.type);
+    expect(types).toContain('tool.call');
+    expect(types).toContain('tool.result');
+    expect(types).toContain('llm.response');
+    expect(types).toContain('agent.complete');
+    expect(types.filter(t => t === 'agent.step').length).toBe(2);
   });
 });

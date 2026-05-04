@@ -20,6 +20,7 @@ import type {
   ToolDefinition,
 } from '../../src/core/index.js';
 import { InMemoryStore, DefaultPauseController, SimpleSchemaRegistry } from '../../src/core/index.js';
+import { HookRegistry } from '../../src/core/hooks.js';
 import type {
   Planner,
   ExecutionPlan,
@@ -146,18 +147,24 @@ function createTestContext(
 ): AgentContext {
   const sessionId = `test-session-${Date.now()}`;
   return {
-    sessionId,
-    agentName: 'test-agent',
-    memory: new InMemoryStore(),
-    pauseController: new DefaultPauseController(),
-    services: {
-      schemaRegistry: new SimpleSchemaRegistry(),
-      llmFactory: { create: () => llm },
-      toolRegistry: tools,
+    identity: { sessionId, agentName: 'test-agent' },
+    core: {
+      llm,
+      tools,
+      memory: new InMemoryStore(),
+      pauseController: new DefaultPauseController(),
+      services: {
+        schemaRegistry: new SimpleSchemaRegistry(),
+        llmFactory: { create: () => llm },
+        toolRegistry: tools,
+      },
     },
-    llm,
-    tools,
-    planner,
+    security: {},
+    controls: {},
+    memory: {},
+    resilience: {},
+    extensions: planner ? { planner } : {},
+    harness: { hookRegistry: new HookRegistry() },
   };
 }
 
@@ -183,7 +190,7 @@ describe('Planner Enforcement — executionMode', () => {
   // ── react mode ──
 
   describe('executionMode: react', () => {
-    it('never invokes the planner even when ctx.planner is present', async () => {
+    it('never invokes the planner even when ctx.extensions.planner is present', async () => {
       const llm = new MockLLMAdapter({ content: 'ReAct response', finishReason: 'stop' });
       const tools = new MockToolRegistry(['read', 'write']);
       const planner = new MockPlanner();

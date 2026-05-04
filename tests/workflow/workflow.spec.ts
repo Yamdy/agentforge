@@ -34,6 +34,7 @@ import {
   SimpleSchemaRegistry,
   serializeError,
 } from '../../src/core/index.js';
+import { HookRegistry } from '../../src/core/hooks.js';
 
 // Cached executor helpers — imported once in beforeAll
 let createPromptGenerator: (template: string) => (input: unknown) => string;
@@ -168,17 +169,24 @@ function createTestContext(llm: MockLLMAdapter, toolRegistry: MockToolRegistry):
   const sessionId = `test-session-${Date.now()}`;
 
   return {
-    sessionId,
-    agentName: 'test-agent',
-    memory: new InMemoryStore(),
-    pauseController: new DefaultPauseController(),
-    services: {
-      schemaRegistry: new SimpleSchemaRegistry(),
-      llmFactory: { create: () => llm },
-      toolRegistry,
+    identity: { sessionId, agentName: 'test-agent' },
+    core: {
+      llm,
+      tools: toolRegistry,
+      memory: new InMemoryStore(),
+      pauseController: new DefaultPauseController(),
+      services: {
+        schemaRegistry: new SimpleSchemaRegistry(),
+        llmFactory: { create: () => llm },
+        toolRegistry,
+      },
     },
-    llm,
-    tools: toolRegistry,
+    security: {},
+    controls: {},
+    memory: {},
+    resilience: {},
+    extensions: {},
+    harness: { hookRegistry: new HookRegistry() },
   };
 }
 

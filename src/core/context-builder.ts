@@ -14,19 +14,9 @@ import type {
   LLMAdapterFactory,
   ToolRegistry,
   ToolDefinition,
-  MemoryStore,
-  CheckpointStorage,
-  HITLController,
-  PauseController as PauseControllerInterface,
-  MCPClient,
-  SubagentRegistry,
-  ErrorHandler,
   ToolContext,
   FunctionDefinition as FunctionDefinitionInterface,
-  PromptBuilder,
 } from './interfaces.js';
-import type { QuotaController } from '../quota/quota-controller.js';
-import type { CompactionManager } from '../memory/index.js';
 import type { ApplicationServices, AgentContext } from './context.js';
 import {
   InMemoryStore,
@@ -36,6 +26,30 @@ import {
   generateSessionId,
 } from './context.js';
 import { toolToFunctionDef } from './zod-to-schema.js';
+import { HookRegistry } from './hooks.js';
+
+// ============================================================
+// Context Builder State
+// ============================================================
+
+/**
+ * Flat builder state — internal storage for ContextBuilder.
+ * Mirrors the old flat AgentContext fields before they were grouped into sub-objects.
+ */
+interface BuilderState {
+  sessionId?: string;
+  agentName?: string;
+  llm?: LLMAdapter;
+  tools?: ToolRegistry | ToolDefinition[];
+  memory?: import('./interfaces.js').MemoryStore;
+  pauseController?: import('./interfaces.js').PauseController;
+  checkpoint?: import('./interfaces.js').CheckpointStorage;
+  hitl?: import('./interfaces.js').HITLController;
+  mcpClients?: Map<string, import('./interfaces.js').MCPClient>;
+  subagents?: import('./interfaces.js').SubagentRegistry;
+  abortSignal?: AbortSignal;
+  onError?: import('./interfaces.js').ErrorHandler;
+}
 
 // ============================================================
 // Context Builder
@@ -50,211 +64,92 @@ import { toolToFunctionDef } from './zod-to-schema.js';
  * ```typescript
  * const ctx = ContextBuilder.create()
  *   .withAppServices(app)
- *   .withSessionId('my-session')
- *   .withLLM(myLLMAdapter)
+ *   .with({ sessionId: 'my-session', llm: myLLMAdapter, checkpoint: myStorage })
  *   .withTools(myTools)
- *   .withCheckpoint(myStorage)
  *   .build();
  * ```
  */
 export class ContextBuilder {
-  private context: Partial<AgentContext> = {};
+  private state: BuilderState = {};
   private appServices?: ApplicationServices;
 
   private constructor() {}
 
-  /**
-   * Create a new builder instance
-   */
   static create(): ContextBuilder {
     return new ContextBuilder();
   }
 
-  /**
-   * Inject application services
-   *
-   * Must be set first, or createAgent will set default.
-   */
+  with(partial: BuilderState): this {
+    Object.assign(this.state, partial);
+    return this;
+  }
+
   withAppServices(services: ApplicationServices): this {
     this.appServices = services;
-    this.context.services = services;
     return this;
   }
 
-  /**
-   * Set session ID
-   */
-  withSessionId(sessionId: string): this {
-    this.context.sessionId = sessionId;
-    return this;
-  }
-
-  /**
-   * Set agent name
-   */
-  withAgentName(name: string): this {
-    this.context.agentName = name;
-    return this;
-  }
-
-  /**
-   * Set LLM adapter
-   */
-  withLLM(llm: LLMAdapter): this {
-    this.context.llm = llm;
-    return this;
-  }
-
-  /**
-   * Set tool registry or tool definitions
-   *
-   * If array of tools provided, creates a SimpleToolRegistry.
-   */
   withTools(tools: ToolRegistry | ToolDefinition[]): this {
     if (Array.isArray(tools)) {
       const registry = new SimpleToolRegistry();
       tools.forEach(t => registry.register(t));
-      this.context.tools = registry;
+      this.state.tools = registry;
     } else {
-      this.context.tools = tools;
+      this.state.tools = tools;
     }
     return this;
   }
 
-  /**
-   * Set memory store
-   */
-  withMemory(memory: MemoryStore): this {
-    this.context.memory = memory;
-    return this;
-  }
-
-  /**
-   * Set pause controller
-   */
-  withPauseController(controller: PauseControllerInterface): this {
-    this.context.pauseController = controller;
-    return this;
-  }
-
-  /**
-   * Set checkpoint storage
-   */
-  withCheckpoint(storage: CheckpointStorage): this {
-    this.context.checkpoint = storage;
-    return this;
-  }
-
-  /**
-   * Set HITL controller
-   */
-  withHITL(hitl: HITLController): this {
-    this.context.hitl = hitl;
-    return this;
-  }
-
-  /**
-   * Set MCP client
-   */
-  withMCPClients(clients: Map<string, MCPClient>): this {
-    this.context.mcpClients = clients;
-    return this;
-  }
-
-  /**
-   * Set subagent registry
-   */
-  withSubagents(subagents: SubagentRegistry): this {
-    this.context.subagents = subagents;
-    return this;
-  }
-
-  /**
-   * Set abort signal
-   */
-  withAbortSignal(signal: AbortSignal): this {
-    this.context.abortSignal = signal;
-    return this;
-  }
-
-  /**
-   * Set error handler
-   */
-  withErrorHandler(handler: ErrorHandler): this {
-    this.context.onError = handler;
-    return this;
-  }
-
-  /**
-   * Set quota controller
-   */
-  withQuota(quota: QuotaController): this {
-    this.context.quota = quota;
-    return this;
-  }
-
-  /**
-   * Set compaction manager
-   */
-  withCompactionManager(manager: CompactionManager): this {
-    this.context.compactionManager = manager;
-    return this;
-  }
-
-  /**
-   * Set prompt builder for constructing LLM prompts
-   *
-   * When set, the prompt builder will be used in the LLM call path
-   * to construct messages from templates instead of raw passthrough.
-   *
-   * @param builder - PromptBuilder instance
-   * @returns this
-   */
-  withPromptBuilder(builder: PromptBuilder): this {
-    this.context.promptBuilder = builder;
-    return this;
-  }
-
-  /**
-   * Build the AgentContext
-   *
-   * Validates that required dependencies are set.
-   */
   build(): AgentContext {
-    // Validate required dependencies
-    if (!this.context.llm) {
+    if (!this.state.llm) {
       throw new Error('LLM adapter is required');
     }
-    if (!this.context.tools) {
+    if (!this.state.tools) {
       throw new Error('ToolRegistry is required');
     }
 
-    // Create default app services if not provided
     const services = this.appServices ?? createDefaultAppServices();
+    const sessionId = this.state.sessionId ?? generateSessionId();
+    const memory = this.state.memory ?? new InMemoryStore();
+    const pauseController = this.state.pauseController ?? new DefaultPauseController();
 
-    // Create default session-level state if not provided
-    const sessionId = this.context.sessionId ?? generateSessionId();
-    const memory = this.context.memory ?? new InMemoryStore();
-    const pauseController = this.context.pauseController ?? new DefaultPauseController();
+    let tools: ToolRegistry;
+    if (Array.isArray(this.state.tools)) {
+      const registry = new SimpleToolRegistry();
+      for (const tool of this.state.tools) {
+        registry.register(tool);
+      }
+      tools = registry;
+    } else {
+      tools = this.state.tools;
+    }
 
-    // Build context with conditional optional properties
     const ctx: AgentContext = {
-      sessionId,
-      agentName: this.context.agentName ?? 'agent',
-      memory,
-      pauseController,
-      services,
-      llm: this.context.llm,
-      tools: this.context.tools,
+      identity: {
+        sessionId,
+        agentName: this.state.agentName ?? 'agent',
+      },
+      core: {
+        llm: this.state.llm,
+        tools,
+        memory,
+        pauseController,
+        services,
+      },
+      security: {},
+      controls: {},
+      memory: {},
+      resilience: {},
+      extensions: {},
+      harness: { hookRegistry: new HookRegistry() },
     };
 
-    if (this.context.checkpoint) ctx.checkpoint = this.context.checkpoint;
-    if (this.context.hitl) ctx.hitl = this.context.hitl;
-    if (this.context.mcpClients !== undefined) ctx.mcpClients = this.context.mcpClients;
-    if (this.context.subagents) ctx.subagents = this.context.subagents;
-    if (this.context.abortSignal) ctx.abortSignal = this.context.abortSignal;
-    if (this.context.onError) ctx.onError = this.context.onError;
-    if (this.context.promptBuilder) ctx.promptBuilder = this.context.promptBuilder;
+    if (this.state.checkpoint) ctx.controls.checkpoint = this.state.checkpoint;
+    if (this.state.hitl) ctx.controls.hitl = this.state.hitl;
+    if (this.state.mcpClients !== undefined) ctx.extensions.mcpClients = this.state.mcpClients;
+    if (this.state.subagents) ctx.extensions.subagents = this.state.subagents;
+    if (this.state.abortSignal) ctx.controls.abortSignal = this.state.abortSignal;
+    if (this.state.onError) ctx.resilience.onError = this.state.onError;
 
     return ctx;
   }

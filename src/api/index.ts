@@ -17,8 +17,7 @@
  * import { createAgent } from 'agentforge';
  *
  * const ctx = AgentContextBuilder.create()
- *   .withLLM(myLLMAdapter)
- *   .withTools([readTool, writeTool])
+ *   .with({ llm: myLLMAdapter, tools: [readTool, writeTool] })
  *   .build();
  *
  * // Promise mode
@@ -35,13 +34,13 @@
 export { createAgent } from './create-agent.js';
 
 export {
-  // Main config type
+  // Main config types
   type AgentConfig,
+  type NormalizedAgentConfig,
   // Agent interface
   type Agent,
   type StreamHandlers,
   type RunHandlers,
-  type CreateAgentResult,
   // Configuration subtypes
   type AgentModelConfig,
   type CheckpointConfig,
@@ -50,6 +49,12 @@ export {
   type HITLConfig,
   type SubagentConfig,
   type MCPServerConfig,
+  // Grouped config sub-interfaces
+  type ExecutionConfig,
+  type ControlsConfig,
+  type ObservabilityConfig,
+  type ExtensionsConfig,
+  type PluginConfig,
   // Plugin Spec (dynamic loading)
   type PluginSpec,
   // Defaults
@@ -138,7 +143,6 @@ export {
   isTerminalEvent,
   isLLMEvent,
   isToolEvent,
-  isHITLEvent,
   isAgentLifecycleEvent,
   serializeError,
   generateId,

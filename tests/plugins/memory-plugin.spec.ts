@@ -7,11 +7,11 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { AgentEvent, Message } from '../../src/core/events.js';
-import type { InterceptorPlugin, PluginContext } from '../../src/plugins/plugin.js';
+import type { Plugin, PluginContext } from '../../src/plugins/plugin.js';
 import type { PersistentMemory, MemoryEntry, MemoryLoadResult } from '../../src/memory/index.js';
 import { applyPlugins } from '../../src/plugins/pipeline.js';
 import { createMemoryPlugin } from '../../src/plugins/memory-plugin.js';
-import { HookRegistry } from '../../src/core/hooks.js';
+import { HookRegistry, RequestHookPriority } from '../../src/core/hooks.js';
 import { AgentEventEmitter } from '../../src/core/events.js';
 
 // ============================================================
@@ -53,65 +53,34 @@ function createPluginContext(): PluginContext {
   return { sessionId: 'test-session', agentName: 'test-agent' };
 }
 
-function createLLMRequestEvent(messages: Message[]): AgentEvent {
-  return {
-    type: 'llm.request',
-    timestamp: Date.now(),
-    sessionId: 'test-session',
-    messages,
-    model: { provider: 'openai', model: 'gpt-4o' },
-  };
-}
-
-function createAgentStartEvent(): AgentEvent {
-  return {
-    type: 'agent.start',
-    timestamp: Date.now(),
-    sessionId: 'test-session',
-    input: 'Hello',
-    agentName: 'test-agent',
-    model: { provider: 'openai', model: 'gpt-4o' },
-  };
-}
-
-function createAgentStepEvent(): AgentEvent {
-  return {
-    type: 'agent.step',
-    timestamp: Date.now(),
-    sessionId: 'test-session',
-    step: 1,
-    maxSteps: 10,
-  };
-}
-
 // ============================================================
 // Inline Skills Plugin (for testing without filesystem)
 // ============================================================
 
-function createTestSkillsPlugin(skills: Array<{ name: string; description: string; path: string }>): InterceptorPlugin {
+function createTestSkillsPlugin(skills: Array<{ name: string; description: string; path: string }>): Plugin {
   return {
     name: 'skills',
-    type: 'interceptor' as const,
-    priority: 5,
-    eventTypes: ['llm.request'],
     enabled: true,
 
-    intercept(event: AgentEvent, _ctx: PluginContext): any {
-      if (event.type !== 'llm.request') return Promise.resolve(event);
-      if (skills.length === 0) return Promise.resolve(event);
+    requestHooks: [{
+      name: 'skills-context',
+      priority: RequestHookPriority.SKILL_INSTRUCTIONS,
+      apply(messages: Message[]): Message[] {
+        if (skills.length === 0) return messages;
 
-      const skillsList = skills
-        .map(s => `- **${s.name}**: ${s.description}\n  -> Read \`${s.path}\` for full instructions`)
-        .join('\n');
+        const skillsList = skills
+          .map(s => `- **${s.name}**: ${s.description}\n  -> Read \`${s.path}\` for full instructions`)
+          .join('\n');
 
-      const skillsMessage: Message = {
-        role: 'system',
-        content: `## Skills System\n\n**Available Skills:**\n\n${skillsList}`,
-        name: 'skills',
-      };
+        const skillsMessage: Message = {
+          role: 'system',
+          content: `## Skills System\n\n**Available Skills:**\n\n${skillsList}`,
+          name: 'skills',
+        };
 
-      return Promise.resolve({ ...event, messages: [skillsMessage, ...event.messages] });
-    },
+        return [skillsMessage, ...messages];
+      },
+    }],
   };
 }
 
@@ -130,7 +99,11 @@ async function applyRequestHooks(registry: HookRegistry, msgs: Message[]): Promi
   const hooks = registry.getRequestHooks();
   let result = msgs;
   for (const hook of hooks) {
-    result = await hook.apply(result, {} as any);
+    try {
+      result = await hook.apply(result, {} as any);
+    } catch {
+      /* isolate plugin errors */
+    }
   }
   return result;
 }
@@ -191,9 +164,8 @@ describe('MemoryPlugin (real implementation)', () => {
     const emitter = new AgentEventEmitter();
     applyPlugins([plugin], registry, emitter, ctx);
 
-    // No hooks should affect non-llm.request processing
-    // The bridge only creates request hooks for llm.request
-    // agent.step events don't go through request hooks at all
+    // Request hooks only affect LLM request processing;
+    // other events like agent.step don't go through request hooks
     expect(true).toBe(true);
   });
 
@@ -276,18 +248,17 @@ describe('Plugin Chain (Skills + Memory)', () => {
     // Apply request hooks
     const msgs = await applyRequestHooks(registry, [{ role: 'user', content: 'Hello' }]);
 
-    // Should have 3 messages: memory + skills + user
-    // Skills(p=5) first → [skills_msg, user_msg]
-    // Memory(p=10) second → [memory_msg, skills_msg, user_msg]
+    // Should have 3 messages: skills + memory + user
+    // Memory(p=20) runs first, Skills(p=30) runs second and prepends on top
     expect(msgs).toHaveLength(3);
 
-    // Memory first (priority=10, executed later, prepends first)
-    expect(msgs[0]?.name).toBe('memory');
-    expect(msgs[0]?.content).toContain('concise answers');
+    // Skills first (priority=30, executed later, prepends on top)
+    expect(msgs[0]?.name).toBe('skills');
+    expect(msgs[0]?.content).toContain('research');
 
-    // Skills second (priority=5, executed first)
-    expect(msgs[1]?.name).toBe('skills');
-    expect(msgs[1]?.content).toContain('research');
+    // Memory second (priority=20, executed first)
+    expect(msgs[1]?.name).toBe('memory');
+    expect(msgs[1]?.content).toContain('concise answers');
 
     // User last
     expect(msgs[2]?.role).toBe('user');
@@ -337,15 +308,16 @@ describe('Plugin Chain (Skills + Memory)', () => {
   });
 
   it('should isolate plugin errors (degrade gracefully)', async () => {
-    const brokenPlugin: InterceptorPlugin = {
+    const brokenPlugin: Plugin = {
       name: 'broken',
-      type: 'interceptor',
-      priority: 1,
-      eventTypes: ['llm.request'],
       enabled: true,
-      intercept() {
-        throw new Error('Plugin crashed!');
-      },
+      requestHooks: [{
+        name: 'broken-hook',
+        priority: 1,
+        apply() {
+          throw new Error('Plugin crashed!');
+        },
+      }],
     };
 
     const registry = new HookRegistry();
@@ -451,7 +423,6 @@ describe('SummarizationPlugin', () => {
     applyPlugins([plugin], registry, emitter, ctx);
 
     // Non-llm.request events don't go through request hooks
-    // The bridge only creates hooks for llm.request
     expect(true).toBe(true);
   });
 });

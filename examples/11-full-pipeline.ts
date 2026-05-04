@@ -381,7 +381,7 @@ function createRunStatsCollector(): {
   getStats: (startTime: number) => AgentRunStats;
 } {
   const events: AgentEvent[] = [];
-  
+
   const handler = (event: AgentEvent) => {
     events.push(event);
   };
@@ -477,17 +477,19 @@ async function scenarioB_fullPipeline(): Promise<void> {
   const tracer = new ConsoleTracer();
   const checkpointStorage = new DemoCheckpointStorage();
 
-  // 用 AgentContextBuilder (L3 API) 手动组装 — 支持 withTracer/withMetrics
+  // 用 AgentContextBuilder (L3 API) 手动组装
   const ctx: AgentContext = AgentContextBuilder.create()
-    .withSessionId(generateSessionId('pipeline'))
-    .withAgentName('pipeline-agent')
-    .withLLM(llm)
-    .withTools([weatherTool, calculatorTool])
-    .withMemory(new InMemoryStore())
-    .withPauseController(new DefaultPauseController())
-    .withCheckpoint(checkpointStorage)
-    .withTracer(tracer)
-    .withMetrics(metrics)
+    .with({
+      sessionId: generateSessionId('pipeline'),
+      agentName: 'pipeline-agent',
+      llm,
+      tools: [weatherTool, calculatorTool],
+      memory: new InMemoryStore(),
+      pauseController: new DefaultPauseController(),
+      checkpoint: checkpointStorage,
+      tracer,
+      metrics,
+    })
     .build();
 
   console.log(
@@ -508,13 +510,13 @@ async function scenarioB_fullPipeline(): Promise<void> {
   const collector = createRunStatsCollector();
 
   // 监听所有事件
-  const unsub = loop.onAny((event) => {
+  const unsub = loop.onAny(event => {
     // 收集事件
     collector.handler(event);
 
     // 日志输出
     const prefix = `[${event.type}]`;
-    
+
     switch (event.type) {
       case 'agent.start':
         console.log(`  📋 ${prefix} sessionId=${event.sessionId}`);
@@ -563,9 +565,7 @@ async function scenarioB_fullPipeline(): Promise<void> {
   console.log(`   总事件: ${stats.totalEvents}`);
   console.log(`   LLM 调用: ${stats.llmCalls}`);
   console.log(`   工具执行: ${stats.toolExecutions}`);
-  console.log(
-    `   Token: prompt=${stats.promptTokens}, completion=${stats.completionTokens}`
-  );
+  console.log(`   Token: prompt=${stats.promptTokens}, completion=${stats.completionTokens}`);
   console.log(`   耗时: ${stats.durationMs}ms`);
 
   console.log(metrics.report());
@@ -760,7 +760,7 @@ async function scenarioE_operatorPresets(): Promise<void> {
   });
 
   // 通过 onAny 实现自定义日志 + 指标收集
-  const unsub = customAgent.onAny((event) => {
+  const unsub = customAgent.onAny(event => {
     // 自定义日志
     console.log(`  [custom] ${event.type}`);
 

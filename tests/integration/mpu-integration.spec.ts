@@ -173,7 +173,7 @@ describe('MPU Integration', () => {
         .with({ llm: createMockLLMAdapter() as any, tools: [], securityGuard: guard })
         .build();
 
-      expect(ctx.securityGuard).toBe(guard);
+      expect(ctx.security.securityGuard).toBe(guard);
     });
   });
 
@@ -188,7 +188,7 @@ describe('MPU Integration', () => {
         .with({ llm: createMockLLMAdapter() as any, tools: [], errorClassifier: classifier })
         .build();
 
-      expect(ctx.errorClassifier).toBe(classifier);
+      expect(ctx.resilience.errorClassifier).toBe(classifier);
     });
   });
 
@@ -203,7 +203,7 @@ describe('MPU Integration', () => {
         .with({ llm: createMockLLMAdapter() as any, tools: [], circuitBreaker: breaker })
         .build();
 
-      expect(ctx.circuitBreaker).toBe(breaker);
+      expect(ctx.resilience.circuitBreaker).toBe(breaker);
     });
   });
 
@@ -218,7 +218,7 @@ describe('MPU Integration', () => {
         .with({ llm: createMockLLMAdapter() as any, tools: [], planner })
         .build();
 
-      expect(ctx.planner).toBe(planner);
+      expect(ctx.extensions.planner).toBe(planner);
     });
   });
 
@@ -231,10 +231,10 @@ describe('MPU Integration', () => {
         .with({ llm: createMockLLMAdapter() as any, tools: [] })
         .build();
 
-      expect(ctx.securityGuard).toBeUndefined();
-      expect(ctx.errorClassifier).toBeUndefined();
-      expect(ctx.circuitBreaker).toBeUndefined();
-      expect(ctx.planner).toBeUndefined();
+      expect(ctx.security.securityGuard).toBeUndefined();
+      expect(ctx.resilience.errorClassifier).toBeUndefined();
+      expect(ctx.resilience.circuitBreaker).toBeUndefined();
+      expect(ctx.extensions.planner).toBeUndefined();
     });
   });
 
@@ -284,32 +284,32 @@ describe('MPU Integration', () => {
     it('should create security guard when enableSecurity is true', () => {
       const result = createMPUServices({ enableSecurity: true });
 
-      expect(result.context.securityGuard).toBeDefined();
-      expect(typeof result.context.securityGuard!.checkCommand).toBe('function');
-      expect(typeof result.context.securityGuard!.checkPath).toBe('function');
-      expect(typeof result.context.securityGuard!.checkNetwork).toBe('function');
+      expect(result.context.security?.securityGuard).toBeDefined();
+      expect(typeof result.context.security?.securityGuard!.checkCommand).toBe('function');
+      expect(typeof result.context.security?.securityGuard!.checkPath).toBe('function');
+      expect(typeof result.context.security?.securityGuard!.checkNetwork).toBe('function');
     });
 
     it('should create circuit breaker when enableCircuitBreaker is true', () => {
       const result = createMPUServices({ enableCircuitBreaker: true });
 
-      expect(result.context.circuitBreaker).toBeDefined();
-      expect(typeof result.context.circuitBreaker!.getState).toBe('function');
+      expect(result.context.resilience?.circuitBreaker).toBeDefined();
+      expect(typeof result.context.resilience?.circuitBreaker!.getState).toBe('function');
     });
 
     it('should create error classifier when enableCircuitBreaker is true', () => {
       const result = createMPUServices({ enableCircuitBreaker: true });
 
-      expect(result.context.errorClassifier).toBeDefined();
-      expect(typeof result.context.errorClassifier!.classify).toBe('function');
+      expect(result.context.resilience?.errorClassifier).toBeDefined();
+      expect(typeof result.context.resilience?.errorClassifier!.classify).toBe('function');
     });
 
     it('should create planner when enablePlanning is true', () => {
       const result = createMPUServices({ enablePlanning: true });
 
-      expect(result.context.planner).toBeDefined();
-      expect(typeof result.context.planner!.plan).toBe('function');
-      expect(typeof result.context.planner!.validate).toBe('function');
+      expect(result.context.extensions?.planner).toBeDefined();
+      expect(typeof result.context.extensions?.planner!.plan).toBe('function');
+      expect(typeof result.context.extensions?.planner!.validate).toBe('function');
     });
   });
 
@@ -333,10 +333,10 @@ describe('MPU Integration', () => {
       expect(result.services.costTracker).toBeUndefined();
       expect(result.services.metricsCollector).toBeUndefined();
       expect(result.services.resultValidator).toBeUndefined();
-      expect(result.context.securityGuard).toBeUndefined();
-      expect(result.context.errorClassifier).toBeUndefined();
-      expect(result.context.circuitBreaker).toBeUndefined();
-      expect(result.context.planner).toBeUndefined();
+      expect(result.context.security?.securityGuard).toBeUndefined();
+      expect(result.context.resilience?.errorClassifier).toBeUndefined();
+      expect(result.context.resilience?.circuitBreaker).toBeUndefined();
+      expect(result.context.extensions?.planner).toBeUndefined();
     });
 
     it('should return empty services and context with empty config', () => {
@@ -347,10 +347,10 @@ describe('MPU Integration', () => {
       expect(result.services.costTracker).toBeUndefined();
       expect(result.services.metricsCollector).toBeUndefined();
       expect(result.services.resultValidator).toBeUndefined();
-      expect(result.context.securityGuard).toBeUndefined();
-      expect(result.context.errorClassifier).toBeUndefined();
-      expect(result.context.circuitBreaker).toBeUndefined();
-      expect(result.context.planner).toBeUndefined();
+      expect(result.context.security?.securityGuard).toBeUndefined();
+      expect(result.context.resilience?.errorClassifier).toBeUndefined();
+      expect(result.context.resilience?.circuitBreaker).toBeUndefined();
+      expect(result.context.extensions?.planner).toBeUndefined();
     });
   });
 
@@ -433,10 +433,10 @@ describe('MPU Integration', () => {
         })
         .build();
 
-      expect(ctx.securityGuard).toBe(guard);
-      expect(ctx.errorClassifier).toBe(classifier);
-      expect(ctx.circuitBreaker).toBe(breaker);
-      expect(ctx.planner).toBe(planner);
+      expect(ctx.security.securityGuard).toBe(guard);
+      expect(ctx.resilience.errorClassifier).toBe(classifier);
+      expect(ctx.resilience.circuitBreaker).toBe(breaker);
+      expect(ctx.extensions.planner).toBe(planner);
     });
   });
 
@@ -456,17 +456,17 @@ describe('MPU Integration', () => {
         .with({
           llm: createMockLLMAdapter() as any,
           tools: [],
-          securityGuard: mpu.context.securityGuard!,
-          errorClassifier: mpu.context.errorClassifier!,
-          circuitBreaker: mpu.context.circuitBreaker!,
-          planner: mpu.context.planner!,
+          securityGuard: mpu.context.security?.securityGuard!,
+          errorClassifier: mpu.context.resilience?.errorClassifier!,
+          circuitBreaker: mpu.context.resilience?.circuitBreaker!,
+          planner: mpu.context.extensions?.planner!,
         })
         .build();
 
-      expect(ctx.securityGuard).toBeDefined();
-      expect(ctx.errorClassifier).toBeDefined();
-      expect(ctx.circuitBreaker).toBeDefined();
-      expect(ctx.planner).toBeDefined();
+      expect(ctx.security.securityGuard).toBeDefined();
+      expect(ctx.resilience.errorClassifier).toBeDefined();
+      expect(ctx.resilience.circuitBreaker).toBeDefined();
+      expect(ctx.extensions.planner).toBeDefined();
     });
   });
 });

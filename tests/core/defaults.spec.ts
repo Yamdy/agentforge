@@ -4,7 +4,7 @@
  * NoopTracer, ConsoleTracer, NoopMetrics, ConsoleMetrics, BridgeMetrics
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeAll } from 'vitest';
 import {
   NoopTracer,
   ConsoleTracer,
@@ -13,6 +13,16 @@ import {
   BridgeMetrics,
 } from '../../src/core/defaults.js';
 import type { MetricsCollector } from '../../src/contracts/mpu-interfaces.js';
+
+let MetricsCollectorImpl: typeof import('../../src/observability/metrics-collector.js').MetricsCollectorImpl;
+let createDefaultAppServices: typeof import('../../src/core/context.js').createDefaultAppServices;
+
+beforeAll(async () => {
+  const metricsMod = await import('../../src/observability/metrics-collector.js');
+  MetricsCollectorImpl = metricsMod.MetricsCollectorImpl;
+  const ctxMod = await import('../../src/core/context.js');
+  createDefaultAppServices = ctxMod.createDefaultAppServices;
+});
 
 // ============================================================
 // NoopTracer
@@ -312,7 +322,6 @@ describe('BridgeMetrics', () => {
 
   it('should work with MetricsCollectorImpl', async () => {
     // Integration test: BridgeMetrics → real MetricsCollectorImpl
-    const { MetricsCollectorImpl } = await import('../../src/observability/metrics-collector.js');
     const collector = new MetricsCollectorImpl({ prefix: 'test' });
     const metrics = new BridgeMetrics(collector);
 
@@ -334,7 +343,6 @@ describe('BridgeMetrics', () => {
 
 describe('createDefaultAppServices defaults', () => {
   it('should include NoopTracer and NoopMetrics by default', async () => {
-    const { createDefaultAppServices } = await import('../../src/core/context.js');
     const services = createDefaultAppServices();
 
     expect(services.tracer).toBeDefined();

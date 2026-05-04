@@ -107,7 +107,10 @@ class MockWorkflowLLMAdapter implements LLMAdapter {
     };
   }
 
-  async *stream(_messages: Message[], _options?: unknown): AsyncGenerator<{ text?: string; finishReason?: string }> {
+  async *stream(
+    _messages: Message[],
+    _options?: unknown
+  ): AsyncGenerator<{ text?: string; finishReason?: string }> {
     yield {
       text: '流式响应',
       finishReason: 'stop',
@@ -123,16 +126,18 @@ function createMockAgentContext(): AgentContext {
   const llmAdapter = new MockWorkflowLLMAdapter();
 
   return ContextBuilder.create()
-    .withSessionId(generateSessionId())
-    .withAgentName('workflow-agent')
-    .withLLM({
-      provider: 'mock',
-      name: 'mock-model',
-      chat: llmAdapter.chat.bind(llmAdapter),
-      stream: llmAdapter.stream.bind(llmAdapter),
+    .with({
+      sessionId: generateSessionId(),
+      agentName: 'workflow-agent',
+      llm: {
+        provider: 'mock',
+        name: 'mock-model',
+        chat: llmAdapter.chat.bind(llmAdapter),
+        stream: llmAdapter.stream.bind(llmAdapter),
+      },
+      memory: new InMemoryStore(),
+      pauseController: new DefaultPauseController(),
     })
-    .withMemory(new InMemoryStore())
-    .withPauseController(new DefaultPauseController())
     .build();
 }
 
@@ -149,9 +154,9 @@ async function runPipelineAndCollect(
   label: string
 ): Promise<AgentEvent[]> {
   const events: AgentEvent[] = [];
-  
+
   // 使用 onAny 监听所有事件
-  const unsub = pipeline.onAny((event) => {
+  const unsub = pipeline.onAny(event => {
     events.push(event);
     // 手动检查是否为 workflow 事件
     if (event.type.startsWith('workflow.')) {
@@ -186,17 +191,17 @@ async function example1_sequentialPipeline(): Promise<void> {
     {
       id: 'search',
       name: '搜索资料',
-      prompt: (input) => `搜索相关资料: ${input}`,
+      prompt: input => `搜索相关资料: ${input}`,
     },
     {
       id: 'analyze',
       name: '分析结果',
-      prompt: (input) => `分析以下搜索结果: ${JSON.stringify(input)}`,
+      prompt: input => `分析以下搜索结果: ${JSON.stringify(input)}`,
     },
     {
       id: 'summarize',
       name: '生成总结',
-      prompt: (input) => `总结分析结果: ${JSON.stringify(input)}`,
+      prompt: input => `总结分析结果: ${JSON.stringify(input)}`,
     },
   ];
 
@@ -248,17 +253,17 @@ async function example2_parallelPipeline(): Promise<void> {
     {
       id: 'branch-search',
       name: '搜索分支',
-      prompt: (_input) => '搜索 AI Agent 相关论文',
+      prompt: _input => '搜索 AI Agent 相关论文',
     },
     {
       id: 'branch-analyze',
       name: '分析分支',
-      prompt: (_input) => '分析当前 AI Agent 技术趋势',
+      prompt: _input => '分析当前 AI Agent 技术趋势',
     },
     {
       id: 'branch-validate',
       name: '验证分支',
-      prompt: (_input) => '验证研究方法论',
+      prompt: _input => '验证研究方法论',
     },
   ];
 
@@ -279,7 +284,7 @@ async function example2_parallelPipeline(): Promise<void> {
   const startTime = Date.now();
   const workflowEvents: AgentEvent[] = [];
 
-  const unsub = pipeline.onAny((event) => {
+  const unsub = pipeline.onAny(event => {
     // 手动检查是否为 workflow 事件
     if (event.type.startsWith('workflow.')) {
       workflowEvents.push(event);
@@ -314,32 +319,32 @@ async function example3_conditionalSteps(): Promise<void> {
     {
       id: 'step-check',
       name: '检查输入',
-      prompt: (input) => `检查输入: ${input}`,
+      prompt: input => `检查输入: ${input}`,
     },
     {
       id: 'step-process-large',
       name: '处理大数据',
       // 条件：如果输入数据量较小则跳过
-      skip: (input) => {
+      skip: input => {
         const data = input as { size?: number };
         return data.size !== undefined && data.size < 1000;
       },
-      prompt: (input) => `处理大数据: ${JSON.stringify(input)}`,
+      prompt: input => `处理大数据: ${JSON.stringify(input)}`,
     },
     {
       id: 'step-process-small',
       name: '处理小数据',
       // 条件：如果输入数据量较大则跳过
-      skip: (input) => {
+      skip: input => {
         const data = input as { size?: number };
         return data.size !== undefined && data.size >= 1000;
       },
-      prompt: (input) => `处理小数据: ${JSON.stringify(input)}`,
+      prompt: input => `处理小数据: ${JSON.stringify(input)}`,
     },
     {
       id: 'step-finalize',
       name: '完成处理',
-      prompt: (input) => `完成处理: ${JSON.stringify(input)}`,
+      prompt: input => `完成处理: ${JSON.stringify(input)}`,
     },
   ];
 
@@ -347,7 +352,7 @@ async function example3_conditionalSteps(): Promise<void> {
   console.log('场景 A: 小数据 (size=500)');
   const pipelineA = createSequentialPipeline(steps, ctx);
 
-  const unsubA = pipelineA.onAny((event) => {
+  const unsubA = pipelineA.onAny(event => {
     if (event.type === 'workflow.step.end') {
       console.log(`  步骤 ${event.stepId}: ${event.result}`);
     }
@@ -364,7 +369,7 @@ async function example3_conditionalSteps(): Promise<void> {
   const ctx2 = createMockAgentContext();
   const pipelineB = createSequentialPipeline(steps, ctx2);
 
-  const unsubB = pipelineB.onAny((event) => {
+  const unsubB = pipelineB.onAny(event => {
     if (event.type === 'workflow.step.end') {
       console.log(`  步骤 ${event.stepId}: ${event.result}`);
     }
@@ -394,17 +399,17 @@ async function example4_workflow_suspendResume(): Promise<void> {
       {
         id: 'init',
         name: '初始化',
-        prompt: (input) => `初始化任务: ${input}`,
+        prompt: input => `初始化任务: ${input}`,
       },
       {
         id: 'process',
         name: '处理',
-        prompt: (input) => `处理数据: ${JSON.stringify(input)}`,
+        prompt: input => `处理数据: ${JSON.stringify(input)}`,
       },
       {
         id: 'complete',
         name: '完成',
-        prompt: (input) => `完成任务: ${JSON.stringify(input)}`,
+        prompt: input => `完成任务: ${JSON.stringify(input)}`,
       },
     ],
   };
@@ -423,7 +428,7 @@ async function example4_workflow_suspendResume(): Promise<void> {
   const events: AgentEvent[] = [];
   let workflowId = '';
 
-  const unsub = workflow.onAny((event) => {
+  const unsub = workflow.onAny(event => {
     events.push(event);
 
     // 提取 workflowId
@@ -497,7 +502,9 @@ async function example5_promptGenerators(): Promise<void> {
 
   console.log('\n自定义条件生成器:');
   console.log(`  搜索类型: ${conditionalPrompt({ type: 'search', content: 'AI Agent' })}`);
-  console.log(`  分析类型: ${conditionalPrompt({ type: 'analyze', content: { data: [1, 2, 3] } })}`);
+  console.log(
+    `  分析类型: ${conditionalPrompt({ type: 'analyze', content: { data: [1, 2, 3] } })}`
+  );
 }
 
 // ============================================================
@@ -581,7 +588,7 @@ async function example7_errorHandling(): Promise<void> {
   const pipelineA = createSequentialPipeline(steps, ctx);
 
   try {
-    const unsubA = pipelineA.onAny((event) => {
+    const unsubA = pipelineA.onAny(event => {
       if (event.type === 'workflow.error') {
         console.log(`  [错误] 步骤: ${event.stepId}`);
       }
@@ -603,7 +610,7 @@ async function example7_errorHandling(): Promise<void> {
   const ctx2 = createMockAgentContext();
   const pipelineB = createSequentialPipeline(steps, ctx2, { continueOnFailure: true });
 
-  const unsubB = pipelineB.onAny((event) => {
+  const unsubB = pipelineB.onAny(event => {
     if (event.type === 'workflow.error') {
       console.log(`  [错误] 步骤: ${event.stepId} (继续执行)`);
     }

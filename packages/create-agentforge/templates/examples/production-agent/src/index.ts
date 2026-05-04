@@ -13,9 +13,11 @@ import { logger } from './observability/index.js';
 import { resilienceConfig } from './resilience/config.js';
 
 // Build context from config with production modules
-const ctx = new AgentContextBuilder()
-  .withLLMAdapter(config.llm)
-  .withTools(config.tools)
+const ctx = AgentContextBuilder.create()
+  .with({
+    llm: config.llm,
+    tools: config.tools,
+  })
   .build();
 
 // Metrics collector for production monitoring

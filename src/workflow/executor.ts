@@ -95,7 +95,7 @@ export class WorkflowExecutor {
     workflowId: string,
     listener: (event: AgentEvent) => void
   ): Promise<StepExecutionResult> {
-    const sessionId = this.agentContext.sessionId;
+    const sessionId = this.agentContext.identity.sessionId;
     const startTime = Date.now();
 
     const prompt = step.prompt(input);
@@ -116,7 +116,10 @@ export class WorkflowExecutor {
 
     try {
       const loop = createAgentLoop(this.agentContext, {
-        model: { provider: this.agentContext.llm.provider, model: this.agentContext.llm.name },
+        model: {
+          provider: this.agentContext.core.llm.provider,
+          model: this.agentContext.core.llm.name,
+        },
         maxSteps: 10,
         maxLLMRepairAttempts: 3,
         parallelToolCalls: false,

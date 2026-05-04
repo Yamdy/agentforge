@@ -8,7 +8,7 @@
  */
 
 import type { AgentContext, AgentState } from '../core/index.js';
-import type { LLMAdapter } from '../core/interfaces.js';
+import type { LLMAdapter, ToolRegistry } from '../core/interfaces.js';
 import { SimpleToolRegistry, createApplicationServices } from '../core/context-builder.js';
 import { ConsoleTracer, ConsoleMetrics, NoopTracer, NoopMetrics } from '../core/defaults.js';
 import { generateId } from '../core/events.js';
@@ -51,17 +51,200 @@ import { normalizeConfig, type NormalizedAgentConfig } from './config-normalizer
 // createAgent
 // ============================================================
 
-export function createAgent(config: AgentConfig, services?: Partial<AgentContext>): AgentInterface {
+/**
+ * Legacy flat field overrides — supported for convenience on the L2 public API.
+ * Mapped to grouped sub-objects during normalization.
+ */
+interface FlatServiceOverrides {
+  llm?: LLMAdapter;
+  tools?: ToolRegistry;
+  memory?: import('../core/interfaces.js').MemoryStore;
+  pauseController?: import('../core/interfaces.js').PauseController;
+  services?: import('../core/index.js').ApplicationServices;
+  sessionId?: string;
+  agentName?: string;
+  hookRegistry?: HookRegistry;
+  tracer?: import('../core/interfaces.js').Tracer;
+  metrics?: import('../core/interfaces.js').Metrics;
+  planner?: Planner;
+  logger?: import('../core/logger.js').Logger;
+  securityGuard?: import('../security/guard.js').SecurityGuard;
+  auditLogger?: import('../core/interfaces.js').AuditLogger;
+  permissionPolicy?: import('../core/interfaces.js').PermissionPolicy;
+  permissionController?: import('../core/interfaces.js').PermissionController;
+  sandboxExecutor?: import('../core/interfaces.js').SandboxExecutor;
+  inputSanitizer?: import('../core/interfaces.js').InputSanitizer;
+  rateLimiter?: import('../core/interfaces.js').RateLimiter;
+  quota?: import('../quota/quota-controller.js').QuotaController;
+  checkpoint?: import('../core/interfaces.js').CheckpointStorage;
+  hitl?: import('../core/interfaces.js').HITLController;
+  abortSignal?: AbortSignal;
+  mcpClients?: Map<string, import('../core/interfaces.js').MCPClient>;
+  subagents?: import('../core/interfaces.js').SubagentRegistry;
+  errorClassifier?: import('../contracts/mpu-interfaces.js').ErrorClassifier;
+  circuitBreaker?: import('../contracts/mpu-interfaces.js').CircuitBreaker;
+  autoRepairer?: import('../contracts/mpu-interfaces.js').AutoRepairer;
+  onError?: import('../core/interfaces.js').ErrorHandler;
+  healthChecker?: import('../contracts/mpu-interfaces.js').HealthChecker;
+  qualityGate?: import('../validation/quality-gate.js').QualityGate;
+  compactionManager?: import('../memory/index.js').CompactionManager;
+}
+
+/**
+ * Grouped sub-object overrides — canonical AgentContext structure.
+ */
+type AgentContextOverrides = {
+  [K in keyof AgentContext]?: Partial<AgentContext[K]>;
+};
+
+/** Normalize flat legacy overrides into grouped AgentContextOverrides */
+function normalizeServices(
+  flat?: FlatServiceOverrides | AgentContextOverrides
+): AgentContextOverrides {
+  if (!flat) return {};
+  // If it already has AgentContext sub-object keys, return as-is
+  const subKeys = [
+    'identity',
+    'core',
+    'security',
+    'controls',
+    'memory',
+    'resilience',
+    'extensions',
+    'harness',
+  ];
+  if (subKeys.some(k => k in flat)) return flat as AgentContextOverrides;
+  // Map flat fields to grouped
+  const f = flat as FlatServiceOverrides;
+  const result: AgentContextOverrides = {};
+  if (
+    f.llm !== undefined ||
+    f.tools !== undefined ||
+    f.memory !== undefined ||
+    f.pauseController !== undefined ||
+    f.services !== undefined ||
+    f.logger !== undefined
+  ) {
+    result.core = {
+      ...(f.llm !== undefined ? { llm: f.llm } : {}),
+      ...(f.tools !== undefined ? { tools: f.tools } : {}),
+      ...(f.memory !== undefined ? { memory: f.memory } : {}),
+      ...(f.pauseController !== undefined ? { pauseController: f.pauseController } : {}),
+      ...(f.services !== undefined ? { services: f.services } : {}),
+      ...(f.logger !== undefined ? { logger: f.logger } : {}),
+    };
+  }
+  if (f.sessionId !== undefined || f.agentName !== undefined) {
+    result.identity = {
+      ...(f.sessionId !== undefined ? { sessionId: f.sessionId } : {}),
+      ...(f.agentName !== undefined ? { agentName: f.agentName } : {}),
+    };
+  }
+  if (
+    f.securityGuard !== undefined ||
+    f.auditLogger !== undefined ||
+    f.permissionPolicy !== undefined ||
+    f.permissionController !== undefined ||
+    f.sandboxExecutor !== undefined ||
+    f.inputSanitizer !== undefined
+  ) {
+    result.security = {
+      ...(f.securityGuard !== undefined ? { securityGuard: f.securityGuard } : {}),
+      ...(f.auditLogger !== undefined ? { auditLogger: f.auditLogger } : {}),
+      ...(f.permissionPolicy !== undefined ? { permissionPolicy: f.permissionPolicy } : {}),
+      ...(f.permissionController !== undefined
+        ? { permissionController: f.permissionController }
+        : {}),
+      ...(f.sandboxExecutor !== undefined ? { sandboxExecutor: f.sandboxExecutor } : {}),
+      ...(f.inputSanitizer !== undefined ? { inputSanitizer: f.inputSanitizer } : {}),
+    };
+  }
+  if (
+    f.rateLimiter !== undefined ||
+    f.quota !== undefined ||
+    f.checkpoint !== undefined ||
+    f.hitl !== undefined ||
+    f.abortSignal !== undefined
+  ) {
+    result.controls = {
+      ...(f.rateLimiter !== undefined ? { rateLimiter: f.rateLimiter } : {}),
+      ...(f.quota !== undefined ? { quota: f.quota } : {}),
+      ...(f.checkpoint !== undefined ? { checkpoint: f.checkpoint } : {}),
+      ...(f.hitl !== undefined ? { hitl: f.hitl } : {}),
+      ...(f.abortSignal !== undefined ? { abortSignal: f.abortSignal } : {}),
+    };
+  }
+  if (f.qualityGate !== undefined || f.compactionManager !== undefined) {
+    result.memory = {
+      ...(f.qualityGate !== undefined ? { qualityGate: f.qualityGate } : {}),
+      ...(f.compactionManager !== undefined ? { compactionManager: f.compactionManager } : {}),
+    };
+  }
+  if (
+    f.errorClassifier !== undefined ||
+    f.circuitBreaker !== undefined ||
+    f.autoRepairer !== undefined ||
+    f.onError !== undefined
+  ) {
+    result.resilience = {
+      ...(f.errorClassifier !== undefined ? { errorClassifier: f.errorClassifier } : {}),
+      ...(f.circuitBreaker !== undefined ? { circuitBreaker: f.circuitBreaker } : {}),
+      ...(f.autoRepairer !== undefined ? { autoRepairer: f.autoRepairer } : {}),
+      ...(f.onError !== undefined ? { onError: f.onError } : {}),
+    };
+  }
+  if (f.mcpClients !== undefined || f.subagents !== undefined || f.planner !== undefined) {
+    result.extensions = {
+      ...(f.mcpClients !== undefined ? { mcpClients: f.mcpClients } : {}),
+      ...(f.subagents !== undefined ? { subagents: f.subagents } : {}),
+      ...(f.planner !== undefined ? { planner: f.planner } : {}),
+    };
+  }
+  if (f.hookRegistry !== undefined) {
+    result.harness = { ...(f.hookRegistry !== undefined ? { hookRegistry: f.hookRegistry } : {}) };
+  }
+  if (f.tracer !== undefined || f.metrics !== undefined) {
+    const existingCore = result.core ?? {};
+    const existingServices = existingCore.services ?? {};
+    (result as Record<string, unknown>).core = {
+      ...existingCore,
+      services: {
+        ...existingServices,
+        ...(f.tracer !== undefined ? { tracer: f.tracer } : {}),
+        ...(f.metrics !== undefined ? { metrics: f.metrics } : {}),
+      },
+    };
+  }
+  if (f.healthChecker !== undefined) {
+    const existingCore = result.core ?? {};
+    const existingServices = existingCore.services ?? {};
+    (result as Record<string, unknown>).core = {
+      ...existingCore,
+      services: {
+        ...existingServices,
+        healthChecker: f.healthChecker,
+      },
+    };
+  }
+  return result;
+}
+
+export function createAgent(
+  config: AgentConfig,
+  services?: FlatServiceOverrides | AgentContextOverrides
+): AgentInterface {
   const n: NormalizedAgentConfig = normalizeConfig(config);
-  const sessionId = generateId('session');
+  const svc = normalizeServices(services);
+  const sessionId = svc?.identity?.sessionId ?? generateId('session');
+  const agentName = svc?.identity?.agentName ?? n.name;
   const hookRegistry = new HookRegistry();
 
   // ── LLM adapter ──
   const modelSpec = `${n.model.provider}/${n.model.model}`;
-  const llm: LLMAdapter = services?.llm ?? createLLMAdapter(modelSpec, n.llmOptions);
+  const llm: LLMAdapter = svc?.core?.llm ?? createLLMAdapter(modelSpec, n.llmOptions);
 
   // ── Application services ──
-  const appServices = services?.services ?? createApplicationServices({});
+  const appServices = svc?.core?.services ?? createApplicationServices({});
   appServices.tracer ??= new NoopTracer();
   appServices.metrics ??= new NoopMetrics();
 
@@ -82,26 +265,32 @@ export function createAgent(config: AgentConfig, services?: Partial<AgentContext
   const memoryStub = stubMemoryStore();
   const pauseStub = stubPauseController();
   const ctx: AgentContext = {
-    sessionId,
-    agentName: n.name,
-    memory: services?.memory ?? memoryStub,
-    pauseController: services?.pauseController ?? pauseStub,
-    services: appServices,
-    llm,
-    tools,
-    hookRegistry,
-    ...services,
+    identity: { sessionId, agentName },
+    core: {
+      llm,
+      tools,
+      memory: svc?.core?.memory ?? memoryStub,
+      pauseController: svc?.core?.pauseController ?? pauseStub,
+      services: appServices,
+      ...(svc?.core?.logger ? { logger: svc.core.logger } : {}),
+    },
+    security: svc?.security ?? {},
+    controls: svc?.controls ?? {},
+    memory: svc?.memory ?? {},
+    resilience: svc?.resilience ?? {},
+    extensions: svc?.extensions ?? {},
+    harness: { hookRegistry, ...svc?.harness },
   };
 
   // Validate
-  if (ctx.permissionPolicy && !ctx.permissionController) {
+  if (ctx.security.permissionPolicy && !ctx.security.permissionController) {
     throw new AgentConfigError('permissionPolicy requires permissionController.');
   }
 
   // Register tools from services
-  if (toolNames.length > 0 && services?.tools) {
+  if (toolNames.length > 0 && svc?.core?.tools) {
     for (const name of toolNames) {
-      const def = services.tools.get(name);
+      const def = svc.core.tools.get(name);
       if (def) tools.register(def);
     }
   }
@@ -143,7 +332,7 @@ export function createAgent(config: AgentConfig, services?: Partial<AgentContext
     pluginManager = createPluginManager();
     const pluginCtx = createPluginContext({
       sessionId,
-      agentName: n.name,
+      agentName,
       ...(appServices.tracer ? { tracer: appServices.tracer } : {}),
       ...(appServices.metrics ? { metrics: appServices.metrics } : {}),
     });
@@ -169,7 +358,7 @@ export function createAgent(config: AgentConfig, services?: Partial<AgentContext
   // Build pipeline now that loop exists (register hooks + event subscriptions)
   if (pluginManager) {
     pluginManager.buildPipeline(hookRegistry, emitterBridge(loop));
-    ctx.pluginManager = pluginManager;
+    ctx.harness.pluginManager = pluginManager;
   }
 
   // ── Async init (tracing + dynamic plugins) ──
@@ -196,7 +385,7 @@ export function createAgent(config: AgentConfig, services?: Partial<AgentContext
   if (specs.length > 0) {
     const pluginCtx = createPluginContext({
       sessionId,
-      agentName: n.name,
+      agentName,
       ...(appServices.tracer ? { tracer: appServices.tracer } : {}),
       ...(appServices.metrics ? { metrics: appServices.metrics } : {}),
     });
@@ -210,13 +399,13 @@ export function createAgent(config: AgentConfig, services?: Partial<AgentContext
 
   // ── Planner (non-react modes) ──
   if (n.executionMode !== 'react') {
-    const planner: Planner = ctx.planner ?? new LLMPlanner(llm, 2);
-    if (!ctx.planner) ctx.planner = planner;
+    const planner: Planner = ctx.extensions.planner ?? new LLMPlanner(llm, 2);
+    if (!ctx.extensions.planner) ctx.extensions.planner = planner;
     const notebook = new PlanNotebook(planner, {
       availableTools: toolNames,
       maxSteps: n.maxSteps,
     });
-    notebook.registerTools(ctx.tools);
+    notebook.registerTools(ctx.core.tools);
     hookRegistry.registerRequest(notebook.planHintHook);
   }
 

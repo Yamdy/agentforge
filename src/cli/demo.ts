@@ -137,7 +137,7 @@ export async function runDemo(): Promise<void> {
 
   const agent1 = createAgent(
     { name: 'demo-agent', model: { provider: 'mock', model: 'mock' }, maxSteps: 3 },
-    { llm: mockLLM1, auditLogger: auditLog, securityGuard }
+    { core: { llm: mockLLM1 }, security: { auditLogger: auditLog, securityGuard } }
   );
 
   agent('read config.json');
@@ -156,13 +156,13 @@ export async function runDemo(): Promise<void> {
   auditLog.append({
     sessionId: 'demo',
     agentName: 'demo-agent',
-    eventType: 'tool.execute',
+    eventType: 'tool.call',
     action: 'read',
     resource: 'config.json',
     result: 'success',
     details: { tool: 'read', file: 'config.json', bytes: 256 },
   });
-  audit('📝 tool.execute | read | config.json | success');
+  audit('📝 tool.call | read | config.json | success');
 
   agent1.destroy();
   footer();
@@ -183,13 +183,13 @@ export async function runDemo(): Promise<void> {
     auditLog.append({
       sessionId: 'demo',
       agentName: 'demo-agent',
-      eventType: 'tool.execute',
+      eventType: 'tool.call',
       action: 'bash',
       resource: 'rm -rf /usr/',
       result: 'denied',
       details: { reason: checkResult.reason!, tool: 'bash', command: 'rm -rf /usr/' },
     });
-    audit('📝 tool.execute | bash | denied');
+    audit('📝 tool.call | bash | denied');
   }
 
   // Also check a sensitive path
