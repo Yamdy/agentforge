@@ -28,9 +28,13 @@ import {
 } from '../core/index.js';
 import type { AgentContext, AgentState } from '../core/index.js';
 import { extractText } from '../core/content-utils.js';
-import { HookRegistry, type HookName, RequestHookPriority } from '../core/hooks.js';
+import {
+  HookRegistry,
+  type HookName,
+  RequestHookPriority,
+  type CheckpointFn,
+} from '../core/hooks.js';
 import { createInitialState } from '../core/state.js';
-import { CheckpointRegistry } from '../core/checkpoint-registry.js';
 import type { LLMOptions } from '../core/interfaces.js';
 import { checkTokenBudget, createBudgetTracker, shouldCompact } from './token-budget.js';
 import { analyzeLLMError, RECOVERY_LIMITS, ESCALATED_MAX_OUTPUT_TOKENS } from './error-analyzer.js';
@@ -60,6 +64,10 @@ export interface AgentLoopConfig {
    * - 'plan-then-execute-strict': Planner MUST succeed, otherwise error and terminate
    */
   executionMode?: 'react' | 'plan-then-execute' | 'plan-then-execute-strict';
+  /** Checkpoint functions to execute before each LLM call (quota, rate-limit) */
+  preLlmCheckpoints?: CheckpointFn[];
+  /** Checkpoint functions to execute after each LLM response (quality gate, circuit breaker) */
+  postLlmCheckpoints?: CheckpointFn[];
 }
 
 /**
@@ -68,6 +76,12 @@ export interface AgentLoopConfig {
 export interface AgentLoop {
   /** Run the agent loop with user input. Returns final output text. */
   run(input: string): Promise<string>;
+  /**
+   * AsyncGenerator-based iteration. Captures all emitted events and yields them
+   * to the caller. Returns the final output string. Subscribe via on()/onAny()
+   * for events outside the generator context.
+   */
+  iterate(input: string): AsyncGenerator<AgentEvent, string, void>;
   /** Subscribe to typed events */
   on<T extends AgentEvent['type']>(
     type: T,
@@ -116,65 +130,11 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       to,
     });
   });
-
-  // ── Checkpoint Registry (R6 iron law) ──
-  const checkpointRegistry = ctx.checkpointRegistry ?? new CheckpointRegistry();
-
-  // Register MPU cross-cutting concerns as declarative checkpoints
-
-  // Pre-LLM: Quota check (MPU M7)
-  checkpointRegistry.register('pre-llm', 10, async (_ctx, _state, ...args) => {
-    if (!_ctx.quota) return { action: 'continue' };
-    const msgs = args[0] as Message[] | undefined;
-    const currentUsage = _ctx.quota.getUsage(_ctx.sessionId);
-    const estimatedPromptTokens = (msgs?.length ?? 0) * 10;
-    const allowed = await _ctx.quota.check(_ctx.sessionId, {
-      promptTokens: currentUsage.promptTokens + estimatedPromptTokens,
-      completionTokens: currentUsage.completionTokens,
-      ...(currentUsage.totalCost !== undefined ? { totalCost: currentUsage.totalCost } : {}),
-    });
-    if (!allowed) {
-      return { action: 'block', reason: 'quota_exceeded' };
-    }
-    return { action: 'continue' };
-  });
-
-  // Pre-LLM: Rate limiter check (MPU M6)
-  checkpointRegistry.register('pre-llm', 20, _ctx => {
-    if (!_ctx.rateLimiter) return { action: 'continue' };
-    const rateLimitKey = `llm:${_ctx.sessionId}`;
-    const rateLimitConfig = { maxRequests: 60, windowMs: 60_000 };
-    if (!_ctx.rateLimiter.check(rateLimitKey, rateLimitConfig)) {
-      return { action: 'block', reason: 'rate_limit_exceeded' };
-    }
-    _ctx.rateLimiter.consume(rateLimitKey, rateLimitConfig);
-    return { action: 'continue' };
-  });
-
-  // Post-LLM: Quality gate (MPU M10)
-  checkpointRegistry.register('post-llm', 10, (_ctx, _state, ...args) => {
-    const response = args[0] as
-      | { content?: string | null; toolCalls?: unknown[]; finishReason?: string; usage?: unknown }
-      | undefined;
-    if (!_ctx.qualityGate || !response?.content) return { action: 'continue' };
-    const gateResult = _ctx.qualityGate.check(response.content, _state);
-    if (!gateResult.passed) {
-      // Inject correction message so LLM retries with guidance
-      _state.messages.push({
-        role: 'user',
-        content: `[System] ${gateResult.feedback ?? 'Your last response had quality issues. Please try again with a different approach.'}`,
-      });
-      _state.step++;
-      return { action: 'block', reason: 'quality_gate_retry' };
-    }
-    return { action: 'continue' };
-  });
-
-  // Post-LLM: Circuit breaker record success (MPU M4)
-  checkpointRegistry.register('post-llm', 20, _ctx => {
-    _ctx.circuitBreaker?.recordSuccess();
-    return { action: 'continue' };
-  });
+  // ── Checkpoints: from plugin pipeline (primary) or config fallback ──
+  const preLlmCheckpoints =
+    ctx.pluginManager?.getCheckpoints('pre-llm') ?? config.preLlmCheckpoints ?? [];
+  const postLlmCheckpoints =
+    ctx.pluginManager?.getCheckpoints('post-llm') ?? config.postLlmCheckpoints ?? [];
 
   // ── Working Memory: register system injection RequestHook ──
   // When working memory is configured, inject <working-memory> XML before each LLM call.
@@ -525,13 +485,6 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
 
     // Sandbox routing
     if (toolDef?.sandboxRequired && ctx.sandboxExecutor) {
-      void emitter.emit({
-        type: 'tool.execute',
-        timestamp: Date.now(),
-        sessionId: ctx.sessionId,
-        toolCallId: tc.id,
-        toolName: tc.name,
-      });
       const sandboxResult = await ctx.sandboxExecutor.execute(
         { toolName: tc.name, args: tc.args },
         { sessionId: ctx.sessionId, signal, timeoutMs: 30000 }
@@ -568,20 +521,12 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       {}
     );
 
-    void emitter.emit({
-      type: 'tool.execute',
-      timestamp: Date.now(),
-      sessionId: ctx.sessionId,
-      toolCallId: tc.id,
-      toolName: tc.name,
-    });
-
     // ── MPU M5: Audit tool execution ──
     ctx.auditLogger?.append({
       sessionId: ctx.sessionId,
       agentName: ctx.agentName,
-      eventType: 'tool.execute',
-      action: 'tool.execute',
+      eventType: 'tool.call',
+      action: 'tool.call',
       resource: tc.name,
       result: 'success',
       details: { toolCallId: tc.id },
@@ -1106,11 +1051,21 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           }
 
           // ── Checkpoint Registry: pre-llm phase (R6) ──
-          const preLlmResult = await checkpointRegistry.run('pre-llm', ctx, state, msgs);
-          if (preLlmResult.action === 'block') {
+          // ── Pre-LLM Checkpoints (R6 — plugin-based) ──
+          let blocked = false;
+          let blockReason = '';
+          for (const fn of preLlmCheckpoints) {
+            const result = await fn(ctx, state, msgs);
+            if (result.action === 'block') {
+              blocked = true;
+              blockReason = result.reason;
+              break;
+            }
+          }
+          if (blocked) {
             // R1: errors-as-events
             const errMsg =
-              preLlmResult.reason === 'quota_exceeded'
+              blockReason === 'quota_exceeded'
                 ? 'Token/cost quota exceeded'
                 : 'LLM rate limit exceeded';
             stateMachine.transition('error');
@@ -1120,7 +1075,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
               sessionId: ctx.sessionId,
               error: {
                 name:
-                  preLlmResult.reason === 'quota_exceeded'
+                  blockReason === 'quota_exceeded'
                     ? 'QuotaExceededError'
                     : 'RateLimitExceededError',
                 message: errMsg,
@@ -1235,12 +1190,21 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             {}
           );
 
-          // ── Checkpoint Registry: post-llm phase (R6) ──
-          const postLlmResult = await checkpointRegistry.run('post-llm', ctx, state, response);
-          if (postLlmResult.action === 'block') {
+          // ── Post-LLM Checkpoints (R6 — plugin-based) ──
+          let postBlocked = false;
+          let postBlockReason = '';
+          for (const fn of postLlmCheckpoints) {
+            const result = await fn(ctx, state, response);
+            if (result.action === 'block') {
+              postBlocked = true;
+              postBlockReason = result.reason;
+              break;
+            }
+          }
+          if (postBlocked) {
             // Quality gate failures are non-fatal — the checkpoint already
             // injected the correction message, so just continue the loop.
-            if (postLlmResult.reason === 'quality_gate_retry') {
+            if (postBlockReason === 'quality_gate_retry') {
               continue;
             }
             // All other post-llm blocks are fatal
@@ -1249,7 +1213,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
               type: 'agent.error',
               timestamp: Date.now(),
               sessionId: ctx.sessionId,
-              error: { name: 'CheckpointBlockedError', message: postLlmResult.reason },
+              error: { name: 'CheckpointBlockedError', message: postBlockReason },
             });
             void emitter.emit({
               type: 'done',
@@ -1535,19 +1499,106 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
   }
 
   // ============================================================
+  // AsyncGenerator Iteration (bridges emitter to generator yields)
+  // ============================================================
+
+  let iterationActive = false;
+
+  async function* iterate(input: string): AsyncGenerator<AgentEvent, string, void> {
+    // Re-entrancy guard — run() also checks isRunning, but iterate()
+    // replaces emitter.emit globally. Concurrent iterate() calls produce
+    // stacked overrides that leak events between generators.
+    // Must use a synchronous flag because isRunning is set inside run()
+    // which fires via microtask (Promise.resolve().then).
+    if (iterationActive || isRunning) {
+      const now = Date.now();
+      yield {
+        type: 'agent.error',
+        timestamp: now,
+        sessionId: ctx.sessionId,
+        agentName: ctx.agentName,
+        error: { name: 'AgentAlreadyRunningError', message: 'Agent is already running' },
+      } as AgentEvent;
+      yield {
+        type: 'done',
+        timestamp: now,
+        sessionId: ctx.sessionId,
+        reason: 'error',
+        agentName: ctx.agentName,
+      } as AgentEvent;
+      return '';
+    }
+
+    const eventQueue: AgentEvent[] = [];
+    let eventPushResolve: (() => void) | null = null;
+
+    const origEmit = emitter.emit.bind(emitter);
+    emitter.emit = async (event: AgentEvent): Promise<void> => {
+      eventQueue.push(event);
+      if (eventPushResolve) {
+        eventPushResolve();
+        eventPushResolve = null;
+      }
+      await origEmit(event);
+    };
+
+    iterationActive = true;
+    let runDone = false;
+    try {
+      let runResult: string;
+      const runPromise = Promise.resolve()
+        .then(() => run(input))
+        .then(v => {
+          runResult = v;
+          runDone = true;
+          // Wake the generator if it is waiting for events.
+          // Without this, paths that return without emitting a final event
+          // (maxSteps, cancel) cause a deadlock.
+          if (eventPushResolve) {
+            eventPushResolve();
+            eventPushResolve = null;
+          }
+          return v;
+        });
+
+      while (!runDone || eventQueue.length > 0) {
+        if (eventQueue.length > 0) {
+          yield eventQueue.shift()!;
+        } else if (!runDone) {
+          await new Promise<void>(resolve => {
+            eventPushResolve = resolve;
+          });
+        }
+      }
+
+      await runPromise;
+      return runResult!;
+    } finally {
+      emitter.emit = origEmit;
+      iterationActive = false;
+      if (!runDone) {
+        cancelLoop();
+      }
+    }
+  }
+
+  function cancelLoop(): void {
+    abortController?.abort();
+    isRunning = false;
+    stateMachine.transition('cancelled');
+  }
+
+  // ============================================================
   // Return
   // ============================================================
 
   return {
     run,
+    iterate,
     on: emitter.on.bind(emitter),
     onAny: emitter.onAny.bind(emitter),
     emit: (event: AgentEvent): Promise<void> => emitter.emit(event),
-    cancel: (): void => {
-      abortController?.abort();
-      isRunning = false;
-      stateMachine.transition('cancelled');
-    },
+    cancel: cancelLoop,
     pause: (): void => {
       paused = true;
       stateMachine.transition('paused');

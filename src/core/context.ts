@@ -40,10 +40,11 @@ import type {
 } from './interfaces.js';
 import type { Logger } from './logger.js';
 import { NoopTracer, NoopMetrics } from './defaults.js';
+import type { PluginManager } from '../plugins/manager.js';
 import type { QuotaController } from '../quota/quota-controller.js';
 import type { CompactionManager } from '../memory/index.js';
 import type { WorkingMemory, WorkingMemoryProcessor } from '../memory/working-memory.js';
-import type { PromptBuilder } from './interfaces.js';
+
 import type { QualityGate } from '../validation/quality-gate.js';
 import type {
   HealthChecker,
@@ -56,7 +57,7 @@ import type {
   AutoRepairer,
 } from '../contracts/mpu-interfaces.js';
 import type { SecurityGuard } from '../security/guard.js';
-import type { PermissionClassifier } from '../security/permission/classifier.js';
+
 import type { Planner } from '../planning/types.js';
 import type { HITLAskOptions } from './interfaces.js';
 import type { HookRegistry } from './hooks.js';
@@ -171,9 +172,6 @@ export interface AgentContext {
   /** Permission controller for human approval flow */
   permissionController?: PermissionController;
 
-  /** Permission classifier — ML/heuristic auto-decision before human ask */
-  permissionClassifier?: PermissionClassifier;
-
   /** Sandbox executor for isolated tool execution */
   sandboxExecutor?: SandboxExecutor;
 
@@ -219,21 +217,15 @@ export interface AgentContext {
   /** Planner for task planning and plan validation */
   planner?: Planner;
 
-  // ----- Decision Trace (optional) -----
-  /** Decision trace storage for decision traceability */
-  decisionTraceStorage?: import('../contracts/decision-trace-storage.js').DecisionTraceStorage;
-
-  // ----- Prompt Construction (optional) -----
-  /** Prompt builder for constructing LLM prompts. If not set, messages are passed through as-is. */
-  promptBuilder?: PromptBuilder;
-
   // ----- Plugin Pipeline (optional) -----
-  /** Plugin pipeline for event interception and observation */
   /** Hook registry for lifecycle/request/tool hooks */
   hookRegistry?: HookRegistry;
 
-  // ----- Checkpoint Registry (R6 iron law) -----
-  /** Declarative checkpoint registry for cross-cutting concern wiring */
+  /** Plugin manager — provides plugin lifecycle and checkpoint access */
+  pluginManager?: PluginManager;
+
+  // ----- Checkpoint Registry (R6 iron law) — @deprecated migrated to pluginManager.checkpointHooks -----
+  /** @deprecated Use pluginManager.getCheckpoints() instead */
   checkpointRegistry?: CheckpointRegistry;
 
   // ----- Control Signals -----
@@ -258,101 +250,6 @@ export interface AgentModelConfig extends ModelConfig {
 
   /** Base URL for API (optional) */
   baseUrl?: string;
-}
-
-// ============================================================
-// Agent Configuration
-// ============================================================
-
-/**
- * Agent configuration schema
- */
-export interface AgentConfig {
-  // ----- Required -----
-  /** Agent name */
-  name: string;
-
-  /** Model configuration */
-  model: AgentModelConfig;
-
-  // ----- Agent Behavior -----
-  /** Maximum steps before termination */
-  maxSteps?: number;
-
-  /** System prompt */
-  systemPrompt?: string;
-
-  /** Tool names or definitions */
-  tools?: string[];
-
-  /** Enable parallel tool calls */
-  parallelToolCalls?: boolean;
-
-  // ----- Control Flow -----
-  /** Total timeout in milliseconds */
-  timeout?: number;
-
-  /** Retry count for recoverable errors */
-  retry?: number;
-
-  /** Retry delay in milliseconds */
-  retryDelay?: number;
-
-  // ----- Observability -----
-  /** Enable tracing */
-  tracing?:
-    | boolean
-    | {
-        exporter: 'console' | 'otel' | 'custom';
-        endpoint?: string;
-      };
-
-  /** Enable metrics */
-  metrics?:
-    | boolean
-    | {
-        prefix?: string;
-      };
-
-  // ----- Checkpoint -----
-  /** Enable checkpointing */
-  checkpoint?:
-    | boolean
-    | {
-        storage: 'memory' | 'sqlite' | 'custom';
-        path?: string;
-        interval?: 'step' | 'tool_result' | 'llm_response';
-      };
-
-  // ----- HITL -----
-  /** HITL configuration */
-  hitl?: {
-    onPermissionAsk?: (ask: {
-      permission: string;
-      context?: Record<string, unknown>;
-    }) => Promise<string>;
-    autoAllow?: string[];
-  };
-
-  // ----- Subsystems -----
-  /** Subagent configurations */
-  subagents?: Array<{
-    name: string;
-    mode?: 'primary' | 'subagent' | 'all';
-    model?: AgentModelConfig;
-    tools?: string[];
-    systemPrompt?: string;
-  }>;
-
-  /** MCP server configurations */
-  mcp?: Array<{
-    name: string;
-    type: 'stdio' | 'http' | 'sse';
-    command?: string;
-    args?: string[];
-    url?: string;
-    env?: Record<string, string>;
-  }>;
 }
 
 // ============================================================
