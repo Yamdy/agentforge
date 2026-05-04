@@ -206,7 +206,7 @@ describe('Plugin State', () => {
         enabled: true,
         toolProviderHooks: [{ name: 'temp', priority: 10, filter: (t) => t }],
       };
-      const cleanup = applyPlugins([plugin], registry, emitter, createMockContext());
+      const { unregister: cleanup } = applyPlugins([plugin], registry, emitter, createMockContext());
       expect(registry.getToolProviderHooks()).toHaveLength(1);
       cleanup();
       expect(registry.getToolProviderHooks()).toHaveLength(0);
@@ -268,7 +268,7 @@ describe('Plugin State', () => {
         enabled: true,
         toolProviderHooks: [{ name: 'h2', priority: 20, filter: (t) => t }],
       };
-      const cleanup = applyPlugins([plugin1, plugin2], registry, emitter, createMockContext());
+      const { unregister: cleanup } = applyPlugins([plugin1, plugin2], registry, emitter, createMockContext());
       expect(registry.getToolProviderHooks()).toHaveLength(2);
       cleanup();
       expect(registry.getToolProviderHooks()).toHaveLength(0);

@@ -7,27 +7,21 @@
  */
 
 // ============================================================
-// Core Interfaces (new imperative API)
+// Core Interfaces
 // ============================================================
 
 export {
   type PluginContext,
   type Plugin,
-  type InterceptorPlugin,
-  type ObserverPlugin,
-  PluginSchema,
-  validatePlugin,
-  isInterceptorPlugin,
-  isObserverPlugin,
   type CreatePluginContextOptions,
   createPluginContext,
 } from './plugin.js';
 
 // ============================================================
-// Pipeline Builder (new imperative API)
+// Pipeline Builder
 // ============================================================
 
-export { applyPlugins } from './pipeline.js';
+export { applyPlugins, type AppliedPipeline } from './pipeline.js';
 
 // ============================================================
 // Plugin Manager
@@ -43,7 +37,10 @@ export { metricsPlugin } from './metrics-plugin.js';
 export { loggingPlugin } from './logging-plugin.js';
 export { createMemoryPlugin } from './memory-plugin.js';
 export { createSkillsPlugin, type SkillMetadata } from './skills-plugin.js';
-export { createSummarizationPlugin, type SummarizationPluginConfig } from './summarization-plugin.js';
+export {
+  createSummarizationPlugin,
+  type SummarizationPluginConfig,
+} from './summarization-plugin.js';
 
 // ============================================================
 // TodoList Plugin (re-exported from tools for convenience)

@@ -1,170 +1,94 @@
 /**
  * AgentForge Plugin Pipeline — Imperative Version
  *
- * Replaces buildPluginPipeline(source, plugins) with:
- * applyPlugins(plugins, hookRegistry, emitter) — registers hooks + event subscriptions.
+ * Applies plugins by registering their hooks and event subscriptions
+ * into the HookRegistry and AgentEventEmitter. Also collects checkpoint
+ * hooks for the agent loop to execute at lifecycle phases.
  *
  * @see docs/design/24-ARCH-REFACTOR.md
  */
 
-import type { AgentEvent } from '../core/events.js';
-import type { Plugin, PluginContext, InterceptorPlugin, ObserverPlugin } from './plugin.js';
-import { HookRegistry, type RequestHook } from '../core/hooks.js';
+import type { Plugin, PluginContext } from './plugin.js';
+import type { LifecyclePhase, CheckpointFn } from '../core/hooks.js';
+import { HookRegistry } from '../core/hooks.js';
 import { AgentEventEmitter } from '../core/events.js';
 
 // ==============================
-// Bridge: old intercept → RequestHook
+// Applied Pipeline
 // ==============================
 
 /**
- * Create RequestHook + lifecycle hooks from a legacy InterceptorPlugin.
- * Handles both llm.request (→ RequestHook) and agent.start (→ lifecycle hook for side effects).
+ * Result of applyPlugins — provides cleanup and checkpoint access.
  */
-function bridgeInterceptor(
-  plugin: InterceptorPlugin,
-  ctx: PluginContext
-): {
-  requestHooks: RequestHook[];
-  lifecycleUnregs: Array<() => void>;
-} {
-  const requestHooks: RequestHook[] = [];
-  const lifecycleUnregs: Array<() => void> = [];
-  const eventTypes = plugin.eventTypes;
-
-  // ── llm.request → RequestHook ──
-  if (eventTypes.length === 0 || eventTypes.includes('llm.request')) {
-    requestHooks.push({
-      name: `${plugin.name}-intercept`,
-      priority: plugin.priority,
-      async apply(messages, _state) {
-        try {
-          const syntheticEvent: any = {
-            type: 'llm.request',
-            timestamp: Date.now(),
-            sessionId: ctx.sessionId,
-            messages,
-          };
-          const result = await Promise.resolve(plugin.intercept!(syntheticEvent, ctx));
-          if (result && typeof result === 'object' && 'messages' in result) {
-            return result.messages;
-          }
-        } catch {
-          /* isolate */
-        }
-        return messages;
-      },
-    });
-  }
-
-  return { requestHooks, lifecycleUnregs };
-}
-
-/**
- * Bridge agent.start for legacy interceptors that need initialization.
- * Returns lifecycle hook registrations that fire on session.start,
- * calling intercept() for its side effects.
- */
-function bridgeAgentStart(
-  plugin: InterceptorPlugin,
-  ctx: PluginContext,
-  hookRegistry: HookRegistry
-): Array<() => void> {
-  const eventTypes = plugin.eventTypes;
-  if (eventTypes.length > 0 && !eventTypes.includes('agent.start')) return [];
-
-  const unregs: Array<() => void> = [];
-  unregs.push(
-    hookRegistry.on(
-      'session.start',
-      async () => {
-        try {
-          const syntheticEvent: any = {
-            type: 'agent.start',
-            timestamp: Date.now(),
-            sessionId: ctx.sessionId,
-            agentName: ctx.agentName,
-            input: '',
-            model: { provider: '', model: '' },
-          };
-          await Promise.resolve(plugin.intercept!(syntheticEvent, ctx));
-        } catch {
-          /* isolate */
-        }
-      },
-      plugin.priority
-    )
-  );
-  return unregs;
-}
-
-/**
- * Bridge legacy ObserverPlugin to event subscriptions.
- */
-function bridgeObserver(
-  plugin: ObserverPlugin,
-  ctx: PluginContext,
-  emitter: AgentEventEmitter
-): Array<() => void> {
-  const unregs: Array<() => void> = [];
-  const eventTypes = plugin.eventTypes;
-  const filterSet = eventTypes.length > 0 ? new Set(eventTypes) : null;
-
-  const unreg = emitter.onAny((event: AgentEvent) => {
-    if (filterSet && !filterSet.has(event.type)) return;
-    void Promise.resolve()
-      .then(() => plugin.observe!(event, ctx))
-      .catch(() => {
-        /* isolate */
-      });
-  });
-  unregs.push(unreg);
-  return unregs;
+export interface AppliedPipeline {
+  /** Remove all registered hooks and subscriptions */
+  unregister(): void;
+  /** Get checkpoint functions for a lifecycle phase, sorted by priority */
+  getCheckpoints(phase: LifecyclePhase): CheckpointFn[];
 }
 
 // ==============================
-// New Imperative API
+// Apply Plugins
 // ==============================
 
 /**
- * Apply all plugins: register their hooks and event subscriptions.
- * Also bridges legacy InterceptorPlugin/ObserverPlugin to the new system.
+ * Apply all plugins: register their hooks, event subscriptions, and
+ * collect checkpoint hooks for execution at lifecycle phases.
  */
 export function applyPlugins(
   plugins: readonly Plugin[],
   hookRegistry: HookRegistry,
   emitter: AgentEventEmitter,
-  ctx: PluginContext
-): () => void {
+  _ctx: PluginContext
+): AppliedPipeline {
   const unregisters: Array<() => void> = [];
+  const checkpointMap = new Map<LifecyclePhase, Array<{ priority: number; fn: CheckpointFn }>>();
 
   for (const plugin of plugins) {
     if (!plugin.enabled) continue;
 
-    // ── New-style hooks ──
+    // ── Request hooks ──
     if (plugin.requestHooks) {
       for (const hook of plugin.requestHooks) {
         unregisters.push(hookRegistry.registerRequest(hook));
       }
     }
 
+    // ── Tool hooks ──
     if (plugin.toolHooks) {
       for (const hook of plugin.toolHooks) {
         unregisters.push(hookRegistry.registerTool(hook));
       }
     }
 
+    // ── ToolProvider hooks ──
     if (plugin.toolProviderHooks) {
       for (const hook of plugin.toolProviderHooks) {
         unregisters.push(hookRegistry.registerToolProvider(hook));
       }
     }
 
+    // ── Lifecycle hooks ──
     if (plugin.lifecycleHooks) {
       for (const h of plugin.lifecycleHooks) {
         unregisters.push(hookRegistry.on(h.name, h.fn, h.priority));
       }
     }
 
+    // ── Checkpoint hooks ──
+    if (plugin.checkpointHooks) {
+      for (const ch of plugin.checkpointHooks) {
+        let entries = checkpointMap.get(ch.phase);
+        if (!entries) {
+          entries = [];
+          checkpointMap.set(ch.phase, entries);
+        }
+        entries.push({ priority: ch.priority, fn: ch.check });
+        entries.sort((a, b) => a.priority - b.priority);
+      }
+    }
+
+    // ── Event subscriptions ──
     if (plugin.eventSubscriptions) {
       for (const sub of plugin.eventSubscriptions) {
         unregisters.push(
@@ -178,37 +102,20 @@ export function applyPlugins(
         );
       }
     }
-
-    // ── Bridge: legacy interceptor → RequestHook + agent.start lifecycle ──
-    if (
-      plugin.type === 'interceptor' &&
-      typeof plugin.intercept === 'function' &&
-      !plugin.requestHooks?.length
-    ) {
-      const bridged = bridgeInterceptor(plugin as InterceptorPlugin, ctx);
-      for (const hook of bridged.requestHooks) {
-        unregisters.push(hookRegistry.registerRequest(hook));
-      }
-      unregisters.push(...bridgeAgentStart(plugin as InterceptorPlugin, ctx, hookRegistry));
-    }
-
-    // ── Bridge: legacy observer → event subscription ──
-    if (
-      plugin.type === 'observer' &&
-      typeof plugin.observe === 'function' &&
-      !plugin.eventSubscriptions?.length
-    ) {
-      unregisters.push(...bridgeObserver(plugin as ObserverPlugin, ctx, emitter));
-    }
   }
 
-  return () => {
-    for (const unreg of unregisters) {
-      try {
-        unreg();
-      } catch {
-        /* isolate */
+  return {
+    unregister: () => {
+      for (const unreg of unregisters) {
+        try {
+          unreg();
+        } catch {
+          /* isolate */
+        }
       }
-    }
+    },
+    getCheckpoints: (phase: LifecyclePhase): CheckpointFn[] => {
+      return (checkpointMap.get(phase) ?? []).map(e => e.fn);
+    },
   };
 }

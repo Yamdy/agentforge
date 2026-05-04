@@ -16,9 +16,9 @@
 
 import type { AgentEventEmitter } from '../core/events.js';
 import { HookRegistry } from '../core/hooks.js';
+import type { LifecyclePhase, CheckpointFn } from '../core/hooks.js';
 import type { Plugin, PluginContext } from './plugin.js';
-import { validatePlugin } from './plugin.js';
-import { applyPlugins } from './pipeline.js';
+import { applyPlugins, type AppliedPipeline } from './pipeline.js';
 
 /**
  * Plugin manager — registration, lifecycle, and hook activation.
@@ -26,8 +26,8 @@ import { applyPlugins } from './pipeline.js';
 export class PluginManager {
   private readonly plugins: Map<string, Plugin> = new Map();
   private pluginContext?: PluginContext;
-  /** Combined unregister function from applyPlugins */
-  private unregisterHooks?: () => void;
+  /** Applied pipeline with unregister + checkpoint access */
+  private appliedPipeline?: AppliedPipeline;
 
   /**
    * Register a plugin.
@@ -36,11 +36,6 @@ export class PluginManager {
    * @throws Error if plugin with same name is already registered
    */
   register(plugin: Plugin): void {
-    // Validate third-party plugins (Tier 1 safety)
-    if (!this.isInternalPlugin(plugin)) {
-      validatePlugin(plugin);
-    }
-
     if (this.plugins.has(plugin.name)) {
       throw new Error(`Plugin "${plugin.name}" is already registered`);
     }
@@ -105,16 +100,6 @@ export class PluginManager {
     return [...this.plugins.values()].filter(p => p.enabled);
   }
 
-  /** @deprecated — all plugins now use lifecycle hooks */
-  getInterceptors(): any[] {
-    return [...this.plugins.values()].filter((p: any) => p.type === 'interceptor');
-  }
-
-  /** @deprecated — all plugins now use lifecycle hooks */
-  getObservers(): any[] {
-    return [...this.plugins.values()].filter((p: any) => p.type === 'observer');
-  }
-
   setContext(ctx: PluginContext): void {
     this.pluginContext = ctx;
   }
@@ -125,63 +110,39 @@ export class PluginManager {
 
   /**
    * Build the plugin pipeline — registers all plugin hooks and event subscriptions.
-   *
-   * @param emitterOrCtx         - EventEmitter (new API) or PluginContext (old API)
-   * @param ctx                  - Plugin context (new API only)
    */
-  buildPipeline(
-    hookRegistryOrSource: HookRegistry | any,
-    emitterOrCtx?: AgentEventEmitter | PluginContext,
-    ctx?: PluginContext
-  ): any {
-    if (hookRegistryOrSource && typeof hookRegistryOrSource.pipe === 'function') {
-      if (this.pluginContext) {
-        for (const plugin of this.getActivePlugins()) {
-          if (plugin.init) {
-            void this.safeInit(plugin);
-          }
-        }
-      }
-      return hookRegistryOrSource;
-    }
-
-    const hookRegistry = hookRegistryOrSource as HookRegistry;
-    const emitter = emitterOrCtx as AgentEventEmitter;
-    const context = ctx ?? (emitterOrCtx && !('emit' in emitterOrCtx) ? emitterOrCtx : undefined);
-
-    if (context) {
-      this.pluginContext = context;
-    }
-
-    const resolvedCtx = this.pluginContext;
-    if (!resolvedCtx) {
+  buildPipeline(hookRegistry: HookRegistry, emitter: AgentEventEmitter, ctx?: PluginContext): void {
+    const context = ctx ?? this.pluginContext;
+    if (!context) {
       throw new Error('Plugin context not set. Call setContext() or pass ctx parameter.');
     }
 
-    // Initialize any plugins that haven't been initialized yet
+    this.pluginContext = context;
+
     for (const plugin of this.getActivePlugins()) {
       if (plugin.init) {
         void this.safeInit(plugin);
       }
     }
 
-    // Remove previous hook registrations
-    this.unregisterHooks?.();
+    this.appliedPipeline?.unregister();
 
-    // Apply all plugins — register hooks + subscriptions
-    this.unregisterHooks = applyPlugins(
-      this.getActivePlugins(),
-      hookRegistry,
-      emitter,
-      resolvedCtx
-    );
+    this.appliedPipeline = applyPlugins(this.getActivePlugins(), hookRegistry, emitter, context);
+  }
+
+  /**
+   * Get checkpoint functions for a lifecycle phase.
+   * Called by the agent loop at pre-llm / post-llm phases.
+   */
+  getCheckpoints(phase: LifecyclePhase): CheckpointFn[] {
+    return this.appliedPipeline?.getCheckpoints(phase) ?? [];
   }
 
   /**
    * Clear all plugins.
    */
   clear(): void {
-    this.unregisterHooks?.();
+    this.appliedPipeline?.unregister();
     for (const plugin of this.plugins.values()) {
       if (plugin.destroy) {
         try {
@@ -213,10 +174,6 @@ export class PluginManager {
     } catch (err) {
       console.error(`Plugin "${plugin.name}" init failed:`, err);
     }
-  }
-
-  private isInternalPlugin(plugin: Plugin): boolean {
-    return '_internal' in plugin;
   }
 }
 

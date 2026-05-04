@@ -175,7 +175,7 @@ describe('applyPlugins', () => {
 
     const hookRegistry = new HookRegistry();
     const emitter = new AgentEventEmitter();
-    const unregister = applyPlugins([plugin], hookRegistry, emitter, mockCtx);
+    const { unregister } = applyPlugins([plugin], hookRegistry, emitter, mockCtx);
 
     expect(hookRegistry.getRequestHooks()).toHaveLength(1);
     expect(hookRegistry.getLifecycleHooks('session.start')).toHaveLength(1);
