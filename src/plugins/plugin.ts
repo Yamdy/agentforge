@@ -1,5 +1,5 @@
 /**
- * AgentForge Plugin System - New Imperative Interfaces
+ * AgentForge Plugin System — Imperative Interfaces
  *
  * Plugin system using hooks for interception points:
  * - RequestHook: modify messages before LLM call
@@ -15,9 +15,15 @@
  * @see docs/design/24-ARCH-REFACTOR.md
  */
 
-import { z } from 'zod';
 import type { AgentEventType, AgentEvent } from '../core/events.js';
-import type { RequestHook, ToolHook, ToolProviderHook, HookFn, HookName } from '../core/hooks.js';
+import type {
+  RequestHook,
+  ToolHook,
+  ToolProviderHook,
+  HookFn,
+  HookName,
+  CheckpointHook,
+} from '../core/hooks.js';
 import type { Tracer, Metrics } from '../core/interfaces.js';
 
 // ============================================================
@@ -67,11 +73,6 @@ export interface Plugin {
    * Persists for the session lifetime. Plugins can read/write this state
    * across hook invocations. The framework does NOT mutate this object —
    * plugins own their state entirely.
-   *
-   * Use cases:
-   * - SandboxPlugin: track sandbox init status across turns
-   * - PhasePlugin: remember current planning phase
-   * - CounterPlugin: count tool invocations across turns
    */
   state?: Record<string, unknown>;
 
@@ -93,33 +94,8 @@ export interface Plugin {
     handler: (event: AgentEvent) => void | Promise<void>;
   }>;
 
-  /**
-   * @deprecated Legacy: use requestHooks instead. Plugin type discriminator for backward compat.
-   */
-  type?: 'interceptor' | 'observer';
-
-  /**
-   * @deprecated Legacy: use requestHooks instead. Intercept function for legacy interceptor plugins.
-   */
-  intercept?: (
-    event: AgentEvent,
-    ctx: PluginContext
-  ) => AgentEvent | Promise<AgentEvent | undefined | null> | undefined | null;
-
-  /**
-   * @deprecated Legacy: use eventSubscriptions instead. Observe function for legacy observer plugins.
-   */
-  observe?: (event: AgentEvent, ctx: PluginContext) => void | Promise<void>;
-
-  /**
-   * @deprecated Legacy: use lifecycle hook priority instead.
-   */
-  priority?: number;
-
-  /**
-   * @deprecated Legacy: filter by event type via hook conditions instead.
-   */
-  eventTypes?: readonly string[];
+  /** Checkpoint hooks — cross-cutting lifecycle checks that can block the agent loop */
+  checkpointHooks?: CheckpointHook[];
 
   /**
    * Initialize plugin with restricted context.
@@ -132,66 +108,6 @@ export interface Plugin {
    * Called when plugin is unregistered.
    */
   destroy?(): void;
-}
-
-// ============================================================
-// Legacy Types (for backward compat during migration)
-// ============================================================
-
-/**
- * @deprecated Use Plugin interface directly. Interceptor pattern is replaced by RequestHook + ToolHook.
- */
-export interface InterceptorPlugin extends Plugin {
-  readonly type: 'interceptor';
-  readonly priority: number;
-  readonly eventTypes: readonly string[];
-  intercept?: (
-    event: AgentEvent,
-    ctx: PluginContext
-  ) => AgentEvent | Promise<AgentEvent | undefined | null> | undefined | null;
-}
-
-/**
- * @deprecated Use Plugin interface directly. Observer pattern is replaced by eventSubscriptions.
- */
-export interface ObserverPlugin extends Plugin {
-  readonly type: 'observer';
-  readonly priority: number;
-  readonly eventTypes: readonly string[];
-  observe?: (event: AgentEvent, ctx: PluginContext) => void | Promise<void>;
-}
-
-// ============================================================
-// Plugin Validation Schema (Tier 1 for third-party plugins)
-// ============================================================
-
-export const PluginSchema = z.object({
-  name: z.string().min(1),
-  type: z.enum(['interceptor', 'observer']).optional(),
-  priority: z.number().int().default(100),
-  eventTypes: z.array(z.string()).default([]),
-  enabled: z.boolean().default(true),
-});
-
-/**
- * Validate a third-party plugin definition
- */
-export function validatePlugin(raw: unknown): z.infer<typeof PluginSchema> {
-  return PluginSchema.parse(raw);
-}
-
-// ============================================================
-// Type Guards (backward compat)
-// ============================================================
-
-/** @deprecated — all plugins now use lifecycle hooks, not intercept/observe */
-export function isInterceptorPlugin(plugin: unknown): plugin is InterceptorPlugin {
-  return (plugin as { type?: string }).type === 'interceptor';
-}
-
-/** @deprecated — all plugins now use lifecycle hooks, not intercept/observe */
-export function isObserverPlugin(plugin: unknown): plugin is ObserverPlugin {
-  return (plugin as { type?: string }).type === 'observer';
 }
 
 // ============================================================

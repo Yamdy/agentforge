@@ -254,6 +254,60 @@ export interface ToolProviderHook {
 }
 
 // ============================================================================
+// Checkpoint Hook (cross-cutting lifecycle checks — quota, rate-limit, quality)
+// ============================================================================
+
+/**
+ * Lifecycle phase where checkpoint hooks execute.
+ *
+ * - pre-llm: Before each LLM call (quota, rate-limit)
+ * - post-llm: After each LLM response (quality gate, circuit breaker)
+ */
+export type LifecyclePhase = 'pre-llm' | 'post-llm';
+
+/**
+ * Result of a checkpoint execution.
+ *
+ * - continue: Proceed normally.
+ * - block: Stop the current phase. The agent loop terminates with the given reason.
+ */
+export type CheckpointResult = { action: 'continue' } | { action: 'block'; reason: string };
+
+/**
+ * Checkpoint function signature.
+ *
+ * Uses `unknown` for ctx/state parameters to avoid circular dependencies
+ * (hooks.ts is a low-level module). Types are narrowed at call sites.
+ *
+ * MUST NOT throw — errors should be handled internally.
+ */
+export type CheckpointFn = (
+  ctx: unknown,
+  state: unknown,
+  ...args: unknown[]
+) => CheckpointResult | Promise<CheckpointResult>;
+
+/**
+ * Checkpoint Hook — registered by plugins to run at lifecycle phases.
+ *
+ * Unlike lifecycle hooks (fire-and-forget observation), checkpoint hooks
+ * can BLOCK the agent loop. This replaces the standalone CheckpointRegistry.
+ *
+ * Hooks are run in priority order (lower = earlier). Execution stops at the
+ * first `{ action: 'block' }` result.
+ */
+export interface CheckpointHook {
+  /** Unique hook name for debugging */
+  name: string;
+  /** Lifecycle phase when this checkpoint executes */
+  phase: LifecyclePhase;
+  /** Execution order (lower = earlier) */
+  priority: number;
+  /** Check function — returns 'continue' or 'block' */
+  check: CheckpointFn;
+}
+
+// ============================================================================
 // Hook Registry
 // ============================================================================
 

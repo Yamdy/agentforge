@@ -14,6 +14,10 @@ import {
   type ToolHook,
   type ToolProviderHook,
   type HookFn,
+  type CheckpointHook,
+  type CheckpointResult,
+  type CheckpointFn,
+  type LifecyclePhase,
 } from '../../src/core/hooks.js';
 import type { Message, ToolCall } from '../../src/core/events.js';
 import type { FunctionDefinition } from '../../src/core/interfaces.js';
@@ -396,6 +400,113 @@ describe('HookRegistry', () => {
       expect(registry.getRequestHooks()).toHaveLength(0);
       expect(registry.getToolHooks()).toHaveLength(0);
       expect(registry.getToolProviderHooks()).toHaveLength(0);
+    });
+  });
+});
+
+// ============================================================
+// CheckpointHook — cross-cutting lifecycle checks
+// ============================================================
+
+describe('CheckpointHook', () => {
+  describe('CheckpointResult', () => {
+    it('should allow continue action', () => {
+      const result: CheckpointResult = { action: 'continue' };
+      expect(result.action).toBe('continue');
+    });
+
+    it('should allow block action with reason', () => {
+      const result: CheckpointResult = { action: 'block', reason: 'quota exceeded' };
+      expect(result.action).toBe('block');
+      expect(result.reason).toBe('quota exceeded');
+    });
+
+    it('should support synchronous check function returning continue', async () => {
+      const fn: CheckpointFn = () => ({ action: 'continue' });
+      const result = await fn({}, {});
+      expect(result).toEqual({ action: 'continue' });
+    });
+
+    it('should support synchronous check function returning block', async () => {
+      const fn: CheckpointFn = () => ({ action: 'block', reason: 'rate limit hit' });
+      const result = await fn({}, {});
+      expect(result).toEqual({ action: 'block', reason: 'rate limit hit' });
+    });
+
+    it('should support async check function', async () => {
+      const fn: CheckpointFn = async () => {
+        await Promise.resolve();
+        return { action: 'block', reason: 'circuit open' };
+      };
+      const result = await fn({}, {});
+      expect(result).toEqual({ action: 'block', reason: 'circuit open' });
+    });
+
+    it('should accept extra args', async () => {
+      const fn: CheckpointFn = (_ctx, _state, msgs) => {
+        const arr = msgs as unknown[];
+        return arr.length > 10 ? { action: 'block', reason: 'too many messages' } : { action: 'continue' };
+      };
+      const result = await fn({}, {}, 1, 2, 3);
+      expect(result).toEqual({ action: 'continue' });
+    });
+  });
+
+  describe('CheckpointHook interface', () => {
+    it('should construct a valid pre-llm checkpoint hook', () => {
+      const hook: CheckpointHook = {
+        name: 'quota-check',
+        phase: 'pre-llm',
+        priority: 10,
+        check: () => ({ action: 'continue' }),
+      };
+      expect(hook.name).toBe('quota-check');
+      expect(hook.phase).toBe('pre-llm');
+      expect(hook.priority).toBe(10);
+    });
+
+    it('should construct a valid post-llm checkpoint hook', () => {
+      const hook: CheckpointHook = {
+        name: 'quality-gate',
+        phase: 'post-llm',
+        priority: 5,
+        check: async () => ({ action: 'block', reason: 'quality below threshold' }),
+      };
+      expect(hook.phase).toBe('post-llm');
+    });
+
+    it('should execute hooks in priority order (lower first)', async () => {
+      const order: string[] = [];
+      const hook1: CheckpointHook = { name: 'h1', phase: 'pre-llm', priority: 10, check: () => { order.push('h1'); return { action: 'continue' }; } };
+      const hook2: CheckpointHook = { name: 'h2', phase: 'pre-llm', priority: 5, check: () => { order.push('h2'); return { action: 'continue' }; } };
+      const hook3: CheckpointHook = { name: 'h3', phase: 'pre-llm', priority: 20, check: () => { order.push('h3'); return { action: 'continue' }; } };
+
+      const hooks = [hook1, hook2, hook3].sort((a, b) => a.priority - b.priority);
+      for (const h of hooks) await h.check({}, {});
+      expect(order).toEqual(['h2', 'h1', 'h3']);
+    });
+
+    it('should stop at first block in priority order', async () => {
+      const order: string[] = [];
+      const hook1: CheckpointHook = { name: 'h1', phase: 'pre-llm', priority: 10, check: () => { order.push('h1'); return { action: 'continue' }; } };
+      const hook2: CheckpointHook = { name: 'h2', phase: 'pre-llm', priority: 5, check: () => { order.push('h2'); return { action: 'block', reason: 'stopped' }; } };
+      const hook3: CheckpointHook = { name: 'h3', phase: 'pre-llm', priority: 20, check: () => { order.push('h3'); return { action: 'continue' }; } };
+
+      const hooks = [hook1, hook2, hook3].sort((a, b) => a.priority - b.priority);
+      let blocked = false;
+      for (const h of hooks) {
+        const result = await h.check({}, {});
+        if (result.action === 'block') { blocked = true; break; }
+      }
+      expect(blocked).toBe(true);
+      expect(order).toEqual(['h2']); // h1 never runs because h2 has priority 5 < 10
+    });
+  });
+
+  describe('LifecyclePhase', () => {
+    it('should only accept pre-llm or post-llm', () => {
+      const phases: LifecyclePhase[] = ['pre-llm', 'post-llm'];
+      expect(phases).toHaveLength(2);
     });
   });
 });
