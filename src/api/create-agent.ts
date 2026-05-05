@@ -166,6 +166,24 @@ export function createAgent(config: AgentConfig, services?: Partial<AgentContext
   const stateRef: { current: AgentState | null } = { current: null };
   const pendingMessages: Message[] = [];
 
+  // Shared PluginContext capability closures (used by both built-in and dynamic plugin paths)
+  const ctxGetState = (): Readonly<AgentState> => {
+    if (!stateRef.current) throw new Error('Agent state not yet initialized');
+    return stateRef.current;
+  };
+  const ctxListTools = (): ToolDefinition[] => {
+    const names = ctx.tools.list();
+    const defs: ToolDefinition[] = [];
+    for (const name of names) {
+      const def = ctx.tools.get(name);
+      if (def) defs.push(def);
+    }
+    return defs;
+  };
+  const ctxAddMessages = (msgs: Message[]): void => {
+    pendingMessages.push(...msgs);
+  };
+
   // ── Plugin pipeline ──
   let pluginManager: PluginManager | undefined;
   if (allPlugins.length > 0) {
@@ -177,19 +195,9 @@ export function createAgent(config: AgentConfig, services?: Partial<AgentContext
       ...(appServices.metrics ? { metrics: appServices.metrics } : {}),
       ...(svc?.logger ? { logger: svc.logger } : {}),
       emitter: sharedEmitter,
-      getState: () => stateRef.current as Readonly<AgentState>,
-      listTools: () => {
-        const names = ctx.tools.list();
-        const defs: ToolDefinition[] = [];
-        for (const name of names) {
-          const def = ctx.tools.get(name);
-          if (def) defs.push(def);
-        }
-        return defs;
-      },
-      addMessages: msgs => {
-        pendingMessages.push(...msgs);
-      },
+      getState: ctxGetState,
+      listTools: ctxListTools,
+      addMessages: ctxAddMessages,
     });
     pluginManager.setContext(pluginCtx);
     for (const plugin of allPlugins) pluginManager.register(plugin);
@@ -250,19 +258,9 @@ export function createAgent(config: AgentConfig, services?: Partial<AgentContext
       ...(appServices.metrics ? { metrics: appServices.metrics } : {}),
       ...(svc?.logger ? { logger: svc.logger } : {}),
       emitter: sharedEmitter,
-      getState: () => stateRef.current as Readonly<AgentState>,
-      listTools: () => {
-        const names = ctx.tools.list();
-        const defs: ToolDefinition[] = [];
-        for (const name of names) {
-          const def = ctx.tools.get(name);
-          if (def) defs.push(def);
-        }
-        return defs;
-      },
-      addMessages: msgs => {
-        pendingMessages.push(...msgs);
-      },
+      getState: ctxGetState,
+      listTools: ctxListTools,
+      addMessages: ctxAddMessages,
     });
     pluginLoadPromise = PluginLoader.loadAll(specs, pluginCtx, hookRegistry, loop.emitter).then(
       () => {}
