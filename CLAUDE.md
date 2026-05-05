@@ -105,10 +105,10 @@ A Plugin can register 6 kinds of hooks:
 | Hook Type | Purpose | Interface |
 |-----------|---------|-----------|
 | **requestHooks** | Modify LLM messages before each call | `apply(messages[], state) → messages[]` |
-| **toolHooks** | Block/allow tool execution | `beforeExecute(toolCall, state) → boolean` |
-| **toolProviderHooks** | Dynamically provide tool definitions | `getTools() → ToolDefinition[]` |
+| **toolHooks** | Filter tool defs + check/modify tool execution | `filter?(tools[], state) → tools[]` / `beforeExecute?(tc, state) → ToolBeforeResult` |
 | **lifecycleHooks** | Observe at key cut-points | `(input, output) → void` |
 | **checkpointHooks** | Register for lifecycle phases (pre-llm, post-llm, etc.) | `{ phase, fn(ctx, state) → CheckpointResult }` |
+| **recoveryHooks** | Observe error/recovery events | `{ phase, fn(input, output) → void }` |
 | **eventSubscriptions** | Subscribe to event emitter events | `{ event: AgentEventType, handler(event) → void }` |
 
 All hook errors are silently caught — plugin isolation is safety-critical.
@@ -209,7 +209,7 @@ The main entry (`src/index.ts`) exports a curated subset organized in 7 categori
 
 **Agent Creation (L2 API):** `createAgent`, `Agent`, `AgentConfig`, `NormalizedAgentConfig`, `RunHandlers`, `StreamHandlers`, `PluginSpec`, `AgentConfigError`
 
-**Plugin System:** `Plugin`, `PluginContext`, `RequestHook`, `ToolHook`, `ToolProviderHook`, `CheckpointHook`, `CheckpointResult`, `CheckpointFn`, `LifecyclePhase`, `LifecycleHookEntry`, `HookName`, `RequestHookPriority`, plus 10 built-in plugin factories (`createQuotaPlugin`, `createMemoryPlugin`, `createSkillsPlugin`, `loggingPlugin`, `metricsPlugin`, etc.)
+**Plugin System:** `Plugin`, `PluginContext`, `RequestHook`, `ToolHook`, `ToolBeforeResult`, `CheckpointHook`, `CheckpointResult`, `CheckpointFn`, `LifecyclePhase`, `CheckpointPhase`, `RecoveryPhase`, `LifecycleHookEntry`, `RecoveryHookEntry`, `RequestHookPriority`, plus 10 built-in plugin factories (`createQuotaPlugin`, `createMemoryPlugin`, `createSkillsPlugin`, `loggingPlugin`, `metricsPlugin`, etc.)
 
 **Events:** `AgentEvent`, `AgentEventType`, `Message`, `ToolCall`, `SerializedError`, `FinishReason`, plus type guards (`isAgentEvent`, `isLLMEvent`, `isToolEvent`, `isTerminalEvent`, `serializeError`, `generateId`)
 
