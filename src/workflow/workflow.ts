@@ -11,11 +11,12 @@
  *
  */
 
-import { type AgentEvent, type AgentContext, generateId, serializeError } from '../core/index.js';
+import { type AgentContext, generateId, serializeError } from '../core/index.js';
 import {
   type WorkflowConfig,
   type WorkflowExecutionContext,
   type WorkflowResult,
+  type WorkflowOrAgentEvent,
 } from './types.js';
 import { WorkflowExecutor } from './executor.js';
 
@@ -74,7 +75,10 @@ export class Workflow {
    * @param listener - Callback for each event emitted during execution
    * @returns Promise resolving to WorkflowResult
    */
-  async run(input: unknown, listener: (event: AgentEvent) => void): Promise<WorkflowResult> {
+  async run(
+    input: unknown,
+    listener: (event: WorkflowOrAgentEvent) => void
+  ): Promise<WorkflowResult> {
     const startTime = Date.now();
     const workflowId = `wf-${generateId()}`;
     const sessionId = this.agentContext.sessionId;

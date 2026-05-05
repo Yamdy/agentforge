@@ -532,15 +532,17 @@ export interface RunHandlers {
 export interface Agent {
   // ----- Execution -----
 
-  /** Run the agent and return the final result */
-  run(input: string, handlers?: RunHandlers): Promise<string>;
+  /** Run the agent and return a structured result with status and output. */
+  run(input: string, handlers?: RunHandlers): Promise<import('../loop/agent-loop.js').RunResult>;
 
   /**
    * AsyncGenerator-based iteration. Yields all emitted events as they occur,
-   * returns the final output string. Use `for await (const event of iterate(...))`
+   * returns the structured result. Use `for await (const event of iterate(...))`
    * for streaming access to the agent's full event stream.
    */
-  iterate(input: string): AsyncGenerator<AgentEvent, string, void>;
+  iterate(
+    input: string
+  ): AsyncGenerator<AgentEvent, import('../loop/agent-loop.js').RunResult, void>;
 
   /** @deprecated wrapper for backward compat */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -185,8 +185,8 @@ export class Agent {
    * @returns The generated response with text and optional usage info
    */
   async generate(input: string): Promise<GenerateResult> {
-    const text = await this.agent.run(input);
-    return { text };
+    const result = await this.agent.run(input);
+    return { text: result.output };
   }
 
   /**

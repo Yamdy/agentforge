@@ -15,9 +15,9 @@
  *
  */
 
-import { type AgentEvent, type AgentContext, serializeError, generateId } from '../core/index.js';
+import { type AgentContext, serializeError, generateId } from '../core/index.js';
 import { WorkflowExecutor } from './executor.js';
-import { type WorkflowStep, type PipelineConfig } from './types.js';
+import { type WorkflowStep, type PipelineConfig, type WorkflowOrAgentEvent } from './types.js';
 
 // ============================================================
 // Pipeline Result
@@ -94,7 +94,10 @@ export class SequentialPipeline {
    * @param listener - Callback for each event emitted during execution
    * @returns Promise resolving to PipelineResult
    */
-  async run(input: unknown, listener: (event: AgentEvent) => void): Promise<PipelineResult> {
+  async run(
+    input: unknown,
+    listener: (event: WorkflowOrAgentEvent) => void
+  ): Promise<PipelineResult> {
     const workflowId = `pipeline-${generateId()}`;
     const sessionId = this.agentContext.sessionId;
     const stepOutputs = new Map<string, unknown>();
@@ -317,7 +320,10 @@ export class ParallelPipeline {
    * @param listener - Callback for each event emitted during execution
    * @returns Promise resolving to PipelineResult
    */
-  async run(input: unknown, listener: (event: AgentEvent) => void): Promise<PipelineResult> {
+  async run(
+    input: unknown,
+    listener: (event: WorkflowOrAgentEvent) => void
+  ): Promise<PipelineResult> {
     const workflowId = `pipeline-${generateId()}`;
     const sessionId = this.agentContext.sessionId;
 

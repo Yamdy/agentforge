@@ -576,8 +576,8 @@ export class CompactionManager {
           strategy: this.config.strategy,
           tokensBefore: context.currentTokenEstimate,
         });
-      } catch {
-        /* isolate */
+      } catch (err) {
+        console.warn('[CompactionManager] Event listener error:', err);
       }
     }
   }
@@ -601,8 +601,8 @@ export class CompactionManager {
     for (const fn of this.eventListeners) {
       try {
         fn(eventPayload);
-      } catch {
-        /* isolate */
+      } catch (err) {
+        console.warn('[CompactionManager] Event listener error:', err);
       }
     }
   }

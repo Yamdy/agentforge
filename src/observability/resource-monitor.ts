@@ -132,8 +132,8 @@ export class ResourceMonitor {
     const timer = setInterval(() => {
       try {
         listener(this.collect());
-      } catch {
-        /* isolate */
+      } catch (err) {
+        console.warn('[ResourceMonitor] Metrics listener error:', err);
       }
     }, this._options.intervalMs);
     return () => clearInterval(timer);

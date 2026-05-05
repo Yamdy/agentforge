@@ -7,6 +7,7 @@
  */
 
 import { z } from 'zod';
+import type { Logger } from './logger.js';
 
 // ============================================================
 // Event Type Enumeration
@@ -20,48 +21,20 @@ import { z } from 'zod';
  * Layer 3: Cross-cutting concern events
  */
 export const AgentEventTypeSchema = z.enum([
-  // ===== Layer 1: Core Agent Loop =====
   'agent.start',
-  'agent.step',
   'agent.complete',
   'agent.error',
-
   'llm.request',
   'llm.response',
-  'llm.chunk',
-
-  'file.change',
-
   'tool.call',
   'tool.result',
-  'tool.batch.start',
-  'tool.batch.complete',
-
   'state.change',
-  'checkpoint',
   'done',
-
-  // ===== Layer 2: Subsystem Lifecycle =====
   'subagent.start',
   'subagent.complete',
-  'subagent.error',
-
-  'mcp.connecting',
-  'mcp.connected',
-  'mcp.disconnected',
-  'mcp.error',
-
-  'workflow.start',
-  'workflow.step.start',
-  'workflow.step.end',
-  'workflow.complete',
-  'workflow.error',
-
-  // ===== Layer 3: Cross-cutting Concerns =====
   'compaction.start',
   'compaction.complete',
-  'permission.prompt',
-  'permission.decision',
+  'permission',
 ]);
 
 export type AgentEventType = z.infer<typeof AgentEventTypeSchema>;
@@ -167,20 +140,14 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
   }),
 
   z.object({
-    type: z.literal('agent.step'),
-    timestamp: z.number(),
-    sessionId: z.string(),
-    step: z.number(),
-    maxSteps: z.number(),
-  }),
-
-  z.object({
     type: z.literal('agent.complete'),
     timestamp: z.number(),
     sessionId: z.string(),
     output: z.string(),
     steps: z.number(),
     tokens: z.object({ input: z.number(), output: z.number() }).optional(),
+    /** Total step count executed (was agent.step) */
+    stepCount: z.number().optional(),
   }),
 
   z.object({
@@ -189,6 +156,8 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
     sessionId: z.string(),
     error: SerializedErrorSchema,
     step: z.number().optional(),
+    /** Event source: 'agent' for main loop, 'subagent' for subagent errors (was subagent.error) */
+    source: z.enum(['agent', 'subagent']).optional(),
   }),
 
   // ----- llm.* -----
@@ -225,20 +194,6 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
       .optional(),
   }),
 
-  // ----- llm.chunk -----
-  z.object({
-    type: z.literal('llm.chunk'),
-    timestamp: z.number(),
-    sessionId: z.string(),
-    text: z.string(),
-    /** Tool call ID (present on tool-call-start/delta/end chunks) */
-    toolCallId: z.string().optional(),
-    /** Tool name (present on tool-call-start chunks) */
-    toolName: z.string().optional(),
-    /** Args delta fragment (present on tool-call-delta chunks) */
-    argsDelta: z.string().optional(),
-  }),
-
   // ----- tool.* -----
   z.object({
     type: z.literal('tool.call'),
@@ -247,6 +202,8 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
     toolCallId: z.string(),
     toolName: z.string(),
     args: z.record(z.string(), z.unknown()),
+    /** Batch ID when tool is executed as part of a parallel batch (was tool.batch.start) */
+    batchId: z.string().optional(),
   }),
 
   z.object({
@@ -264,25 +221,8 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
     // Tool output truncation metadata
     truncated: z.boolean().optional(),
     originalLength: z.number().optional(),
-  }),
-
-  z.object({
-    type: z.literal('tool.batch.start'),
-    timestamp: z.number(),
-    sessionId: z.string(),
-    batchId: z.string(),
-    totalCalls: z.number(),
-  }),
-
-  z.object({
-    type: z.literal('tool.batch.complete'),
-    timestamp: z.number(),
-    sessionId: z.string(),
-    batchId: z.string(),
-    totalCalls: z.number(),
-    successCount: z.number(),
-    errorCount: z.number(),
-    durationMs: z.number(),
+    /** Batch ID when tool result is part of a parallel batch (was tool.batch.complete) */
+    batchId: z.string().optional(),
   }),
 
   // ----- state.* -----
@@ -292,16 +232,13 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
     sessionId: z.string(),
     from: z.string(),
     to: z.string(),
-  }),
-
-  // ----- checkpoint -----
-  z.object({
-    type: z.literal('checkpoint'),
-    timestamp: z.number(),
-    sessionId: z.string(),
-    checkpointId: z.string(),
-    position: z.enum(['before_llm', 'after_llm', 'before_tool', 'after_tool']),
-    state: z.unknown(), // AgentState snapshot - validated by CheckpointSchema
+    /** Checkpoint metadata when state change is a checkpoint save (was separate checkpoint event) */
+    checkpoint: z
+      .object({
+        id: z.string(),
+        position: z.enum(['before_llm', 'after_llm', 'before_tool', 'after_tool']),
+      })
+      .optional(),
   }),
 
   // ----- control -----
@@ -329,116 +266,6 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
     output: z.string(),
   }),
 
-  z.object({
-    type: z.literal('subagent.error'),
-    timestamp: z.number(),
-    sessionId: z.string(),
-    error: SerializedErrorSchema,
-  }),
-
-  // ----- mcp.* -----
-  z.object({
-    type: z.literal('mcp.connecting'),
-    timestamp: z.number(),
-    sessionId: z.string(),
-    serverName: z.string(),
-  }),
-
-  z.object({
-    type: z.literal('mcp.connected'),
-    timestamp: z.number(),
-    sessionId: z.string(),
-    serverName: z.string(),
-    tools: z.string().array().optional(),
-  }),
-
-  z.object({
-    type: z.literal('mcp.disconnected'),
-    timestamp: z.number(),
-    sessionId: z.string(),
-    serverName: z.string(),
-    reason: z.string().optional(),
-  }),
-
-  z.object({
-    type: z.literal('mcp.error'),
-    timestamp: z.number(),
-    sessionId: z.string(),
-    serverName: z.string(),
-    error: SerializedErrorSchema,
-  }),
-
-  // ----- workflow.* -----
-  z.object({
-    type: z.literal('workflow.start'),
-    timestamp: z.number(),
-    sessionId: z.string(),
-    workflowId: z.string(),
-    workflowName: z.string(),
-  }),
-
-  z.object({
-    type: z.literal('workflow.step.start'),
-    timestamp: z.number(),
-    sessionId: z.string(),
-    workflowId: z.string(),
-    stepId: z.string(),
-    stepName: z.string(),
-  }),
-
-  z.object({
-    type: z.literal('workflow.step.end'),
-    timestamp: z.number(),
-    sessionId: z.string(),
-    workflowId: z.string(),
-    stepId: z.string(),
-    result: z.enum(['success', 'failure', 'skipped']),
-  }),
-
-  z.object({
-    type: z.literal('workflow.complete'),
-    timestamp: z.number(),
-    sessionId: z.string(),
-    workflowId: z.string(),
-    result: z.unknown(),
-  }),
-
-  z.object({
-    type: z.literal('workflow.error'),
-    timestamp: z.number(),
-    sessionId: z.string(),
-    workflowId: z.string(),
-    error: SerializedErrorSchema,
-    stepId: z.string().optional(),
-  }),
-
-  // ----- file.change -----
-  z.object({
-    type: z.literal('file.change'),
-    timestamp: z.number(),
-    sessionId: z.string(),
-    changes: z.array(
-      z.object({
-        path: z.string(),
-        type: z.enum(['created', 'modified', 'deleted']),
-        before: z
-          .object({
-            exists: z.boolean(),
-            size: z.number(),
-            mtimeMs: z.number(),
-          })
-          .nullable(),
-        after: z
-          .object({
-            exists: z.boolean(),
-            size: z.number(),
-            mtimeMs: z.number(),
-          })
-          .nullable(),
-      })
-    ),
-  }),
-
   // ----- compaction.* -----
   z.object({
     type: z.literal('compaction.start'),
@@ -464,22 +291,17 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
     summarizedMessages: z.number().optional(),
   }),
 
-  // ----- permission.* -----
+  // ----- permission (merged prompt + decision) -----
   z.object({
-    type: z.literal('permission.prompt'),
+    type: z.literal('permission'),
     timestamp: z.number(),
     sessionId: z.string(),
     promptId: z.string(),
     permission: z.string(),
+    /** Decision, if already made (allow/deny/allow_always) — omitted for prompt-only events */
+    decision: z.enum(['allow', 'deny', 'allow_always']).optional(),
+    /** Context for the permission request (risk level, tool args, etc.) */
     context: z.record(z.string(), z.unknown()).optional(),
-  }),
-
-  z.object({
-    type: z.literal('permission.decision'),
-    timestamp: z.number(),
-    sessionId: z.string(),
-    promptId: z.string(),
-    decision: z.enum(['allow', 'deny', 'allow_always']),
   }),
 ]);
 
@@ -520,39 +342,11 @@ export function isTerminalEvent(event: AgentEvent): boolean {
   return event.type === 'done' || event.type === 'agent.error';
 }
 
-/** Check if event is a SubAgent lifecycle event */
-export function isSubagentEvent(
-  event: AgentEvent
-): event is Extract<AgentEvent, { type: `subagent.${string}` }> {
-  return event.type.startsWith('subagent.');
-}
-
-/** Check if event is an MCP lifecycle event */
-export function isMCPEvent(
-  event: AgentEvent
-): event is Extract<AgentEvent, { type: `mcp.${string}` }> {
-  return event.type.startsWith('mcp.');
-}
-
-/** Check if event is a Workflow lifecycle event */
-export function isWorkflowEvent(
-  event: AgentEvent
-): event is Extract<AgentEvent, { type: `workflow.${string}` }> {
-  return event.type.startsWith('workflow.');
-}
-
 /** Check if event is a Compaction event */
 export function isCompactionEvent(
   event: AgentEvent
 ): event is Extract<AgentEvent, { type: `compaction.${string}` }> {
   return event.type.startsWith('compaction.');
-}
-
-/** Check if event is a Permission event */
-export function isPermissionEvent(
-  event: AgentEvent
-): event is Extract<AgentEvent, { type: `permission.${string}` }> {
-  return event.type.startsWith('permission.');
 }
 
 // ============================================================
@@ -596,6 +390,8 @@ export function generateId(prefix = ''): string {
 export class AgentEventEmitter {
   private typed = new Map<string, Set<(event: unknown) => void | Promise<void>>>();
   private any = new Set<(event: AgentEvent) => void | Promise<void>>();
+
+  constructor(private logger?: Logger) {}
 
   /**
    * Register a listener for a specific event type.
@@ -644,8 +440,11 @@ export class AgentEventEmitter {
         tasks.push(
           Promise.resolve()
             .then(() => fn(event))
-            .catch(() => {
-              /* isolate */
+            .catch((listenerError: unknown) => {
+              this.logger?.warn('Event listener error', {
+                eventType: event.type,
+                error: serializeError(listenerError),
+              });
             })
         );
       }
@@ -656,8 +455,11 @@ export class AgentEventEmitter {
       tasks.push(
         Promise.resolve()
           .then(() => fn(event))
-          .catch(() => {
-            /* isolate */
+          .catch((listenerError: unknown) => {
+            this.logger?.warn('Event listener error', {
+              eventType: event.type,
+              error: serializeError(listenerError),
+            });
           })
       );
     }

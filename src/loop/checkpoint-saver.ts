@@ -23,13 +23,13 @@ export function saveCheckpoint(
 
   const cpId = generateId('cp');
   void deps.emitter.emit({
-    type: 'checkpoint',
+    type: 'state.change',
     timestamp: Date.now(),
     sessionId: deps.ctx.sessionId,
-    checkpointId: cpId,
-    position,
-    state,
-  } as import('../core/events.js').AgentEvent);
+    from: 'running',
+    to: 'running',
+    checkpoint: { id: cpId, position },
+  });
 
   deps.ctx.checkpoint
     ?.save({

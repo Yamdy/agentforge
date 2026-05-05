@@ -134,8 +134,8 @@ export class AgentForgeMCPClient implements MCPClient {
     // Replay current status immediately
     try {
       listener(this._status);
-    } catch {
-      /* isolate */
+    } catch (err) {
+      console.warn('[MCPClient] Status listener error:', err);
     }
     return () => {
       this._statusListeners.delete(listener);
@@ -148,8 +148,8 @@ export class AgentForgeMCPClient implements MCPClient {
     for (const listener of this._statusListeners) {
       try {
         listener(status);
-      } catch {
-        /* isolate */
+      } catch (err) {
+        console.warn('[MCPClient] Status listener error:', err);
       }
     }
   }

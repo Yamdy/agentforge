@@ -8,8 +8,78 @@
  */
 
 import { z } from 'zod';
-import type { AgentEvent } from '../core/events.js';
+import type { AgentEvent, SerializedError } from '../core/events.js';
 import type { AgentContext } from '../core/context.js';
+
+// ============================================================
+// Workflow Event Types (separate from AgentEvent)
+// ============================================================
+
+/**
+ * Workflow-specific event types.
+ * Workflow events are emitted through the workflow listener callback,
+ * NOT through the AgentEventEmitter. They are separate from AgentEvent
+ * to keep AgentEventSchema lean (14 types).
+ */
+export type WorkflowEvent =
+  | {
+      type: 'workflow.start';
+      timestamp: number;
+      sessionId: string;
+      workflowId: string;
+      workflowName: string;
+    }
+  | {
+      type: 'workflow.step.start';
+      timestamp: number;
+      sessionId: string;
+      workflowId: string;
+      stepId: string;
+      stepName: string;
+    }
+  | {
+      type: 'workflow.step.end';
+      timestamp: number;
+      sessionId: string;
+      workflowId: string;
+      stepId: string;
+      result: 'success' | 'failure' | 'skipped';
+    }
+  | {
+      type: 'workflow.complete';
+      timestamp: number;
+      sessionId: string;
+      workflowId: string;
+      result: unknown;
+    }
+  | {
+      type: 'workflow.error';
+      timestamp: number;
+      sessionId: string;
+      workflowId: string;
+      error: SerializedError;
+      stepId?: string;
+    };
+
+/** Union of AgentEvent and WorkflowEvent — for workflow listener callbacks */
+export type WorkflowOrAgentEvent = AgentEvent | WorkflowEvent;
+
+/**
+ * Check if an event is a workflow event.
+ */
+export function isWorkflowEvent(event: WorkflowOrAgentEvent): event is WorkflowEvent {
+  return event.type.startsWith('workflow.');
+}
+
+/**
+ * Extract workflow ID from a workflow event.
+ */
+export function getWorkflowIdFromEvent(event: WorkflowOrAgentEvent): string | undefined {
+  if (isWorkflowEvent(event) && 'workflowId' in event) {
+    return (event as WorkflowEvent & { workflowId: string }).workflowId;
+  }
+  return undefined;
+}
 
 // ============================================================
 // Workflow Step Schema
@@ -187,29 +257,6 @@ export interface PipelineConfig {
   maxConcurrency?: number;
   /** Continue on step failure */
   continueOnFailure?: boolean;
-}
-
-// ============================================================
-// Workflow Events Helper
-// ============================================================
-
-/**
- * Helper to check if an event is a workflow event
- */
-export function isWorkflowEvent(
-  event: AgentEvent
-): event is Extract<AgentEvent, { type: `workflow.${string}` }> {
-  return event.type.startsWith('workflow.');
-}
-
-/**
- * Extract workflow ID from event
- */
-export function getWorkflowIdFromEvent(event: AgentEvent): string | undefined {
-  if (isWorkflowEvent(event) && 'workflowId' in event) {
-    return event.workflowId;
-  }
-  return undefined;
 }
 
 /**

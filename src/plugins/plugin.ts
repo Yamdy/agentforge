@@ -42,6 +42,8 @@ export interface PluginContext {
   readonly tracer?: Tracer;
   /** Metrics collector for observability */
   readonly metrics?: Metrics;
+  /** Logger for diagnostic output */
+  readonly logger?: import('../core/logger.js').Logger;
 }
 
 // ============================================================
@@ -110,18 +112,21 @@ export interface CreatePluginContextOptions {
   agentName: string;
   tracer?: Tracer;
   metrics?: Metrics;
+  logger?: import('../core/logger.js').Logger;
 }
 
 export function createPluginContext(options: CreatePluginContextOptions): PluginContext {
-  return options.tracer !== undefined || options.metrics !== undefined
-    ? {
-        sessionId: options.sessionId,
-        agentName: options.agentName,
-        ...(options.tracer !== undefined ? { tracer: options.tracer } : {}),
-        ...(options.metrics !== undefined ? { metrics: options.metrics } : {}),
-      }
-    : {
-        sessionId: options.sessionId,
-        agentName: options.agentName,
-      };
+  const base = {
+    sessionId: options.sessionId,
+    agentName: options.agentName,
+    ...(options.logger !== undefined ? { logger: options.logger } : {}),
+  };
+  if (options.tracer !== undefined || options.metrics !== undefined) {
+    return {
+      ...base,
+      ...(options.tracer !== undefined ? { tracer: options.tracer } : {}),
+      ...(options.metrics !== undefined ? { metrics: options.metrics } : {}),
+    };
+  }
+  return base;
 }

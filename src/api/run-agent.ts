@@ -36,7 +36,7 @@ export function runAgent(
   });
 
   return {
-    run: (input: string) => loop.run(input),
+    run: (input: string) => loop.run(input).then(r => r.output),
     on: loop.on.bind(loop) as (type: string, fn: (e: unknown) => void) => () => void,
     cancel: loop.cancel.bind(loop),
     getState: () => (loop.getState() ? 'running' : 'idle'),

@@ -11,7 +11,7 @@
 import type { Plugin, PluginContext } from './plugin.js';
 import type { LifecyclePhase, CheckpointFn } from '../core/hooks.js';
 import { HookRegistry } from '../core/hooks.js';
-import { AgentEventEmitter } from '../core/events.js';
+import { AgentEventEmitter, serializeError } from '../core/events.js';
 
 // ==============================
 // Applied Pipeline
@@ -39,7 +39,7 @@ export function applyPlugins(
   plugins: readonly Plugin[],
   hookRegistry: HookRegistry,
   emitter: AgentEventEmitter,
-  _ctx: PluginContext
+  ctx: PluginContext
 ): AppliedPipeline {
   const unregisters: Array<() => void> = [];
   const checkpointMap = new Map<LifecyclePhase, Array<{ priority: number; fn: CheckpointFn }>>();
@@ -86,8 +86,11 @@ export function applyPlugins(
       for (const sub of plugin.eventSubscriptions) {
         unregisters.push(
           emitter.on(sub.event, event =>
-            Promise.resolve(sub.handler(event)).catch(() => {
-              /* isolate */
+            Promise.resolve(sub.handler(event)).catch((err: unknown) => {
+              ctx.logger?.warn('Plugin event subscription error', {
+                eventType: sub.event,
+                error: serializeError(err),
+              });
             })
           )
         );
@@ -100,8 +103,10 @@ export function applyPlugins(
       for (const unreg of unregisters) {
         try {
           unreg();
-        } catch {
-          /* isolate */
+        } catch (err) {
+          ctx.logger?.warn('Plugin unregister error', {
+            error: serializeError(err),
+          });
         }
       }
     },

@@ -208,7 +208,30 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
    * ToolHook → PermissionController → SecurityGuard → Sandbox/Tool execution.
    * Extracted from the serial loop so both serial and parallel paths reuse it.
    */
-  async function executeSingleTool(tc: ToolCall, signal: AbortSignal): Promise<Message> {
+  async function executeSingleTool(
+    tc: ToolCall,
+    signal: AbortSignal,
+    batchId?: string
+  ): Promise<Message> {
+    // Helper to emit tool.result with common fields + optional batchId
+    const emitToolResult = (
+      result: string,
+      isError: boolean,
+      extra?: Record<string, unknown>
+    ): void => {
+      void emitter.emit({
+        type: 'tool.result',
+        timestamp: Date.now(),
+        sessionId: ctx.sessionId,
+        toolCallId: tc.id,
+        toolName: tc.name,
+        result,
+        isError,
+        ...(batchId ? { batchId } : {}),
+        ...(extra ?? {}),
+      });
+    };
+
     // Emit tool.call
     void emitter.emit({
       type: 'tool.call',
@@ -217,6 +240,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       toolCallId: tc.id,
       toolName: tc.name,
       args: tc.args,
+      ...(batchId ? { batchId } : {}),
     });
 
     // ── MPU M5: Audit tool call ──
@@ -246,15 +270,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         toolCallId: tc.id,
         name: tc.name,
       };
-      void emitter.emit({
-        type: 'tool.result',
-        timestamp: Date.now(),
-        sessionId: ctx.sessionId,
-        toolCallId: tc.id,
-        toolName: tc.name,
-        result: extractText(deniedMsg.content),
-        isError: true,
-      });
+      emitToolResult(extractText(deniedMsg.content), true);
       return deniedMsg;
     }
 
@@ -277,15 +293,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           toolCallId: tc.id,
           name: tc.name,
         };
-        void emitter.emit({
-          type: 'tool.result',
-          timestamp: Date.now(),
-          sessionId: ctx.sessionId,
-          toolCallId: tc.id,
-          toolName: tc.name,
-          result: extractText(deniedMsg.content),
-          isError: true,
-        });
+        emitToolResult(extractText(deniedMsg.content), true);
         ctx.auditLogger?.append({
           sessionId: ctx.sessionId,
           agentName: ctx.agentName,
@@ -301,7 +309,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       if (policyDecision === 'ask') {
         const promptId = `perm-${tc.id}`;
         void emitter.emit({
-          type: 'permission.prompt',
+          type: 'permission',
           timestamp: Date.now(),
           sessionId: ctx.sessionId,
           promptId,
@@ -311,7 +319,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             approvalMessage: toolDef.approvalMessage,
             toolArgs: tc.args,
           },
-        });
+        } as AgentEvent);
 
         // ── Isolate permission ask from batch abort ──
         // Treat controller rejection as per-tool deny, not loop crash.
@@ -333,12 +341,13 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         }
 
         void emitter.emit({
-          type: 'permission.decision',
+          type: 'permission',
           timestamp: Date.now(),
           sessionId: ctx.sessionId,
           promptId,
+          permission: tc.name,
           decision: permDecision,
-        });
+        } as AgentEvent);
 
         // Audit the HITL decision regardless of outcome
         ctx.auditLogger?.append({
@@ -361,15 +370,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             toolCallId: tc.id,
             name: tc.name,
           };
-          void emitter.emit({
-            type: 'tool.result',
-            timestamp: Date.now(),
-            sessionId: ctx.sessionId,
-            toolCallId: tc.id,
-            toolName: tc.name,
-            result: extractText(deniedMsg.content),
-            isError: true,
-          });
+          emitToolResult(extractText(deniedMsg.content), true);
           return deniedMsg;
         }
         // 'allow' or 'allow_always' → proceed to SecurityGuard
@@ -389,15 +390,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           toolCallId: tc.id,
           name: tc.name,
         };
-        void emitter.emit({
-          type: 'tool.result',
-          timestamp: Date.now(),
-          sessionId: ctx.sessionId,
-          toolCallId: tc.id,
-          toolName: tc.name,
-          result: `Blocked: ${cmdCheck.reason}`,
-          isError: true,
-        });
+        emitToolResult(`Blocked: ${cmdCheck.reason}`, true);
         // ── MPU M5: Audit blocked tool call ──
         ctx.auditLogger?.append({
           sessionId: ctx.sessionId,
@@ -421,15 +414,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       const sbResultStr = sandboxResult.success
         ? (sandboxResult.result ?? '')
         : `Sandbox error: ${sandboxResult.error?.message ?? 'Unknown error'}`;
-      void emitter.emit({
-        type: 'tool.result',
-        timestamp: Date.now(),
-        sessionId: ctx.sessionId,
-        toolCallId: tc.id,
-        toolName: tc.name,
-        result: sbResultStr,
-        isError: !sandboxResult.success,
-      });
+      emitToolResult(sbResultStr, !sandboxResult.success);
       return {
         role: 'tool',
         content: sbResultStr,
@@ -474,22 +459,11 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         parentSessionId: ctx.sessionId,
       });
 
-      // ── File Snapshot: diff after successful execution ──
+      // ── File Snapshot: notify tracker of changes ──
       if (beforeSnapshot && filePaths.length > 0) {
         const afterSnapshot = await fileTracker.takeSnapshotOf(filePaths);
         const changes = fileTracker.diff(beforeSnapshot, afterSnapshot);
         if (changes.length > 0) {
-          void emitter.emit({
-            type: 'file.change',
-            timestamp: Date.now(),
-            sessionId: ctx.sessionId,
-            changes: changes.map(c => ({
-              path: c.path,
-              type: c.type,
-              before: c.before,
-              after: c.after,
-            })),
-          } as AgentEvent);
           fileTracker.notify(changes, ctx.sessionId);
         }
       }
@@ -506,15 +480,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       );
 
       const resultStr = typeof result === 'string' ? result : JSON.stringify(result);
-      void emitter.emit({
-        type: 'tool.result',
-        timestamp: Date.now(),
-        sessionId: ctx.sessionId,
-        toolCallId: tc.id,
-        toolName: tc.name,
-        result: resultStr,
-        isError: false,
-      });
+      emitToolResult(resultStr, false);
 
       // ── MPU M5: Audit tool result (success) ──
       ctx.auditLogger?.append({
@@ -564,15 +530,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         { retry: false }
       );
 
-      void emitter.emit({
-        type: 'tool.result',
-        timestamp: Date.now(),
-        sessionId: ctx.sessionId,
-        toolCallId: tc.id,
-        toolName: tc.name,
-        result: errStr,
-        isError: true,
-      });
+      emitToolResult(errStr, true);
 
       // ── MPU M5 + M4: Audit + circuit breaker on tool error ──
       ctx.auditLogger?.append({
@@ -611,44 +569,18 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
 
   /**
    * Execute a batch of concurrency-safe tools in parallel via Promise.all.
-   * Emits tool.batch.start/tool.batch.complete events for observability.
+   * Passes batchId to each tool.call/tool.result for observability.
    */
   async function executeToolBatchParallel(
     batch: { calls: ToolCall[]; isConcurrencySafe: boolean },
     signal: AbortSignal
   ): Promise<Message[]> {
     const batchId = generateId('batch');
-    const startedAt = Date.now();
 
-    // Emit batch start event
-    void emitter.emit({
-      type: 'tool.batch.start',
-      timestamp: Date.now(),
-      sessionId: ctx.sessionId,
-      batchId,
-      totalCalls: batch.calls.length,
-    });
-
-    // Execute all tools in parallel — each tool emits its own tool.call via executeSingleTool
-    const settled = await Promise.all(batch.calls.map(tc => executeSingleTool(tc, signal)));
-
-    // Count results
-    const successCount = settled.filter(
-      m => !m.content?.toString().includes('Permission denied')
-    ).length;
-    const errorCount = settled.length - successCount;
-
-    // Emit batch complete event
-    void emitter.emit({
-      type: 'tool.batch.complete',
-      timestamp: Date.now(),
-      sessionId: ctx.sessionId,
-      batchId,
-      totalCalls: batch.calls.length,
-      successCount,
-      errorCount,
-      durationMs: Date.now() - startedAt,
-    });
+    // Execute all tools in parallel — each tool emits its own tool.call/tool.result with batchId
+    const settled = await Promise.all(
+      batch.calls.map(tc => executeSingleTool(tc, signal, batchId))
+    );
 
     return settled;
   }
@@ -814,6 +746,8 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       recoveryState,
       errorRecoveryDeps,
       runLifecycleHook,
+      // onChunk is intentionally undefined here; streaming consumers
+      // subscribe via onChunk through the AgentLoop API surface
     };
 
     // ── Emit agent.start (awaited — plugins load memory/skills here) ──
@@ -896,6 +830,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
               sessionId: ctx.sessionId,
               output: state.output,
               steps: state.step,
+              stepCount: state.step,
             });
             void emitter.emit({
               type: 'done',
@@ -927,15 +862,6 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             },
             {}
           );
-
-          // ── Emit agent.step for backward compat ──
-          void emitter.emit({
-            type: 'agent.step',
-            timestamp: Date.now(),
-            sessionId: ctx.sessionId,
-            step: state.step,
-            maxSteps,
-          } as AgentEvent);
 
           // ── 1. Request Hooks: transform messages ──
           let msgs = [...state.messages];
@@ -1152,18 +1078,18 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             details: { finishReason: response.finishReason, usage: response.usage },
           });
 
-          // ── Emit checkpoint after LLM response ──
+          // ── Emit state.change with checkpoint after LLM response ──
           const cpEnabled = config.checkpoint?.enabled !== false;
           if (cpEnabled) {
             const cpId = generateId('cp');
             void emitter.emit({
-              type: 'checkpoint',
+              type: 'state.change',
               timestamp: Date.now(),
               sessionId: ctx.sessionId,
-              checkpointId: cpId,
-              position: 'after_llm',
-              state: state,
-            } as AgentEvent);
+              from: stateMachine.state,
+              to: stateMachine.state,
+              checkpoint: { id: cpId, position: 'after_llm' },
+            });
             // Fire-and-forget: never block the loop on checkpoint save
             ctx.checkpoint
               ?.save({
@@ -1221,6 +1147,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
               sessionId: ctx.sessionId,
               output: state.output,
               steps: state.step,
+              stepCount: state.step,
               tokens: { input: state.tokens.prompt, output: state.tokens.completion },
             });
             void emitter.emit({
@@ -1309,18 +1236,18 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             {}
           );
 
-          // ── Emit checkpoint after tool execution ──
+          // ── Emit state.change with checkpoint after tool execution ──
           const cpEnabled2 = config.checkpoint?.enabled !== false;
           if (cpEnabled2) {
             const cpId2 = generateId('cp');
             void emitter.emit({
-              type: 'checkpoint',
+              type: 'state.change',
               timestamp: Date.now(),
               sessionId: ctx.sessionId,
-              checkpointId: cpId2,
-              position: 'after_tool',
-              state: state,
-            } as AgentEvent);
+              from: stateMachine.state,
+              to: stateMachine.state,
+              checkpoint: { id: cpId2, position: 'after_tool' },
+            });
             ctx.checkpoint
               ?.save({
                 id: cpId2,

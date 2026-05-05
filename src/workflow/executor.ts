@@ -11,14 +11,9 @@
  *
  */
 
-import {
-  type AgentEvent,
-  type AgentContext,
-  type SerializedError,
-  serializeError,
-} from '../core/index.js';
+import { type AgentContext, type SerializedError, serializeError } from '../core/index.js';
 import { createAgentLoop } from '../loop/agent-loop.js';
-import { type WorkflowStep, type WorkflowStepResult } from './types.js';
+import { type WorkflowStep, type WorkflowStepResult, type WorkflowOrAgentEvent } from './types.js';
 
 // ============================================================
 // Step Execution Result
@@ -93,7 +88,7 @@ export class WorkflowExecutor {
     step: WorkflowStep,
     input: unknown,
     workflowId: string,
-    listener: (event: AgentEvent) => void
+    listener: (event: WorkflowOrAgentEvent) => void
   ): Promise<StepExecutionResult> {
     const sessionId = this.agentContext.sessionId;
     const startTime = Date.now();
@@ -215,7 +210,7 @@ export class WorkflowExecutor {
       };
     }
 
-    const events: AgentEvent[] = [];
+    const events: WorkflowOrAgentEvent[] = [];
     const result = await this.executeStep(step, input, workflowId, event => {
       events.push(event);
     });
@@ -246,7 +241,10 @@ export class WorkflowExecutor {
   /**
    * Map nested agent events with workflowId for correlation
    */
-  private mapEventWithWorkflowId(event: AgentEvent, _workflowId: string): AgentEvent {
+  private mapEventWithWorkflowId(
+    event: WorkflowOrAgentEvent,
+    _workflowId: string
+  ): WorkflowOrAgentEvent {
     // For workflow events, pass through as-is
     if (event.type.startsWith('workflow.')) {
       return event;

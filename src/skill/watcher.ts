@@ -322,8 +322,8 @@ export class SkillWatcher {
       for (const listener of this.reloadListeners) {
         try {
           listener(event);
-        } catch {
-          /* isolate */
+        } catch (err) {
+          console.warn('[SkillWatcher] Reload listener error:', err);
         }
       }
     }, this.config.debounceMs);

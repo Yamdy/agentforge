@@ -120,6 +120,9 @@ export const AgentStateSchema = z.object({
   // Recovery state (error tracking, escalation counts)
   recovery: RecoveryStateSchema,
 
+  // Auto-repair state (tracks repair attempts in current run)
+  autoRepairAttempts: z.number().default(0),
+
   // Context management (compression, memory limits)
   contextManagement: ContextManagementSchema.optional(),
 
@@ -164,6 +167,7 @@ export function createInitialState(options: CreateInitialStateOptions): AgentSta
       fallbackSwitchCount: 0,
       compactionRetryCount: 0,
     },
+    autoRepairAttempts: 0,
   };
 }
 

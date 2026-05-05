@@ -49,6 +49,9 @@ export {
   type WorkflowStepResult,
   type PipelineMode,
   type PipelineConfig,
+  // Workflow Event Types
+  type WorkflowEvent,
+  type WorkflowOrAgentEvent,
   // Helpers
   isWorkflowEvent,
   getWorkflowIdFromEvent,

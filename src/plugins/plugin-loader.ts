@@ -19,7 +19,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { Plugin, PluginContext } from './plugin.js';
 import { HookRegistry } from '../core/hooks.js';
-import type { AgentEventEmitter } from '../core/events.js';
+import { type AgentEventEmitter, serializeError } from '../core/events.js';
 
 // ============================================================
 // Types
@@ -346,8 +346,11 @@ export class PluginLoader {
         if (plugin.eventSubscriptions) {
           for (const sub of plugin.eventSubscriptions) {
             emitter.on(sub.event, event =>
-              Promise.resolve(sub.handler(event)).catch(() => {
-                /* isolate */
+              Promise.resolve(sub.handler(event)).catch((err: unknown) => {
+                ctx.logger?.warn('Plugin event subscription error', {
+                  eventType: sub.event,
+                  error: serializeError(err),
+                });
               })
             );
           }
@@ -357,8 +360,11 @@ export class PluginLoader {
         if (plugin.init) {
           try {
             await plugin.init(ctx);
-          } catch {
-            /* isolate */
+          } catch (err) {
+            ctx.logger?.warn('Plugin init error', {
+              pluginName: plugin.name,
+              error: serializeError(err),
+            });
           }
         }
 

@@ -125,8 +125,8 @@ export class FileTracker {
     for (const handler of this.handlers) {
       try {
         handler(changes, sessionId);
-      } catch {
-        /* isolate */
+      } catch (err) {
+        console.warn('[FileTracker] File change handler error:', err);
       }
     }
   }

@@ -73,7 +73,7 @@ export function AgentLoop(ctx: AgentContext, options: AgentLoopOptions): AgentLo
       try {
         const result = await loop.run(input);
         currentState = 'completed';
-        return result;
+        return result.output;
       } catch {
         currentState = 'error';
         throw new Error('Agent execution failed');

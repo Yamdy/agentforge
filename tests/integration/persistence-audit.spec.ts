@@ -306,8 +306,10 @@ describe('Integration: Persistence + Audit Logging', () => {
       // Should have at least one checkpoint saved
       expect(checkpointStorage.savedCheckpoints.length).toBeGreaterThan(0);
 
-      // Verify checkpoint event is emitted
-      const checkpointEvents = events.filter(e => e.type === 'checkpoint');
+      // Verify checkpoint event is emitted as state.change with checkpoint metadata
+      const checkpointEvents = events.filter(
+        e => e.type === 'state.change' && 'checkpoint' in e
+      );
       expect(checkpointEvents.length).toBeGreaterThan(0);
     });
 
@@ -587,8 +589,10 @@ describe('Integration: Persistence + Audit Logging', () => {
       const agent = createAgentLoop(ctx, config);
       const events = await runAndCollect(agent, 'Weather?');
 
-      // Checkpoint events emitted
-      const checkpointEvents = events.filter(e => e.type === 'checkpoint');
+      // Checkpoint events emitted as state.change with checkpoint metadata
+      const checkpointEvents = events.filter(
+        e => e.type === 'state.change' && 'checkpoint' in e
+      );
       expect(checkpointEvents.length).toBeGreaterThan(0);
 
       // Checkpoints persisted to storage

@@ -374,9 +374,9 @@ describe('SubagentRegistry', () => {
     it('should emit subagent.error for unregistered subagent', async () => {
       const events = await runAndCollect(registry, 'non-existent-agent', 'Do something');
 
-      const errorEvent = events.find(e => e.type === 'subagent.error');
+      const errorEvent = events.find(e => e.type === 'agent.error' && (e as { source?: string }).source === 'subagent');
       expect(errorEvent).toBeDefined();
-      if (errorEvent?.type === 'subagent.error') {
+      if (errorEvent?.type === 'agent.error' && (errorEvent as { source?: string }).source === 'subagent') {
         expect(errorEvent.error.name).toBe('SubagentNotFoundError');
         expect(errorEvent.error.message).toContain('non-existent-agent');
       }
@@ -440,9 +440,9 @@ describe('SubagentRegistry', () => {
 
       const events = await runAndCollect(registry, 'failing-agent', 'Fail task');
 
-      const errorEvent = events.find(e => e.type === 'subagent.error');
+      const errorEvent = events.find(e => e.type === 'agent.error' && (e as { source?: string }).source === 'subagent');
       expect(errorEvent).toBeDefined();
-      if (errorEvent?.type === 'subagent.error') {
+      if (errorEvent?.type === 'agent.error' && (errorEvent as { source?: string }).source === 'subagent') {
         expect(errorEvent.error.message).toBe('Subagent execution failed');
       }
     });
@@ -452,9 +452,10 @@ describe('SubagentRegistry', () => {
         output: '',
         events: [
           {
-            type: 'subagent.error',
+            type: 'agent.error',
             timestamp: Date.now(),
             sessionId: 'sub-session',
+            source: 'subagent',
             error: {
               name: 'SubagentError',
               message: 'Internal error',
@@ -469,7 +470,7 @@ describe('SubagentRegistry', () => {
 
       const events = await runAndCollect(registry, 'error-agent', 'Error task');
 
-      const errorEvent = events.find(e => e.type === 'subagent.error');
+      const errorEvent = events.find(e => e.type === 'agent.error' && (e as { source?: string }).source === 'subagent');
       expect(errorEvent).toBeDefined();
     });
 
@@ -562,7 +563,7 @@ describe('SubagentRegistry', () => {
 
       // Should have start and error, but NOT complete
       expect(events.find(e => e.type === 'subagent.start')).toBeDefined();
-      expect(events.find(e => e.type === 'subagent.error')).toBeDefined();
+      expect(events.find(e => e.type === 'agent.error' && (e as { source?: string }).source === 'subagent')).toBeDefined();
       expect(events.find(e => e.type === 'subagent.complete')).toBeUndefined();
     });
 

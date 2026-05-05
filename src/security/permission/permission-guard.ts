@@ -84,7 +84,7 @@ export function createPermissionPromptEvent(
   context?: Record<string, unknown>
 ): AgentEvent {
   return {
-    type: 'permission.prompt',
+    type: 'permission',
     timestamp: Date.now(),
     sessionId,
     promptId,
@@ -99,10 +99,11 @@ export function createPermissionDecisionEvent(
   sessionId: string
 ): AgentEvent {
   return {
-    type: 'permission.decision',
+    type: 'permission',
     timestamp: Date.now(),
     sessionId,
     promptId,
+    permission: '',
     decision,
   } as AgentEvent;
 }

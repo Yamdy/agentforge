@@ -135,7 +135,7 @@ describe('createPermissionDeniedEvents', () => {
 describe('createPermissionPromptEvent', () => {
   it('should produce a valid permission.prompt event', () => {
     const event = createPermissionPromptEvent('pid-1', 'tool:write', 'ses-1', { key: 'val' });
-    expect(event.type).toBe('permission.prompt');
+    expect(event.type).toBe('permission');
     expect((event as { promptId: string }).promptId).toBe('pid-1');
     expect((event as { permission: string }).permission).toBe('tool:write');
     expect(event.sessionId).toBe('ses-1');
@@ -164,7 +164,7 @@ describe('createPermissionPromptEvent', () => {
 describe('createPermissionDecisionEvent', () => {
   it('should produce a valid permission.decision event with allow', () => {
     const event = createPermissionDecisionEvent('pid-1', 'allow', 'ses-1');
-    expect(event.type).toBe('permission.decision');
+    expect(event.type).toBe('permission');
     expect((event as { promptId: string }).promptId).toBe('pid-1');
     expect((event as { decision: string }).decision).toBe('allow');
     expect(event.sessionId).toBe('ses-1');
@@ -173,13 +173,13 @@ describe('createPermissionDecisionEvent', () => {
 
   it('should produce a valid permission.decision event with deny', () => {
     const event = createPermissionDecisionEvent('pid-2', 'deny', 'ses-2');
-    expect(event.type).toBe('permission.decision');
+    expect(event.type).toBe('permission');
     expect((event as { decision: string }).decision).toBe('deny');
   });
 
   it('should produce a valid permission.decision event with allow_always', () => {
     const event = createPermissionDecisionEvent('pid-3', 'allow_always', 'ses-3');
-    expect(event.type).toBe('permission.decision');
+    expect(event.type).toBe('permission');
     expect((event as { decision: string }).decision).toBe('allow_always');
   });
 });
@@ -226,7 +226,7 @@ describe('handlePermissionAsk', () => {
     const results = await resultPromise;
 
     expect(results).toHaveLength(2);
-    expect(results[0]!.event.type).toBe('permission.decision');
+    expect(results[0]!.event.type).toBe('permission');
     expect((results[0]!.event as { decision: string }).decision).toBe('allow');
     expect(results[1]!.event.type).toBe('tool.result');
     expect(onAllow).toHaveBeenCalledOnce();
@@ -263,7 +263,7 @@ describe('handlePermissionAsk', () => {
 
     // Expect [decision, agent.error, done] = 3 entries
     expect(results).toHaveLength(3);
-    expect(results[0]!.event.type).toBe('permission.decision');
+    expect(results[0]!.event.type).toBe('permission');
     expect((results[0]!.event as { decision: string }).decision).toBe('deny');
     expect(results[1]!.event.type).toBe('agent.error');
     expect(results[2]!.event.type).toBe('done');

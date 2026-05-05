@@ -113,7 +113,11 @@ export class DefaultApprovalChannel implements ApprovalChannel {
 
     // Emit prompt to UI subscribers
     for (const listener of this.askListeners) {
-      try { listener(prompt); } catch { /* isolate */ }
+      try {
+        listener(prompt);
+      } catch (err) {
+        console.warn('[ApprovalChannel] Ask listener error:', err);
+      }
     }
 
     // Return unsubscribe
@@ -124,7 +128,9 @@ export class DefaultApprovalChannel implements ApprovalChannel {
 
   onAsk(listener: (prompt: ApprovalPrompt) => void): () => void {
     this.askListeners.add(listener);
-    return () => { this.askListeners.delete(listener); };
+    return () => {
+      this.askListeners.delete(listener);
+    };
   }
 
   answer(promptId: string, response: string): void {

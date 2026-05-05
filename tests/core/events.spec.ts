@@ -25,11 +25,7 @@ import {
   isToolEvent,
   isAgentLifecycleEvent,
   isTerminalEvent,
-  isSubagentEvent,
-  isMCPEvent,
-  isWorkflowEvent,
   isCompactionEvent,
-  isPermissionEvent,
   serializeError,
   generateId,
 } from '../../src/core/events.js';
@@ -39,38 +35,42 @@ import {
 // ============================================================
 
 describe('AgentEventTypeSchema', () => {
-  it('should have all event types (slimmed per P1 cleanup)', () => {
+  it('should have exactly 14 event types (reduced from 31)', () => {
     const types = AgentEventTypeSchema.options;
-    expect(types.length).toBeGreaterThan(22);
-    expect(types.length).toBeLessThanOrEqual(32);
+    expect(types.length).toBe(14);
   });
 
-  it('should validate core agent loop events', () => {
-    const coreEvents = [
+  it('should validate all 14 event types', () => {
+    const allEvents = [
       'agent.start',
-      'agent.step',
       'agent.complete',
       'agent.error',
       'llm.request',
       'llm.response',
       'tool.call',
       'tool.result',
-      'tool.batch.start',
-      'tool.batch.complete',
       'state.change',
-      'checkpoint',
       'done',
+      'subagent.start',
+      'subagent.complete',
+      'compaction.start',
+      'compaction.complete',
+      'permission',
     ];
 
-    for (const event of coreEvents) {
+    for (const event of allEvents) {
       expect(AgentEventTypeSchema.safeParse(event).success).toBe(true);
     }
   });
 
-  it('should validate subsystem lifecycle events', () => {
-    const subsystemEvents = [
-      'subagent.start',
-      'subagent.complete',
+  it('should reject deleted event types', () => {
+    const deletedEvents = [
+      'agent.step',
+      'llm.chunk',
+      'file.change',
+      'tool.batch.start',
+      'tool.batch.complete',
+      'checkpoint',
       'subagent.error',
       'mcp.connecting',
       'mcp.connected',
@@ -81,23 +81,12 @@ describe('AgentEventTypeSchema', () => {
       'workflow.step.end',
       'workflow.complete',
       'workflow.error',
-    ];
-
-    for (const event of subsystemEvents) {
-      expect(AgentEventTypeSchema.safeParse(event).success).toBe(true);
-    }
-  });
-
-  it('should validate cross-cutting events', () => {
-    const crossCuttingEvents = [
-      'compaction.start',
-      'compaction.complete',
       'permission.prompt',
       'permission.decision',
     ];
 
-    for (const event of crossCuttingEvents) {
-      expect(AgentEventTypeSchema.safeParse(event).success).toBe(true);
+    for (const event of deletedEvents) {
+      expect(AgentEventTypeSchema.safeParse(event).success).toBe(false);
     }
   });
 
@@ -242,19 +231,6 @@ describe('AgentEventSchema', () => {
     });
   });
 
-  describe('agent.step', () => {
-    it('should validate agent.step event', () => {
-      const event = {
-        type: 'agent.step' as const,
-        timestamp: Date.now(),
-        sessionId: 'session-123',
-        step: 1,
-        maxSteps: 10,
-      };
-      expect(AgentEventSchema.safeParse(event).success).toBe(true);
-    });
-  });
-
   describe('agent.complete', () => {
     it('should validate agent.complete event', () => {
       const event = {
@@ -267,13 +243,14 @@ describe('AgentEventSchema', () => {
       expect(AgentEventSchema.safeParse(event).success).toBe(true);
     });
 
-    it('should validate agent.complete with optional tokens', () => {
+    it('should validate agent.complete with optional tokens and stepCount', () => {
       const event = {
         type: 'agent.complete' as const,
         timestamp: Date.now(),
         sessionId: 'session-123',
         output: 'Done',
         steps: 3,
+        stepCount: 3,
         tokens: { input: 100, output: 50 },
       };
       expect(AgentEventSchema.safeParse(event).success).toBe(true);
@@ -291,13 +268,14 @@ describe('AgentEventSchema', () => {
       expect(AgentEventSchema.safeParse(event).success).toBe(true);
     });
 
-    it('should validate agent.error with optional step', () => {
+    it('should validate agent.error with optional step and source', () => {
       const event = {
         type: 'agent.error' as const,
         timestamp: Date.now(),
         sessionId: 'session-123',
         error: { name: 'Error', message: 'Failed' },
         step: 5,
+        source: 'subagent' as const,
       };
       expect(AgentEventSchema.safeParse(event).success).toBe(true);
     });
@@ -359,28 +337,30 @@ describe('AgentEventSchema', () => {
     });
   });
 
-  describe('tool.batch events', () => {
-    it('should validate tool.batch.start event', () => {
+  describe('tool events with batchId', () => {
+    it('should validate tool.call with optional batchId', () => {
       const event = {
-        type: 'tool.batch.start' as const,
+        type: 'tool.call' as const,
         timestamp: Date.now(),
         sessionId: 'session-123',
+        toolCallId: 'tc-1',
+        toolName: 'weather',
+        args: {},
         batchId: 'batch-1',
-        totalCalls: 3,
       };
       expect(AgentEventSchema.safeParse(event).success).toBe(true);
     });
 
-    it('should validate tool.batch.complete event', () => {
+    it('should validate tool.result with optional batchId', () => {
       const event = {
-        type: 'tool.batch.complete' as const,
+        type: 'tool.result' as const,
         timestamp: Date.now(),
         sessionId: 'session-123',
+        toolCallId: 'tc-1',
+        toolName: 'weather',
+        result: 'ok',
+        isError: false,
         batchId: 'batch-1',
-        totalCalls: 3,
-        successCount: 2,
-        errorCount: 1,
-        durationMs: 150,
       };
       expect(AgentEventSchema.safeParse(event).success).toBe(true);
     });
@@ -398,14 +378,14 @@ describe('AgentEventSchema', () => {
       expect(AgentEventSchema.safeParse(event).success).toBe(true);
     });
 
-    it('should validate checkpoint event', () => {
+    it('should validate state.change with checkpoint info', () => {
       const event = {
-        type: 'checkpoint' as const,
+        type: 'state.change' as const,
         timestamp: Date.now(),
         sessionId: 'session-123',
-        checkpointId: 'cp-1',
-        position: 'after_llm' as const,
-        state: { step: 1 },
+        from: 'running',
+        to: 'running',
+        checkpoint: { id: 'cp-1', position: 'after_llm' as const },
       };
       expect(AgentEventSchema.safeParse(event).success).toBe(true);
     });
@@ -435,74 +415,31 @@ describe('AgentEventSchema', () => {
       expect(AgentEventSchema.safeParse(event).success).toBe(true);
     });
 
-    it('should validate subagent.error event', () => {
+    it('should reject deleted subagent.error event', () => {
       const event = {
         type: 'subagent.error' as const,
         timestamp: Date.now(),
         sessionId: 'sub-session-1',
         error: { name: 'TimeoutError', message: 'Subagent timed out' },
       };
-      expect(AgentEventSchema.safeParse(event).success).toBe(true);
+      expect(AgentEventSchema.safeParse(event).success).toBe(false);
     });
   });
 
-  describe('mcp events', () => {
-    it('should validate mcp.connecting event', () => {
+  describe('mcp events (removed from AgentEvent)', () => {
+    it('should reject mcp.connecting event (MCP uses own event system)', () => {
       const event = {
         type: 'mcp.connecting' as const,
         timestamp: Date.now(),
         sessionId: 'session-123',
         serverName: 'filesystem',
       };
-      expect(AgentEventSchema.safeParse(event).success).toBe(true);
-    });
-
-    it('should validate mcp.connected event', () => {
-      const event = {
-        type: 'mcp.connected' as const,
-        timestamp: Date.now(),
-        sessionId: 'session-123',
-        serverName: 'filesystem',
-        tools: ['read_file', 'write_file'],
-      };
-      expect(AgentEventSchema.safeParse(event).success).toBe(true);
-    });
-
-    it('should validate mcp.connected event without tools', () => {
-      const event = {
-        type: 'mcp.connected' as const,
-        timestamp: Date.now(),
-        sessionId: 'session-123',
-        serverName: 'filesystem',
-      };
-      expect(AgentEventSchema.safeParse(event).success).toBe(true);
-    });
-
-    it('should validate mcp.disconnected event', () => {
-      const event = {
-        type: 'mcp.disconnected' as const,
-        timestamp: Date.now(),
-        sessionId: 'session-123',
-        serverName: 'filesystem',
-        reason: 'Connection lost',
-      };
-      expect(AgentEventSchema.safeParse(event).success).toBe(true);
-    });
-
-    it('should validate mcp.error event', () => {
-      const event = {
-        type: 'mcp.error' as const,
-        timestamp: Date.now(),
-        sessionId: 'session-123',
-        serverName: 'filesystem',
-        error: { name: 'ConnectionError', message: 'Failed to connect' },
-      };
-      expect(AgentEventSchema.safeParse(event).success).toBe(true);
+      expect(AgentEventSchema.safeParse(event).success).toBe(false);
     });
   });
 
-  describe('workflow events', () => {
-    it('should validate workflow.start event', () => {
+  describe('workflow events (removed from AgentEvent)', () => {
+    it('should reject workflow.start event (workflow uses own event system)', () => {
       const event = {
         type: 'workflow.start' as const,
         timestamp: Date.now(),
@@ -510,65 +447,7 @@ describe('AgentEventSchema', () => {
         workflowId: 'wf-1',
         workflowName: 'Data Processing',
       };
-      expect(AgentEventSchema.safeParse(event).success).toBe(true);
-    });
-
-    it('should validate workflow.step.start event', () => {
-      const event = {
-        type: 'workflow.step.start' as const,
-        timestamp: Date.now(),
-        sessionId: 'session-123',
-        workflowId: 'wf-1',
-        stepId: 'step-1',
-        stepName: 'Extract Data',
-      };
-      expect(AgentEventSchema.safeParse(event).success).toBe(true);
-    });
-
-    it('should validate workflow.step.end event', () => {
-      const event = {
-        type: 'workflow.step.end' as const,
-        timestamp: Date.now(),
-        sessionId: 'session-123',
-        workflowId: 'wf-1',
-        stepId: 'step-1',
-        result: 'success' as const,
-      };
-      expect(AgentEventSchema.safeParse(event).success).toBe(true);
-    });
-
-    it('should validate workflow.complete event', () => {
-      const event = {
-        type: 'workflow.complete' as const,
-        timestamp: Date.now(),
-        sessionId: 'session-123',
-        workflowId: 'wf-1',
-        result: { status: 'success', items: 10 },
-      };
-      expect(AgentEventSchema.safeParse(event).success).toBe(true);
-    });
-
-    it('should validate workflow.error event', () => {
-      const event = {
-        type: 'workflow.error' as const,
-        timestamp: Date.now(),
-        sessionId: 'session-123',
-        workflowId: 'wf-1',
-        error: { name: 'WorkflowError', message: 'Step failed' },
-      };
-      expect(AgentEventSchema.safeParse(event).success).toBe(true);
-    });
-
-    it('should validate workflow.error event with stepId', () => {
-      const event = {
-        type: 'workflow.error' as const,
-        timestamp: Date.now(),
-        sessionId: 'session-123',
-        workflowId: 'wf-1',
-        error: { name: 'WorkflowError', message: 'Step failed' },
-        stepId: 'step-3',
-      };
-      expect(AgentEventSchema.safeParse(event).success).toBe(true);
+      expect(AgentEventSchema.safeParse(event).success).toBe(false);
     });
   });
 
@@ -609,9 +488,9 @@ describe('AgentEventSchema', () => {
   });
 
   describe('permission events', () => {
-    it('should validate permission.prompt event', () => {
+    it('should validate permission event (merged prompt + decision)', () => {
       const event = {
-        type: 'permission.prompt' as const,
+        type: 'permission' as const,
         timestamp: Date.now(),
         sessionId: 'session-123',
         promptId: 'perm-1',
@@ -621,12 +500,13 @@ describe('AgentEventSchema', () => {
       expect(AgentEventSchema.safeParse(event).success).toBe(true);
     });
 
-    it('should validate permission.decision event', () => {
+    it('should validate permission event with decision', () => {
       const event = {
-        type: 'permission.decision' as const,
+        type: 'permission' as const,
         timestamp: Date.now(),
         sessionId: 'session-123',
         promptId: 'perm-1',
+        permission: 'file_write',
         decision: 'allow' as const,
       };
       expect(AgentEventSchema.safeParse(event).success).toBe(true);
@@ -734,77 +614,6 @@ describe('Type Guards', () => {
     });
   });
 
-  describe('isSubagentEvent', () => {
-    it('should return true for subagent events', () => {
-      const event: AgentEvent = {
-        ...baseEvent,
-        type: 'subagent.start',
-        parentSessionId: 'parent-1',
-        subagentName: 'researcher',
-        input: 'Search',
-      };
-      expect(isSubagentEvent(event)).toBe(true);
-    });
-
-    it('should return false for non-subagent events', () => {
-      const event: AgentEvent = { ...baseEvent, type: 'done', reason: 'stop' };
-      expect(isSubagentEvent(event)).toBe(false);
-    });
-  });
-
-  describe('isMCPEvent', () => {
-    it('should return true for MCP events', () => {
-      const event: AgentEvent = {
-        ...baseEvent,
-        type: 'mcp.connected',
-        serverName: 'filesystem',
-      };
-      expect(isMCPEvent(event)).toBe(true);
-    });
-
-    it('should return true for mcp.error events', () => {
-      const event: AgentEvent = {
-        ...baseEvent,
-        type: 'mcp.error',
-        serverName: 'filesystem',
-        error: { name: 'Error', message: 'test' },
-      };
-      expect(isMCPEvent(event)).toBe(true);
-    });
-
-    it('should return false for non-MCP events', () => {
-      const event: AgentEvent = { ...baseEvent, type: 'done', reason: 'stop' };
-      expect(isMCPEvent(event)).toBe(false);
-    });
-  });
-
-  describe('isWorkflowEvent', () => {
-    it('should return true for workflow events', () => {
-      const event: AgentEvent = {
-        ...baseEvent,
-        type: 'workflow.start',
-        workflowId: 'wf-1',
-        workflowName: 'Test',
-      };
-      expect(isWorkflowEvent(event)).toBe(true);
-    });
-
-    it('should return true for workflow.error events', () => {
-      const event: AgentEvent = {
-        ...baseEvent,
-        type: 'workflow.error',
-        workflowId: 'wf-1',
-        error: { name: 'Error', message: 'test' },
-      };
-      expect(isWorkflowEvent(event)).toBe(true);
-    });
-
-    it('should return false for non-workflow events', () => {
-      const event: AgentEvent = { ...baseEvent, type: 'done', reason: 'stop' };
-      expect(isWorkflowEvent(event)).toBe(false);
-    });
-  });
-
   describe('isCompactionEvent', () => {
     it('should return true for compaction events', () => {
       const event: AgentEvent = {
@@ -819,23 +628,6 @@ describe('Type Guards', () => {
     it('should return false for non-compaction events', () => {
       const event: AgentEvent = { ...baseEvent, type: 'done', reason: 'stop' };
       expect(isCompactionEvent(event)).toBe(false);
-    });
-  });
-
-  describe('isPermissionEvent', () => {
-    it('should return true for permission events', () => {
-      const event: AgentEvent = {
-        ...baseEvent,
-        type: 'permission.prompt',
-        promptId: 'perm-1',
-        permission: 'file_write',
-      };
-      expect(isPermissionEvent(event)).toBe(true);
-    });
-
-    it('should return false for non-permission events', () => {
-      const event: AgentEvent = { ...baseEvent, type: 'done', reason: 'stop' };
-      expect(isPermissionEvent(event)).toBe(false);
     });
   });
 });

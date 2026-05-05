@@ -390,7 +390,7 @@ export async function loadAgentFromConfig(config: L1AgentConfig): Promise<Agent>
  */
 export async function runPrompt(filePath: string, prompt: string): Promise<string> {
   const agent = await loadAgent(filePath);
-  return agent.run(prompt);
+  return (await agent.run(prompt)).output;
 }
 
 /**
@@ -402,7 +402,7 @@ export async function runPrompt(filePath: string, prompt: string): Promise<strin
  */
 export async function runPromptWithConfig(config: L1AgentConfig, prompt: string): Promise<string> {
   const agent = await loadAgentFromConfig(config);
-  return agent.run(prompt);
+  return (await agent.run(prompt)).output;
 }
 
 // ============================================================

@@ -9,5 +9,6 @@
 export {
   type AgentLoopConfig,
   type AgentLoop,
+  type RunResult,
   createAgentLoop,
 } from './agent-loop.js';

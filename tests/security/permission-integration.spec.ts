@@ -99,7 +99,7 @@ describe('ApprovalChannel → PermissionController → handlePermissionAsk pipel
 
     // First: permission.decision with 'allow'
     const [decisionEntry, toolEntry] = results as [typeof results[0], typeof results[1]];
-    expect(decisionEntry!.event.type).toBe('permission.decision');
+    expect(decisionEntry!.event.type).toBe('permission');
     expect((decisionEntry!.event as { decision: string }).decision).toBe('allow');
 
     // Second: tool.result from onAllow
@@ -147,7 +147,7 @@ describe('ApprovalChannel → PermissionController → handlePermissionAsk pipel
       typeof results[2],
     ];
 
-    expect(decisionEntry!.event.type).toBe('permission.decision');
+    expect(decisionEntry!.event.type).toBe('permission');
     expect((decisionEntry!.event as { decision: string }).decision).toBe('deny');
 
     expect(errorEntry!.event.type).toBe('agent.error');
@@ -212,7 +212,7 @@ describe('ApprovalChannel → PermissionController → handlePermissionAsk pipel
     expect(promptCount).toBe(1);
 
     const decisionEvent2 = results2[0]!.event;
-    expect(decisionEvent2.type).toBe('permission.decision');
+    expect(decisionEvent2.type).toBe('permission');
     expect((decisionEvent2 as { decision: string }).decision).toBe('allow');
   });
 });

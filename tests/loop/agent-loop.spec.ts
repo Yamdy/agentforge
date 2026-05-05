@@ -918,7 +918,7 @@ describe('Phase 2a: Agent Loop', () => {
   // Scenario 13: Event routing
   // ========================================
   describe('Scenario 13: Event routing', () => {
-    it('should emit agent.step and llm.request on agent start', async () => {
+    it('should emit llm.request on agent start', async () => {
       llm.setResponses([
         { content: 'Hello!', finishReason: 'stop' },
       ]);
@@ -931,20 +931,17 @@ describe('Phase 2a: Agent Loop', () => {
 
       const types = events.map(e => e.type);
 
-      // Should have agent.start, agent.step, llm.request in that order
+      // Should have agent.start, llm.request, llm.response in that order
       expect(types).toContain('agent.start');
-      expect(types).toContain('agent.step');
       expect(types).toContain('llm.request');
       expect(types).toContain('llm.response');
 
-      // Verify order: agent.start -> agent.step -> llm.request -> llm.response
+      // Verify order: agent.start -> llm.request -> llm.response
       const startIdx = types.indexOf('agent.start');
-      const stepIdx = types.indexOf('agent.step');
       const requestIdx = types.indexOf('llm.request');
       const responseIdx = types.indexOf('llm.response');
 
-      expect(startIdx).toBeLessThan(stepIdx);
-      expect(stepIdx).toBeLessThan(requestIdx);
+      expect(startIdx).toBeLessThan(requestIdx);
       expect(requestIdx).toBeLessThan(responseIdx);
 
       // Verify llm.request has correct fields
@@ -1014,10 +1011,10 @@ describe('Phase 2a: Agent Loop', () => {
       const hasRequestBefore = beforeResponse.some(e => e.type === 'llm.request');
       expect(hasRequestBefore).toBe(true);
 
-      // agent.step should be before llm.request
+      // agent.start should be before llm.request
       const requestIdxInBefore = beforeResponse.findIndex(e => e.type === 'llm.request');
-      const hasStepBeforeRequest = beforeResponse.slice(0, requestIdxInBefore).some(e => e.type === 'agent.step');
-      expect(hasStepBeforeRequest).toBe(true);
+      const hasStartBeforeRequest = beforeResponse.slice(0, requestIdxInBefore).some(e => e.type === 'agent.start');
+      expect(hasStartBeforeRequest).toBe(true);
     });
 
     it('should emit llm.request after tool.result for next step', async () => {
@@ -1042,9 +1039,9 @@ describe('Phase 2a: Agent Loop', () => {
       const requestCount = types.filter(t => t === 'llm.request').length;
       expect(requestCount).toBe(2);
 
-      // Should have two agent.step events
-      const stepCount = types.filter(t => t === 'agent.step').length;
-      expect(stepCount).toBe(2);
+      // Should have two llm.request events (one per step)
+      const requestCount2 = types.filter(t => t === 'llm.request').length;
+      expect(requestCount2).toBe(2);
 
       // Verify second llm.request comes after tool.result
       const resultIdx = types.indexOf('tool.result');
@@ -1112,7 +1109,7 @@ describe('Phase 2a: Agent Loop', () => {
       const events = await runAndCollect(agent, 'Hi');
 
       // Should emit a checkpoint event
-      const checkpointEvents = events.filter(e => e.type === 'checkpoint');
+      const checkpointEvents = events.filter(e => e.type === 'state.change' && (e as { checkpoint?: { id: string; position: string } }).checkpoint);
       expect(checkpointEvents.length).toBeGreaterThan(0);
 
       // Verify checkpoint event fields
@@ -1160,7 +1157,7 @@ describe('Phase 2a: Agent Loop', () => {
       const events = await runAndCollect(agent, 'Hi');
 
       // Should NOT emit checkpoint events when disabled
-      const checkpointEvents = events.filter(e => e.type === 'checkpoint');
+      const checkpointEvents = events.filter(e => e.type === 'state.change' && (e as { checkpoint?: { id: string; position: string } }).checkpoint);
       expect(checkpointEvents).toHaveLength(0);
 
       // Should NOT call storage.save
@@ -1182,7 +1179,7 @@ describe('Phase 2a: Agent Loop', () => {
       const events = await runAndCollect(agent, 'Hi');
 
       // Checkpoint events are still emitted for observability (even without storage)
-      const checkpointEvents = events.filter(e => e.type === 'checkpoint');
+      const checkpointEvents = events.filter(e => e.type === 'state.change' && (e as { checkpoint?: { id: string; position: string } }).checkpoint);
       expect(checkpointEvents.length).toBeGreaterThanOrEqual(0);
     });
 
@@ -1218,12 +1215,12 @@ describe('Phase 2a: Agent Loop', () => {
       const events = await runAndCollect(agent, 'Get weather');
 
       // Should emit checkpoint events for each LLM response + tool execution
-      const checkpointEvents = events.filter(e => e.type === 'checkpoint');
+      const checkpointEvents = events.filter(e => e.type === 'state.change' && (e as { checkpoint?: { id: string; position: string } }).checkpoint);
       expect(checkpointEvents.length).toBeGreaterThanOrEqual(1);
 
       // At least one checkpoint should be at after_llm position
       const afterLlm = checkpointEvents.filter(
-        c => c.type === 'checkpoint' && (c as any).position === 'after_llm'
+        c => (c as { checkpoint?: { id: string; position: string } }).checkpoint?.position === 'after_llm'
       );
       expect(afterLlm.length).toBeGreaterThanOrEqual(1);
 
@@ -1265,12 +1262,13 @@ describe('Phase 2a: Agent Loop', () => {
       const agent = createAgentLoop(ctx, config);
       const events = await runAndCollect(agent, 'Calculate');
 
-      const types = events.map(e => e.type);
-
-      // Checkpoint should appear after llm.response but before tool.call
-      const llmResponseIdx = types.indexOf('llm.response');
-      const checkpointIdx = types.indexOf('checkpoint');
-      const toolCallIdx = types.indexOf('tool.call');
+      // Checkpoint (state.change) should appear after llm.response but before tool.call
+      const llmResponseIdx = events.findIndex(e => e.type === 'llm.response');
+      const checkpointEvt = events.find(
+        e => e.type === 'state.change' && (e as { checkpoint?: unknown }).checkpoint != null
+      );
+      const checkpointIdx = events.indexOf(checkpointEvt!);
+      const toolCallIdx = events.findIndex(e => e.type === 'tool.call');
 
       expect(checkpointIdx).toBeGreaterThan(llmResponseIdx);
       expect(toolCallIdx).toBeGreaterThan(checkpointIdx);
@@ -1307,7 +1305,7 @@ describe('Phase 2a: Agent Loop', () => {
       expect(events.find(e => e.type === 'done')).toBeDefined();
 
       // Checkpoint event should still be emitted even if save fails
-      expect(events.some(e => e.type === 'checkpoint')).toBe(true);
+      expect(events.some(e => e.type === 'state.change' && (e as { checkpoint?: { id: string; position: string } }).checkpoint)).toBe(true);
     });
   });
 
@@ -1744,10 +1742,10 @@ describe('Scenario 15: HITL PermissionController integration', () => {
     const events = await runAndCollect(agent, 'Do something risky');
 
     // Should see permission.prompt and permission.decision events
-    const promptEvent = events.find(e => e.type === 'permission.prompt');
+    const promptEvent = events.find(e => e.type === 'permission');
     expect(promptEvent).toBeDefined();
 
-    const decisionEvent = events.find(e => e.type === 'permission.decision');
+    const decisionEvent = events.find(e => e.type === 'permission');
     expect(decisionEvent).toBeDefined();
 
     // Tool should NOT have been executed (denial in tool.result)
@@ -1807,11 +1805,11 @@ describe('Scenario 15: HITL PermissionController integration', () => {
     const agent = createAgentLoop(ctx, createTestConfig());
     const events = await runAndCollect(agent, 'Test');
 
-    const promptEvt = events.find(e => e.type === 'permission.prompt');
+    const promptEvt = events.find(e => e.type === 'permission' && !('decision' in e));
     expect(promptEvt).toBeDefined();
     expect((promptEvt as any).permission).toBe('high_risk_tool');
 
-    const decisionEvt = events.find(e => e.type === 'permission.decision');
+    const decisionEvt = events.find(e => e.type === 'permission' && 'decision' in e);
     expect(decisionEvt).toBeDefined();
     expect((decisionEvt as any).decision).toBe('allow');
   });
@@ -1866,11 +1864,11 @@ describe('Scenario 15b: Critical-risk tool blocked at policy layer', () => {
     const events = await runAndCollect(agent, 'Do something dangerous');
 
     // Verify NO permission.prompt event (controller was never asked)
-    const promptEvent = events.find(e => e.type === 'permission.prompt');
+    const promptEvent = events.find(e => e.type === 'permission');
     expect(promptEvent).toBeUndefined();
 
     // Verify NO permission.decision event
-    const decisionEvent = events.find(e => e.type === 'permission.decision');
+    const decisionEvent = events.find(e => e.type === 'permission');
     expect(decisionEvent).toBeUndefined();
 
     // Verify tool.result exists with isError=true and permission denied message
@@ -2022,19 +2020,20 @@ describe('State Machine Integration', () => {
     const events = await runAndCollect(agent, 'Hi');
 
     const stateChanges = events.filter(e => e.type === 'state.change');
-    expect(stateChanges.length).toBe(2);
+    // At least 2: pending→running, running→completed (checkpoint events also emit state.change)
+    expect(stateChanges.length).toBeGreaterThanOrEqual(2);
 
-    // Verify first is pending→running
-    if (stateChanges[0]?.type === 'state.change') {
-      expect(stateChanges[0].from).toBe('pending');
-      expect(stateChanges[0].to).toBe('running');
-    }
+    // Verify pending→running transition exists
+    const pendingToRunning = stateChanges.find(
+      e => e.type === 'state.change' && e.from === 'pending' && e.to === 'running'
+    );
+    expect(pendingToRunning).toBeDefined();
 
-    // Verify second is running→completed
-    if (stateChanges[1]?.type === 'state.change') {
-      expect(stateChanges[1].from).toBe('running');
-      expect(stateChanges[1].to).toBe('completed');
-    }
+    // Verify running→completed transition exists
+    const runningToCompleted = stateChanges.find(
+      e => e.type === 'state.change' && e.from === 'running' && e.to === 'completed'
+    );
+    expect(runningToCompleted).toBeDefined();
   });
 
   it('f: terminal states are irreversible (completed→paused fails)', async () => {
@@ -2297,6 +2296,6 @@ describe('AsyncGenerator iterate()', () => {
     expect(types).toContain('tool.result');
     expect(types).toContain('llm.response');
     expect(types).toContain('agent.complete');
-    expect(types.filter(t => t === 'agent.step').length).toBe(2);
+    expect(types.filter(t => t === 'agent.start').length).toBe(1);
   });
 });

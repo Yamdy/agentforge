@@ -43,7 +43,8 @@ export interface ToolBatch {
 export async function executeSingleTool(
   deps: ToolExecutorDeps,
   tc: ToolCall,
-  signal: AbortSignal
+  signal: AbortSignal,
+  batchId?: string
 ): Promise<Message> {
   const { ctx, hooks, emitter, getState, runLifecycleHook } = deps;
   const state = getState();
@@ -56,7 +57,27 @@ export async function executeSingleTool(
     toolCallId: tc.id,
     toolName: tc.name,
     args: tc.args,
+    ...(batchId ? { batchId } : {}),
   });
+
+  // Helper to emit tool.result with common fields + optional batchId
+  const emitToolResult = (
+    result: string,
+    isError: boolean,
+    extra?: Record<string, unknown>
+  ): void => {
+    void emitter.emit({
+      type: 'tool.result',
+      timestamp: Date.now(),
+      sessionId: ctx.sessionId,
+      toolCallId: tc.id,
+      toolName: tc.name,
+      result,
+      isError,
+      ...(batchId ? { batchId } : {}),
+      ...(extra ?? {}),
+    });
+  };
 
   // Audit tool call
   ctx.auditLogger?.append({
@@ -85,15 +106,7 @@ export async function executeSingleTool(
       toolCallId: tc.id,
       name: tc.name,
     };
-    void emitter.emit({
-      type: 'tool.result',
-      timestamp: Date.now(),
-      sessionId: ctx.sessionId,
-      toolCallId: tc.id,
-      toolName: tc.name,
-      result: extractText(deniedMsg.content),
-      isError: true,
-    });
+    emitToolResult(extractText(deniedMsg.content), true);
     return deniedMsg;
   }
 
@@ -111,15 +124,7 @@ export async function executeSingleTool(
         toolCallId: tc.id,
         name: tc.name,
       };
-      void emitter.emit({
-        type: 'tool.result',
-        timestamp: Date.now(),
-        sessionId: ctx.sessionId,
-        toolCallId: tc.id,
-        toolName: tc.name,
-        result: extractText(deniedMsg.content),
-        isError: true,
-      });
+      emitToolResult(extractText(deniedMsg.content), true);
       ctx.auditLogger?.append({
         sessionId: ctx.sessionId,
         agentName: ctx.agentName,
@@ -135,7 +140,7 @@ export async function executeSingleTool(
     if (policyDecision === 'ask') {
       const promptId = `perm-${tc.id}`;
       void emitter.emit({
-        type: 'permission.prompt',
+        type: 'permission',
         timestamp: Date.now(),
         sessionId: ctx.sessionId,
         promptId,
@@ -164,10 +169,11 @@ export async function executeSingleTool(
       }
 
       void emitter.emit({
-        type: 'permission.decision',
+        type: 'permission',
         timestamp: Date.now(),
         sessionId: ctx.sessionId,
         promptId,
+        permission: tc.name,
         decision: permDecision,
       });
 
@@ -191,15 +197,7 @@ export async function executeSingleTool(
           toolCallId: tc.id,
           name: tc.name,
         };
-        void emitter.emit({
-          type: 'tool.result',
-          timestamp: Date.now(),
-          sessionId: ctx.sessionId,
-          toolCallId: tc.id,
-          toolName: tc.name,
-          result: extractText(deniedMsg.content),
-          isError: true,
-        });
+        emitToolResult(extractText(deniedMsg.content), true);
         return deniedMsg;
       }
     }
@@ -215,15 +213,7 @@ export async function executeSingleTool(
         toolCallId: tc.id,
         name: tc.name,
       };
-      void emitter.emit({
-        type: 'tool.result',
-        timestamp: Date.now(),
-        sessionId: ctx.sessionId,
-        toolCallId: tc.id,
-        toolName: tc.name,
-        result: `Blocked: ${cmdCheck.reason}`,
-        isError: true,
-      });
+      emitToolResult(`Blocked: ${cmdCheck.reason}`, true);
       ctx.auditLogger?.append({
         sessionId: ctx.sessionId,
         agentName: ctx.agentName,
@@ -248,18 +238,13 @@ export async function executeSingleTool(
       : `Sandbox error: ${sandboxResult.error?.message ?? 'Unknown error'}`;
     const sbTruncated = truncateOutput(sbResultStr);
     sbResultStr = sbTruncated.content;
-    void emitter.emit({
-      type: 'tool.result',
-      timestamp: Date.now(),
-      sessionId: ctx.sessionId,
-      toolCallId: tc.id,
-      toolName: tc.name,
-      result: sbResultStr,
-      isError: !sandboxResult.success,
-      ...(sbTruncated.truncated
-        ? { truncated: true, originalLength: sbTruncated.originalLength }
-        : {}),
-    });
+    emitToolResult(
+      sbResultStr,
+      !sandboxResult.success,
+      sbTruncated.truncated
+        ? { truncated: sbTruncated.truncated, originalLength: sbTruncated.originalLength }
+        : undefined
+    );
     return {
       role: 'tool',
       content: sbResultStr,
@@ -290,18 +275,13 @@ export async function executeSingleTool(
     let resultStr = typeof result === 'string' ? result : JSON.stringify(result);
     const truncation = truncateOutput(resultStr);
     resultStr = truncation.content;
-    void emitter.emit({
-      type: 'tool.result',
-      timestamp: Date.now(),
-      sessionId: ctx.sessionId,
-      toolCallId: tc.id,
-      toolName: tc.name,
-      result: resultStr,
-      isError: false,
-      ...(truncation.truncated
-        ? { truncated: true, originalLength: truncation.originalLength }
-        : {}),
-    });
+    emitToolResult(
+      resultStr,
+      false,
+      truncation.truncated
+        ? { truncated: truncation.truncated, originalLength: truncation.originalLength }
+        : undefined
+    );
 
     ctx.auditLogger?.append({
       sessionId: ctx.sessionId,
@@ -346,18 +326,13 @@ export async function executeSingleTool(
       { retry: false }
     );
 
-    void emitter.emit({
-      type: 'tool.result',
-      timestamp: Date.now(),
-      sessionId: ctx.sessionId,
-      toolCallId: tc.id,
-      toolName: tc.name,
-      result: errStr,
-      isError: true,
-      ...(errTruncation.truncated
-        ? { truncated: true, originalLength: errTruncation.originalLength }
-        : {}),
-    });
+    emitToolResult(
+      errStr,
+      true,
+      errTruncation.truncated
+        ? { truncated: errTruncation.truncated, originalLength: errTruncation.originalLength }
+        : undefined
+    );
 
     ctx.auditLogger?.append({
       sessionId: ctx.sessionId,
@@ -403,35 +378,11 @@ export async function executeToolBatchParallel(
   batch: ToolBatch,
   signal: AbortSignal
 ): Promise<Message[]> {
-  const { ctx, emitter } = deps;
   const batchId = generateId('batch');
-  const startedAt = Date.now();
 
-  void emitter.emit({
-    type: 'tool.batch.start',
-    timestamp: Date.now(),
-    sessionId: ctx.sessionId,
-    batchId,
-    totalCalls: batch.calls.length,
-  });
-
-  const settled = await Promise.all(batch.calls.map(tc => executeSingleTool(deps, tc, signal)));
-
-  const successCount = settled.filter(
-    m => !m.content?.toString().includes('Permission denied')
-  ).length;
-  const errorCount = settled.length - successCount;
-
-  void emitter.emit({
-    type: 'tool.batch.complete',
-    timestamp: Date.now(),
-    sessionId: ctx.sessionId,
-    batchId,
-    totalCalls: batch.calls.length,
-    successCount,
-    errorCount,
-    durationMs: Date.now() - startedAt,
-  });
+  const settled = await Promise.all(
+    batch.calls.map(tc => executeSingleTool(deps, tc, signal, batchId))
+  );
 
   return settled;
 }

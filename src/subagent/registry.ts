@@ -152,9 +152,10 @@ export class SubagentRegistry implements ISubagentRegistry {
 
     if (!entry) {
       listener({
-        type: 'subagent.error',
+        type: 'agent.error',
         timestamp: Date.now(),
         sessionId: '',
+        source: 'subagent',
         error: {
           name: 'SubagentNotFoundError',
           message: `Subagent '${name}' is not registered`,
@@ -239,7 +240,7 @@ export class SubagentRegistry implements ISubagentRegistry {
         if (event.type === 'agent.complete') {
           finalOutput = event.output ?? '';
         }
-        if (event.type === 'subagent.error') {
+        if (event.type === 'agent.error' && event.source === 'subagent') {
           hadError = true;
         }
         listener({ ...event, parentSessionId } as AgentEvent);
@@ -250,9 +251,10 @@ export class SubagentRegistry implements ISubagentRegistry {
       } catch (error) {
         hadError = true;
         listener({
-          type: 'subagent.error',
+          type: 'agent.error',
           timestamp: Date.now(),
           sessionId,
+          source: 'subagent' as const,
           error: serializeError(error),
         } as AgentEvent);
       } finally {
@@ -330,8 +332,8 @@ export class SubagentRegistry implements ISubagentRegistry {
     }
     try {
       activeRun.agent?.cancel?.();
-    } catch {
-      /* isolate */
+    } catch (err) {
+      console.warn('[SubagentRegistry] Cancel error:', err);
     }
     this.activeRuns.delete(sessionId);
     return true;
@@ -469,9 +471,10 @@ export class SubagentRegistry implements ISubagentRegistry {
         handle.setError(error instanceof Error ? error : new Error(String(error)), events);
         // Emit subagent.error
         listener({
-          type: 'subagent.error',
+          type: 'agent.error',
           timestamp: Date.now(),
           sessionId,
+          source: 'subagent' as const,
           error: err,
         } as AgentEvent);
         // Call onError callback

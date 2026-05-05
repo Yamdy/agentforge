@@ -20,14 +20,7 @@ const MAX_CONTENT_LENGTH = 100;
 /**
  * Event types that should include full error details
  */
-const ERROR_EVENT_TYPES = new Set([
-  'agent.error',
-  'llm.error',
-  'tool.error',
-  'subagent.error',
-  'mcp.error',
-  'workflow.error',
-]);
+const ERROR_EVENT_TYPES = new Set(['agent.error', 'llm.error', 'tool.error']);
 
 /**
  * Event types to subscribe to
@@ -39,9 +32,8 @@ const SUBSCRIBED_EVENTS: AgentEventType[] = [
   'llm.request',
   'llm.response',
   'tool.result',
-  'subagent.error',
-  'mcp.error',
-  'workflow.error',
+  'state.change',
+  'permission',
   'done' as AgentEventType,
 ];
 

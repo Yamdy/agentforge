@@ -14,7 +14,7 @@
  * @see docs/design/24-ARCH-REFACTOR.md
  */
 
-import type { AgentEventEmitter } from '../core/events.js';
+import { type AgentEventEmitter, serializeError } from '../core/events.js';
 import { HookRegistry } from '../core/hooks.js';
 import type { LifecyclePhase, CheckpointFn } from '../core/hooks.js';
 import type { Plugin, PluginContext } from './plugin.js';
@@ -66,8 +66,11 @@ export class PluginManager {
       if (plugin.destroy) {
         try {
           plugin.destroy();
-        } catch {
-          /* isolate */
+        } catch (err) {
+          this.pluginContext?.logger?.warn('Plugin destroy error', {
+            pluginName: name,
+            error: serializeError(err),
+          });
         }
       }
       this.plugins.delete(name);
@@ -147,8 +150,11 @@ export class PluginManager {
       if (plugin.destroy) {
         try {
           plugin.destroy();
-        } catch {
-          /* isolate */
+        } catch (err) {
+          this.pluginContext?.logger?.warn('Plugin destroy error on clear', {
+            pluginName: plugin.name,
+            error: serializeError(err),
+          });
         }
       }
     }

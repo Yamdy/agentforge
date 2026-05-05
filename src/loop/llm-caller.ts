@@ -21,6 +21,14 @@ import type { ErrorRecoveryDeps } from './error-recovery-handler.js';
 // Types
 // ============================================================
 
+/** Lightweight streaming chunk callback (replaces Zod-validated llm.chunk event) */
+export type OnChunkCallback = (chunk: {
+  content: string;
+  toolCallId?: string;
+  toolName?: string;
+  argsDelta?: string;
+}) => void;
+
 export interface LLMCallDeps {
   ctx: AgentContext;
   config: AgentLoopConfig;
@@ -30,6 +38,8 @@ export interface LLMCallDeps {
   recoveryState: { escalatedMaxTokens: number | undefined };
   errorRecoveryDeps: ErrorRecoveryDeps;
   runLifecycleHook: (phase: LifecyclePhase, input: unknown, output: unknown) => Promise<void>;
+  /** Lightweight callback for streaming text chunks (replaces Zod-validated llm.chunk event) */
+  onChunk?: OnChunkCallback;
 }
 
 export type LLMCallResult =
@@ -131,8 +141,17 @@ export async function performStreamingLLMCall(
   signal: AbortSignal,
   deps: LLMCallDeps
 ): Promise<LLMCallResult> {
-  const { ctx, config, hooks, emitter, state, recoveryState, errorRecoveryDeps, runLifecycleHook } =
-    deps;
+  const {
+    ctx,
+    config,
+    hooks,
+    emitter,
+    state,
+    recoveryState,
+    errorRecoveryDeps,
+    runLifecycleHook,
+    onChunk,
+  } = deps;
   const st = state!;
 
   // Audit LLM request
@@ -177,15 +196,10 @@ export async function performStreamingLLMCall(
     for await (const chunk of stream) {
       if (signal.aborted) break;
 
-      // Text delta
+      // Text delta — lightweight callback (no Zod validation per chunk)
       if (chunk.text) {
         textContent += chunk.text;
-        void emitter.emit({
-          type: 'llm.chunk',
-          timestamp: Date.now(),
-          sessionId: ctx.sessionId,
-          text: chunk.text,
-        } as AgentEvent);
+        onChunk?.({ content: chunk.text });
       }
 
       // Tool call start — allocate accumulator
