@@ -61,13 +61,6 @@ export function applyPlugins(
       }
     }
 
-    // ── ToolProvider hooks ──
-    if (plugin.toolProviderHooks) {
-      for (const hook of plugin.toolProviderHooks) {
-        unregisters.push(hookRegistry.registerToolProvider(hook));
-      }
-    }
-
     // ── Checkpoint hooks ──
     if (plugin.checkpointHooks) {
       for (const ch of plugin.checkpointHooks) {

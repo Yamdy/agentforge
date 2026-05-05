@@ -2,7 +2,7 @@
  * Unit tests for src/core/hooks.ts
  *
  * Tests HookRegistry with LifecycleHook, RequestHook, ToolHook,
- * ToolProviderHook, and RequestHookPriority constants.
+ * unified ToolHook (filter + beforeExecute), and RequestHookPriority constants.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -12,7 +12,7 @@ import {
   DEFAULT_REQUEST_HOOK_PRIORITY,
   type RequestHook,
   type ToolHook,
-  type ToolProviderHook,
+  type ToolBeforeResult,
   type HookFn,
   type CheckpointHook,
   type CheckpointResult,
@@ -217,7 +217,7 @@ describe('HookRegistry', () => {
       const hook: ToolHook = {
         name: 'test-tool-hook',
         priority: 50,
-        beforeExecute: () => true,
+        beforeExecute: () => ({ action: 'allow' }),
       };
       const unreg = registry.registerTool(hook);
       expect(unreg).toBeInstanceOf(Function);
@@ -242,97 +242,124 @@ describe('HookRegistry', () => {
     });
   });
 
-  // ── ToolProvider Hooks ──
+  // ── ToolHook (unified) ──
 
-  describe('tool provider hooks', () => {
-    it('should register a tool provider hook', () => {
-      const hook: ToolProviderHook = {
-        name: 'test-provider',
-        priority: 40,
-        filter: (tools) => tools,
-      };
-      const unreg = registry.registerToolProvider(hook);
-      expect(unreg).toBeInstanceOf(Function);
-      expect(registry.getToolProviderHooks()).toHaveLength(1);
-    });
-
-    it('should return tool provider hooks sorted by priority', () => {
-      const hook1: ToolProviderHook = { name: 'last', priority: 100, filter: (t) => t };
-      const hook2: ToolProviderHook = { name: 'first', priority: 10, filter: (t) => t };
-      registry.registerToolProvider(hook1);
-      registry.registerToolProvider(hook2);
-      const hooks = registry.getToolProviderHooks();
-      expect(hooks[0]!.name).toBe('first');
-      expect(hooks[1]!.name).toBe('last');
-    });
-
-    it('should unregister tool provider hook', () => {
-      const hook: ToolProviderHook = { name: 'test', priority: 40, filter: (t) => t };
-      const unreg = registry.registerToolProvider(hook);
-      expect(registry.getToolProviderHooks()).toHaveLength(1);
-      unreg();
-      expect(registry.getToolProviderHooks()).toHaveLength(0);
-    });
-
-    it('should filter tools via tool provider hooks', async () => {
+  describe('ToolHook (unified)', () => {
+    it('filter removes tools', async () => {
       const tools: FunctionDefinition[] = [
-        { name: 'read', description: 'Read file', parameters: {} },
-        { name: 'write', description: 'Write file', parameters: {} },
-        { name: 'execute', description: 'Execute command', parameters: {} },
+        { name: 'safe', description: 'Safe tool', parameters: {} },
+        { name: 'dangerous', description: 'Dangerous tool', parameters: {} },
       ];
-      registry.registerToolProvider({
-        name: 'remove-execute',
+      const hook: ToolHook = {
+        name: 'filter',
         priority: 10,
-        filter: (t) => t.filter((td) => td.name !== 'execute'),
-      });
-      const hooks = registry.getToolProviderHooks();
+        filter: (t: FunctionDefinition[]) => t.filter((td) => td.name !== 'dangerous'),
+      };
+      registry.registerTool(hook);
+      const filterHooks = registry.getToolFilterHooks();
+      expect(filterHooks).toHaveLength(1);
       let result = tools;
-      for (const h of hooks) {
-        result = await h.filter(result, createMockState());
+      for (const h of filterHooks) {
+        result = await h.filter!(result, createMockState());
       }
-      expect(result).toHaveLength(2);
-      expect(result.map((t) => t.name)).toEqual(['read', 'write']);
+      expect(result).toHaveLength(1);
+      expect(result[0]!.name).toBe('safe');
     });
 
-    it('should allow tool injection via tool provider hooks', async () => {
+    it('filter injects tools', async () => {
       const tools: FunctionDefinition[] = [{ name: 'read', description: 'Read', parameters: {} }];
-      registry.registerToolProvider({
-        name: 'add-todo',
+      const hook: ToolHook = {
+        name: 'inject',
         priority: 10,
-        filter: (t) => [...t, { name: 'write_todos', description: 'Plan tasks', parameters: {} }],
-      });
-      const hooks = registry.getToolProviderHooks();
+        filter: (t: FunctionDefinition[]) => [...t, { name: 'write_todos', description: 'Plan tasks', parameters: {} }],
+      };
+      registry.registerTool(hook);
+      const filterHooks = registry.getToolFilterHooks();
       let result = tools;
-      for (const h of hooks) {
-        result = await h.filter(result, createMockState());
+      for (const h of filterHooks) {
+        result = await h.filter!(result, createMockState());
       }
       expect(result).toHaveLength(2);
       expect(result[1]!.name).toBe('write_todos');
     });
 
-    it('should chain multiple tool provider hooks', async () => {
+    it('chains multiple filter hooks', async () => {
       const tools: FunctionDefinition[] = [
         { name: 'a', description: 'A', parameters: {} },
         { name: 'b', description: 'B', parameters: {} },
         { name: 'c', description: 'C', parameters: {} },
       ];
-      registry.registerToolProvider({
+      registry.registerTool({
         name: 'remove-c',
         priority: 10,
-        filter: (t) => t.filter((td) => td.name !== 'c'),
+        filter: (t: FunctionDefinition[]) => t.filter((td) => td.name !== 'c'),
       });
-      registry.registerToolProvider({
+      registry.registerTool({
         name: 'add-d',
         priority: 20,
-        filter: (t) => [...t, { name: 'd', description: 'D', parameters: {} }],
+        filter: (t: FunctionDefinition[]) => [...t, { name: 'd', description: 'D', parameters: {} }],
       });
-      const hooks = registry.getToolProviderHooks();
+      const filterHooks = registry.getToolFilterHooks();
       let result = tools;
-      for (const h of hooks) {
-        result = await h.filter(result, createMockState());
+      for (const h of filterHooks) {
+        result = await h.filter!(result, createMockState());
       }
       expect(result).toHaveLength(3);
       expect(result.map((t) => t.name).sort()).toEqual(['a', 'b', 'd']);
+    });
+
+    it('beforeExecute allows', async () => {
+      const hook: ToolHook = {
+        name: 'allow',
+        priority: 10,
+        beforeExecute: () => ({ action: 'allow' as const }),
+      };
+      const result = await hook.beforeExecute!(createToolCall(), createMockState());
+      expect(result.action).toBe('allow');
+    });
+
+    it('beforeExecute blocks', async () => {
+      const hook: ToolHook = {
+        name: 'block',
+        priority: 10,
+        beforeExecute: () => ({ action: 'block' as const, reason: 'test' }),
+      };
+      const result = await hook.beforeExecute!(createToolCall(), createMockState());
+      expect(result).toEqual({ action: 'block', reason: 'test' });
+    });
+
+    it('beforeExecute modifies args', async () => {
+      const hook: ToolHook = {
+        name: 'modify',
+        priority: 10,
+        beforeExecute: (tc) => ({ action: 'modify' as const, args: { ...tc.args, injected: true } }),
+      };
+      const tc = createToolCall();
+      const result = await hook.beforeExecute!(tc, createMockState());
+      expect(result).toEqual({ action: 'modify', args: { injected: true } });
+    });
+
+    it('getToolFilterHooks returns only hooks with filter method', () => {
+      registry.registerTool({ name: 'filter-only', priority: 10, filter: (t) => t });
+      registry.registerTool({ name: 'before-only', priority: 20, beforeExecute: () => ({ action: 'allow' }) });
+      registry.registerTool({
+        name: 'both',
+        priority: 30,
+        filter: (t) => t,
+        beforeExecute: () => ({ action: 'allow' }),
+      });
+      const filterHooks = registry.getToolFilterHooks();
+      expect(filterHooks.map(h => h.name)).toEqual(['filter-only', 'both']);
+    });
+
+    it('returns tool hooks sorted by priority', () => {
+      const hook1: ToolHook = { name: 'last', priority: 100, beforeExecute: () => ({ action: 'allow' }) };
+      const hook2: ToolHook = { name: 'first', priority: 10, beforeExecute: () => ({ action: 'allow' }) };
+      registry.registerTool(hook1);
+      registry.registerTool(hook2);
+      const hooks = registry.getToolHooks();
+      expect(hooks[0]!.name).toBe('first');
+      expect(hooks[1]!.name).toBe('last');
     });
   });
 
@@ -353,15 +380,9 @@ describe('HookRegistry', () => {
     });
 
     it('should remove all tool hooks', () => {
-      registry.registerTool({ name: 'test', priority: 50, beforeExecute: () => true });
+      registry.registerTool({ name: 'test', priority: 50, beforeExecute: () => ({ action: 'allow' }) });
       registry.clear();
       expect(registry.getToolHooks()).toHaveLength(0);
-    });
-
-    it('should remove all tool provider hooks', () => {
-      registry.registerToolProvider({ name: 'test', priority: 40, filter: (t) => t });
-      registry.clear();
-      expect(registry.getToolProviderHooks()).toHaveLength(0);
     });
 
     it('should be idempotent', () => {
@@ -369,7 +390,6 @@ describe('HookRegistry', () => {
       registry.clear();
       expect(registry.getRequestHooks()).toHaveLength(0);
       expect(registry.getToolHooks()).toHaveLength(0);
-      expect(registry.getToolProviderHooks()).toHaveLength(0);
     });
   });
 
@@ -379,20 +399,17 @@ describe('HookRegistry', () => {
     it('should support all hook types simultaneously', () => {
       registry.on('step.begin', () => {});
       registry.registerRequest({ name: 'req', priority: 10, apply: (m) => m });
-      registry.registerTool({ name: 'tool', priority: 10, beforeExecute: () => true });
-      registry.registerToolProvider({ name: 'prov', priority: 10, filter: (t) => t });
+      registry.registerTool({ name: 'tool', priority: 10, beforeExecute: () => ({ action: 'allow' }) });
 
       expect(registry.getLifecycleHooks('step.begin')).toHaveLength(1);
       expect(registry.getRequestHooks()).toHaveLength(1);
       expect(registry.getToolHooks()).toHaveLength(1);
-      expect(registry.getToolProviderHooks()).toHaveLength(1);
 
       // clear should remove all
       registry.clear();
       expect(registry.getLifecycleHooks('step.begin')).toHaveLength(0);
       expect(registry.getRequestHooks()).toHaveLength(0);
       expect(registry.getToolHooks()).toHaveLength(0);
-      expect(registry.getToolProviderHooks()).toHaveLength(0);
     });
   });
 });

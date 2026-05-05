@@ -86,10 +86,10 @@ export async function performLLMCall(
     model: config.model,
   });
 
-  // ToolProvider Hooks: per-call dynamic tool injection
+  // Tool filter hooks: per-call dynamic tool injection
   let toolDefs = ctx.tools?.getFunctionDefs() ?? [];
-  for (const h of hooks.getToolProviderHooks()) {
-    toolDefs = await h.filter(toolDefs, st);
+  for (const h of hooks.getToolFilterHooks()) {
+    toolDefs = await h.filter!(toolDefs, st);
   }
 
   try {
@@ -177,10 +177,10 @@ export async function performStreamingLLMCall(
     model: config.model,
   });
 
-  // ToolProvider Hooks: per-call dynamic tool injection
+  // Tool filter hooks: per-call dynamic tool injection
   let toolDefs = ctx.tools?.getFunctionDefs() ?? [];
-  for (const h of hooks.getToolProviderHooks()) {
-    toolDefs = await h.filter(toolDefs, st);
+  for (const h of hooks.getToolFilterHooks()) {
+    toolDefs = await h.filter!(toolDefs, st);
   }
 
   try {

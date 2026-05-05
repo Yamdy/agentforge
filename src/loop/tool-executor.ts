@@ -94,24 +94,43 @@ export async function executeSingleTool(
     details: { toolCallId: tc.id },
   });
 
-  // ToolHook: permission check
-  let blocked = false;
+  // ToolHook: permission check with modify support
+  let modifiedArgs = tc.args;
   for (const h of hooks.getToolHooks()) {
-    if (!(await h.beforeExecute(tc, state!))) {
-      blocked = true;
-      break;
+    if (!h.beforeExecute) continue;
+
+    const result = await h.beforeExecute({ ...tc, args: modifiedArgs }, state!);
+
+    if (result.action === 'block') {
+      const deniedMsg: Message = {
+        role: 'tool',
+        content: `Permission denied for tool: ${tc.name} (reason: ${result.reason})`,
+        toolCallId: tc.id,
+        name: tc.name,
+      };
+      // Audit blocked tool
+      ctx.auditLogger?.append({
+        sessionId: ctx.sessionId,
+        agentName: ctx.agentName,
+        eventType: 'tool.call',
+        action: 'tool.call',
+        resource: tc.name,
+        result: 'denied',
+        details: { toolCallId: tc.id, reason: result.reason },
+      });
+      emitToolResult(extractText(deniedMsg.content), true);
+      return deniedMsg;
     }
+
+    if (result.action === 'modify') {
+      modifiedArgs = result.args;
+    }
+    // 'allow' — continue to next hook
   }
 
-  if (blocked) {
-    const deniedMsg: Message = {
-      role: 'tool',
-      content: `Permission denied for tool: ${tc.name}`,
-      toolCallId: tc.id,
-      name: tc.name,
-    };
-    emitToolResult(extractText(deniedMsg.content), true);
-    return deniedMsg;
+  // Use potentially modified args
+  if (modifiedArgs !== tc.args) {
+    tc = { ...tc, args: modifiedArgs };
   }
 
   // Get tool definition for subsequent checks

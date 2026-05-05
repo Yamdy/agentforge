@@ -129,85 +129,59 @@ export interface RequestHook {
 }
 
 // ============================================================================
-// Tool Hook (check/block tool execution)
+// Tool Hook (filter definitions + check/modify before execution)
 // ============================================================================
 
+/** Result of a beforeExecute check. */
+export type ToolBeforeResult =
+  | { action: 'allow' }
+  | { action: 'block'; reason: string }
+  | { action: 'modify'; args: Record<string, unknown> };
+
 /**
- * Tool Hook — validates or blocks tool execution before it runs.
+ * Tool Hook — unified interface for tool control.
+ *
+ * Combines the former ToolProviderHook (filtering tool definitions before
+ * LLM calls) and ToolHook (checking/modifying tool execution) into a single
+ * interface. A ToolHook can implement either or both methods.
  *
  * Use cases:
- * - PermissionPlugin: deny dangerous tool calls
- * - RateLimitPlugin: throttle tool invocation frequency
- * - AuditPlugin: log all tool calls before execution
+ * - filter: remove dangerous tools, inject context-specific tools
+ * - beforeExecute: permission check, rate-limit, parameter modification
  *
- * Hooks are run in priority order. If ANY hook returns false,
- * the tool is blocked and subsequent hooks are NOT run.
+ * Hooks are run in priority order (lower = earlier).
+ * - filter: each hook transforms the array, next hook sees the result
+ * - beforeExecute: first block/modify wins, remaining hooks skip
  */
 export interface ToolHook {
   /** Unique hook name for debugging */
   name: string;
   /** Execution order (lower = earlier) */
   priority: number;
-  /**
-   * Validate whether a tool call should proceed.
-   *
-   * @param toolCall - The tool call being requested
-   * @param state    - Current agent loop state
-   * @returns true to allow, false to block
-   */
-  beforeExecute(toolCall: ToolCall, state: AgentState): boolean | Promise<boolean>;
-}
 
-// ============================================================================
-// ToolProvider Hook (dynamic per-call tool injection)
-// ============================================================================
-
-/**
- * ToolProvider Hook — modifies the tool set available to the LLM on each call.
- *
- * Unlike {@link ToolHook} (which only blocks execution AFTER the LLM has already
- * chosen a tool), ToolProviderHook filters/injects tools BEFORE the LLM sees them.
- * This enables middleware-style dynamic tool management:
- *
- * Use cases:
- * - SandboxPlugin: only include `execute` tool when sandbox backend is available
- * - PhasePlugin: add `write_todos` only during planning phase
- * - ContextPlugin: remove tools irrelevant to the current task
- * - ProviderPlugin: exclude tools unsupported by the current model
- *
- * Hooks are applied in priority order (lower = earlier).
- * Each hook receives the output of the previous hook.
- *
- * @example
- * ```typescript
- * const sandboxHook: ToolProviderHook = {
- *   name: 'sandbox-tool-filter',
- *   priority: 40,
- *   async filter(tools, state) {
- *     if (!this.sandboxAvailable) {
- *       return tools.filter(t => t.name !== 'execute');
- *     }
- *     return tools;
- *   },
- * };
- * ```
- */
-export interface ToolProviderHook {
-  /** Unique hook name for debugging */
-  name: string;
-  /** Execution order (lower = earlier) */
-  priority: number;
   /**
-   * Filter or extend the tool list for this LLM call.
+   * Optional — filter/inject tool definitions before each LLM call.
    *
-   * @param tools  - Current tool definitions (after previous hooks)
-   * @param state  - Current agent loop state (read-only reference)
+   * @param tools - Current tool definitions (after previous hooks)
+   * @param state - Current agent loop state (read-only reference)
    * @returns Modified tool definitions
    */
-  filter(
+  filter?(
     tools: FunctionDefinition[],
     state: AgentState
   ): FunctionDefinition[] | Promise<FunctionDefinition[]>;
+
+  /**
+   * Optional — validate or modify a tool call before execution.
+   *
+   * @param toolCall - The tool call being requested
+   * @param state    - Current agent loop state
+   * @returns allow, block with reason, or modify with new args
+   */
+  beforeExecute?(
+    toolCall: ToolCall,
+    state: AgentState
+  ): ToolBeforeResult | Promise<ToolBeforeResult>;
 }
 
 // ============================================================================
@@ -345,11 +319,6 @@ export class HookRegistry {
   private tools: ToolHook[] = [];
 
   /**
-   * ToolProvider hooks (per-call tool injection/filtering), sorted by priority.
-   */
-  private toolProviders: ToolProviderHook[] = [];
-
-  /**
    * Recovery hooks indexed by phase.
    */
   private recovery = new Map<RecoveryPhase, RecoveryHookEntry[]>();
@@ -471,27 +440,11 @@ export class HookRegistry {
     return this.tools;
   }
 
-  // ── ToolProvider Hooks ──
-
   /**
-   * Register a tool provider hook.
-   *
-   * @returns Unregister function
+   * Get tool hooks that have filter capability, sorted by priority.
    */
-  registerToolProvider(hook: ToolProviderHook): () => void {
-    this.toolProviders.push(hook);
-    this.toolProviders.sort((a, b) => a.priority - b.priority);
-    return () => {
-      const idx = this.toolProviders.indexOf(hook);
-      if (idx >= 0) this.toolProviders.splice(idx, 1);
-    };
-  }
-
-  /**
-   * Get all tool provider hooks, sorted by priority.
-   */
-  getToolProviderHooks(): ToolProviderHook[] {
-    return this.toolProviders;
+  getToolFilterHooks(): ToolHook[] {
+    return this.tools.filter(h => typeof h.filter === 'function');
   }
 
   // ── Bulk Operations ──
@@ -504,6 +457,5 @@ export class HookRegistry {
     this.recovery.clear();
     this.requests = [];
     this.tools = [];
-    this.toolProviders = [];
   }
 }

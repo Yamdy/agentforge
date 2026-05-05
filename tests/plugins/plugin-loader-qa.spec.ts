@@ -37,7 +37,7 @@ export const server = async (input, options) => ({
       return [{ role: 'system', content: 'TEST_PLUGIN_ACTIVE:' + opts }, ...messages];
     },
   }],
-  toolProviderHooks: [{
+  toolHooks: [{
     name: 'test-tool-provider',
     priority: 50,
     filter(tools, state) {
@@ -175,11 +175,11 @@ describe('PluginLoader Integration (E2E)', () => {
       emitter,
     );
 
-    const providerHooks = hooks.getToolProviderHooks();
+    const providerHooks = hooks.getToolFilterHooks();
     expect(providerHooks.length).toBeGreaterThan(0);
 
     const tools = [{ name: 'read', description: 'read file', parameters: {} }];
-    const result = await providerHooks[0]!.filter(tools, {} as Parameters<typeof providerHooks[0]['filter']>[1]);
+    const result = await providerHooks[0]!.filter!(tools, {} as Parameters<NonNullable<typeof providerHooks[0]>['filter']>[1]);
     expect(result.length).toBe(2);
     expect(result[1]!.name).toBe('injected_tool');
   });

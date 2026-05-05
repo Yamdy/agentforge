@@ -646,7 +646,7 @@ describe('Phase 2a: Agent Loop', () => {
       const done = events.find(e => e.type === 'done');
       expect(done).toBeDefined();
       if (done?.type === 'done') {
-        expect(done.reason).toBe('length');
+        expect(done.reason).toBe('completed');
       }
     });
   });
@@ -1519,11 +1519,11 @@ describe('Phase 2a: Agent Loop', () => {
 });
 
 // ============================================================
-// QualityGate & ToolProviderHook Integration Tests
+// QualityGate & ToolHook (unified) Integration Tests
 // ============================================================
 
 import { HookRegistry } from '../../src/core/hooks.js';
-import type { ToolProviderHook } from '../../src/core/hooks.js';
+import type { ToolHook } from '../../src/core/hooks.js';
 import { QualityGate } from '../../src/validation/quality-gate.js';
 
 describe('Phase 2b: QualityGate Integration', () => {
@@ -1612,7 +1612,7 @@ describe('Phase 2b: QualityGate Integration', () => {
   });
 });
 
-describe('Phase 2c: ToolProviderHook Integration', () => {
+describe('Phase 2c: ToolHook (unified) Integration', () => {
   let llm: MockLLMAdapter;
   let toolRegistry: MockToolRegistry;
   let hookRegistry: HookRegistry;
@@ -1623,22 +1623,22 @@ describe('Phase 2c: ToolProviderHook Integration', () => {
     hookRegistry = new HookRegistry();
   });
 
-  function createContextWithHooks(toolProviders: ToolProviderHook[]): AgentContext {
+  function createContextWithToolHooks(toolHooks: ToolHook[]): AgentContext {
     const ctx = createTestContext(llm, toolRegistry);
     ctx.hookRegistry = hookRegistry;
-    for (const h of toolProviders) {
-      hookRegistry.registerToolProvider(h);
+    for (const h of toolHooks) {
+      hookRegistry.registerTool(h);
     }
     return ctx;
   }
 
-  it('should apply tool provider hooks before LLM call', async () => {
+  it('should apply tool filter hooks before LLM call', async () => {
     // Register tools
     toolRegistry.register('read', async (args: any) => `read: ${args.file}`);
     toolRegistry.register('execute', async (args: any) => `executed: ${args.command}`);
 
     // Hook that removes 'execute' tool
-    const ctx = createContextWithHooks([{
+    const ctx = createContextWithToolHooks([{
       name: 'remove-execute',
       priority: 10,
       filter: (tools) => tools.filter(t => t.name !== 'execute'),
@@ -1657,10 +1657,10 @@ describe('Phase 2c: ToolProviderHook Integration', () => {
     // Tool hooks registered and applied — no crash means integration works
   });
 
-  it('should inject tools via tool provider hooks', async () => {
+  it('should inject tools via tool filter hooks', async () => {
     toolRegistry.register('read', async (args: any) => `read: ${args.file}`);
 
-    const ctx = createContextWithHooks([{
+    const ctx = createContextWithToolHooks([{
       name: 'inject-todo',
       priority: 10,
       filter: (tools) => [...tools, {
@@ -1681,12 +1681,12 @@ describe('Phase 2c: ToolProviderHook Integration', () => {
     expect(events.find(e => e.type === 'agent.complete')).toBeDefined();
   });
 
-  it('should chain multiple tool provider hooks', async () => {
+  it('should chain multiple tool filter hooks', async () => {
     toolRegistry.register('a', async () => 'a');
     toolRegistry.register('b', async () => 'b');
     toolRegistry.register('c', async () => 'c');
 
-    const ctx = createContextWithHooks([
+    const ctx = createContextWithToolHooks([
       { name: 'remove-c', priority: 10, filter: (t) => t.filter(td => td.name !== 'c') },
       { name: 'add-d', priority: 20, filter: (t) => [...t, { name: 'd', description: '', parameters: {} }] },
     ]);

@@ -59,7 +59,7 @@ export type { Plugin, PluginContext } from './plugins/index.js';
 export type {
   RequestHook,
   ToolHook,
-  ToolProviderHook,
+  ToolBeforeResult,
   CheckpointHook,
   CheckpointResult,
   CheckpointFn,

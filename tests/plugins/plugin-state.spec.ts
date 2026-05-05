@@ -1,8 +1,8 @@
 /**
- * Unit tests for Plugin.state and Plugin.toolProviderHooks fields.
+ * Unit tests for Plugin.state and Plugin.toolHooks fields.
  *
- * Tests the new Plugin interface fields added for cross-turn state
- * and dynamic tool injection.
+ * Tests the unified ToolHook interface (filter + beforeExecute)
+ * and plugin state persistence.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -10,7 +10,7 @@ import type { Plugin, PluginContext } from '../../src/plugins/plugin.js';
 import { applyPlugins } from '../../src/plugins/pipeline.js';
 import { HookRegistry } from '../../src/core/hooks.js';
 import { AgentEventEmitter } from '../../src/core/events.js';
-import type { ToolProviderHook } from '../../src/core/hooks.js';
+import type { ToolHook } from '../../src/core/hooks.js';
 import type { AgentState } from '../../src/core/state.js';
 import type { FunctionDefinition } from '../../src/core/interfaces.js';
 
@@ -116,11 +116,11 @@ describe('Plugin State', () => {
     });
   });
 
-  // ── toolProviderHooks field ──
+  // ── toolHooks (unified: filter + beforeExecute) ──
 
-  describe('toolProviderHooks', () => {
-    it('should register toolProviderHooks via applyPlugins', () => {
-      const providerHook: ToolProviderHook = {
+  describe('toolHooks (unified)', () => {
+    it('should register toolHooks with filter via applyPlugins', () => {
+      const toolHook: ToolHook = {
         name: 'test-provider',
         priority: 40,
         filter: (tools) => tools,
@@ -128,91 +128,97 @@ describe('Plugin State', () => {
       const plugin: Plugin = {
         name: 'provider-plugin',
         enabled: true,
-        toolProviderHooks: [providerHook],
+        toolHooks: [toolHook],
       };
       applyPlugins([plugin], registry, emitter, createMockContext());
-      expect(registry.getToolProviderHooks()).toHaveLength(1);
-      expect(registry.getToolProviderHooks()[0]!.name).toBe('test-provider');
+      expect(registry.getToolFilterHooks()).toHaveLength(1);
+      expect(registry.getToolFilterHooks()[0]!.name).toBe('test-provider');
     });
 
-    it('should apply toolProviderHooks to filter tools', async () => {
+    it('should apply toolHooks filter to filter tools', async () => {
       const plugin: Plugin = {
         name: 'sandbox-filter',
         enabled: true,
-        toolProviderHooks: [{
+        toolHooks: [{
           name: 'remove-execute',
           priority: 10,
           filter: (tools) => tools.filter((t) => t.name !== 'execute'),
         }],
       };
       applyPlugins([plugin], registry, emitter, createMockContext());
-      const hooks = registry.getToolProviderHooks();
+      const hooks = registry.getToolFilterHooks();
       let tools = createToolDefs();
       for (const h of hooks) {
-        tools = await h.filter(tools, createMockState());
+        tools = await h.filter!(tools, createMockState());
       }
       expect(tools).toHaveLength(2);
       expect(tools.map((t) => t.name)).toEqual(['read', 'write']);
     });
 
-    it('should support multiple toolProviderHooks in one plugin', () => {
+    it('should support multiple toolHooks in one plugin', () => {
       const plugin: Plugin = {
         name: 'multi-provider',
         enabled: true,
-        toolProviderHooks: [
+        toolHooks: [
           { name: 'hook-a', priority: 10, filter: (t) => t },
           { name: 'hook-b', priority: 20, filter: (t) => t },
         ],
       };
       applyPlugins([plugin], registry, emitter, createMockContext());
-      expect(registry.getToolProviderHooks()).toHaveLength(2);
+      expect(registry.getToolFilterHooks()).toHaveLength(2);
     });
 
-    it('should work with BOTH toolHooks and toolProviderHooks', () => {
+    it('should work with BOTH filter and beforeExecute on a single toolHook', () => {
       const plugin: Plugin = {
         name: 'dual-hook',
         enabled: true,
-        toolHooks: [{ name: 'block-execute', priority: 50, beforeExecute: () => true }],
-        toolProviderHooks: [{ name: 'filter-tools', priority: 40, filter: (t) => t }],
+        toolHooks: [{
+          name: 'filter-and-guard',
+          priority: 40,
+          filter: (t) => t,
+          beforeExecute: () => ({ action: 'allow' }),
+        }],
       };
       applyPlugins([plugin], registry, emitter, createMockContext());
-      expect(registry.getToolHooks()).toHaveLength(1);
-      expect(registry.getToolProviderHooks()).toHaveLength(1);
+      const allHooks = registry.getToolHooks();
+      expect(allHooks).toHaveLength(1);
+      const filterHooks = registry.getToolFilterHooks();
+      expect(filterHooks).toHaveLength(1);
     });
 
-    it('should support tool injection via toolProviderHooks', async () => {
+    it('should support tool injection via toolHooks filter', async () => {
       const plugin: Plugin = {
         name: 'phase-aware',
         enabled: true,
-        toolProviderHooks: [{
+        toolHooks: [{
           name: 'add-planning-tool',
           priority: 10,
           filter: (tools) => [...tools, { name: 'write_todos', description: 'Plan', parameters: {} }],
         }],
       };
       applyPlugins([plugin], registry, emitter, createMockContext());
-      const hooks = registry.getToolProviderHooks();
+      const hooks = registry.getToolFilterHooks();
       let tools: FunctionDefinition[] = [{ name: 'read', description: 'Read', parameters: {} }];
       for (const h of hooks) {
-        tools = await h.filter(tools, createMockState());
+        tools = await h.filter!(tools, createMockState());
       }
       expect(tools).toHaveLength(2);
       expect(tools[1]!.name).toBe('write_todos');
     });
 
-    it('should unregister toolProviderHooks when cleanup returned', () => {
+    it('should unregister toolHooks when cleanup returned', () => {
       const plugin: Plugin = {
         name: 'temp-provider',
         enabled: true,
-        toolProviderHooks: [{ name: 'temp', priority: 10, filter: (t) => t }],
+        toolHooks: [{ name: 'temp', priority: 10, filter: (t) => t }],
       };
       const { unregister: cleanup } = applyPlugins([plugin], registry, emitter, createMockContext());
-      expect(registry.getToolProviderHooks()).toHaveLength(1);
+      expect(registry.getToolFilterHooks()).toHaveLength(1);
       cleanup();
-      expect(registry.getToolProviderHooks()).toHaveLength(0);
+      expect(registry.getToolFilterHooks()).toHaveLength(0);
     });
 
-    it('should not crash when plugin has no toolProviderHooks (backward compat)', () => {
+    it('should not crash when plugin has no toolHooks', () => {
       const plugin: Plugin = {
         name: 'old-plugin',
         enabled: true,
@@ -224,24 +230,24 @@ describe('Plugin State', () => {
 
   // ── Multiple Plugins ──
 
-  describe('multiple plugins with toolProviderHooks', () => {
-    it('should execute toolProviderHooks from multiple plugins in priority order', async () => {
+  describe('multiple plugins with toolHooks', () => {
+    it('should execute toolHooks filter from multiple plugins in priority order', async () => {
       const plugin1: Plugin = {
         name: 'remove-execute',
         enabled: true,
-        toolProviderHooks: [{ name: 'remove-execute', priority: 10, filter: (t) => t.filter((d) => d.name !== 'execute') }],
+        toolHooks: [{ name: 'remove-execute', priority: 10, filter: (t) => t.filter((d) => d.name !== 'execute') }],
       };
       const plugin2: Plugin = {
         name: 'add-todo',
         enabled: true,
-        toolProviderHooks: [{ name: 'add-todo', priority: 20, filter: (t) => [...t, { name: 'write_todos', description: '', parameters: {} }] }],
+        toolHooks: [{ name: 'add-todo', priority: 20, filter: (t) => [...t, { name: 'write_todos', description: '', parameters: {} }] }],
       };
       applyPlugins([plugin1, plugin2], registry, emitter, createMockContext());
 
-      const hooks = registry.getToolProviderHooks();
+      const hooks = registry.getToolFilterHooks();
       let tools = createToolDefs();
       for (const h of hooks) {
-        tools = await h.filter(tools, createMockState());
+        tools = await h.filter!(tools, createMockState());
       }
       // remove-execute (priority 10) runs first, then add-todo (priority 20)
       expect(tools.map((t) => t.name).sort()).toEqual(['read', 'write', 'write_todos']);
@@ -251,27 +257,27 @@ describe('Plugin State', () => {
       const plugin: Plugin = {
         name: 'disabled',
         enabled: false,
-        toolProviderHooks: [{ name: 'skip-me', priority: 10, filter: (t) => t }],
+        toolHooks: [{ name: 'skip-me', priority: 10, filter: (t) => t }],
       };
       applyPlugins([plugin], registry, emitter, createMockContext());
-      expect(registry.getToolProviderHooks()).toHaveLength(0);
+      expect(registry.getToolFilterHooks()).toHaveLength(0);
     });
 
     it('should clean up all hooks from all plugins on cleanup', () => {
       const plugin1: Plugin = {
         name: 'p1',
         enabled: true,
-        toolProviderHooks: [{ name: 'h1', priority: 10, filter: (t) => t }],
+        toolHooks: [{ name: 'h1', priority: 10, filter: (t) => t }],
       };
       const plugin2: Plugin = {
         name: 'p2',
         enabled: true,
-        toolProviderHooks: [{ name: 'h2', priority: 20, filter: (t) => t }],
+        toolHooks: [{ name: 'h2', priority: 20, filter: (t) => t }],
       };
       const { unregister: cleanup } = applyPlugins([plugin1, plugin2], registry, emitter, createMockContext());
-      expect(registry.getToolProviderHooks()).toHaveLength(2);
+      expect(registry.getToolFilterHooks()).toHaveLength(2);
       cleanup();
-      expect(registry.getToolProviderHooks()).toHaveLength(0);
+      expect(registry.getToolFilterHooks()).toHaveLength(0);
     });
   });
 });

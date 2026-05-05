@@ -1,20 +1,15 @@
 /**
- * 04-tool-profiler.ts — ToolProviderHook + LifecycleHook 插件
+ * 04-tool-profiler.ts — ToolHook (unified) + LifecycleHook 插件
  *
- * 本示例演示两种高级模式的组合：
- *   1. ToolProviderHook — 在 LLM 看到工具列表之前动态过滤工具
+ * 本示例演示统一 ToolHook 接口的两种能力：
+ *   1. ToolHook.filter — 在 LLM 看到工具列表之前动态过滤工具
  *   2. LifecycleHook — 挂载在 tool.before/after 切点测量耗时
- *
- * ToolProviderHook vs ToolHook 的区别：
- *   - ToolProviderHook：在 LLM 决策前过滤工具列表（LLM 不会看到被过滤的工具）
- *   - ToolHook：在 LLM 已选择工具后、执行前进行权限检查
- *   - 前者影响 LLM 的决策空间，后者影响执行安全性
  *
  * 运行方式: npx tsx examples/plugins/04-tool-profiler.ts
  */
 
 import type { Plugin, PluginContext } from '../../src/plugins/plugin.js';
-import type { ToolProviderHook, HookFn } from '../../src/core/hooks.js';
+import type { ToolHook, HookFn } from '../../src/core/hooks.js';
 import type { FunctionDefinition, AgentState } from '../../src/core/index.js';
 
 // ── 内部状态：记录工具执行开始时间 ──
@@ -29,7 +24,7 @@ const timers = new Map<string, number>();
  *   - 根据当前 Agent 步骤阶段，逐步开放更高级的工具
  *   - 在 compaction 后移除 mark_memory 工具（避免重复记忆）
  */
-const toolFilterHook: ToolProviderHook = {
+const toolFilterHook: ToolHook = {
   name: 'tool-profiler-filter',
   priority: 40, // 在 TOOL_DESCRIPTIONS(40) 层执行，与内置工具描述注入同级
 
@@ -109,7 +104,7 @@ const onToolError: HookFn = function (_input: unknown, output: unknown): void {
  * tool-profiler 插件 — 工具调用性能分析与动态过滤
  *
  * 需要同时使用两种 Hook 类型的场景：
- *   - ToolProviderHook: 控制 LLM 看到哪些工具（影响决策空间）
+ *   - ToolHook.filter: 控制 LLM 看到哪些工具（影响决策空间）
  *   - LifecycleHook: 观测工具实际执行情况（不影响流程）
  *
  * 注意：输入输出对象的具体结构由 Agent 循环在调用时传入，
@@ -120,8 +115,8 @@ export const plugin: Plugin = {
   name: 'tool-profiler',
   enabled: true,
 
-  // ── ToolProviderHook — 每次 LLM 调用前过滤工具列表 ──
-  toolProviderHooks: [toolFilterHook],
+  // ── ToolHook.filter — 每次 LLM 调用前过滤工具列表 ──
+  toolHooks: [toolFilterHook],
 
   // ── LifecycleHook — 在工具执行生命周期切点挂载回调 ──
   lifecycleHooks: [
