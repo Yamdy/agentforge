@@ -107,7 +107,7 @@ describe('Plugin State', () => {
         enabled: true,
         state: { counter: 0 },
         requestHooks: [{ name: 'req', priority: 50, apply: (m) => m }],
-        toolHooks: [{ name: 'tool', priority: 50, beforeExecute: () => true }],
+        toolHooks: [{ name: 'tool', priority: 50, beforeExecute: () => ({ action: 'allow' }) }],
       };
       applyPlugins([plugin], registry, emitter, createMockContext());
       expect(plugin.state).toEqual({ counter: 0 });

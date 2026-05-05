@@ -225,8 +225,8 @@ describe('HookRegistry', () => {
     });
 
     it('should return tool hooks sorted by priority', () => {
-      const hook1: ToolHook = { name: 'last', priority: 100, beforeExecute: () => true };
-      const hook2: ToolHook = { name: 'first', priority: 10, beforeExecute: () => true };
+      const hook1: ToolHook = { name: 'last', priority: 100, beforeExecute: () => ({ action: 'allow' }) };
+      const hook2: ToolHook = { name: 'first', priority: 10, beforeExecute: () => ({ action: 'allow' }) };
       registry.registerTool(hook1);
       registry.registerTool(hook2);
       const hooks = registry.getToolHooks();
@@ -235,7 +235,7 @@ describe('HookRegistry', () => {
     });
 
     it('should unregister tool hook', () => {
-      const hook: ToolHook = { name: 'test', priority: 50, beforeExecute: () => true };
+      const hook: ToolHook = { name: 'test', priority: 50, beforeExecute: () => ({ action: 'allow' }) };
       const unreg = registry.registerTool(hook);
       unreg();
       expect(registry.getToolHooks()).toHaveLength(0);
