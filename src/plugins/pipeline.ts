@@ -81,6 +81,13 @@ export function applyPlugins(
       }
     }
 
+    // ── Lifecycle hooks ──
+    if (plugin.lifecycleHooks) {
+      for (const lh of plugin.lifecycleHooks) {
+        unregisters.push(hookRegistry.on(lh.phase, lh.fn, lh.priority));
+      }
+    }
+
     // ── Event subscriptions ──
     if (plugin.eventSubscriptions) {
       for (const sub of plugin.eventSubscriptions) {

@@ -21,7 +21,13 @@ import {
   type Message,
   AgentEventEmitter,
 } from '../core/events.js';
-import type { RequestHook, ToolHook, CheckpointHook, RecoveryHookEntry } from '../core/hooks.js';
+import type {
+  RequestHook,
+  ToolHook,
+  CheckpointHook,
+  RecoveryHookEntry,
+  LifecycleHookEntry,
+} from '../core/hooks.js';
 import type { AgentState } from '../core/state.js';
 import type { Tracer, Metrics, ToolDefinition } from '../core/interfaces.js';
 
@@ -102,6 +108,9 @@ export interface Plugin {
 
   /** Recovery hooks — observe error/recovery events (fire-and-forget, non-blocking) */
   recoveryHooks?: RecoveryHookEntry[];
+
+  /** Lifecycle hooks — observe lifecycle events (fire-and-forget, non-blocking) */
+  lifecycleHooks?: LifecycleHookEntry[];
 
   /**
    * Initialize plugin with restricted context.
