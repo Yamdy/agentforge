@@ -9,7 +9,7 @@
  */
 
 import type { Plugin, PluginContext } from './plugin.js';
-import type { LifecyclePhase, CheckpointFn } from '../core/hooks.js';
+import type { CheckpointPhase, CheckpointFn } from '../core/hooks.js';
 import { HookRegistry } from '../core/hooks.js';
 import { AgentEventEmitter, serializeError } from '../core/events.js';
 
@@ -24,7 +24,7 @@ export interface AppliedPipeline {
   /** Remove all registered hooks and subscriptions */
   unregister(): void;
   /** Get checkpoint functions for a lifecycle phase, sorted by priority */
-  getCheckpoints(phase: LifecyclePhase): CheckpointFn[];
+  getCheckpoints(phase: CheckpointPhase): CheckpointFn[];
 }
 
 // ==============================
@@ -42,7 +42,7 @@ export function applyPlugins(
   ctx: PluginContext
 ): AppliedPipeline {
   const unregisters: Array<() => void> = [];
-  const checkpointMap = new Map<LifecyclePhase, Array<{ priority: number; fn: CheckpointFn }>>();
+  const checkpointMap = new Map<CheckpointPhase, Array<{ priority: number; fn: CheckpointFn }>>();
 
   for (const plugin of plugins) {
     if (!plugin.enabled) continue;
@@ -81,6 +81,13 @@ export function applyPlugins(
       }
     }
 
+    // ── Recovery hooks ──
+    if (plugin.recoveryHooks) {
+      for (const rh of plugin.recoveryHooks) {
+        unregisters.push(hookRegistry.onRecovery(rh.phase, rh.fn, rh.priority));
+      }
+    }
+
     // ── Event subscriptions ──
     if (plugin.eventSubscriptions) {
       for (const sub of plugin.eventSubscriptions) {
@@ -110,7 +117,7 @@ export function applyPlugins(
         }
       }
     },
-    getCheckpoints: (phase: LifecyclePhase): CheckpointFn[] => {
+    getCheckpoints: (phase: CheckpointPhase): CheckpointFn[] => {
       return (checkpointMap.get(phase) ?? []).map(e => e.fn);
     },
   };

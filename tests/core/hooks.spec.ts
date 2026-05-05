@@ -18,6 +18,8 @@ import {
   type CheckpointResult,
   type CheckpointFn,
   type LifecyclePhase,
+  type CheckpointPhase,
+  type RecoveryPhase,
 } from '../../src/core/hooks.js';
 import type { Message, ToolCall } from '../../src/core/events.js';
 import type { FunctionDefinition } from '../../src/core/interfaces.js';
@@ -125,9 +127,10 @@ describe('HookRegistry', () => {
     });
 
     it('should support multiple hooks on same name', () => {
-      registry.on('llm.error', () => {});
-      registry.on('llm.error', () => {});
-      expect(registry.getLifecycleHooks('llm.error')).toHaveLength(2);
+      // 'llm.error' is now a RecoveryPhase — use onRecovery/getRecoveryHooks
+      registry.onRecovery('llm.error', () => {});
+      registry.onRecovery('llm.error', () => {});
+      expect(registry.getRecoveryHooks('llm.error')).toHaveLength(2);
     });
 
     it('should return empty array for unregistered hook name', () => {
@@ -493,19 +496,34 @@ describe('CheckpointHook', () => {
     });
   });
 
-  describe('LifecyclePhase', () => {
-    it('should accept all 18 lifecycle phases', () => {
+  describe('LifecyclePhase types', () => {
+    it('should accept all 2 CheckpointPhase values', () => {
+      const phases: CheckpointPhase[] = ['pre-llm', 'post-llm'];
+      expect(phases).toHaveLength(2);
+    });
+
+    it('should accept all 10 LifecyclePhase values', () => {
       const phases: LifecyclePhase[] = [
         'session.start', 'session.end',
         'step.begin', 'step.end',
-        'pre-llm', 'post-llm',
-        'llm.request.before', 'llm.response.after', 'llm.error',
-        'tool.before', 'tool.after', 'tool.error',
+        'llm.request.before', 'llm.response.after',
+        'tool.before', 'tool.after',
         'compaction.before', 'compaction.after',
+      ];
+      expect(phases).toHaveLength(10);
+    });
+
+    it('should accept all 6 RecoveryPhase values', () => {
+      const phases: RecoveryPhase[] = [
+        'llm.error', 'tool.error',
         'recovery.escalate', 'recovery.compact', 'recovery.fallback',
         'error',
       ];
-      expect(phases).toHaveLength(18);
+      expect(phases).toHaveLength(6);
+    });
+
+    it('should have 18 total phases across all three types', () => {
+      expect(2 + 10 + 6).toBe(18);
     });
   });
 });

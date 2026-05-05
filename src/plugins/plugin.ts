@@ -17,7 +17,13 @@
  */
 
 import type { AgentEventType, AgentEvent } from '../core/events.js';
-import type { RequestHook, ToolHook, ToolProviderHook, CheckpointHook } from '../core/hooks.js';
+import type {
+  RequestHook,
+  ToolHook,
+  ToolProviderHook,
+  CheckpointHook,
+  RecoveryHookEntry,
+} from '../core/hooks.js';
 import type { Tracer, Metrics } from '../core/interfaces.js';
 
 // ============================================================
@@ -89,6 +95,9 @@ export interface Plugin {
 
   /** Checkpoint hooks — cross-cutting lifecycle checks that can block the agent loop */
   checkpointHooks?: CheckpointHook[];
+
+  /** Recovery hooks — observe error/recovery events (fire-and-forget, non-blocking) */
+  recoveryHooks?: RecoveryHookEntry[];
 
   /**
    * Initialize plugin with restricted context.

@@ -11,12 +11,13 @@
  * so the recovery logic is testable independently of the agent loop.
  */
 
-import type { Message, AgentEvent } from '../core/index.js';
 import type { AgentContext, AgentState } from '../core/index.js';
 import type { AgentEventEmitter } from '../core/events.js';
-import type { LifecyclePhase } from '../core/hooks.js';
+import type { LifecyclePhase, RecoveryPhase } from '../core/hooks.js';
 import type { AgentLoopConfig } from './agent-loop.js';
 import { analyzeLLMError, RECOVERY_LIMITS, ESCALATED_MAX_OUTPUT_TOKENS } from './error-analyzer.js';
+import { DEFAULT_PROMPT_TEMPLATES } from './prompt-templates.js';
+import { DEFAULT_TOKEN_BUDGET } from './token-budget.js';
 
 // ============================================================
 // Types
@@ -28,7 +29,11 @@ export interface ErrorRecoveryDeps {
   state: AgentState | null;
   recoveryState: { escalatedMaxTokens: number | undefined };
   emitter: AgentEventEmitter;
-  runLifecycleHook: (phase: LifecyclePhase, input: unknown, output: unknown) => Promise<void>;
+  runLifecycleHook: (
+    phase: LifecyclePhase | RecoveryPhase,
+    input: unknown,
+    output: unknown
+  ) => Promise<void>;
 }
 
 // ============================================================
@@ -64,7 +69,9 @@ export async function handleLLMError(
           state.recovery.recoveryMessageCount++;
           state.messages.push({
             role: 'user',
-            content: 'Output token limit hit. Resume directly — no apology, no recap.',
+            content:
+              deps.config.promptTemplates?.resumeAfterTokenLimit ??
+              DEFAULT_PROMPT_TEMPLATES.resumeAfterTokenLimit,
           });
           await runLifecycleHook('recovery.compact', { error: analysis.message }, {});
           return 'continue';
@@ -107,27 +114,27 @@ export async function handleLLMError(
           const reactiveCtx = {
             sessionId: ctx.sessionId,
             messages: state.messages,
-            maxTokens: config.tokenBudget ?? 200_000,
+            maxTokens: config.tokenBudget ?? DEFAULT_TOKEN_BUDGET,
             currentTokenEstimate: currentTokens,
           };
           const result =
             ctx.compactionManager.reactiveCompact(reactiveCtx) ??
             ctx.compactionManager.multiLayerCompact(reactiveCtx);
-          state.messages = result.messages as Message[];
+          state.messages = result.messages;
           void emitter.emit({
             type: 'compaction.start',
             timestamp: Date.now(),
             sessionId: ctx.sessionId,
             strategy: result.strategy,
             tokensBefore: currentTokens,
-          } as AgentEvent);
+          });
           void emitter.emit({
             type: 'compaction.complete',
             timestamp: Date.now(),
             sessionId: ctx.sessionId,
             tokensAfter: result.tokensAfter,
             removedMessages: result.removedCount,
-          } as AgentEvent);
+          });
           await runLifecycleHook(
             'compaction.after',
             { sessionId: ctx.sessionId, messages: state.messages },

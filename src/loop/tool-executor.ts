@@ -15,6 +15,7 @@ import type { ToolDefinition } from '../core/interfaces.js';
 import { evaluatePermission } from '../security/permission/permission-policy.js';
 import { generateId, serializeError } from '../core/events.js';
 import { truncateOutput } from './tool-truncation.js';
+import { type FileTracker, extractPathsFromArgs } from './file-snapshot.js';
 
 // ============================================================
 // Types
@@ -26,10 +27,12 @@ export interface ToolExecutorDeps {
   emitter: AgentEventEmitter;
   getState: () => AgentState | null;
   runLifecycleHook: (
-    phase: import('../core/hooks.js').LifecyclePhase,
+    phase: import('../core/hooks.js').LifecyclePhase | import('../core/hooks.js').RecoveryPhase,
     input: unknown,
     output: unknown
   ) => Promise<void>;
+  /** Optional file snapshot tracker for tool-side-effect detection */
+  fileTracker?: FileTracker | undefined;
 }
 
 export interface ToolBatch {
@@ -261,11 +264,27 @@ export async function executeSingleTool(
     {}
   );
 
+  // File Snapshot: take before-snapshot for tools that modify files
+  const filePaths = extractPathsFromArgs(tc.args);
+  let beforeSnapshot = null;
+  if (filePaths.length > 0 && deps.fileTracker) {
+    beforeSnapshot = await deps.fileTracker.takeSnapshotOf(filePaths);
+  }
+
   try {
     const result = await ctx.tools.execute(tc.name, tc.args, {
       toolCallId: tc.id,
       parentSessionId: ctx.sessionId,
     });
+
+    // File Snapshot: notify tracker of changes
+    if (beforeSnapshot && filePaths.length > 0 && deps.fileTracker) {
+      const afterSnapshot = await deps.fileTracker.takeSnapshotOf(filePaths);
+      const changes = deps.fileTracker.diff(beforeSnapshot, afterSnapshot);
+      if (changes.length > 0) {
+        deps.fileTracker.notify(changes, ctx.sessionId);
+      }
+    }
 
     await runLifecycleHook(
       'tool.after',

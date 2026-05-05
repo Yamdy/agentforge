@@ -20,6 +20,7 @@ export type {
   Message,
   ToolCall,
   FinishReason,
+  AgentTerminationReason,
   SerializedError,
   AgentEvent,
 } from './events.js';
@@ -185,10 +186,16 @@ export {
   RequestHookPriority,
   DEFAULT_REQUEST_HOOK_PRIORITY,
   type LifecyclePhase,
+  type CheckpointPhase,
+  type RecoveryPhase,
   type HookFn,
   type LifecycleHookEntry,
+  type RecoveryHookEntry,
   type RequestHook,
   type ToolHook,
+  type CheckpointHook,
+  type CheckpointResult,
+  type CheckpointFn,
 } from './hooks.js';
 
 // ============================================================

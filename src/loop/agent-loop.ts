@@ -18,12 +18,12 @@
 import {
   type AgentEvent,
   type Message,
-  type ToolCall,
   type SerializedError,
   AgentEventEmitter,
   serializeError,
   generateId,
 } from '../core/events.js';
+import { ErrorCode } from '../core/error-codes.js';
 import type { AgentContext } from '../core/context.js';
 import type { AgentState } from '../core/state.js';
 import { AgentStateMachine, type AgentStateEnum } from '../core/state-machine.js';
@@ -31,18 +31,28 @@ import { extractText } from '../core/content-utils.js';
 import {
   HookRegistry,
   type LifecyclePhase,
+  type RecoveryPhase,
   RequestHookPriority,
   type CheckpointFn,
+  CheckpointBlockReason,
 } from '../core/hooks.js';
 import { createInitialState } from '../core/state.js';
-import { checkTokenBudget, createBudgetTracker, shouldCompact } from './token-budget.js';
+import {
+  checkTokenBudget,
+  createBudgetTracker,
+  shouldCompact,
+  DEFAULT_TOKEN_BUDGET,
+} from './token-budget.js';
 import { type ErrorRecoveryDeps } from './error-recovery-handler.js';
 import { runPlanThenExecute } from './plan-executor.js';
 import { performLLMCall, type LLMCallDeps, performStreamingLLMCall } from './llm-caller.js';
 import { partitionToolCalls } from './tool-partition.js';
-import { evaluatePermission } from '../security/permission/permission-policy.js';
+import { executeToolBatch, type ToolExecutorDeps } from './tool-executor.js';
 import { createDoomLoopDetector, type DoomLoopDetector } from './doom-loop-detector.js';
-import { createFileTracker, extractPathsFromArgs, type FileTracker } from './file-snapshot.js';
+import { createFileTracker, type FileTracker } from './file-snapshot.js';
+import { attemptAutoRepair } from './auto-repairer.js';
+import { bridgeEmitterToGenerator } from './event-iterator.js';
+import { type PromptTemplates, DEFAULT_PROMPT_TEMPLATES } from './prompt-templates.js';
 
 // ============================================================
 // Types
@@ -54,6 +64,8 @@ export interface RunResult {
   status: 'success' | 'error' | 'aborted' | 'max_steps' | 'cancelled';
   error?: SerializedError;
 }
+
+export type ExecutionMode = 'react' | 'plan-then-execute' | 'plan-then-execute-strict';
 
 export interface AgentLoopConfig {
   model: { provider: string; model: string };
@@ -73,11 +85,13 @@ export interface AgentLoopConfig {
    * - 'plan-then-execute': Try planner first, fall back to ReAct on failure
    * - 'plan-then-execute-strict': Planner MUST succeed, otherwise error and terminate
    */
-  executionMode?: 'react' | 'plan-then-execute' | 'plan-then-execute-strict';
+  executionMode?: ExecutionMode;
   /** Checkpoint functions to execute before each LLM call (quota, rate-limit) */
   preLlmCheckpoints?: CheckpointFn[];
   /** Checkpoint functions to execute after each LLM response (quality gate, circuit breaker) */
   postLlmCheckpoints?: CheckpointFn[];
+  /** Customizable prompt templates (defaults to English) */
+  promptTemplates?: PromptTemplates | undefined;
 }
 
 /**
@@ -148,6 +162,9 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
   const postLlmCheckpoints =
     ctx.pluginManager?.getCheckpoints('post-llm') ?? config.postLlmCheckpoints ?? [];
 
+  // ── Prompt Templates: from config or defaults ──
+  const promptTemplates: PromptTemplates = config.promptTemplates ?? DEFAULT_PROMPT_TEMPLATES;
+
   // ── Working Memory: register system injection RequestHook ──
   // When working memory is configured, inject <working-memory> XML before each LLM call.
   // Priority 20 — sits between MEMORY (10) and SKILL (30).
@@ -179,476 +196,51 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
   // ============================================================
 
   async function runLifecycleHook(
-    phase: LifecyclePhase,
+    phase: LifecyclePhase | RecoveryPhase,
     input: unknown,
     output: unknown
   ): Promise<void> {
-    for (const h of hooks.getLifecycleHooks(phase)) {
+    // CheckpointPhase values ('pre-llm', 'post-llm') are handled separately
+    // by preLlmCheckpoints/postLlmCheckpoints — this function only runs
+    // LifecyclePhase (observational) and RecoveryPhase (error/recovery) hooks.
+    const recoveryPhases = new Set<string>([
+      'llm.error',
+      'tool.error',
+      'recovery.escalate',
+      'recovery.compact',
+      'recovery.fallback',
+      'error',
+    ]);
+    const fns = recoveryPhases.has(phase as string)
+      ? hooks.getRecoveryHooks(phase as RecoveryPhase)
+      : hooks.getLifecycleHooks(phase as LifecyclePhase);
+    for (const fn of fns) {
       try {
-        await h(input, output);
-      } catch (err) {
-        ctx.logger?.warn('Lifecycle hook error', {
-          hookName: phase,
-          error: serializeError(err),
-        });
+        await fn(input, output);
+      } catch {
+        // Plugin isolation — hook errors never crash the loop
       }
     }
   }
 
   // ============================================================
-  // Error Recovery
+  // Tool Executor (delegated to tool-executor.ts)
   // ============================================================
 
-  // ============================================================
-  // Tool Execution
-  // ============================================================
-
-  /**
-   * Execute a single tool call with full safety pipeline:
-   * ToolHook → PermissionController → SecurityGuard → Sandbox/Tool execution.
-   * Extracted from the serial loop so both serial and parallel paths reuse it.
-   */
-  async function executeSingleTool(
-    tc: ToolCall,
-    signal: AbortSignal,
-    batchId?: string
-  ): Promise<Message> {
-    // Helper to emit tool.result with common fields + optional batchId
-    const emitToolResult = (
-      result: string,
-      isError: boolean,
-      extra?: Record<string, unknown>
-    ): void => {
-      void emitter.emit({
-        type: 'tool.result',
-        timestamp: Date.now(),
-        sessionId: ctx.sessionId,
-        toolCallId: tc.id,
-        toolName: tc.name,
-        result,
-        isError,
-        ...(batchId ? { batchId } : {}),
-        ...(extra ?? {}),
-      });
-    };
-
-    // Emit tool.call
-    void emitter.emit({
-      type: 'tool.call',
-      timestamp: Date.now(),
-      sessionId: ctx.sessionId,
-      toolCallId: tc.id,
-      toolName: tc.name,
-      args: tc.args,
-      ...(batchId ? { batchId } : {}),
-    });
-
-    // ── MPU M5: Audit tool call ──
-    ctx.auditLogger?.append({
-      sessionId: ctx.sessionId,
-      agentName: ctx.agentName,
-      eventType: 'tool.call',
-      action: 'tool.call',
-      resource: tc.name,
-      result: 'success',
-      details: { toolCallId: tc.id },
-    });
-
-    // ── ToolHook: permission check ──
-    let blocked = false;
-    for (const h of hooks.getToolHooks()) {
-      if (!(await h.beforeExecute(tc, state!))) {
-        blocked = true;
-        break;
-      }
-    }
-
-    if (blocked) {
-      const deniedMsg: Message = {
-        role: 'tool',
-        content: `Permission denied for tool: ${tc.name}`,
-        toolCallId: tc.id,
-        name: tc.name,
-      };
-      emitToolResult(extractText(deniedMsg.content), true);
-      return deniedMsg;
-    }
-
-    // Get tool definition for subsequent checks
-    const toolDef = ctx.tools.get(tc.name);
-
-    // ── HITL PermissionController: primary gate (A2 iron law) ──
-    // Inserted between ToolHook (secondary check) and SecurityGuard.
-    // Uses evaluatePermission() for policy-based routing:
-    //   deny → block immediately
-    //   allow → proceed
-    //   ask  → human-in-the-loop via PermissionController (with rejection isolation)
-    if (toolDef && ctx.permissionController && ctx.permissionPolicy) {
-      const policyDecision = evaluatePermission(toolDef, ctx.permissionPolicy);
-
-      if (policyDecision === 'deny') {
-        const deniedMsg: Message = {
-          role: 'tool',
-          content: `Permission denied for tool: ${tc.name} (policy: deny)`,
-          toolCallId: tc.id,
-          name: tc.name,
-        };
-        emitToolResult(extractText(deniedMsg.content), true);
-        ctx.auditLogger?.append({
-          sessionId: ctx.sessionId,
-          agentName: ctx.agentName,
-          eventType: 'tool.call',
-          action: 'tool.call',
-          resource: tc.name,
-          result: 'denied',
-          details: { toolCallId: tc.id, reason: 'permission_policy_deny' },
-        });
-        return deniedMsg;
-      }
-
-      if (policyDecision === 'ask') {
-        const promptId = `perm-${tc.id}`;
-        void emitter.emit({
-          type: 'permission',
-          timestamp: Date.now(),
-          sessionId: ctx.sessionId,
-          promptId,
-          permission: tc.name,
-          context: {
-            riskLevel: toolDef.riskLevel,
-            approvalMessage: toolDef.approvalMessage,
-            toolArgs: tc.args,
-          },
-        } as AgentEvent);
-
-        // ── Isolate permission ask from batch abort ──
-        // Treat controller rejection as per-tool deny, not loop crash.
-        let permDecision: 'allow' | 'deny' | 'allow_always';
-        try {
-          permDecision = await ctx.permissionController.ask({
-            promptId,
-            permission: tc.name,
-            toolName: tc.name,
-            toolArgs: tc.args,
-            context: {
-              riskLevel: toolDef.riskLevel,
-              approvalMessage: toolDef.approvalMessage,
-            },
-          });
-        } catch {
-          // Permission system failure → deny the tool, don't crash the loop
-          permDecision = 'deny';
-        }
-
-        void emitter.emit({
-          type: 'permission',
-          timestamp: Date.now(),
-          sessionId: ctx.sessionId,
-          promptId,
-          permission: tc.name,
-          decision: permDecision,
-        } as AgentEvent);
-
-        // Audit the HITL decision regardless of outcome
-        ctx.auditLogger?.append({
-          sessionId: ctx.sessionId,
-          agentName: ctx.agentName,
-          eventType: 'tool.call',
-          action: 'tool.call',
-          resource: tc.name,
-          result: permDecision === 'deny' ? 'denied' : 'success',
-          details: {
-            toolCallId: tc.id,
-            reason: permDecision === 'deny' ? 'HITL rejection' : `HITL ${permDecision}`,
-          },
-        });
-
-        if (permDecision === 'deny') {
-          const deniedMsg: Message = {
-            role: 'tool',
-            content: `Permission denied for tool: ${tc.name} (HITL rejection)`,
-            toolCallId: tc.id,
-            name: tc.name,
-          };
-          emitToolResult(extractText(deniedMsg.content), true);
-          return deniedMsg;
-        }
-        // 'allow' or 'allow_always' → proceed to SecurityGuard
-      }
-      // policyDecision === 'allow' → proceed to SecurityGuard
-    }
-
-    // ── MPU M6: Security check before tool execution ──
-
-    // Check command/path/network blocklist
-    if (toolDef && ctx.securityGuard) {
-      const cmdCheck = ctx.securityGuard.checkCommand(tc.name);
-      if (!cmdCheck.allowed) {
-        const blockedMsg: Message = {
-          role: 'tool',
-          content: `Tool "${tc.name}" blocked by security guard: ${cmdCheck.reason}`,
-          toolCallId: tc.id,
-          name: tc.name,
-        };
-        emitToolResult(`Blocked: ${cmdCheck.reason}`, true);
-        // ── MPU M5: Audit blocked tool call ──
-        ctx.auditLogger?.append({
-          sessionId: ctx.sessionId,
-          agentName: ctx.agentName,
-          eventType: 'tool.call',
-          action: 'tool.call',
-          resource: tc.name,
-          result: 'denied',
-          details: { toolCallId: tc.id, reason: cmdCheck.reason },
-        });
-        return blockedMsg;
-      }
-    }
-
-    // Sandbox routing
-    if (toolDef?.sandboxRequired && ctx.sandboxExecutor) {
-      const sandboxResult = await ctx.sandboxExecutor.execute(
-        { toolName: tc.name, args: tc.args },
-        { sessionId: ctx.sessionId, signal, timeoutMs: 30000 }
-      );
-      const sbResultStr = sandboxResult.success
-        ? (sandboxResult.result ?? '')
-        : `Sandbox error: ${sandboxResult.error?.message ?? 'Unknown error'}`;
-      emitToolResult(sbResultStr, !sandboxResult.success);
-      return {
-        role: 'tool',
-        content: sbResultStr,
-        toolCallId: tc.id,
-        name: tc.name,
-      };
-    }
-
-    // ── Execute tool ──
-    await runLifecycleHook(
-      'tool.before',
-      {
-        sessionId: ctx.sessionId,
-        toolName: tc.name,
-        callId: tc.id,
-        args: tc.args,
-      },
-      {}
-    );
-
-    // ── MPU M5: Audit tool execution ──
-    ctx.auditLogger?.append({
-      sessionId: ctx.sessionId,
-      agentName: ctx.agentName,
-      eventType: 'tool.call',
-      action: 'tool.call',
-      resource: tc.name,
-      result: 'success',
-      details: { toolCallId: tc.id },
-    });
-
-    // ── File Snapshot: take before-snapshot for tools that modify files ──
-    const filePaths = extractPathsFromArgs(tc.args);
-    let beforeSnapshot = null;
-    if (filePaths.length > 0) {
-      beforeSnapshot = await fileTracker.takeSnapshotOf(filePaths);
-    }
-
-    try {
-      const result = await ctx.tools.execute(tc.name, tc.args, {
-        toolCallId: tc.id,
-        parentSessionId: ctx.sessionId,
-      });
-
-      // ── File Snapshot: notify tracker of changes ──
-      if (beforeSnapshot && filePaths.length > 0) {
-        const afterSnapshot = await fileTracker.takeSnapshotOf(filePaths);
-        const changes = fileTracker.diff(beforeSnapshot, afterSnapshot);
-        if (changes.length > 0) {
-          fileTracker.notify(changes, ctx.sessionId);
-        }
-      }
-
-      await runLifecycleHook(
-        'tool.after',
-        {
-          sessionId: ctx.sessionId,
-          toolName: tc.name,
-          callId: tc.id,
-          args: tc.args,
-        },
-        { result }
-      );
-
-      const resultStr = typeof result === 'string' ? result : JSON.stringify(result);
-      emitToolResult(resultStr, false);
-
-      // ── MPU M5: Audit tool result (success) ──
-      ctx.auditLogger?.append({
-        sessionId: ctx.sessionId,
-        agentName: ctx.agentName,
-        eventType: 'tool.result',
-        action: 'tool.result',
-        resource: tc.name,
-        result: 'success',
-        details: { toolCallId: tc.id },
-      });
-
-      // ── MPU M10: Result validation ──
-      if (ctx.services.resultValidator) {
-        try {
-          const validation = ctx.services.resultValidator.validate(tc.name, resultStr);
-          if (!validation.valid) {
-            ctx.logger?.warn(`Tool result validation failed for ${tc.name}:`, {
-              errors: validation.errors,
-            });
-          }
-        } catch (err) {
-          ctx.logger?.warn('Tool result validation error', {
-            toolName: tc.name,
-            error: serializeError(err),
-          });
-        }
-      }
-
-      return {
-        role: 'tool',
-        content: resultStr,
-        toolCallId: tc.id,
-        name: tc.name,
-      };
-    } catch (err) {
-      const errStr = err instanceof Error ? err.message : String(err);
-
-      await runLifecycleHook(
-        'tool.error',
-        {
-          sessionId: ctx.sessionId,
-          toolName: tc.name,
-          callId: tc.id,
-          error: err,
-        },
-        { retry: false }
-      );
-
-      emitToolResult(errStr, true);
-
-      // ── MPU M5 + M4: Audit + circuit breaker on tool error ──
-      ctx.auditLogger?.append({
-        sessionId: ctx.sessionId,
-        agentName: ctx.agentName,
-        eventType: 'tool.result',
-        action: 'tool.result',
-        resource: tc.name,
-        result: 'error',
-        details: { toolCallId: tc.id, error: errStr },
-      });
-
-      if (ctx.errorClassifier && ctx.circuitBreaker) {
-        try {
-          const severity = ctx.errorClassifier.classify({
-            name: 'ToolExecutionError',
-            message: errStr,
-            stack: undefined,
-          });
-          ctx.circuitBreaker.recordFailure(severity);
-        } catch (err) {
-          ctx.logger?.warn('Error classification / circuit breaker error', {
-            error: serializeError(err),
-          });
-        }
-      }
-
-      return {
-        role: 'tool',
-        content: `Error: ${errStr}`,
-        toolCallId: tc.id,
-        name: tc.name,
-      };
-    }
-  }
-
-  /**
-   * Execute a batch of concurrency-safe tools in parallel via Promise.all.
-   * Passes batchId to each tool.call/tool.result for observability.
-   */
-  async function executeToolBatchParallel(
-    batch: { calls: ToolCall[]; isConcurrencySafe: boolean },
-    signal: AbortSignal
-  ): Promise<Message[]> {
-    const batchId = generateId('batch');
-
-    // Execute all tools in parallel — each tool emits its own tool.call/tool.result with batchId
-    const settled = await Promise.all(
-      batch.calls.map(tc => executeSingleTool(tc, signal, batchId))
-    );
-
-    return settled;
-  }
-
-  async function executeToolBatch(
-    batch: { calls: ToolCall[]; isConcurrencySafe: boolean },
-    signal: AbortSignal
-  ): Promise<Message[]> {
-    // Parallel path for concurrency-safe batches
-    if (batch.isConcurrencySafe && config.parallelToolCalls && batch.calls.length > 1) {
-      return executeToolBatchParallel(batch, signal);
-    }
-
-    // Serial path (unchanged behavior)
-    const results: Message[] = [];
-    for (const tc of batch.calls) {
-      if (signal.aborted) break;
-      const result = await executeSingleTool(tc, signal);
-      results.push(result);
-    }
-    return results;
-  }
+  const toolExecutorDeps: ToolExecutorDeps = {
+    ctx,
+    hooks,
+    emitter,
+    getState: () => state,
+    runLifecycleHook,
+    fileTracker,
+  };
 
   // ============================================================
-  // Auto-Repair Helper
+  // Auto-Repair Helper (delegated to auto-repairer.ts)
   // ============================================================
 
-  const MAX_AUTO_REPAIR_ATTEMPTS = 3;
-
-  async function attemptAutoRepair(error: unknown, state: AgentState): Promise<boolean> {
-    if (!ctx.autoRepairer) return false;
-    if (state.autoRepairAttempts >= MAX_AUTO_REPAIR_ATTEMPTS) return false;
-
-    try {
-      const err = serializeError(error);
-      const repairCtx: import('../contracts/mpu-interfaces.js').RepairContext = {
-        error: err,
-        retryCount: state.autoRepairAttempts,
-        sessionId: ctx.sessionId,
-        llm: ctx.llm,
-        ...(ctx.compactionManager ? { compactionManager: ctx.compactionManager } : {}),
-        messages: state.messages,
-        currentTokenEstimate: state.tokens.prompt + state.tokens.completion,
-        config: {
-          ...(config.fallbackModel
-            ? { fallbackModel: `${config.fallbackModel.provider}/${config.fallbackModel.model}` }
-            : {}),
-        },
-      };
-      const result = await ctx.autoRepairer.attemptRepair(repairCtx);
-      if (result.success) {
-        ctx.logger?.info('Auto-repair succeeded, retrying', {
-          description: result.description,
-          attempt: state.autoRepairAttempts + 1,
-        });
-        return true;
-      }
-      ctx.logger?.warn('Auto-repair failed', {
-        description: result.description,
-      });
-      return false;
-    } catch (repairErr) {
-      ctx.logger?.warn('Auto-repair attempt error', {
-        error: serializeError(repairErr),
-      });
-      return false;
-    }
-  }
+  const autoRepairDeps = { ctx, config };
 
   // ============================================================
   // Main Run Function
@@ -661,7 +253,11 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         type: 'agent.error',
         timestamp: Date.now(),
         sessionId: ctx.sessionId,
-        error: { name: 'AgentAlreadyRunningError', message: 'Agent is already running' },
+        error: {
+          name: 'AgentAlreadyRunningError',
+          message: 'Agent is already running',
+          code: ErrorCode.AGENT_ALREADY_RUNNING,
+        },
       };
       void emitter.emit(errEvent);
       void emitter.emit({
@@ -673,7 +269,11 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       return {
         output: '',
         status: 'error',
-        error: { name: 'AgentAlreadyRunningError', message: 'Agent is already running' },
+        error: {
+          name: 'AgentAlreadyRunningError',
+          message: 'Agent is already running',
+          code: ErrorCode.AGENT_ALREADY_RUNNING,
+        },
       };
     }
     isRunning = true;
@@ -725,7 +325,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
     });
 
     const maxSteps = state.maxSteps;
-    const tokenBudget = config.tokenBudget ?? 200_000;
+    const tokenBudget = config.tokenBudget ?? DEFAULT_TOKEN_BUDGET;
     const budgetTracker = createBudgetTracker();
 
     // ── Deps for extracted loop modules (must be after state init) ──
@@ -836,7 +436,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
               type: 'done',
               timestamp: Date.now(),
               sessionId: ctx.sessionId,
-              reason: 'length',
+              reason: 'completed',
             });
             await runLifecycleHook(
               'session.end',
@@ -885,7 +485,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
               sessionId: ctx.sessionId,
               messages: state.messages,
               currentTokenEstimate: state.tokens.prompt + state.tokens.completion,
-              maxTokens: config.tokenBudget ?? 200_000,
+              maxTokens: config.tokenBudget ?? DEFAULT_TOKEN_BUDGET,
             });
             if (needsCompact) {
               void emitter.emit({
@@ -894,21 +494,21 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
                 sessionId: ctx.sessionId,
                 strategy: ctx.compactionManager.getConfig().strategy,
                 tokensBefore: state.tokens.prompt + state.tokens.completion,
-              } as AgentEvent);
+              });
               const result = await ctx.compactionManager.compact({
                 sessionId: ctx.sessionId,
                 messages: state.messages,
                 currentTokenEstimate: state.tokens.prompt + state.tokens.completion,
-                maxTokens: config.tokenBudget ?? 200_000,
+                maxTokens: config.tokenBudget ?? DEFAULT_TOKEN_BUDGET,
               });
-              state.messages = result.messages as Message[];
+              state.messages = result.messages;
               void emitter.emit({
                 type: 'compaction.complete',
                 timestamp: Date.now(),
                 sessionId: ctx.sessionId,
                 tokensAfter: result.tokensAfter,
                 removedMessages: result.removedCount,
-              } as AgentEvent);
+              });
             }
           }
 
@@ -926,21 +526,23 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           }
           if (blocked) {
             // R1: errors-as-events
-            const errMsg =
-              blockReason === 'quota_exceeded'
-                ? 'Token/cost quota exceeded'
-                : 'LLM rate limit exceeded';
+            const isQuotaExceeded = blockReason === CheckpointBlockReason.QUOTA_EXCEEDED;
+            const errMsg = isQuotaExceeded
+              ? 'Token/cost quota exceeded'
+              : 'LLM rate limit exceeded';
+            const errCode = isQuotaExceeded
+              ? ErrorCode.QUOTA_EXCEEDED
+              : ErrorCode.RATE_LIMIT_EXCEEDED;
+            const errName = isQuotaExceeded ? 'QuotaExceededError' : 'RateLimitExceededError';
             stateMachine.transition('error');
             void emitter.emit({
               type: 'agent.error',
               timestamp: Date.now(),
               sessionId: ctx.sessionId,
               error: {
-                name:
-                  blockReason === 'quota_exceeded'
-                    ? 'QuotaExceededError'
-                    : 'RateLimitExceededError',
+                name: errName,
                 message: errMsg,
+                code: errCode,
               },
             });
             void emitter.emit({
@@ -953,11 +555,9 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
               output: state.output,
               status: 'error',
               error: {
-                name:
-                  blockReason === 'quota_exceeded'
-                    ? 'QuotaExceededError'
-                    : 'RateLimitExceededError',
+                name: errName,
                 message: errMsg,
+                code: errCode,
               },
             };
           }
@@ -973,7 +573,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           }
           if (llmResult.status === 'fatal') {
             // Try auto-repair before giving up (P0-4 fix)
-            const repaired = await attemptAutoRepair(llmResult.error, state);
+            const repaired = await attemptAutoRepair(autoRepairDeps, llmResult.error, state);
             if (repaired) {
               state.autoRepairAttempts++;
               state.step++;
@@ -1016,7 +616,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             toolCalls: response.toolCalls,
             finishReason: response.finishReason,
             usage: response.usage,
-          } as AgentEvent);
+          });
 
           await runLifecycleHook(
             'llm.response.after',
@@ -1043,7 +643,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           if (postBlocked) {
             // Quality gate failures are non-fatal — the checkpoint already
             // injected the correction message, so just continue the loop.
-            if (postBlockReason === 'quality_gate_retry') {
+            if (postBlockReason === CheckpointBlockReason.QUALITY_GATE_RETRY) {
               continue;
             }
             // All other post-llm blocks are fatal
@@ -1052,7 +652,11 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
               type: 'agent.error',
               timestamp: Date.now(),
               sessionId: ctx.sessionId,
-              error: { name: 'CheckpointBlockedError', message: postBlockReason },
+              error: {
+                name: 'CheckpointBlockedError',
+                message: postBlockReason,
+                code: ErrorCode.CHECKPOINT_BLOCKED,
+              },
             });
             void emitter.emit({
               type: 'done',
@@ -1063,7 +667,11 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             return {
               output: state.output,
               status: 'error',
-              error: { name: 'CheckpointBlockedError', message: postBlockReason },
+              error: {
+                name: 'CheckpointBlockedError',
+                message: postBlockReason,
+                code: ErrorCode.CHECKPOINT_BLOCKED,
+              },
             };
           }
 
@@ -1122,7 +730,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
                 { role: 'assistant', content: response.content },
                 {
                   role: 'user',
-                  content: 'Continue from where you left off. Do not repeat or summarize.',
+                  content: promptTemplates.continuePrompt,
                 },
               ];
               state.step++;
@@ -1154,7 +762,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
               type: 'done',
               timestamp: Date.now(),
               sessionId: ctx.sessionId,
-              reason: 'length',
+              reason: 'completed',
             });
             break;
           }
@@ -1175,6 +783,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
               error: {
                 name: 'DoomLoopDetectedError',
                 message: `Doom loop detected: ${details?.repeatCount ?? 3} consecutive identical calls to tool "${details?.toolName ?? 'unknown'}"`,
+                code: ErrorCode.DOOM_LOOP_DETECTED,
               },
             });
             void emitter.emit({
@@ -1189,6 +798,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
               error: {
                 name: 'DoomLoopDetectedError',
                 message: `Doom loop detected: ${details?.repeatCount ?? 3} consecutive identical calls to tool "${details?.toolName ?? 'unknown'}"`,
+                code: ErrorCode.DOOM_LOOP_DETECTED,
               },
             };
           }
@@ -1210,7 +820,12 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           for (const batch of batches) {
             if (signal.aborted) break;
 
-            const results = await executeToolBatch(batch, signal);
+            const results = await executeToolBatch(
+              toolExecutorDeps,
+              batch,
+              signal,
+              config.parallelToolCalls ?? false
+            );
             toolResults.push(...results);
           }
 
@@ -1224,6 +839,46 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           );
           if (hasToolError) {
             doomLoop.reset();
+          }
+
+          // ── Token Budget: absolute check after tool-call path (covers
+          // agents that continuously make tool calls without returning text).
+          // Uses absolute threshold rather than diminishing-returns logic,
+          // which is specific to the text-continuation flow. ──
+          const totalTokens = state.tokens.prompt + state.tokens.completion;
+          if (totalTokens >= tokenBudget) {
+            state.output =
+              state.messages
+                .filter(m => m.role === 'assistant')
+                .map(m => extractText(m.content))
+                .join('\n') || state.output;
+            await runLifecycleHook(
+              'session.end',
+              {
+                sessionId: ctx.sessionId,
+                reason: 'token_budget',
+                steps: state.step,
+                tokens: state.tokens,
+              },
+              {}
+            );
+            stateMachine.transition('completed');
+            void emitter.emit({
+              type: 'agent.complete',
+              timestamp: Date.now(),
+              sessionId: ctx.sessionId,
+              output: state.output,
+              steps: state.step,
+              stepCount: state.step,
+              tokens: { input: state.tokens.prompt, output: state.tokens.completion },
+            });
+            void emitter.emit({
+              type: 'done',
+              timestamp: Date.now(),
+              sessionId: ctx.sessionId,
+              reason: 'completed',
+            });
+            break;
           }
 
           await runLifecycleHook(
@@ -1281,21 +936,21 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
                 sessionId: ctx.sessionId,
                 strategy: ctx.compactionManager.getConfig().strategy,
                 tokensBefore: state.tokens.prompt + state.tokens.completion,
-              } as AgentEvent);
+              });
               const result = await ctx.compactionManager.compact({
                 sessionId: ctx.sessionId,
                 messages: state.messages,
-                maxTokens: config.tokenBudget ?? 200_000,
+                maxTokens: config.tokenBudget ?? DEFAULT_TOKEN_BUDGET,
                 currentTokenEstimate: state.tokens.prompt + state.tokens.completion,
               });
-              state.messages = result.messages as Message[];
+              state.messages = result.messages;
               void emitter.emit({
                 type: 'compaction.complete',
                 timestamp: Date.now(),
                 sessionId: ctx.sessionId,
                 tokensAfter: result.tokensAfter,
                 removedMessages: result.removedCount,
-              } as AgentEvent);
+              });
             }
             await runLifecycleHook(
               'compaction.after',
@@ -1310,6 +965,10 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       } catch (error) {
         // ── Errors-as-events ──
         const err: SerializedError = serializeError(error);
+        // Ensure unexpected errors have a code for programmatic handling
+        if (!err.code) {
+          err.code = ErrorCode.INTERNAL_ERROR;
+        }
         stateMachine.transition('error');
         const errEvent: AgentEvent = {
           type: 'agent.error',
@@ -1372,91 +1031,20 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
   }
 
   // ============================================================
-  // AsyncGenerator Iteration (bridges emitter to generator yields)
+  // AsyncGenerator Iteration (delegated to event-iterator.ts)
   // ============================================================
 
-  let iterationActive = false;
-
-  async function* iterate(input: string): AsyncGenerator<AgentEvent, RunResult, void> {
-    // Re-entrancy guard — run() also checks isRunning, but iterate()
-    // replaces emitter.emit globally. Concurrent iterate() calls produce
-    // stacked overrides that leak events between generators.
-    // Must use a synchronous flag because isRunning is set inside run()
-    // which fires via microtask (Promise.resolve().then).
-    if (iterationActive || isRunning) {
-      const now = Date.now();
-      yield {
-        type: 'agent.error',
-        timestamp: now,
+  function iterate(input: string): AsyncGenerator<AgentEvent, RunResult, void> {
+    return bridgeEmitterToGenerator(
+      {
+        emitter,
         sessionId: ctx.sessionId,
-        agentName: ctx.agentName,
-        error: { name: 'AgentAlreadyRunningError', message: 'Agent is already running' },
-      } as AgentEvent;
-      yield {
-        type: 'done',
-        timestamp: now,
-        sessionId: ctx.sessionId,
-        reason: 'error',
-        agentName: ctx.agentName,
-      } as AgentEvent;
-      return {
-        output: '',
-        status: 'error',
-        error: { name: 'AgentAlreadyRunningError', message: 'Agent is already running' },
-      };
-    }
-
-    const eventQueue: AgentEvent[] = [];
-    let eventPushResolve: (() => void) | null = null;
-
-    const origEmit = emitter.emit.bind(emitter);
-    emitter.emit = async (event: AgentEvent): Promise<void> => {
-      eventQueue.push(event);
-      if (eventPushResolve) {
-        eventPushResolve();
-        eventPushResolve = null;
-      }
-      await origEmit(event);
-    };
-
-    iterationActive = true;
-    let runDone = false;
-    try {
-      let runResult: RunResult;
-      const runPromise = Promise.resolve()
-        .then(() => run(input))
-        .then(v => {
-          runResult = v;
-          runDone = true;
-          // Wake the generator if it is waiting for events.
-          // Without this, paths that return without emitting a final event
-          // (maxSteps, cancel) cause a deadlock.
-          if (eventPushResolve) {
-            eventPushResolve();
-            eventPushResolve = null;
-          }
-          return v;
-        });
-
-      while (!runDone || eventQueue.length > 0) {
-        if (eventQueue.length > 0) {
-          yield eventQueue.shift()!;
-        } else if (!runDone) {
-          await new Promise<void>(resolve => {
-            eventPushResolve = resolve;
-          });
-        }
-      }
-
-      await runPromise;
-      return runResult!;
-    } finally {
-      emitter.emit = origEmit;
-      iterationActive = false;
-      if (!runDone) {
-        cancelLoop();
-      }
-    }
+        isRunning: () => isRunning,
+        cancelLoop,
+      },
+      run,
+      input
+    );
   }
 
   function cancelLoop(): void {

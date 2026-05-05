@@ -16,7 +16,7 @@
 
 import { type AgentEventEmitter, serializeError } from '../core/events.js';
 import { HookRegistry } from '../core/hooks.js';
-import type { LifecyclePhase, CheckpointFn } from '../core/hooks.js';
+import type { CheckpointPhase, CheckpointFn } from '../core/hooks.js';
 import type { Plugin, PluginContext } from './plugin.js';
 import { applyPlugins, type AppliedPipeline } from './pipeline.js';
 
@@ -137,7 +137,7 @@ export class PluginManager {
    * Get checkpoint functions for a lifecycle phase.
    * Called by the agent loop at pre-llm / post-llm phases.
    */
-  getCheckpoints(phase: LifecyclePhase): CheckpointFn[] {
+  getCheckpoints(phase: CheckpointPhase): CheckpointFn[] {
     return this.appliedPipeline?.getCheckpoints(phase) ?? [];
   }
 

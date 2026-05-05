@@ -8,11 +8,11 @@
  * into loop state.
  */
 
-import type { AgentEvent, Message, ToolCall } from '../core/index.js';
+import type { Message, ToolCall } from '../core/index.js';
 import type { AgentContext, AgentState } from '../core/index.js';
 import type { LLMOptions, LLMResponse } from '../core/interfaces.js';
 import type { AgentEventEmitter } from '../core/events.js';
-import type { LifecyclePhase, HookRegistry } from '../core/hooks.js';
+import type { LifecyclePhase, RecoveryPhase, HookRegistry } from '../core/hooks.js';
 import type { AgentLoopConfig } from './agent-loop.js';
 import { handleLLMError } from './error-recovery-handler.js';
 import type { ErrorRecoveryDeps } from './error-recovery-handler.js';
@@ -37,7 +37,11 @@ export interface LLMCallDeps {
   state: AgentState | null;
   recoveryState: { escalatedMaxTokens: number | undefined };
   errorRecoveryDeps: ErrorRecoveryDeps;
-  runLifecycleHook: (phase: LifecyclePhase, input: unknown, output: unknown) => Promise<void>;
+  runLifecycleHook: (
+    phase: LifecyclePhase | RecoveryPhase,
+    input: unknown,
+    output: unknown
+  ) => Promise<void>;
   /** Lightweight callback for streaming text chunks (replaces Zod-validated llm.chunk event) */
   onChunk?: OnChunkCallback;
 }
@@ -80,7 +84,7 @@ export async function performLLMCall(
     sessionId: ctx.sessionId,
     messages: msgs,
     model: config.model,
-  } as AgentEvent);
+  });
 
   // ToolProvider Hooks: per-call dynamic tool injection
   let toolDefs = ctx.tools?.getFunctionDefs() ?? [];
@@ -171,7 +175,7 @@ export async function performStreamingLLMCall(
     sessionId: ctx.sessionId,
     messages: msgs,
     model: config.model,
-  } as AgentEvent);
+  });
 
   // ToolProvider Hooks: per-call dynamic tool injection
   let toolDefs = ctx.tools?.getFunctionDefs() ?? [];

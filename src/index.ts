@@ -64,7 +64,10 @@ export type {
   CheckpointResult,
   CheckpointFn,
   LifecyclePhase,
+  CheckpointPhase,
+  RecoveryPhase,
   LifecycleHookEntry,
+  RecoveryHookEntry,
 } from './core/hooks.js';
 
 export { RequestHookPriority, DEFAULT_REQUEST_HOOK_PRIORITY } from './core/hooks.js';
@@ -94,6 +97,7 @@ export type {
   ToolCall,
   SerializedError,
   FinishReason,
+  AgentTerminationReason,
 } from './core/events.js';
 
 export {
@@ -105,6 +109,12 @@ export {
   serializeError,
   generateId,
 } from './core/events.js';
+
+// ============================================================
+// Error Codes
+// ============================================================
+
+export { ErrorCode } from './core/error-codes.js';
 
 // ============================================================
 // Core Types
