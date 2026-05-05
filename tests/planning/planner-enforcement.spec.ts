@@ -246,7 +246,7 @@ describe('Planner Enforcement — executionMode', () => {
       const completeEvents = events.filter((e: any) => e.type === 'agent.complete');
       expect(completeEvents.length).toBeGreaterThan(0);
       const doneEvent = events.find((e: any) => e.type === 'done');
-      expect(doneEvent.reason).toBe('stop');
+      expect(doneEvent.reason).toBe('completed');
     });
 
     it('falls back to ReAct when planner throws', async () => {
@@ -325,7 +325,7 @@ describe('Planner Enforcement — executionMode', () => {
       subscribe();
 
       const doneEvent = events.find((e: any) => e.type === 'done');
-      expect(doneEvent.reason).toBe('stop');
+      expect(doneEvent.reason).toBe('completed');
     });
 
     it('emits agent.error and done when planner throws', async () => {

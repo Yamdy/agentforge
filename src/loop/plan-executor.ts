@@ -7,8 +7,10 @@
 
 import type { AgentContext } from '../core/context.js';
 import type { AgentState } from '../core/state.js';
-import type { AgentEventEmitter, SerializedError, AgentEvent } from '../core/events.js';
+import type { AgentEventEmitter, SerializedError } from '../core/events.js';
 import type { AgentStateMachine } from '../core/state-machine.js';
+import { ErrorCode } from '../core/error-codes.js';
+import type { ExecutionMode } from './agent-loop.js';
 
 export interface PlanExecutorDeps {
   ctx: AgentContext;
@@ -16,7 +18,7 @@ export interface PlanExecutorDeps {
   input: string;
   emitter: AgentEventEmitter;
   stateMachine: AgentStateMachine;
-  executionMode: 'react' | 'plan-then-execute' | 'plan-then-execute-strict';
+  executionMode: ExecutionMode;
   maxSteps: number;
   cleanupRun: () => void;
 }
@@ -48,6 +50,7 @@ export async function runPlanThenExecute(
       name: 'PlannerError',
       message: fullMessage,
       stack: planningError instanceof Error ? planningError.stack : undefined,
+      code: ErrorCode.PLANNER_ERROR,
     };
     stateMachine.transition('error');
     void emitter.emit({
@@ -55,7 +58,7 @@ export async function runPlanThenExecute(
       timestamp: Date.now(),
       sessionId: ctx.sessionId,
       error: plannedError,
-    } as AgentEvent);
+    });
     void emitter.emit({
       type: 'done',
       reason: 'error',
@@ -150,10 +153,10 @@ export async function runPlanThenExecute(
         sessionId: ctx.sessionId,
         output: finalOutput,
         steps: deps.state.step,
-      } as AgentEvent);
+      });
       void emitter.emit({
         type: 'done',
-        reason: 'stop',
+        reason: 'completed',
         timestamp: Date.now(),
         sessionId: ctx.sessionId,
       });

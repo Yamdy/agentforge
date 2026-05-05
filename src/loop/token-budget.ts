@@ -13,6 +13,16 @@
 import type { Message } from '../core/events.js';
 
 // ============================================================
+// Constants
+// ============================================================
+
+/** Default token budget (200k) — a generous default suitable for most models */
+export const DEFAULT_TOKEN_BUDGET = 200_000;
+
+/** Default context window size (128k) — used for compaction threshold heuristics */
+export const DEFAULT_CONTEXT_WINDOW = 128_000;
+
+// ============================================================
 // Budget Tracker
 // ============================================================
 
@@ -104,7 +114,7 @@ export function checkTokenBudget(
 export function shouldCompact(
   messages: Message[],
   tokens: { prompt: number; completion: number },
-  contextWindow = 128_000
+  contextWindow = DEFAULT_CONTEXT_WINDOW
 ): boolean {
   const totalTokens = tokens.prompt + tokens.completion;
   // Trigger if >80% of context window or >50 messages

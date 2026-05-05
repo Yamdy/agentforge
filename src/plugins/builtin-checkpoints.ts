@@ -12,6 +12,7 @@
 
 import type { Plugin } from './plugin.js';
 import type { CheckpointHook } from '../core/hooks.js';
+import { CheckpointBlockReason } from '../core/hooks.js';
 import type { AgentContext } from '../core/context.js';
 import type { AgentState } from '../core/state.js';
 
@@ -34,7 +35,7 @@ export function createQuotaPlugin(): Plugin {
       ...(currentUsage.totalCost !== undefined ? { totalCost: currentUsage.totalCost } : {}),
     });
     if (!allowed) {
-      return { action: 'block', reason: 'quota_exceeded' };
+      return { action: 'block', reason: CheckpointBlockReason.QUOTA_EXCEEDED };
     }
     return { action: 'continue' };
   };
@@ -94,7 +95,7 @@ export function createQualityGatePlugin(): Plugin {
         content: `[System] ${gateResult.feedback ?? 'Your last response had quality issues. Please try again.'}`,
       });
       s.step++;
-      return { action: 'block', reason: 'quality_gate_retry' };
+      return { action: 'block', reason: CheckpointBlockReason.QUALITY_GATE_RETRY };
     }
     return { action: 'continue' };
   };

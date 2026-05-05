@@ -107,7 +107,7 @@ export function createSummarizationPlugin(config: SummarizationPluginConfig): Pl
             await offloadManager.offload(state.sessionId, removed);
           }
 
-          return result.messages as Message[];
+          return result.messages;
         },
       },
     ],

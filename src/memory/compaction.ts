@@ -7,7 +7,7 @@
  */
 
 import { z } from 'zod';
-import type { Message } from '../core/events.js';
+import { MessageSchema, type Message } from '../core/events.js';
 import type { LLMAdapter } from '../core/interfaces.js';
 import {
   type CompactionStrategy,
@@ -85,7 +85,7 @@ export const CompactionContextSchema = z.object({
   sessionId: z.string(),
 
   /** Current messages in conversation */
-  messages: z.array(z.any()), // Message array
+  messages: z.array(MessageSchema),
 
   /** Current token estimate */
   currentTokenEstimate: z.number(),
@@ -284,7 +284,7 @@ export class CompactionManager {
       // Extract pinned metadata from current messages before they are removed.
       // Pinned items are stored in the WorkingMemory object and will be
       // re-injected by the RequestHook after compaction.
-      this.workingMemoryProcessor.process(context.messages as Message[], this.workingMemory);
+      this.workingMemoryProcessor.process(context.messages, this.workingMemory);
     }
 
     let result: CompactionResult;
@@ -321,7 +321,7 @@ export class CompactionManager {
 
     // ── Offload removed messages for future retrieval ──
     if (this.offloadManager && result.removedCount > 0) {
-      const resultMessages = result.messages as Message[];
+      const resultMessages = result.messages;
       // Track which original indices were kept (by reference comparison).
       // Using indices avoids the fragile === reference equality of .includes().
       const keptIndices = new Set<number>();
@@ -362,7 +362,7 @@ export class CompactionManager {
       ? Math.max(2, Math.floor(this.config.preserveRecent / 2))
       : this.config.preserveRecent;
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-    return truncateOldest(context.messages as Message[], preserveRecent);
+    return truncateOldest(context.messages, preserveRecent);
   }
 
   /**
@@ -382,16 +382,11 @@ export class CompactionManager {
     if (!this.llmAdapter) {
       // Fallback to truncate-oldest if no LLM adapter
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      return truncateOldest(context.messages as Message[], preserveRecent);
+      return truncateOldest(context.messages, preserveRecent);
     }
 
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-    return summarize(
-      context.messages as Message[],
-      preserveRecent,
-      this.llmAdapter,
-      maxSummaryLength
-    );
+    return summarize(context.messages, preserveRecent, this.llmAdapter, maxSummaryLength);
   }
 
   /**
@@ -406,11 +401,7 @@ export class CompactionManager {
       : this.config.targetTokenRatio;
     const targetTokens = Math.floor(context.maxTokens * targetTokenRatio);
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-    return importanceWeighted(
-      context.messages as Message[],
-      this.config.preserveRecent,
-      targetTokens
-    );
+    return importanceWeighted(context.messages, this.config.preserveRecent, targetTokens);
   }
 
   /**
@@ -424,7 +415,7 @@ export class CompactionManager {
       ? Math.max(1, Math.floor(this.config.keepRecentTurns / 2))
       : this.config.keepRecentTurns;
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-    return snipCompaction(context.messages as Message[], keepRecentTurns);
+    return snipCompaction(context.messages, keepRecentTurns);
   }
 
   /**
@@ -445,7 +436,7 @@ export class CompactionManager {
     if (!this.vectorStore || !this.embeddingModel) {
       // Fallback to truncate-oldest if no VectorStore/EmbeddingModel available
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      return truncateOldest(context.messages as Message[], preserveRecent);
+      return truncateOldest(context.messages, preserveRecent);
     }
 
     const pointerConfig: PointerIndexedConfig = {
@@ -455,12 +446,7 @@ export class CompactionManager {
     };
 
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-    return pointerIndexed(
-      context.messages as Message[],
-      pointerConfig,
-      this.vectorStore,
-      this.embeddingModel
-    );
+    return pointerIndexed(context.messages, pointerConfig, this.vectorStore, this.embeddingModel);
   }
 
   /**
@@ -471,7 +457,7 @@ export class CompactionManager {
     _options?: { aggressive?: boolean }
   ): CompactionResult {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-    return microcompact(context.messages as Message[], {
+    return microcompact(context.messages, {
       maxToolResultChars: 2000,
       preserveSystem: true,
     });
@@ -491,13 +477,13 @@ export class CompactionManager {
    */
   multiLayerCompact(context: CompactionContext): CompactionResult {
     const targetTokens = Math.floor(context.maxTokens * this.config.targetTokenRatio);
-    let currentMessages = [...(context.messages as Message[])];
+    let currentMessages = [...context.messages];
     let totalRemoved = 0;
     const tokensBefore = estimateTokens(currentMessages);
 
     // Layer 1: snip — preserve 5 most recent turns
     const snipResult = snipCompaction(currentMessages, 5);
-    currentMessages = snipResult.messages as Message[];
+    currentMessages = snipResult.messages;
     totalRemoved += snipResult.removedCount;
     if (estimateTokens(currentMessages) <= targetTokens && currentMessages.length > 0) {
       return {
@@ -512,7 +498,7 @@ export class CompactionManager {
     // Layer 2: microcompact — trim tool results to 2000 chars
     // Reports 'microcompact' as the most aggressive layer applied (snip also ran)
     const microResult = microcompact(currentMessages, { maxToolResultChars: 2000 });
-    currentMessages = microResult.messages as Message[];
+    currentMessages = microResult.messages;
     if (estimateTokens(currentMessages) <= targetTokens && currentMessages.length > 0) {
       return {
         messages: currentMessages,
@@ -527,7 +513,7 @@ export class CompactionManager {
     // Reports 'truncate-oldest' as the most aggressive layer applied (snip + microcompact also ran)
     const truncResult = truncateOldest(currentMessages, Math.max(2, this.config.preserveRecent));
     totalRemoved += truncResult.removedCount;
-    currentMessages = truncResult.messages as Message[];
+    currentMessages = truncResult.messages;
 
     return {
       messages: currentMessages,

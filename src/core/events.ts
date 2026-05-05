@@ -111,6 +111,10 @@ export type ToolCall = z.infer<typeof ToolCallSchema>;
 export const FinishReasonSchema = z.enum(['stop', 'tool_calls', 'length', 'error', 'cancelled']);
 export type FinishReason = z.infer<typeof FinishReasonSchema>;
 
+/** Agent loop termination reason — semantically distinct from LLM finish_reason. */
+export const AgentTerminationReasonSchema = z.enum(['completed', 'error', 'cancelled']);
+export type AgentTerminationReason = z.infer<typeof AgentTerminationReasonSchema>;
+
 /**
  * Serialized Error Schema
  *
@@ -121,6 +125,7 @@ export const SerializedErrorSchema = z.object({
   name: z.string(),
   message: z.string(),
   stack: z.string().optional(),
+  code: z.string().optional(),
 });
 export type SerializedError = z.infer<typeof SerializedErrorSchema>;
 
@@ -246,7 +251,7 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
     type: z.literal('done'),
     timestamp: z.number(),
     sessionId: z.string(),
-    reason: FinishReasonSchema,
+    reason: AgentTerminationReasonSchema,
   }),
 
   // ----- subagent.* -----
@@ -350,16 +355,37 @@ export function isCompactionEvent(
 }
 
 // ============================================================
+// Streaming Chunk Event (lightweight — no Zod validation)
+// ============================================================
+
+/**
+ * Lightweight streaming chunk event.
+ *
+ * Intentionally NOT in AgentEventTypeSchema z.enum — chunks bypass Zod
+ * validation for performance (streaming fires 10s of times per second).
+ * TypeScript types provide sufficient safety for the simple delta structure.
+ */
+export interface LLMChunkEvent {
+  type: 'llm.chunk';
+  delta: string;
+  index: number;
+  timestamp: number;
+  sessionId: string;
+}
+
+// ============================================================
 // Event Helpers
 // ============================================================
 
 /** Create serialized error from Error instance */
 export function serializeError(error: unknown): SerializedError {
   if (error instanceof Error) {
+    const code = (error as Error & { code?: string }).code;
     return {
       name: error.name,
       message: error.message,
       stack: error.stack,
+      ...(code ? { code } : {}),
     };
   }
   return {
@@ -390,6 +416,7 @@ export function generateId(prefix = ''): string {
 export class AgentEventEmitter {
   private typed = new Map<string, Set<(event: unknown) => void | Promise<void>>>();
   private any = new Set<(event: AgentEvent) => void | Promise<void>>();
+  private chunkListeners = new Set<(chunk: LLMChunkEvent) => void | Promise<void>>();
 
   constructor(private logger?: Logger) {}
 
@@ -468,10 +495,45 @@ export class AgentEventEmitter {
   }
 
   /**
-   * Remove all listeners.
+   * Emit a streaming text chunk through the fast path (no Zod validation).
+   *
+   * Chunks are high-frequency events during streaming. Zod validation
+   * overhead would be measurable at 10+ chunks/second.
+   */
+  emitChunk(delta: string, metadata?: { index?: number }): void {
+    const chunk: LLMChunkEvent = {
+      type: 'llm.chunk',
+      delta,
+      index: metadata?.index ?? 0,
+      timestamp: Date.now(),
+      sessionId: '',
+    };
+    for (const fn of this.chunkListeners) {
+      Promise.resolve()
+        .then(() => fn(chunk))
+        .catch((err: unknown) => {
+          this.logger?.warn('Chunk listener error', { error: serializeError(err as Error) });
+        });
+    }
+  }
+
+  /**
+   * Subscribe to streaming chunk events.
+   * Returns an unsubscribe function.
+   */
+  onChunk(fn: (chunk: LLMChunkEvent) => void | Promise<void>): () => void {
+    this.chunkListeners.add(fn);
+    return () => {
+      this.chunkListeners.delete(fn);
+    };
+  }
+
+  /**
+   * Remove all listeners (typed, any, and chunk).
    */
   clear(): void {
     this.typed.clear();
     this.any.clear();
+    this.chunkListeners.clear();
   }
 }

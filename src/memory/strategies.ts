@@ -13,7 +13,7 @@
  */
 
 import { z } from 'zod';
-import type { Message } from '../core/events.js';
+import { MessageSchema, type Message } from '../core/events.js';
 import type { LLMAdapter } from '../core/interfaces.js';
 import { countMessagesTokens } from '../token-counter.js';
 import { extractText } from '../core/content-utils.js';
@@ -42,8 +42,8 @@ export type CompactionStrategy = z.infer<typeof CompactionStrategySchema>;
  * Compaction result
  */
 export const CompactionResultSchema = z.object({
-  /** Compacted message array */
-  messages: z.array(z.any()), // Message array - using z.any() to avoid circular dependency
+  /** Compacted message array (Zod-validated per MessageSchema) */
+  messages: z.array(MessageSchema),
 
   /** Number of messages removed */
   removedCount: z.number(),

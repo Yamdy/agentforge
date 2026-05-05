@@ -474,16 +474,9 @@ describe('SubagentRegistry', () => {
       expect(errorEvent).toBeDefined();
     });
 
-    it('should decorate nested events with parentSessionId', async () => {
+    it('should provide parentSessionId on subagent.start event', async () => {
       mockAgent.setBehavior({
         events: [
-          {
-            type: 'agent.step',
-            timestamp: Date.now(),
-            sessionId: 'nested-session',
-            step: 1,
-            maxSteps: 5,
-          },
           {
             type: 'agent.complete',
             timestamp: Date.now(),
@@ -500,11 +493,10 @@ describe('SubagentRegistry', () => {
 
       const events = await runAndCollect(registry, 'nested-agent', 'Nested test');
 
-      // Find nested agent.step event (not subagent.start)
-      const stepEvent = events.find(e => e.type === 'agent.step');
-      expect(stepEvent).toBeDefined();
-      // parentSessionId is added by registry via runtime spread, access via any
-      expect((stepEvent as any).parentSessionId).toBeDefined();
+      // parentSessionId is carried on the subagent.start event (schema-validated)
+      const startEvent = events.find(e => e.type === 'subagent.start');
+      expect(startEvent).toBeDefined();
+      expect(startEvent!.parentSessionId).toBeDefined();
     });
 
     it('should emit events in correct order: start -> nested -> complete', async () => {

@@ -40,7 +40,7 @@ export const metricsPlugin: Plugin = {
   },
 
   eventSubscriptions: (
-    ['llm.response', 'tool.result', 'agent.complete', 'agent.error'] as AgentEventType[]
+    ['llm.response', 'tool.result', 'agent.complete', 'agent.error'] satisfies AgentEventType[]
   ).map(evt => ({
     event: evt,
     handler(event: AgentEvent): void {

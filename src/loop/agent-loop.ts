@@ -17,6 +17,7 @@
 
 import {
   type AgentEvent,
+  type LLMChunkEvent,
   type Message,
   type SerializedError,
   AgentEventEmitter,
@@ -108,10 +109,10 @@ export interface AgentLoop {
   run(input: string): Promise<RunResult>;
   /**
    * AsyncGenerator-based iteration. Captures all emitted events and yields them
-   * to the caller. Returns structured result. Subscribe via on()/onAny()
-   * for events outside the generator context.
+   * to the caller, including streaming LLMChunkEvents. Returns structured result.
+   * Subscribe via on()/onAny()/onChunk() for events outside the generator context.
    */
-  iterate(input: string): AsyncGenerator<AgentEvent, RunResult, void>;
+  iterate(input: string): AsyncGenerator<AgentEvent | LLMChunkEvent, RunResult, void>;
   /** Subscribe to typed events */
   on<T extends AgentEvent['type']>(
     type: T,
@@ -1050,7 +1051,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
   // AsyncGenerator Iteration (delegated to event-iterator.ts)
   // ============================================================
 
-  function iterate(input: string): AsyncGenerator<AgentEvent, RunResult, void> {
+  function iterate(input: string): AsyncGenerator<AgentEvent | LLMChunkEvent, RunResult, void> {
     return bridgeEmitterToGenerator(
       {
         emitter,

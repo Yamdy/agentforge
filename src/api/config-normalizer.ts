@@ -10,6 +10,7 @@ import type { ToolDefinition } from '../core/interfaces.js';
 import { parseModelSpec } from '../adapters/index.js';
 import type { Plugin } from '../plugins/index.js';
 import type { PluginSpec } from '../plugins/plugin-loader.js';
+import type { ExecutionMode } from '../loop/agent-loop.js';
 import type {
   AgentConfig,
   AgentModelConfig,
@@ -35,7 +36,7 @@ export interface NormalizedAgentConfig {
   toolSpecs: (string | ToolDefinition)[];
   parallelToolCalls: boolean;
   streaming: boolean;
-  executionMode: 'react' | 'plan-then-execute' | 'plan-then-execute-strict';
+  executionMode: ExecutionMode;
   timeout: number | undefined;
   tokenBudget: number | undefined;
   retry: number;

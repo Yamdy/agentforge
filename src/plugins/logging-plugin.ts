@@ -34,7 +34,7 @@ const SUBSCRIBED_EVENTS: AgentEventType[] = [
   'tool.result',
   'state.change',
   'permission',
-  'done' as AgentEventType,
+  'done',
 ];
 
 /**

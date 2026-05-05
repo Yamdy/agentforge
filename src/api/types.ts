@@ -8,6 +8,7 @@
 
 import type {
   AgentEvent,
+  LLMChunkEvent,
   Message,
   ModelConfig,
   AgentState,
@@ -17,6 +18,7 @@ import type {
   ToolDefinition,
   CheckpointStorage,
 } from '../core/index.js';
+import type { ExecutionMode } from '../loop/agent-loop.js';
 import type { Plugin } from '../plugins/index.js';
 import type { PluginSpec } from '../plugins/plugin-loader.js';
 import type { VectorStore } from '../memory/vector-store.js';
@@ -175,7 +177,7 @@ export interface ExecutionConfig {
    * - 'plan-then-execute': Try planner first, fall back to ReAct on failure
    * - 'plan-then-execute-strict': Planner MUST succeed, otherwise error
    */
-  executionMode?: 'react' | 'plan-then-execute' | 'plan-then-execute-strict';
+  executionMode?: ExecutionMode;
 }
 
 /**
@@ -349,7 +351,7 @@ export interface AgentConfig {
   streaming?: boolean;
 
   /** @deprecated Use `execution.executionMode` */
-  executionMode?: 'react' | 'plan-then-execute' | 'plan-then-execute-strict';
+  executionMode?: ExecutionMode;
 
   /** @deprecated Use `controls.timeout` */
   timeout?: number;
@@ -536,13 +538,14 @@ export interface Agent {
   run(input: string, handlers?: RunHandlers): Promise<import('../loop/agent-loop.js').RunResult>;
 
   /**
-   * AsyncGenerator-based iteration. Yields all emitted events as they occur,
-   * returns the structured result. Use `for await (const event of iterate(...))`
-   * for streaming access to the agent's full event stream.
+   * AsyncGenerator-based iteration. Yields all emitted events as they occur
+   * (including streaming LLMChunkEvents), returns the structured result.
+   * Use `for await (const event of iterate(...))` for streaming access
+   * to the agent's full event stream.
    */
   iterate(
     input: string
-  ): AsyncGenerator<AgentEvent, import('../loop/agent-loop.js').RunResult, void>;
+  ): AsyncGenerator<AgentEvent | LLMChunkEvent, import('../loop/agent-loop.js').RunResult, void>;
 
   /** @deprecated wrapper for backward compat */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

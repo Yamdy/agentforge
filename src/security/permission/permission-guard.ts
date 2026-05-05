@@ -90,7 +90,7 @@ export function createPermissionPromptEvent(
     promptId,
     permission,
     context,
-  } as AgentEvent;
+  };
 }
 
 export function createPermissionDecisionEvent(
@@ -105,7 +105,7 @@ export function createPermissionDecisionEvent(
     promptId,
     permission: '',
     decision,
-  } as AgentEvent;
+  };
 }
 
 /**
@@ -203,13 +203,13 @@ export async function handlePermissionAsk(
       sessionId,
       error: serializeError(error),
       step,
-    } as AgentEvent;
+    };
     const doneEvent: AgentEvent = {
       type: 'done',
       timestamp: Date.now(),
       sessionId,
       reason: 'error',
-    } as AgentEvent;
+    };
     return [
       { event: errorEvent, state: undefined },
       { event: doneEvent, state: undefined },

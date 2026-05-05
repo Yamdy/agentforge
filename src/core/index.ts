@@ -23,6 +23,7 @@ export type {
   AgentTerminationReason,
   SerializedError,
   AgentEvent,
+  LLMChunkEvent,
 } from './events.js';
 
 export {

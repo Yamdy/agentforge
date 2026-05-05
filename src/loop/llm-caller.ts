@@ -200,10 +200,11 @@ export async function performStreamingLLMCall(
     for await (const chunk of stream) {
       if (signal.aborted) break;
 
-      // Text delta — lightweight callback (no Zod validation per chunk)
+      // Text delta — lightweight callback + emitter fast path
       if (chunk.text) {
         textContent += chunk.text;
         onChunk?.({ content: chunk.text });
+        emitter.emitChunk(chunk.text, { index: textContent.length - chunk.text.length });
       }
 
       // Tool call start — allocate accumulator

@@ -20,6 +20,8 @@ import {
   type SerializedError,
   AgentEventSchema,
   type AgentEvent,
+  AgentEventEmitter,
+  type LLMChunkEvent,
   isAgentEvent,
   isLLMEvent,
   isToolEvent,
@@ -373,7 +375,7 @@ describe('AgentEventSchema', () => {
         type: 'done' as const,
         timestamp: Date.now(),
         sessionId: 'session-123',
-        reason: 'stop' as const,
+        reason: 'completed' as const,
       };
       expect(AgentEventSchema.safeParse(event).success).toBe(true);
     });
@@ -526,7 +528,7 @@ describe('Type Guards', () => {
 
   describe('isAgentEvent', () => {
     it('should return true for valid events', () => {
-      const event = { ...baseEvent, type: 'done', reason: 'stop' };
+      const event = { ...baseEvent, type: 'done', reason: 'completed' };
       expect(isAgentEvent(event)).toBe(true);
     });
 
@@ -548,7 +550,7 @@ describe('Type Guards', () => {
     });
 
     it('should return false for non-LLM events', () => {
-      const event: AgentEvent = { ...baseEvent, type: 'done', reason: 'stop' };
+      const event: AgentEvent = { ...baseEvent, type: 'done', reason: 'completed' };
       expect(isLLMEvent(event)).toBe(false);
     });
   });
@@ -567,7 +569,7 @@ describe('Type Guards', () => {
     });
 
     it('should return false for non-tool events', () => {
-      const event: AgentEvent = { ...baseEvent, type: 'done', reason: 'stop' };
+      const event: AgentEvent = { ...baseEvent, type: 'done', reason: 'completed' };
       expect(isToolEvent(event)).toBe(false);
     });
   });
@@ -585,14 +587,14 @@ describe('Type Guards', () => {
     });
 
     it('should return false for non-agent lifecycle events', () => {
-      const event: AgentEvent = { ...baseEvent, type: 'done', reason: 'stop' };
+      const event: AgentEvent = { ...baseEvent, type: 'done', reason: 'completed' };
       expect(isAgentLifecycleEvent(event)).toBe(false);
     });
   });
 
   describe('isTerminalEvent', () => {
     it('should return true for terminal events', () => {
-      const doneEvent: AgentEvent = { ...baseEvent, type: 'done', reason: 'stop' };
+      const doneEvent: AgentEvent = { ...baseEvent, type: 'done', reason: 'completed' };
       const errorEvent: AgentEvent = {
         ...baseEvent,
         type: 'agent.error',
@@ -626,7 +628,7 @@ describe('Type Guards', () => {
     });
 
     it('should return false for non-compaction events', () => {
-      const event: AgentEvent = { ...baseEvent, type: 'done', reason: 'stop' };
+      const event: AgentEvent = { ...baseEvent, type: 'done', reason: 'completed' };
       expect(isCompactionEvent(event)).toBe(false);
     });
   });
@@ -700,5 +702,103 @@ describe('generateId', () => {
     expect(sessionId.startsWith('session-')).toBe(true);
     expect(toolId.startsWith('tool-')).toBe(true);
     expect(sessionId).not.toBe(toolId);
+  });
+});
+
+// ============================================================
+// AgentEventEmitter.emitChunk — fast path streaming chunks
+// ============================================================
+
+describe('AgentEventEmitter.emitChunk', () => {
+  it('delivers chunks to onChunk subscribers', async () => {
+    const emitter = new AgentEventEmitter();
+    const received: LLMChunkEvent[] = [];
+
+    emitter.onChunk(chunk => received.push(chunk));
+    emitter.emitChunk('hello', { index: 0 });
+    emitter.emitChunk(' world', { index: 1 });
+
+    // Flush microtasks (listeners fire via Promise.resolve().then())
+    await new Promise(r => setTimeout(r, 0));
+
+    expect(received).toHaveLength(2);
+    expect(received[0]!.delta).toBe('hello');
+    expect(received[0]!.index).toBe(0);
+    expect(received[1]!.delta).toBe(' world');
+  });
+
+  it('does not trigger typed event listeners', async () => {
+    const emitter = new AgentEventEmitter();
+    let typedReceived = false;
+    const chunkReceived: LLMChunkEvent[] = [];
+
+    emitter.on('llm.request', () => {
+      typedReceived = true;
+    });
+    emitter.onChunk(chunk => chunkReceived.push(chunk));
+
+    emitter.emitChunk('test');
+    await new Promise(r => setTimeout(r, 0));
+
+    expect(typedReceived).toBe(false);
+    expect(chunkReceived).toHaveLength(1);
+  });
+
+  it('onChunk returns unsubscribe function', async () => {
+    const emitter = new AgentEventEmitter();
+    const received: LLMChunkEvent[] = [];
+
+    const unsub = emitter.onChunk(chunk => received.push(chunk));
+    emitter.emitChunk('first');
+    await new Promise(r => setTimeout(r, 0));
+    unsub();
+    emitter.emitChunk('second');
+    await new Promise(r => setTimeout(r, 0));
+
+    expect(received).toHaveLength(1);
+  });
+
+  it('listener errors do not crash other listeners', async () => {
+    const emitter = new AgentEventEmitter();
+    const received: LLMChunkEvent[] = [];
+
+    emitter.onChunk(() => {
+      throw new Error('boom');
+    });
+    emitter.onChunk(chunk => received.push(chunk));
+
+    expect(() => emitter.emitChunk('test')).not.toThrow();
+    await new Promise(r => setTimeout(r, 0));
+    expect(received).toHaveLength(1);
+  });
+
+  it('handles 10000 chunks (performance smoke test)', async () => {
+    const emitter = new AgentEventEmitter();
+    let count = 0;
+    emitter.onChunk(() => {
+      count++;
+    });
+
+    const start = Date.now();
+    for (let i = 0; i < 10000; i++) {
+      emitter.emitChunk('x', { index: i });
+    }
+    const elapsed = Date.now() - start;
+
+    // Flush microtasks so listeners execute
+    await new Promise(r => setTimeout(r, 0));
+
+    expect(count).toBe(10000);
+    expect(elapsed).toBeLessThan(1000);
+  });
+
+  it('clear() removes chunk listeners', async () => {
+    const emitter = new AgentEventEmitter();
+    const received: LLMChunkEvent[] = [];
+    emitter.onChunk(chunk => received.push(chunk));
+    emitter.clear();
+    emitter.emitChunk('test');
+    await new Promise(r => setTimeout(r, 0));
+    expect(received).toHaveLength(0);
   });
 });
