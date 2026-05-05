@@ -8,10 +8,10 @@
  */
 
 import type { AgentContext, AgentState } from '../core/index.js';
-import type { LLMAdapter } from '../core/interfaces.js';
+import type { LLMAdapter, ToolDefinition } from '../core/interfaces.js';
 import { SimpleToolRegistry, createApplicationServices } from '../core/context-builder.js';
 import { ConsoleTracer, ConsoleMetrics, NoopTracer, NoopMetrics } from '../core/defaults.js';
-import { generateId } from '../core/events.js';
+import { AgentEventEmitter, generateId, type Message } from '../core/events.js';
 import { HookRegistry } from '../core/hooks.js';
 import { createAgentLoop, type AgentLoopConfig, type AgentLoop } from '../loop/agent-loop.js';
 import { createLLMAdapter } from '../adapters/index.js';
@@ -159,6 +159,13 @@ export function createAgent(config: AgentConfig, services?: Partial<AgentContext
   allPlugins.push(createQualityGatePlugin());
   allPlugins.push(createCircuitBreakerPlugin());
 
+  // ── Shared state for PluginContext wiring ──
+  // Created before the agent loop so PluginContext can provide emitter,
+  // getState, and addMessages at init time.
+  const sharedEmitter = new AgentEventEmitter();
+  const stateRef: { current: AgentState | null } = { current: null };
+  const pendingMessages: Message[] = [];
+
   // ── Plugin pipeline ──
   let pluginManager: PluginManager | undefined;
   if (allPlugins.length > 0) {
@@ -169,6 +176,20 @@ export function createAgent(config: AgentConfig, services?: Partial<AgentContext
       ...(appServices.tracer ? { tracer: appServices.tracer } : {}),
       ...(appServices.metrics ? { metrics: appServices.metrics } : {}),
       ...(svc?.logger ? { logger: svc.logger } : {}),
+      emitter: sharedEmitter,
+      getState: () => stateRef.current as Readonly<AgentState>,
+      listTools: () => {
+        const names = ctx.tools.list();
+        const defs: ToolDefinition[] = [];
+        for (const name of names) {
+          const def = ctx.tools.get(name);
+          if (def) defs.push(def);
+        }
+        return defs;
+      },
+      addMessages: msgs => {
+        pendingMessages.push(...msgs);
+      },
     });
     pluginManager.setContext(pluginCtx);
     for (const plugin of allPlugins) pluginManager.register(plugin);
@@ -184,6 +205,11 @@ export function createAgent(config: AgentConfig, services?: Partial<AgentContext
     executionMode: n.executionMode,
     systemPrompt: n.systemPrompt,
     history: n.history,
+    externalEmitter: sharedEmitter,
+    onStateCreated: s => {
+      stateRef.current = s;
+    },
+    pendingMessages,
   };
   if (n.tokenBudget !== undefined) loopConfig.tokenBudget = n.tokenBudget;
 
@@ -223,6 +249,20 @@ export function createAgent(config: AgentConfig, services?: Partial<AgentContext
       ...(appServices.tracer ? { tracer: appServices.tracer } : {}),
       ...(appServices.metrics ? { metrics: appServices.metrics } : {}),
       ...(svc?.logger ? { logger: svc.logger } : {}),
+      emitter: sharedEmitter,
+      getState: () => stateRef.current as Readonly<AgentState>,
+      listTools: () => {
+        const names = ctx.tools.list();
+        const defs: ToolDefinition[] = [];
+        for (const name of names) {
+          const def = ctx.tools.get(name);
+          if (def) defs.push(def);
+        }
+        return defs;
+      },
+      addMessages: msgs => {
+        pendingMessages.push(...msgs);
+      },
     });
     pluginLoadPromise = PluginLoader.loadAll(specs, pluginCtx, hookRegistry, loop.emitter).then(
       () => {}

@@ -16,7 +16,12 @@
  * @see docs/design/24-ARCH-REFACTOR.md
  */
 
-import type { AgentEventType, AgentEvent } from '../core/events.js';
+import {
+  type AgentEventType,
+  type AgentEvent,
+  type Message,
+  AgentEventEmitter,
+} from '../core/events.js';
 import type {
   RequestHook,
   ToolHook,
@@ -24,7 +29,8 @@ import type {
   CheckpointHook,
   RecoveryHookEntry,
 } from '../core/hooks.js';
-import type { Tracer, Metrics } from '../core/interfaces.js';
+import type { AgentState } from '../core/state.js';
+import type { Tracer, Metrics, ToolDefinition } from '../core/interfaces.js';
 
 // ============================================================
 // Plugin Context (Restricted - prevents capability bypass)
@@ -50,6 +56,14 @@ export interface PluginContext {
   readonly metrics?: Metrics;
   /** Logger for diagnostic output */
   readonly logger?: import('../core/logger.js').Logger;
+  /** Emit custom events through the agent's event emitter */
+  readonly emitter: AgentEventEmitter;
+  /** Get a read-only snapshot of the current agent state */
+  getState(): Readonly<AgentState>;
+  /** List registered tool definitions (read-only -- cannot execute) */
+  listTools(): ToolDefinition[];
+  /** Inject messages into the conversation flow */
+  addMessages(messages: Message[]): void;
 }
 
 // ============================================================
@@ -122,12 +136,24 @@ export interface CreatePluginContextOptions {
   tracer?: Tracer;
   metrics?: Metrics;
   logger?: import('../core/logger.js').Logger;
+  emitter?: AgentEventEmitter;
+  getState?: () => Readonly<AgentState>;
+  listTools?: () => ToolDefinition[];
+  addMessages?: (messages: Message[]) => void;
 }
 
 export function createPluginContext(options: CreatePluginContextOptions): PluginContext {
   const base = {
     sessionId: options.sessionId,
     agentName: options.agentName,
+    emitter: options.emitter ?? new AgentEventEmitter(),
+    getState:
+      options.getState ??
+      (() => {
+        throw new Error('PluginContext.getState() is not available in this context');
+      }),
+    listTools: options.listTools ?? (() => []),
+    addMessages: options.addMessages ?? (() => {}),
     ...(options.logger !== undefined ? { logger: options.logger } : {}),
   };
   if (options.tracer !== undefined || options.metrics !== undefined) {

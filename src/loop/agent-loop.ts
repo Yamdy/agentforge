@@ -92,6 +92,12 @@ export interface AgentLoopConfig {
   postLlmCheckpoints?: CheckpointFn[];
   /** Customizable prompt templates (defaults to English) */
   promptTemplates?: PromptTemplates | undefined;
+  /** External emitter to use (if provided, loop won't create its own) */
+  externalEmitter?: AgentEventEmitter | undefined;
+  /** Callback invoked when agent state is initialized (for PluginContext.getState) */
+  onStateCreated?: ((state: AgentState) => void) | undefined;
+  /** Queue of messages injected by plugins, consumed at top of each loop iteration */
+  pendingMessages?: Message[] | undefined;
 }
 
 /**
@@ -138,7 +144,7 @@ export interface AgentLoop {
 // ============================================================
 
 export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): AgentLoop {
-  const emitter = new AgentEventEmitter(ctx.logger);
+  const emitter = config.externalEmitter ?? new AgentEventEmitter(ctx.logger);
   const hooks = ctx.hookRegistry ?? new HookRegistry();
   let abortController: AbortController | null = null;
   let onExternalAbort: (() => void) | null = null;
@@ -325,6 +331,8 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       maxSteps: config.maxSteps ?? 10,
     });
 
+    config.onStateCreated?.(state);
+
     const maxSteps = state.maxSteps;
     const tokenBudget = config.tokenBudget ?? DEFAULT_TOKEN_BUDGET;
     const budgetTracker = createBudgetTracker();
@@ -420,6 +428,13 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             // eslint-disable-next-line @typescript-eslint/await-thenable
             await resumePromise;
             if (signal.aborted) break;
+          }
+
+          // ── Consume pending messages from PluginContext.addMessages() ──
+          const pendingMsgs = config.pendingMessages;
+          if (pendingMsgs && pendingMsgs.length > 0) {
+            state.messages.push(...pendingMsgs);
+            pendingMsgs.length = 0;
           }
 
           // ── Guard: max steps ──
