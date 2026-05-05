@@ -5,7 +5,7 @@
  *
  * @example
  * ```typescript
- * import { SubagentRegistry, createSubagentRegistry } from 'agentforge/subagent';
+ * import { SubagentRegistry, createSubagentRegistry } from 'agentforge/extensions';
  * import { createAgentLoop } from 'agentforge';
  *
  * // Create a subagent registry
@@ -26,7 +26,7 @@
  *   .subscribe(event => console.log(event.type));
  * ```
  *
- * @module agentforge/subagent
+ * @module agentforge/extensions
  */
 
 // Types

@@ -11,7 +11,7 @@
  *
  * @example
  * ```typescript
- * import { loadSkill, SkillRegistry, parseSkillFile } from 'agentforge/skill';
+ * import { loadSkill, SkillRegistry, parseSkillFile } from 'agentforge/extensions';
  *
  * // Load a single skill
  * const result = await loadSkill('/path/to/skill/SKILL.md');
@@ -29,7 +29,7 @@
  *
  * @example Hot-Reload
  * ```typescript
- * import { SkillWatcher, createCacheInvalidationHook } from 'agentforge/skill';
+ * import { SkillWatcher, createCacheInvalidationHook } from 'agentforge/extensions';
  *
  * const registry = new SkillRegistry();
  * const watcher = new SkillWatcher({

@@ -4,7 +4,7 @@
  * Internal types for subagent execution logic.
  * These types extend the interfaces.ts definitions with implementation-specific details.
  *
- * @module agentforge/subagent
+ * @module agentforge/extensions
  */
 
 import type { AgentEvent, Message } from '../core/events.js';

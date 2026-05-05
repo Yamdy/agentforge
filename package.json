@@ -18,33 +18,17 @@
       "types": "./dist/api/index.d.ts",
       "import": "./dist/api/index.js"
     },
-    "./storage": {
-      "types": "./dist/storage/index.d.ts",
-      "import": "./dist/storage/index.js"
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js"
     },
-    "./planning": {
-      "types": "./dist/planning/index.d.ts",
-      "import": "./dist/planning/index.js"
+    "./loop": {
+      "types": "./dist/loop/index.d.ts",
+      "import": "./dist/loop/index.js"
     },
-    "./sandbox": {
-      "types": "./dist/sandbox/index.d.ts",
-      "import": "./dist/sandbox/index.js"
-    },
-    "./resilience": {
-      "types": "./dist/resilience/index.d.ts",
-      "import": "./dist/resilience/index.js"
-    },
-    "./security": {
-      "types": "./dist/security/index.d.ts",
-      "import": "./dist/security/index.js"
-    },
-    "./integration": {
-      "types": "./dist/integration/index.d.ts",
-      "import": "./dist/integration/index.js"
-    },
-    "./app": {
-      "types": "./dist/app/index.d.ts",
-      "import": "./dist/app/index.js"
+    "./plugins": {
+      "types": "./dist/plugins/index.d.ts",
+      "import": "./dist/plugins/index.js"
     },
     "./adapters": {
       "types": "./dist/adapters/index.d.ts",
@@ -54,49 +38,29 @@
       "types": "./dist/contracts/index.d.ts",
       "import": "./dist/contracts/index.js"
     },
-    "./core": {
-      "types": "./dist/core/index.d.ts",
-      "import": "./dist/core/index.js"
-    },
-    "./evaluation": {
-      "types": "./dist/evaluation/index.d.ts",
-      "import": "./dist/evaluation/index.js"
-    },
-    "./l1": {
-      "types": "./dist/l1/index.d.ts",
-      "import": "./dist/l1/index.js"
-    },
-    "./loop": {
-      "types": "./dist/loop/index.d.ts",
-      "import": "./dist/loop/index.js"
+    "./security": {
+      "types": "./dist/security/index.d.ts",
+      "import": "./dist/security/index.js"
     },
     "./memory": {
       "types": "./dist/memory/index.d.ts",
       "import": "./dist/memory/index.js"
     },
-    "./plugins": {
-      "types": "./dist/plugins/index.d.ts",
-      "import": "./dist/plugins/index.js"
+    "./extensions": {
+      "types": "./dist/extensions/index.d.ts",
+      "import": "./dist/extensions/index.js"
     },
-    "./skill": {
-      "types": "./dist/skill/index.d.ts",
-      "import": "./dist/skill/index.js"
+    "./planning": {
+      "types": "./dist/planning/index.d.ts",
+      "import": "./dist/planning/index.js"
     },
-    "./a2a": {
-      "types": "./dist/a2a/index.d.ts",
-      "import": "./dist/a2a/index.js"
+    "./resilience": {
+      "types": "./dist/resilience/index.d.ts",
+      "import": "./dist/resilience/index.js"
     },
-    "./mcp": {
-      "types": "./dist/mcp/index.d.ts",
-      "import": "./dist/mcp/index.js"
-    },
-    "./subagent": {
-      "types": "./dist/subagent/index.d.ts",
-      "import": "./dist/subagent/index.js"
-    },
-    "./workflow": {
-      "types": "./dist/workflow/index.d.ts",
-      "import": "./dist/workflow/index.js"
+    "./evaluation": {
+      "types": "./dist/evaluation/index.d.ts",
+      "import": "./dist/evaluation/index.js"
     }
   },
   "sideEffects": false,

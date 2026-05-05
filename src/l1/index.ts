@@ -10,7 +10,7 @@
  * npx agentforge run agent.json
  *
  * # Or programmatically
- * import { loadAgent } from 'agentforge/l1';
+ * import { loadAgent } from 'agentforge/api';
  * const agent = await loadAgent('agent.json');
  * const result = await agent.run('Hello!');
  * ```
@@ -323,7 +323,7 @@ function toL2Config(l1Config: L1AgentConfig): AgentConfig {
  * //   "maxSteps": 5
  * // }
  *
- * import { loadAgent } from 'agentforge/l1';
+ * import { loadAgent } from 'agentforge/api';
  *
  * const agent = await loadAgent('agent.json');
  * const result = await agent.run('Hello!');
@@ -345,7 +345,7 @@ export async function loadAgent(filePath: string): Promise<Agent> {
  *
  * @example
  * ```typescript
- * import { loadAgentFromConfig } from 'agentforge/l1';
+ * import { loadAgentFromConfig } from 'agentforge/api';
  *
  * const agent = await loadAgentFromConfig({
  *   name: 'assistant',
@@ -382,7 +382,7 @@ export async function loadAgentFromConfig(config: L1AgentConfig): Promise<Agent>
  *
  * @example
  * ```typescript
- * import { runPrompt } from 'agentforge/l1';
+ * import { runPrompt } from 'agentforge/api';
  *
  * const response = await runPrompt('agent.json', 'Hello!');
  * console.log(response);

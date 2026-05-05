@@ -141,3 +141,33 @@ export {
   serializeError,
   generateId,
 } from '../core/events.js';
+
+// ============================================================
+// L1 API Re-exports (Zero-code config layer)
+// ============================================================
+
+export {
+  loadAgent,
+  loadAgentFromConfig,
+  loadConfig,
+  runPrompt,
+  runPromptWithConfig,
+  L1AgentConfigSchema,
+  AgentConfigSchema,
+} from '../l1/index.js';
+
+export type { L1AgentConfig } from '../l1/index.js';
+
+// ============================================================
+// App Re-exports (Application harness)
+// ============================================================
+
+export { Application } from '../app/index.js';
+export type { AppConfig, ToolResult } from '../app/index.js';
+
+// ============================================================
+// Integration Re-exports (MPU service factory)
+// ============================================================
+
+export { createMPUServices } from '../integration/index.js';
+export type { MPUConfig, MPUServiceResult } from '../integration/index.js';

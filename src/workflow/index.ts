@@ -6,7 +6,7 @@
  *
  * @example
  * ```typescript
- * import { Workflow, SequentialPipeline, ParallelPipeline } from 'agentforge/workflow';
+ * import { Workflow, SequentialPipeline, ParallelPipeline } from 'agentforge/loop';
  *
  * // Create a workflow
  * const workflow = new Workflow({

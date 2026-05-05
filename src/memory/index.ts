@@ -157,6 +157,12 @@ export { type PineconeVectorStoreConfig, PineconeVectorStore } from './stores/pi
 export { type QdrantVectorStoreConfig, QdrantVectorStore } from './stores/qdrant.js';
 
 // ============================================================
+// Storage (SQLite checkpoint & session storage)
+// ============================================================
+
+export { SqliteCheckpointStorage, SqliteSessionStorage } from '../storage/index.js';
+
+// ============================================================
 // Working Memory (short-term memory with pinned items + scratchpad)
 // ============================================================
 

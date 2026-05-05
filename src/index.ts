@@ -4,33 +4,18 @@
  * Main entry point with curated public API (~60 symbols).
  * For subsystem access, use sub-path imports:
  *
- *   agentforge/api          — Agent creation, builders, run helpers
+ *   agentforge/api          — Agent creation, builders, run helpers (L1 + L2)
  *   agentforge/adapters     — LLM provider adapters (OpenAI, Anthropic, Google, Ollama)
- *   agentforge/plugins      — Plugin system, built-in plugins, plugin loader
- *   agentforge/core         — Core interfaces, events, state, hooks, defaults
+ *   agentforge/plugins      — Plugin system, built-in plugins, plugin loader, quota
+ *   agentforge/core         — Core interfaces, events, state, hooks, lifecycle, observability
  *   agentforge/loop         — Agent loop factory (createAgentLoop)
- *   agentforge/mcp          — Model Context Protocol client
- *   agentforge/skill        — Skill system (loading, discovery, hot-reload)
- *   agentforge/a2a          — Agent-to-Agent protocol
- *   agentforge/workflow     — Workflow orchestration
- *   agentforge/subagent     — Subagent delegation
+ *   agentforge/extensions   — Subagent delegation, MCP client, skill system
  *   agentforge/planning     — Task planning engine
- *   agentforge/memory       — Compaction, vector stores, semantic memory
- *   agentforge/quota        — Quota management
+ *   agentforge/memory       — Compaction, vector stores, semantic memory, storage
+ *   agentforge/security     — Security guard, sandbox executor, permission, audit, validation
  *   agentforge/resilience   — Circuit breaker, error classifier, auto-repairer
- *   agentforge/security     — Security guard, sandbox executor
- *   agentforge/audit        — Audit logging (SQLite + hash chain)
- *   agentforge/storage      — SQLite checkpoint & session storage
- *   agentforge/sandbox      — Docker sandbox isolation
- *   agentforge/validation   — Result validation
- *   agentforge/observability— Health checker, metrics collector, OTel
- *   agentforge/lifecycle    — Graceful shutdown
- *   agentforge/integration  — MPU service factory
  *   agentforge/evaluation   — LLM-based evaluation framework
- *   agentforge/l1           — Zero-code config file API
- *   agentforge/quickstart   — Zero-config Agent class
  *   agentforge/contracts    — Zod contracts with graceful degradation
- *   agentforge/app          — Application harness (multitenant)
  *
  * @module agentforge
  */
@@ -93,6 +78,7 @@ export {
 export type {
   AgentEvent,
   AgentEventType,
+  LLMChunkEvent,
   Message,
   ToolCall,
   SerializedError,

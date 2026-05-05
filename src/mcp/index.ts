@@ -6,7 +6,7 @@
  *
  * @example
  * ```typescript
- * import { createMCPClient, adaptMCPTools } from 'agentforge/mcp';
+ * import { createMCPClient, adaptMCPTools } from 'agentforge/extensions';
  *
  * const client = createMCPClient({
  *   serverName: 'filesystem',
@@ -28,7 +28,7 @@
  * await client.disconnect();
  * ```
  *
- * @module agentforge/mcp
+ * @module agentforge/extensions
  */
 
 // ============================================================

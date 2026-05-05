@@ -7,7 +7,7 @@
  * Design: run() takes a listener callback and returns Promise<string>.
  * Uses agent.onAny() for event subscription.
  *
- * @module agentforge/subagent
+ * @module agentforge/extensions
  */
 
 import type { AgentEvent, Message } from '../core/events.js';
@@ -160,7 +160,7 @@ export class SubagentRegistry implements ISubagentRegistry {
           name: 'SubagentNotFoundError',
           message: `Subagent '${name}' is not registered`,
         },
-      } as AgentEvent);
+      });
       return '';
     }
 
@@ -177,7 +177,7 @@ export class SubagentRegistry implements ISubagentRegistry {
         subagentName: name,
         input: `Tool scope restricted to: ${entry.config.allowedTools.join(', ')}`,
         parentSessionId,
-      } as AgentEvent);
+      });
     }
 
     switch (entry.config.executionMode) {
@@ -230,7 +230,7 @@ export class SubagentRegistry implements ISubagentRegistry {
         parentSessionId,
         subagentName,
         input,
-      } as AgentEvent);
+      });
 
       let finalOutput = '';
       let hadError = false;
@@ -243,7 +243,7 @@ export class SubagentRegistry implements ISubagentRegistry {
         if (event.type === 'agent.error' && event.source === 'subagent') {
           hadError = true;
         }
-        listener({ ...event, parentSessionId } as AgentEvent);
+        listener(event);
       });
 
       try {
@@ -256,7 +256,7 @@ export class SubagentRegistry implements ISubagentRegistry {
           sessionId,
           source: 'subagent' as const,
           error: serializeError(error),
-        } as AgentEvent);
+        });
       } finally {
         unreg();
         this.activeRuns.delete(sessionId);
@@ -269,7 +269,7 @@ export class SubagentRegistry implements ISubagentRegistry {
           timestamp: Date.now(),
           sessionId,
           output: finalOutput,
-        } as AgentEvent);
+        });
       }
 
       return finalOutput;
@@ -416,7 +416,7 @@ export class SubagentRegistry implements ISubagentRegistry {
       parentSessionId,
       subagentName,
       input,
-    } as AgentEvent);
+    });
 
     // Create handle and store it
     const handle = new AsyncHandleImpl(sessionId);
@@ -440,7 +440,7 @@ export class SubagentRegistry implements ISubagentRegistry {
     // Subscribe to agent events
     const unreg = entry.config.agent.onAny((event: AgentEvent) => {
       events.push(event);
-      listener({ ...event, parentSessionId } as AgentEvent);
+      listener(event);
     });
 
     // Fire-and-forget background execution
@@ -455,7 +455,7 @@ export class SubagentRegistry implements ISubagentRegistry {
           timestamp: Date.now(),
           sessionId,
           output,
-        } as AgentEvent);
+        });
         // Call onComplete callback
         entry.config.asyncConfig?.onComplete?.({
           sessionId,
@@ -476,7 +476,7 @@ export class SubagentRegistry implements ISubagentRegistry {
           sessionId,
           source: 'subagent' as const,
           error: err,
-        } as AgentEvent);
+        });
         // Call onError callback
         entry.config.asyncConfig?.onError?.(
           error instanceof Error ? error : new Error(String(error))

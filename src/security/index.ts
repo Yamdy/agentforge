@@ -138,3 +138,17 @@ export {
   NoopPermissionClassifier,
   safeClassify,
 } from './permission/classifier.js';
+
+/* ===== Sandbox Sub-System (Docker/Process sandbox implementations) ===== */
+export { DockerSandbox, type DockerSandboxConfig } from '../sandbox/index.js';
+
+export { ProcessSandbox, type ProcessSandboxConfig } from '../sandbox/index.js';
+
+export {
+  createSandbox,
+  createProcessSandbox,
+  createNoopSandbox,
+  isDockerAvailable,
+  type SandboxMode,
+  type SandboxFactoryConfig,
+} from '../sandbox/index.js';
