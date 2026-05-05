@@ -14,7 +14,6 @@
 
 import type { Plugin, PluginContext } from '../../src/plugins/plugin.js';
 import type { AgentEvent } from '../../src/core/events.js';
-import { HookName } from '../../src/core/hooks.js';
 import type { HookFn } from '../../src/core/hooks.js';
 
 // ── 辅助：从事件中提取 token 统计 ──
@@ -111,11 +110,11 @@ requestLogger = {
   // ── 生命周期 Hook — 在精确的切点执行 ──
   lifecycleHooks: [
     {
-      name: HookName['llm.request.before'],
+      phase: 'llm.request.before',
       fn: onRequestBefore,
     },
     {
-      name: HookName['llm.response.after'],
+      phase: 'llm.response.after',
       fn: onResponseAfter,
     },
   ],

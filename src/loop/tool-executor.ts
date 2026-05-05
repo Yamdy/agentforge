@@ -25,7 +25,7 @@ export interface ToolExecutorDeps {
   emitter: AgentEventEmitter;
   getState: () => AgentState | null;
   runLifecycleHook: (
-    name: import('../core/hooks.js').HookName,
+    phase: import('../core/hooks.js').LifecyclePhase,
     input: unknown,
     output: unknown
   ) => Promise<void>;
@@ -270,7 +270,7 @@ export async function executeSingleTool(
 
   // Execute tool
   await runLifecycleHook(
-    'tool.execute.before',
+    'tool.before',
     { sessionId: ctx.sessionId, toolName: tc.name, callId: tc.id, args: tc.args },
     {}
   );
@@ -282,7 +282,7 @@ export async function executeSingleTool(
     });
 
     await runLifecycleHook(
-      'tool.execute.after',
+      'tool.after',
       { sessionId: ctx.sessionId, toolName: tc.name, callId: tc.id, args: tc.args },
       { result }
     );
@@ -341,7 +341,7 @@ export async function executeSingleTool(
     errStr = errTruncation.content;
 
     await runLifecycleHook(
-      'tool.execute.error',
+      'tool.error',
       { sessionId: ctx.sessionId, toolName: tc.name, callId: tc.id, error: err },
       { retry: false }
     );

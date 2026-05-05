@@ -8,8 +8,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   HookRegistry,
-  HookName,
   RequestHookPriority,
+  DEFAULT_REQUEST_HOOK_PRIORITY,
   type RequestHook,
   type ToolHook,
   type ToolProviderHook,
@@ -108,18 +108,18 @@ describe('HookRegistry', () => {
   describe('lifecycle hooks', () => {
     it('should register a lifecycle hook via on()', () => {
       const fn: HookFn = () => {};
-      const unreg = registry.on(HookName['step.begin'], fn);
+      const unreg = registry.on('step.begin', fn);
       expect(unreg).toBeInstanceOf(Function);
-      const hooks = registry.getLifecycleHooks(HookName['step.begin']);
+      const hooks = registry.getLifecycleHooks('step.begin');
       expect(hooks).toHaveLength(1);
     });
 
     it('should return hooks sorted by priority', () => {
       const calls: string[] = [];
-      registry.on(HookName['step.begin'], () => { calls.push('third'); }, 30);
-      registry.on(HookName['step.begin'], () => { calls.push('first'); }, 10);
-      registry.on(HookName['step.begin'], () => { calls.push('second'); }, 20);
-      const hooks = registry.getLifecycleHooks(HookName['step.begin']);
+      registry.on('step.begin', () => { calls.push('third'); }, 30);
+      registry.on('step.begin', () => { calls.push('first'); }, 10);
+      registry.on('step.begin', () => { calls.push('second'); }, 20);
+      const hooks = registry.getLifecycleHooks('step.begin');
       for (const h of hooks) {
         h({}, {});
       }
@@ -128,34 +128,34 @@ describe('HookRegistry', () => {
 
     it('should unregister via returned function', () => {
       const fn: HookFn = () => {};
-      const unreg = registry.on(HookName['session.start'], fn);
-      expect(registry.getLifecycleHooks(HookName['session.start'])).toHaveLength(1);
+      const unreg = registry.on('session.start', fn);
+      expect(registry.getLifecycleHooks('session.start')).toHaveLength(1);
       unreg();
-      expect(registry.getLifecycleHooks(HookName['session.start'])).toHaveLength(0);
+      expect(registry.getLifecycleHooks('session.start')).toHaveLength(0);
     });
 
     it('should support multiple hooks on same name', () => {
-      registry.on(HookName['llm.error'], () => {});
-      registry.on(HookName['llm.error'], () => {});
-      expect(registry.getLifecycleHooks(HookName['llm.error'])).toHaveLength(2);
+      registry.on('llm.error', () => {});
+      registry.on('llm.error', () => {});
+      expect(registry.getLifecycleHooks('llm.error')).toHaveLength(2);
     });
 
     it('should return empty array for unregistered hook name', () => {
-      expect(registry.getLifecycleHooks(HookName['compaction.before'])).toEqual([]);
+      expect(registry.getLifecycleHooks('compaction.before')).toEqual([]);
     });
   });
 
   describe('registerLifecycle', () => {
     it('should batch register multiple lifecycle hooks', () => {
       const unreg = registry.registerLifecycle([
-        { name: HookName['step.begin'], fn: () => {} },
-        { name: HookName['step.end'], fn: () => {} },
+        { phase: 'step.begin', fn: () => {} },
+        { phase: 'step.end', fn: () => {} },
       ]);
-      expect(registry.getLifecycleHooks(HookName['step.begin'])).toHaveLength(1);
-      expect(registry.getLifecycleHooks(HookName['step.end'])).toHaveLength(1);
+      expect(registry.getLifecycleHooks('step.begin')).toHaveLength(1);
+      expect(registry.getLifecycleHooks('step.end')).toHaveLength(1);
       unreg();
-      expect(registry.getLifecycleHooks(HookName['step.begin'])).toHaveLength(0);
-      expect(registry.getLifecycleHooks(HookName['step.end'])).toHaveLength(0);
+      expect(registry.getLifecycleHooks('step.begin')).toHaveLength(0);
+      expect(registry.getLifecycleHooks('step.end')).toHaveLength(0);
     });
   });
 
@@ -347,10 +347,10 @@ describe('HookRegistry', () => {
 
   describe('clear', () => {
     it('should remove all lifecycle hooks', () => {
-      registry.on(HookName['step.begin'], () => {});
-      expect(registry.getLifecycleHooks(HookName['step.begin'])).toHaveLength(1);
+      registry.on('step.begin', () => {});
+      expect(registry.getLifecycleHooks('step.begin')).toHaveLength(1);
       registry.clear();
-      expect(registry.getLifecycleHooks(HookName['step.begin'])).toHaveLength(0);
+      expect(registry.getLifecycleHooks('step.begin')).toHaveLength(0);
     });
 
     it('should remove all request hooks', () => {
@@ -384,19 +384,19 @@ describe('HookRegistry', () => {
 
   describe('coexistence', () => {
     it('should support all hook types simultaneously', () => {
-      registry.on(HookName['step.begin'], () => {});
+      registry.on('step.begin', () => {});
       registry.registerRequest({ name: 'req', priority: 10, apply: (m) => m });
       registry.registerTool({ name: 'tool', priority: 10, beforeExecute: () => true });
       registry.registerToolProvider({ name: 'prov', priority: 10, filter: (t) => t });
 
-      expect(registry.getLifecycleHooks(HookName['step.begin'])).toHaveLength(1);
+      expect(registry.getLifecycleHooks('step.begin')).toHaveLength(1);
       expect(registry.getRequestHooks()).toHaveLength(1);
       expect(registry.getToolHooks()).toHaveLength(1);
       expect(registry.getToolProviderHooks()).toHaveLength(1);
 
       // clear should remove all
       registry.clear();
-      expect(registry.getLifecycleHooks(HookName['step.begin'])).toHaveLength(0);
+      expect(registry.getLifecycleHooks('step.begin')).toHaveLength(0);
       expect(registry.getRequestHooks()).toHaveLength(0);
       expect(registry.getToolHooks()).toHaveLength(0);
       expect(registry.getToolProviderHooks()).toHaveLength(0);
@@ -504,9 +504,18 @@ describe('CheckpointHook', () => {
   });
 
   describe('LifecyclePhase', () => {
-    it('should only accept pre-llm or post-llm', () => {
-      const phases: LifecyclePhase[] = ['pre-llm', 'post-llm'];
-      expect(phases).toHaveLength(2);
+    it('should accept all 18 lifecycle phases', () => {
+      const phases: LifecyclePhase[] = [
+        'session.start', 'session.end',
+        'step.begin', 'step.end',
+        'pre-llm', 'post-llm',
+        'llm.request.before', 'llm.response.after', 'llm.error',
+        'tool.before', 'tool.after', 'tool.error',
+        'compaction.before', 'compaction.after',
+        'recovery.escalate', 'recovery.compact', 'recovery.fallback',
+        'error',
+      ];
+      expect(phases).toHaveLength(18);
     });
   });
 });

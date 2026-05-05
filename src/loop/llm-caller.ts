@@ -12,7 +12,7 @@ import type { AgentEvent, Message, ToolCall } from '../core/index.js';
 import type { AgentContext, AgentState } from '../core/index.js';
 import type { LLMOptions, LLMResponse } from '../core/interfaces.js';
 import type { AgentEventEmitter } from '../core/events.js';
-import type { HookName, HookRegistry } from '../core/hooks.js';
+import type { LifecyclePhase, HookRegistry } from '../core/hooks.js';
 import type { AgentLoopConfig } from './agent-loop.js';
 import { handleLLMError } from './error-recovery-handler.js';
 import type { ErrorRecoveryDeps } from './error-recovery-handler.js';
@@ -29,7 +29,7 @@ export interface LLMCallDeps {
   state: AgentState | null;
   recoveryState: { escalatedMaxTokens: number | undefined };
   errorRecoveryDeps: ErrorRecoveryDeps;
-  runLifecycleHook: (name: HookName, input: unknown, output: unknown) => Promise<void>;
+  runLifecycleHook: (phase: LifecyclePhase, input: unknown, output: unknown) => Promise<void>;
 }
 
 export type LLMCallResult =

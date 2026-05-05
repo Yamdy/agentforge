@@ -67,7 +67,7 @@ export type {
   LifecycleHookEntry,
 } from './core/hooks.js';
 
-export { HookName, RequestHookPriority } from './core/hooks.js';
+export { RequestHookPriority, DEFAULT_REQUEST_HOOK_PRIORITY } from './core/hooks.js';
 
 // Built-in plugin factories
 export {
@@ -130,7 +130,7 @@ export { createInitialState, updateState } from './core/state.js';
 
 export { ContextBuilder, createApplicationServices } from './core/context-builder.js';
 
-export type { AgentLoop, AgentLoopConfig } from './loop/index.js';
+export type { AgentLoop, AgentLoopConfig, RunResult } from './loop/index.js';
 
 export { createAgentLoop } from './loop/index.js';
 

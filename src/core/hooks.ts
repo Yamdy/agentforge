@@ -65,48 +65,8 @@ export const RequestHookPriority = {
 
 export type RequestHookPriority = (typeof RequestHookPriority)[keyof typeof RequestHookPriority];
 
-// ============================================================================
-// Hook Name Enumeration
-// ============================================================================
-
-/**
- * All lifecycle hook names.
- *
- * These are cut-points where plugins can register callbacks.
- * The hook is called with (input, output) where:
- * - input: context data at the cut-point
- * - output: result data (may be empty {} if hook fires before result is available)
- */
-export const HookName = {
-  // ── Session lifecycle ──
-  'session.start': 'session.start',
-  'session.end': 'session.end',
-
-  // ── Step lifecycle ──
-  'step.begin': 'step.begin',
-  'step.end': 'step.end',
-
-  // ── LLM lifecycle ──
-  'llm.request.before': 'llm.request.before',
-  'llm.response.after': 'llm.response.after',
-  'llm.error': 'llm.error',
-
-  // ── Tool lifecycle ──
-  'tool.execute.before': 'tool.execute.before',
-  'tool.execute.after': 'tool.execute.after',
-  'tool.execute.error': 'tool.execute.error',
-
-  // ── Compaction lifecycle ──
-  'compaction.before': 'compaction.before',
-  'compaction.after': 'compaction.after',
-
-  // ── Recovery lifecycle ──
-  'recovery.escalate': 'recovery.escalate',
-  'recovery.compact': 'recovery.compact',
-  'recovery.fallback': 'recovery.fallback',
-} as const;
-
-export type HookName = (typeof HookName)[keyof typeof HookName];
+/** Default priority for hooks registered without explicit priority */
+export const DEFAULT_REQUEST_HOOK_PRIORITY = 100;
 
 // ============================================================================
 // Hook Function Types
@@ -130,7 +90,7 @@ export type HookFn<TInput = unknown, TOutput = unknown> = (
  * Registered lifecycle hook entry.
  */
 export interface LifecycleHookEntry {
-  name: HookName;
+  phase: LifecyclePhase;
   fn: HookFn;
   /** Lower number = earlier execution */
   priority: number;
@@ -258,12 +218,30 @@ export interface ToolProviderHook {
 // ============================================================================
 
 /**
- * Lifecycle phase where checkpoint hooks execute.
+ * Lifecycle phase where hooks execute.
  *
- * - pre-llm: Before each LLM call (quota, rate-limit)
- * - post-llm: After each LLM response (quality gate, circuit breaker)
+ * - pre-llm / post-llm: blocking checkpoint hooks (quota, rate-limit, quality gate)
+ * - All others: fire-and-forget observation hooks
  */
-export type LifecyclePhase = 'pre-llm' | 'post-llm';
+export type LifecyclePhase =
+  | 'session.start'
+  | 'session.end'
+  | 'step.begin'
+  | 'step.end'
+  | 'pre-llm'
+  | 'post-llm'
+  | 'llm.request.before'
+  | 'llm.response.after'
+  | 'llm.error'
+  | 'tool.before'
+  | 'tool.after'
+  | 'tool.error'
+  | 'compaction.before'
+  | 'compaction.after'
+  | 'recovery.escalate'
+  | 'recovery.compact'
+  | 'recovery.fallback'
+  | 'error';
 
 /**
  * Result of a checkpoint execution.
@@ -325,7 +303,7 @@ export class HookRegistry {
    * Lifecycle hooks indexed by hook name.
    * Multiple plugins can register for the same hook name.
    */
-  private lifecycle = new Map<HookName, LifecycleHookEntry[]>();
+  private lifecycle = new Map<LifecyclePhase, LifecycleHookEntry[]>();
 
   /**
    * Request hooks (modify messages), sorted by priority.
@@ -352,14 +330,14 @@ export class HookRegistry {
    * @param priority - Execution order (default: RequestHookPriority.USER_CUSTOM = 50)
    * @returns Unregister function
    */
-  on(name: HookName, fn: HookFn, priority = 50): () => void {
-    const entry: LifecycleHookEntry = { name, fn, priority };
-    const existing = this.lifecycle.get(name) ?? [];
+  on(phase: LifecyclePhase, fn: HookFn, priority = DEFAULT_REQUEST_HOOK_PRIORITY): () => void {
+    const entry: LifecycleHookEntry = { phase, fn, priority };
+    const existing = this.lifecycle.get(phase) ?? [];
     existing.push(entry);
     existing.sort((a, b) => a.priority - b.priority);
-    this.lifecycle.set(name, existing);
+    this.lifecycle.set(phase, existing);
     return () => {
-      const arr = this.lifecycle.get(name);
+      const arr = this.lifecycle.get(phase);
       if (arr) {
         const idx = arr.indexOf(entry);
         if (idx >= 0) arr.splice(idx, 1);
@@ -370,16 +348,18 @@ export class HookRegistry {
   /**
    * Register multiple lifecycle hooks at once.
    */
-  registerLifecycle(hooks: Array<{ name: HookName; fn: HookFn; priority?: number }>): () => void {
-    const unregisters = hooks.map(h => this.on(h.name, h.fn, h.priority));
+  registerLifecycle(
+    hooks: Array<{ phase: LifecyclePhase; fn: HookFn; priority?: number }>
+  ): () => void {
+    const unregisters = hooks.map(h => this.on(h.phase, h.fn, h.priority));
     return () => unregisters.forEach(u => u());
   }
 
   /**
    * Get all lifecycle hooks for a given name, sorted by priority.
    */
-  getLifecycleHooks(name: HookName): HookFn[] {
-    return (this.lifecycle.get(name) ?? []).map(e => e.fn);
+  getLifecycleHooks(phase: LifecyclePhase): HookFn[] {
+    return (this.lifecycle.get(phase) ?? []).map(e => e.fn);
   }
 
   // ── Request Hooks ──

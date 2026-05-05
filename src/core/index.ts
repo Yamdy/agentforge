@@ -203,7 +203,9 @@ export { DefaultLogger, NoopLogger } from './logger.js';
 // ============================================================
 
 export {
-  HookName,
+  RequestHookPriority,
+  DEFAULT_REQUEST_HOOK_PRIORITY,
+  type LifecyclePhase,
   type HookFn,
   type LifecycleHookEntry,
   type RequestHook,

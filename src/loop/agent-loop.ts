@@ -30,7 +30,7 @@ import type { AgentContext, AgentState } from '../core/index.js';
 import { extractText } from '../core/content-utils.js';
 import {
   HookRegistry,
-  type HookName,
+  type LifecyclePhase,
   RequestHookPriority,
   type CheckpointFn,
 } from '../core/hooks.js';
@@ -178,13 +178,17 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
   // Lifecycle Hook Runner (error-isolated)
   // ============================================================
 
-  async function runLifecycleHook(name: HookName, input: unknown, output: unknown): Promise<void> {
-    for (const h of hooks.getLifecycleHooks(name)) {
+  async function runLifecycleHook(
+    phase: LifecyclePhase,
+    input: unknown,
+    output: unknown
+  ): Promise<void> {
+    for (const h of hooks.getLifecycleHooks(phase)) {
       try {
         await h(input, output);
       } catch (err) {
         ctx.logger?.warn('Lifecycle hook error', {
-          hookName: name,
+          hookName: phase,
           error: serializeError(err),
         });
       }
@@ -436,7 +440,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
 
     // ── Execute tool ──
     await runLifecycleHook(
-      'tool.execute.before',
+      'tool.before',
       {
         sessionId: ctx.sessionId,
         toolName: tc.name,
@@ -491,7 +495,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       }
 
       await runLifecycleHook(
-        'tool.execute.after',
+        'tool.after',
         {
           sessionId: ctx.sessionId,
           toolName: tc.name,
@@ -550,7 +554,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       const errStr = err instanceof Error ? err.message : String(err);
 
       await runLifecycleHook(
-        'tool.execute.error',
+        'tool.error',
         {
           sessionId: ctx.sessionId,
           toolName: tc.name,

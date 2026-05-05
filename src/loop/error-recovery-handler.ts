@@ -14,7 +14,7 @@
 import type { Message, AgentEvent } from '../core/index.js';
 import type { AgentContext, AgentState } from '../core/index.js';
 import type { AgentEventEmitter } from '../core/events.js';
-import type { HookName } from '../core/hooks.js';
+import type { LifecyclePhase } from '../core/hooks.js';
 import type { AgentLoopConfig } from './agent-loop.js';
 import { analyzeLLMError, RECOVERY_LIMITS, ESCALATED_MAX_OUTPUT_TOKENS } from './error-analyzer.js';
 
@@ -28,7 +28,7 @@ export interface ErrorRecoveryDeps {
   state: AgentState | null;
   recoveryState: { escalatedMaxTokens: number | undefined };
   emitter: AgentEventEmitter;
-  runLifecycleHook: (name: HookName, input: unknown, output: unknown) => Promise<void>;
+  runLifecycleHook: (phase: LifecyclePhase, input: unknown, output: unknown) => Promise<void>;
 }
 
 // ============================================================

@@ -3,7 +3,7 @@
  *
  * 本示例演示两种高级模式的组合：
  *   1. ToolProviderHook — 在 LLM 看到工具列表之前动态过滤工具
- *   2. LifecycleHook — 挂载在 tool.execute.before/after 切点测量耗时
+ *   2. LifecycleHook — 挂载在 tool.before/after 切点测量耗时
  *
  * ToolProviderHook vs ToolHook 的区别：
  *   - ToolProviderHook：在 LLM 决策前过滤工具列表（LLM 不会看到被过滤的工具）
@@ -15,7 +15,6 @@
 
 import type { Plugin, PluginContext } from '../../src/plugins/plugin.js';
 import type { ToolProviderHook, HookFn } from '../../src/core/hooks.js';
-import { HookName } from '../../src/core/hooks.js';
 import type { FunctionDefinition, AgentState } from '../../src/core/index.js';
 
 // ── 内部状态：记录工具执行开始时间 ──
@@ -127,17 +126,17 @@ export const plugin: Plugin = {
   // ── LifecycleHook — 在工具执行生命周期切点挂载回调 ──
   lifecycleHooks: [
     {
-      name: HookName['tool.execute.before'],
+      phase: 'tool.before',
       fn: onToolBefore,
       priority: 50,
     },
     {
-      name: HookName['tool.execute.after'],
+      phase: 'tool.after',
       fn: onToolAfter,
       priority: 50,
     },
     {
-      name: HookName['tool.execute.error'],
+      phase: 'tool.error',
       fn: onToolError,
       priority: 50,
     },
