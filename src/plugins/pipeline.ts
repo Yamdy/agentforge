@@ -85,11 +85,11 @@ export function applyPlugins(
     if (plugin.eventSubscriptions) {
       for (const sub of plugin.eventSubscriptions) {
         unregisters.push(
-          emitter.on(sub.event, event => {
-            void Promise.resolve(sub.handler(event)).catch(() => {
+          emitter.on(sub.event, event =>
+            Promise.resolve(sub.handler(event)).catch(() => {
               /* isolate */
-            });
-          })
+            })
+          )
         );
       }
     }

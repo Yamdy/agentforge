@@ -594,26 +594,27 @@ export function generateId(prefix = ''): string {
  * do not affect others.
  */
 export class AgentEventEmitter {
-  private typed = new Map<string, Set<(event: unknown) => void>>();
-  private any = new Set<(event: AgentEvent) => void>();
+  private typed = new Map<string, Set<(event: unknown) => void | Promise<void>>>();
+  private any = new Set<(event: AgentEvent) => void | Promise<void>>();
 
   /**
    * Register a listener for a specific event type.
+   * Listeners may return void or Promise<void> — emit awaits all.
    * @returns Unregister function
    */
   on<T extends AgentEvent['type']>(
     type: T,
-    fn: (event: Extract<AgentEvent, { type: T }>) => void
+    fn: (event: Extract<AgentEvent, { type: T }>) => void | Promise<void>
   ): () => void {
     const existing = this.typed.get(type);
     if (existing) {
-      existing.add(fn as (event: unknown) => void);
+      existing.add(fn as (event: unknown) => void | Promise<void>);
     } else {
-      this.typed.set(type, new Set([fn as (event: unknown) => void]));
+      this.typed.set(type, new Set([fn as (event: unknown) => void | Promise<void>]));
     }
     return () => {
       const set = this.typed.get(type);
-      if (set) set.delete(fn as (event: unknown) => void);
+      if (set) set.delete(fn as (event: unknown) => void | Promise<void>);
     };
   }
 
@@ -621,7 +622,7 @@ export class AgentEventEmitter {
    * Register a catch-all listener for ALL event types.
    * @returns Unregister function
    */
-  onAny(fn: (event: AgentEvent) => void): () => void {
+  onAny(fn: (event: AgentEvent) => void | Promise<void>): () => void {
     this.any.add(fn);
     return () => {
       this.any.delete(fn);
