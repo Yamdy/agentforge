@@ -56,12 +56,12 @@ interface PluginContext {
 ```typescript
 import type { Plugin } from 'agentforge';
 import type { RequestHook } from 'agentforge';
-import { RequestHookPriority } from 'agentforge';
+import { DEFAULT_REQUEST_HOOK_PRIORITY } from 'agentforge';
 import type { Message, AgentState } from 'agentforge';
 
 const systemPromptHook: RequestHook = {
   name: 'my-system-prompt',
-  priority: RequestHookPriority.USER_CUSTOM,
+  priority: DEFAULT_REQUEST_HOOK_PRIORITY,
 
   apply(messages: Message[], _state: AgentState): Message[] {
     return [
@@ -282,21 +282,18 @@ const plugin: Plugin = {
 
 | 常量 | 数值 | 说明 | 负责组件 |
 |------|------|------|----------|
-| `SYSTEM_RULES` | 10 | 系统核心规则（身份、硬约束、输出格式） | 框架内置 |
-| `MEMORY_CONTEXT` | 20 | 持久记忆 / AGENTS.md 上下文 | MemoryPlugin |
-| `WORKING_MEMORY` | 25 | 工作记忆（钉选条目、暂存区） | 框架内置 |
-| `SKILL_INSTRUCTIONS` | 30 | 技能指令 / 领域知识 | SkillsPlugin |
-| `TOOL_DESCRIPTIONS` | 40 | 工具描述注入 | 框架内置 |
-| `USER_CUSTOM` | 50 | 用户自定义 Hook（默认） | 你的插件 |
+| `MEMORY` | 10 | 持久记忆 / AGENTS.md 上下文 | MemoryPlugin |
+| `WORKING_MEMORY` | 20 | 工作记忆（钉选条目、暂存区） | 框架内置 |
+| `SKILL` | 30 | 技能指令 / 领域知识 | SkillsPlugin |
 
 使用示例：
 
 ```typescript
-import { RequestHookPriority } from 'agentforge';
+import { DEFAULT_REQUEST_HOOK_PRIORITY } from 'agentforge';
 
 const myHook: RequestHook = {
   name: 'my-hook',
-  priority: RequestHookPriority.USER_CUSTOM, // 在所有内置 Hook 之后执行
+  priority: DEFAULT_REQUEST_HOOK_PRIORITY, // 在所有内置 Hook 之后执行
   apply(messages, state) { ... },
 };
 ```

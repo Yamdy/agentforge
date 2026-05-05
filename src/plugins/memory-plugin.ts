@@ -36,7 +36,7 @@ export interface MemoryPluginConfig extends MemoryConfig {
  * - session.start: Loads AGENTS.md files into cache
  * - requestHooks: Prepends memory content to messages before each LLM call
  *
- * Priority: MEMORY_CONTEXT (20)
+ * Priority: MEMORY (10)
  *
  * @param memory - PersistentMemory implementation
  * @param config - Memory configuration (supports autoDiscover option)
@@ -82,7 +82,7 @@ export function createMemoryPlugin(memory: PersistentMemory, config: MemoryPlugi
     requestHooks: [
       {
         name: 'memory-context',
-        priority: RequestHookPriority.MEMORY_CONTEXT,
+        priority: RequestHookPriority.MEMORY,
         apply(messages: Message[]): Message[] {
           if (loaded && entries.length > 0) {
             const memoryText = memory.formatForPrompt(entries);

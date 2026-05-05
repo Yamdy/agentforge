@@ -64,7 +64,7 @@ function createTestSkillsPlugin(skills: Array<{ name: string; description: strin
 
     requestHooks: [{
       name: 'skills-context',
-      priority: RequestHookPriority.SKILL_INSTRUCTIONS,
+      priority: RequestHookPriority.SKILL,
       apply(messages: Message[]): Message[] {
         if (skills.length === 0) return messages;
 

@@ -31,7 +31,7 @@ export interface SkillMetadata {
  * - session.start: Scans skill directories, parses SKILL.md frontmatter
  * - requestHooks: Prepends skill list (name + description only) to messages
  *
- * Priority: SKILL_INSTRUCTIONS (30)
+ * Priority: SKILL (30)
  *
  * Progressive disclosure: Only metadata is injected. Model reads full SKILL.md on demand.
  *
@@ -71,7 +71,7 @@ export function createSkillsPlugin(sources: string[]): Plugin {
     requestHooks: [
       {
         name: 'skills-context',
-        priority: RequestHookPriority.SKILL_INSTRUCTIONS,
+        priority: RequestHookPriority.SKILL,
         apply(messages: Message[]): Message[] {
           if (skills.length === 0) return messages;
 

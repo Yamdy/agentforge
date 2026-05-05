@@ -24,43 +24,29 @@ import type { FunctionDefinition } from './interfaces.js';
 /**
  * Standard priority tiers for RequestHook ordering.
  *
- * Progressive disclosure strategy: context is layered into the LLM
- * request from most critical (system rules) to least critical
- * (user extensions). Lower-numbered hooks execute first, establishing
- * a foundation that later hooks can build upon.
+ * Three-tier progressive disclosure: context is layered into the LLM
+ * request from foundational memory to applied skill knowledge.
+ * Lower-numbered hooks execute first, establishing a foundation that
+ * later hooks can build upon.
  *
  * Usage:
  * ```typescript
  * const hook: RequestHook = {
  *   name: 'my-memory-hook',
- *   priority: RequestHookPriority.MEMORY_CONTEXT,
+ *   priority: RequestHookPriority.MEMORY,
  *   apply(messages, state) { ... }
  * };
  * ```
- *
- * @see DeepAgents middleware stack ordering
  */
 export const RequestHookPriority = {
-  /** System core rules — identity, hard constraints, output format (NEVER override) */
-  SYSTEM_RULES: 10,
-
-  /** Persistent memory / AGENTS.md context */
-  MEMORY_CONTEXT: 20,
+  /** Memory context — persistent memory and AGENTS.md (lowest = runs first) */
+  MEMORY: 10,
 
   /** Working memory — pinned items and scratchpad (survives compaction) */
-  WORKING_MEMORY: 25,
+  WORKING_MEMORY: 20,
 
-  /** Skill instructions / domain knowledge */
-  SKILL_INSTRUCTIONS: 30,
-
-  /**
-   * Tool descriptions — inject tool schemas into system prompt.
-   * Runs after skills so tools can reference skill-defined concepts.
-   */
-  TOOL_DESCRIPTIONS: 40,
-
-  /** User-provided custom hooks (default priority) */
-  USER_CUSTOM: 50,
+  /** Skill instructions — domain knowledge and tool descriptions */
+  SKILL: 30,
 } as const;
 
 export type RequestHookPriority = (typeof RequestHookPriority)[keyof typeof RequestHookPriority];
@@ -327,7 +313,7 @@ export class HookRegistry {
    *
    * @param name     - Cut-point name
    * @param fn       - Hook function
-   * @param priority - Execution order (default: RequestHookPriority.USER_CUSTOM = 50)
+   * @param priority - Execution order (default: DEFAULT_REQUEST_HOOK_PRIORITY = 100)
    * @returns Unregister function
    */
   on(phase: LifecyclePhase, fn: HookFn, priority = DEFAULT_REQUEST_HOOK_PRIORITY): () => void {

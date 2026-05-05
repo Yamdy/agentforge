@@ -175,7 +175,7 @@ describe('PlanNotebook', () => {
     expect(notebook).toBeInstanceOf(PlanNotebook);
     expect(notebook.planHintHook).toBeDefined();
     expect(notebook.planHintHook.name).toBe('plan-notebook-hint');
-    expect(notebook.planHintHook.priority).toBe(25);
+    expect(notebook.planHintHook.priority).toBe(20);
   });
 
   // ---- b. registerTools registers 3 tools ----

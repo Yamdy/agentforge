@@ -150,7 +150,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
 
   // ── Working Memory: register system injection RequestHook ──
   // When working memory is configured, inject <working-memory> XML before each LLM call.
-  // Priority 25 — sits between MEMORY_CONTEXT (20) and SKILL_INSTRUCTIONS (30).
+  // Priority 20 — sits between MEMORY (10) and SKILL (30).
   if (ctx.workingMemoryProcessor && ctx.workingMemory) {
     const wmHook = ctx.workingMemoryProcessor.createSystemInjectionHook(
       ctx.workingMemory,

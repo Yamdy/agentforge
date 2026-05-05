@@ -7,20 +7,20 @@
  *   - 接收当前消息列表，返回修改后的消息列表
  *   - 多个 RequestHook 按优先级顺序串联执行（前一个的输出是后一个的输入）
  *
- * 优先级系统：使用 RequestHookPriority.USER_CUSTOM（50），位于内置 Hook 之后
- *   - SYSTEM_RULES(10) → MEMORY_CONTEXT(20) → SKILL_INSTRUCTIONS(30)
- *     → TOOL_DESCRIPTIONS(40) → USER_CUSTOM(50)
+ * 优先级系统：使用 DEFAULT_REQUEST_HOOK_PRIORITY（100），位于内置 Hook 之后
+ *   - MEMORY(10) → WORKING_MEMORY(20) → SKILL(30)
+ *     → DEFAULT_REQUEST_HOOK_PRIORITY(100)
  *
  * 运行方式: npx tsx examples/plugins/03-custom-system-prompt.ts
  */
 
 import type { Plugin } from '../../src/plugins/plugin.js';
 import type { RequestHook } from '../../src/core/hooks.js';
-import { RequestHookPriority } from '../../src/core/hooks.js';
+import { DEFAULT_REQUEST_HOOK_PRIORITY } from '../../src/core/hooks.js';
 import type { Message, AgentState } from '../../src/core/index.js';
 
 /**
- * 自定义系统提示 Hook — 在所有用户自定义 Hook 中最后执行（priority=50）
+ * 自定义系统提示 Hook — 在所有用户自定义 Hook 中最后执行（priority=100）
  *
  * 策略说明：
  *   - system 角色的消息在 LLM 上下文窗口的顶部
@@ -30,7 +30,7 @@ import type { Message, AgentState } from '../../src/core/index.js';
  */
 const customSystemPromptHook: RequestHook = {
   name: 'custom-system-prompt',
-  priority: RequestHookPriority.USER_CUSTOM, // 50 — 用户自定义层
+  priority: DEFAULT_REQUEST_HOOK_PRIORITY, // 100 — 用户自定义层
 
   /**
    * 转换消息列表，注入自定义系统提示。

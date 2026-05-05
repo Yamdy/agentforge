@@ -64,31 +64,21 @@ function createToolDef(): FunctionDefinition {
 // ============================================================
 
 describe('RequestHookPriority', () => {
-  it('should define SYSTEM_RULES as 10', () => {
-    expect(RequestHookPriority.SYSTEM_RULES).toBe(10);
+  it('should define MEMORY as 10', () => {
+    expect(RequestHookPriority.MEMORY).toBe(10);
   });
 
-  it('should define MEMORY_CONTEXT as 20', () => {
-    expect(RequestHookPriority.MEMORY_CONTEXT).toBe(20);
+  it('should define WORKING_MEMORY as 20', () => {
+    expect(RequestHookPriority.WORKING_MEMORY).toBe(20);
   });
 
-  it('should define SKILL_INSTRUCTIONS as 30', () => {
-    expect(RequestHookPriority.SKILL_INSTRUCTIONS).toBe(30);
-  });
-
-  it('should define TOOL_DESCRIPTIONS as 40', () => {
-    expect(RequestHookPriority.TOOL_DESCRIPTIONS).toBe(40);
-  });
-
-  it('should define USER_CUSTOM as 50', () => {
-    expect(RequestHookPriority.USER_CUSTOM).toBe(50);
+  it('should define SKILL as 30', () => {
+    expect(RequestHookPriority.SKILL).toBe(30);
   });
 
   it('should have ascending numeric values for progressive disclosure', () => {
-    expect(RequestHookPriority.SYSTEM_RULES).toBeLessThan(RequestHookPriority.MEMORY_CONTEXT);
-    expect(RequestHookPriority.MEMORY_CONTEXT).toBeLessThan(RequestHookPriority.SKILL_INSTRUCTIONS);
-    expect(RequestHookPriority.SKILL_INSTRUCTIONS).toBeLessThan(RequestHookPriority.TOOL_DESCRIPTIONS);
-    expect(RequestHookPriority.TOOL_DESCRIPTIONS).toBeLessThan(RequestHookPriority.USER_CUSTOM);
+    expect(RequestHookPriority.MEMORY).toBeLessThan(RequestHookPriority.WORKING_MEMORY);
+    expect(RequestHookPriority.WORKING_MEMORY).toBeLessThan(RequestHookPriority.SKILL);
   });
 });
 

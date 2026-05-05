@@ -141,7 +141,7 @@ description: A test skill for verification
     const requestHooks = hooks.getRequestHooks();
     const memoryHook = requestHooks.find(h => h.name === 'memory-context');
     expect(memoryHook).toBeDefined();
-    expect(memoryHook!.priority).toBe(20);
+    expect(memoryHook!.priority).toBe(10); // MEMORY
   });
 
   it('should register memory request hook with correct priority', () => {
@@ -159,7 +159,7 @@ description: A test skill for verification
     const requestHooks = hooks.getRequestHooks();
     const memoryHook = requestHooks.find(h => h.name === 'memory-context');
     expect(memoryHook).toBeDefined();
-    expect(memoryHook!.priority).toBe(20); // MEMORY_CONTEXT
+    expect(memoryHook!.priority).toBe(10); // MEMORY
   });
 
   // ==========================================================
@@ -199,7 +199,7 @@ description: A test skill for verification
     const requestHooks = hooks.getRequestHooks();
     const skillsHook = requestHooks.find(h => h.name === 'skills-context');
     expect(skillsHook).toBeDefined();
-    expect(skillsHook!.priority).toBe(30); // SKILL_INSTRUCTIONS
+    expect(skillsHook!.priority).toBe(30); // SKILL
   });
 
   // ==========================================================

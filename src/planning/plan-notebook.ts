@@ -20,7 +20,7 @@ import type { Planner, PlannerContext, ExecutionPlan, PlanStep, StepResult } fro
 // Constants
 // ============================================================
 
-const HINT_PRIORITY = 25; // Between MEMORY_CONTEXT (20) and SKILL_INSTRUCTIONS (30)
+const HINT_PRIORITY = 20; // Between MEMORY (10) and SKILL (30)
 
 // ============================================================
 // PlanNotebook
@@ -59,7 +59,7 @@ export class PlanNotebook {
    * RequestHook that injects the current plan step hint into
    * the system message before each LLM call.
    *
-   * Priority: 25 (between MEMORY_CONTEXT and SKILL_INSTRUCTIONS).
+   * Priority: 20 (between MEMORY and SKILL).
    */
   readonly planHintHook: RequestHook = {
     name: 'plan-notebook-hint',

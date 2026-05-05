@@ -113,7 +113,7 @@ A Plugin can register 6 kinds of hooks:
 
 All hook errors are silently caught — plugin isolation is safety-critical.
 
-Request hooks have standard priority tiers (lower = earlier): SYSTEM_RULES(10) → MEMORY_CONTEXT(20) → WORKING_MEMORY(25) → SKILL_INSTRUCTIONS(30) → TOOL_DESCRIPTIONS(40) → USER_CUSTOM(50).
+Request hooks have standard priority tiers (lower = earlier): MEMORY(10) → WORKING_MEMORY(20) → SKILL(30). User custom hooks default to DEFAULT_REQUEST_HOOK_PRIORITY(100).
 
 Built-in plugin factories (exported from main entry): `createQuotaPlugin`, `createRateLimitPlugin`, `createQualityGatePlugin`, `createCircuitBreakerPlugin`, `createMemoryPlugin`, `createSkillsPlugin`, `createSummarizationPlugin`, `createTodoListPlugin`, `loggingPlugin`, `metricsPlugin`.
 
