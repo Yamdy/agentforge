@@ -217,8 +217,9 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
     for (const fn of fns) {
       try {
         await fn(input, output);
-      } catch {
+      } catch (err) {
         // Plugin isolation — hook errors never crash the loop
+        ctx.logger?.warn('Lifecycle hook error', { phase, error: serializeError(err as Error) });
       }
     }
   }
