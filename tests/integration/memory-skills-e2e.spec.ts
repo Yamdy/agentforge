@@ -133,7 +133,7 @@ description: A test skill for verification
     expect(memoryHook!.priority).toBe(20);
   });
 
-  it('should register memory lifecycle hook for agent.start bridging', () => {
+  it('should register memory request hook with correct priority', () => {
     const agent = createAgent({
       name: 'memory-lifecycle',
       model: { provider: 'mock', model: 'mock-model' },
@@ -145,8 +145,10 @@ description: A test skill for verification
     });
 
     const hooks = agent.ctx.harness.hookRegistry as HookRegistry;
-    const lifecycleFns = hooks.getLifecycleHooks('session.start');
-    expect(lifecycleFns.length).toBeGreaterThanOrEqual(1);
+    const requestHooks = hooks.getRequestHooks();
+    const memoryHook = requestHooks.find(h => h.name === 'memory-context');
+    expect(memoryHook).toBeDefined();
+    expect(memoryHook!.priority).toBe(20); // MEMORY_CONTEXT
   });
 
   // ==========================================================
@@ -172,7 +174,7 @@ description: A test skill for verification
     expect(skillsHook!.priority).toBe(30);
   });
 
-  it('should register skills lifecycle hook for agent.start bridging', () => {
+  it('should register skills request hook with correct priority', () => {
     const agent = createAgent({
       name: 'skills-lifecycle',
       model: { provider: 'mock', model: 'mock-model' },
@@ -183,8 +185,10 @@ description: A test skill for verification
     });
 
     const hooks = agent.ctx.harness.hookRegistry as HookRegistry;
-    const lifecycleFns = hooks.getLifecycleHooks('session.start');
-    expect(lifecycleFns.length).toBeGreaterThanOrEqual(1);
+    const requestHooks = hooks.getRequestHooks();
+    const skillsHook = requestHooks.find(h => h.name === 'skills-context');
+    expect(skillsHook).toBeDefined();
+    expect(skillsHook!.priority).toBe(30); // SKILL_INSTRUCTIONS
   });
 
   // ==========================================================

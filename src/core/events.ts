@@ -28,6 +28,9 @@ export const AgentEventTypeSchema = z.enum([
 
   'llm.request',
   'llm.response',
+  'llm.chunk',
+
+  'file.change',
 
   'tool.call',
   'tool.result',
@@ -222,6 +225,20 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
       .optional(),
   }),
 
+  // ----- llm.chunk -----
+  z.object({
+    type: z.literal('llm.chunk'),
+    timestamp: z.number(),
+    sessionId: z.string(),
+    text: z.string(),
+    /** Tool call ID (present on tool-call-start/delta/end chunks) */
+    toolCallId: z.string().optional(),
+    /** Tool name (present on tool-call-start chunks) */
+    toolName: z.string().optional(),
+    /** Args delta fragment (present on tool-call-delta chunks) */
+    argsDelta: z.string().optional(),
+  }),
+
   // ----- tool.* -----
   z.object({
     type: z.literal('tool.call'),
@@ -395,12 +412,46 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
     stepId: z.string().optional(),
   }),
 
+  // ----- file.change -----
+  z.object({
+    type: z.literal('file.change'),
+    timestamp: z.number(),
+    sessionId: z.string(),
+    changes: z.array(
+      z.object({
+        path: z.string(),
+        type: z.enum(['created', 'modified', 'deleted']),
+        before: z
+          .object({
+            exists: z.boolean(),
+            size: z.number(),
+            mtimeMs: z.number(),
+          })
+          .nullable(),
+        after: z
+          .object({
+            exists: z.boolean(),
+            size: z.number(),
+            mtimeMs: z.number(),
+          })
+          .nullable(),
+      })
+    ),
+  }),
+
   // ----- compaction.* -----
   z.object({
     type: z.literal('compaction.start'),
     timestamp: z.number(),
     sessionId: z.string(),
-    strategy: z.enum(['truncate-oldest', 'summarize', 'importance-weighted']),
+    strategy: z.enum([
+      'truncate-oldest',
+      'summarize',
+      'importance-weighted',
+      'snip',
+      'pointer-indexed',
+      'microcompact',
+    ]),
     tokensBefore: z.number(),
   }),
 

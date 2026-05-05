@@ -50,10 +50,10 @@ export function createMemoryPlugin(memory: PersistentMemory, config: MemoryPlugi
     name: 'memory',
     enabled: config.enabled,
 
-    lifecycleHooks: [
+    eventSubscriptions: [
       {
-        name: 'session.start',
-        fn: async () => {
+        event: 'agent.start',
+        handler: async () => {
           if (loaded) return;
 
           if (config.autoDiscover) {

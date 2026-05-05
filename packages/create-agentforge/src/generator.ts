@@ -232,8 +232,12 @@ function renderBaseTemplates(
     { template: '.env.example.hbs', output: '.env.example', description: 'Environment variables template' },
     { template: 'README.md.hbs', output: 'README.md', description: 'Project documentation' },
     { template: 'src/index.ts.hbs', output: 'src/index.ts', description: 'Main entry point' },
+    // Deployment templates
+    { template: 'Dockerfile.hbs', output: 'Dockerfile', description: 'Multi-stage Docker build' },
+    { template: 'docker-compose.yml.hbs', output: 'docker-compose.yml', description: 'Docker Compose configuration' },
     // Static files (no template)
     { template: '.gitignore', output: '.gitignore', description: 'Git ignore rules' },
+    { template: '.dockerignore', output: '.dockerignore', description: 'Docker build ignores' },
     { template: 'src/types.ts', output: 'src/types.ts', description: 'Shared type definitions' },
   ];
 

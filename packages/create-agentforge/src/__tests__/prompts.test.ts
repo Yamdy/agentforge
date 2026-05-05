@@ -82,6 +82,7 @@ describe('prompts', () => {
       compaction: false,
       subagent: false,
       mcp: false,
+      deployment: false,
       apiMode: 'simple' as const,
       preset: undefined,  // explicitly in overrides = "skip prompt"
       gitInit: true,
@@ -173,6 +174,7 @@ describe('prompts', () => {
         compaction: false,
         subagent: false,
         mcp: false,
+        deployment: false,
         apiMode: 'simple' as const,
         preset: undefined,  // skip preset prompt
         gitInit: true,

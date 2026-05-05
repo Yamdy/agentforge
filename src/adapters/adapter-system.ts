@@ -160,6 +160,7 @@ export class ProviderRegistry {
 // ============================================================
 
 import { generateText, streamText, jsonSchema } from 'ai';
+import { fullStreamToChunks } from './stream-utils.js';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import type { JSONSchema7 } from 'json-schema';
 import type { FunctionDefinition, ToolChoice } from '../core/interfaces.js';
@@ -348,9 +349,9 @@ export function createHttpAdapter(
       }
 
       const result = streamText(config as Parameters<typeof streamText>[0]);
-      for await (const textPart of result.textStream) {
-        yield { text: textPart };
-      }
+      yield* fullStreamToChunks(
+        result.fullStream as AsyncIterable<{ type: string; [key: string]: unknown }>
+      );
     },
   };
 }

@@ -27,6 +27,7 @@ import {
 } from './context.js';
 import { toolToFunctionDef } from './zod-to-schema.js';
 import { HookRegistry } from './hooks.js';
+import { createTruncateCompactionManager } from '../memory/index.js';
 
 // ============================================================
 // Context Builder State
@@ -42,6 +43,7 @@ interface BuilderState {
   llm?: LLMAdapter;
   tools?: ToolRegistry | ToolDefinition[];
   memory?: import('./interfaces.js').MemoryStore;
+  compactionManager?: import('../memory/index.js').CompactionManager;
   pauseController?: import('./interfaces.js').PauseController;
   checkpoint?: import('./interfaces.js').CheckpointStorage;
   hitl?: import('./interfaces.js').HITLController;
@@ -138,7 +140,9 @@ export class ContextBuilder {
       },
       security: {},
       controls: {},
-      memory: {},
+      memory: {
+        compactionManager: this.state.compactionManager ?? createTruncateCompactionManager(),
+      },
       resilience: {},
       extensions: {},
       harness: { hookRegistry: new HookRegistry() },

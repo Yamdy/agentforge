@@ -35,11 +35,14 @@ import {
   type CheckpointFn,
 } from '../core/hooks.js';
 import { createInitialState } from '../core/state.js';
-import type { LLMOptions } from '../core/interfaces.js';
 import { checkTokenBudget, createBudgetTracker, shouldCompact } from './token-budget.js';
-import { analyzeLLMError, RECOVERY_LIMITS, ESCALATED_MAX_OUTPUT_TOKENS } from './error-analyzer.js';
+import { type ErrorRecoveryDeps } from './error-recovery-handler.js';
+import { runPlanThenExecute } from './plan-executor.js';
+import { performLLMCall, type LLMCallDeps, performStreamingLLMCall } from './llm-caller.js';
 import { partitionToolCalls } from './tool-partition.js';
 import { evaluatePermission } from '../security/permission/permission-policy.js';
+import { createDoomLoopDetector, type DoomLoopDetector } from './doom-loop-detector.js';
+import { createFileTracker, extractPathsFromArgs, type FileTracker } from './file-snapshot.js';
 
 // ============================================================
 // Types
@@ -154,6 +157,9 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
 
   // ── Streaming ──
 
+  // ── File Snapshot Tracker (P2-15) ──
+  const fileTracker: FileTracker = createFileTracker();
+
   // ── Error recovery mutable state (shared with handleLLMError) ──
   const recoveryState = {
     escalatedMaxTokens: undefined as number | undefined,
@@ -176,99 +182,6 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
   // ============================================================
   // Error Recovery
   // ============================================================
-
-  async function handleLLMError(
-    error: unknown,
-    signal: AbortSignal
-  ): Promise<'continue' | 'fatal'> {
-    if (signal.aborted) return 'fatal';
-
-    const errStatus =
-      error instanceof Error ? (error as Error & { status?: number }).status : undefined;
-    const analysis = analyzeLLMError(error as Error, config.model.model, errStatus);
-
-    if (analysis.recoverable && state) {
-      switch (analysis.recovery) {
-        case 'escalate_output_tokens':
-          if (state.recovery.outputTokenEscalationCount < RECOVERY_LIMITS.outputTokenEscalation) {
-            state.recovery.outputTokenEscalationCount++;
-            recoveryState.escalatedMaxTokens = ESCALATED_MAX_OUTPUT_TOKENS;
-            await runLifecycleHook('recovery.escalate', { error: analysis.message }, {});
-            return 'continue';
-          }
-          break;
-
-        case 'inject_recovery_message':
-          if (state.recovery.recoveryMessageCount < RECOVERY_LIMITS.recoveryMessage) {
-            state.recovery.recoveryMessageCount++;
-            state.messages.push({
-              role: 'user',
-              content: 'Output token limit hit. Resume directly — no apology, no recap.',
-            });
-            await runLifecycleHook('recovery.compact', { error: analysis.message }, {});
-            return 'continue';
-          }
-          break;
-
-        case 'switch_fallback_model':
-          if (
-            config.fallbackModel &&
-            state.recovery.fallbackSwitchCount < RECOVERY_LIMITS.fallbackSwitch
-          ) {
-            state.recovery.fallbackSwitchCount++;
-            config.model = config.fallbackModel;
-            await runLifecycleHook(
-              'recovery.fallback',
-              { error: analysis.message },
-              { model: config.fallbackModel }
-            );
-            return 'continue';
-          }
-          break;
-
-        case 'trigger_compaction':
-          if (
-            ctx.memory.compactionManager &&
-            state.recovery.compactionRetryCount < RECOVERY_LIMITS.compactionRetry
-          ) {
-            state.recovery.compactionRetryCount++;
-            if (state) {
-              await runLifecycleHook(
-                'compaction.before',
-                {
-                  sessionId: ctx.identity.sessionId,
-                  messages: state.messages,
-                  tokenCount: state.tokens.prompt + state.tokens.completion,
-                },
-                {}
-              );
-              const result = await ctx.memory.compactionManager.compact(
-                {
-                  sessionId: ctx.identity.sessionId,
-                  messages: state.messages,
-                  maxTokens: config.tokenBudget ?? 200_000,
-                  currentTokenEstimate: state.tokens.prompt + state.tokens.completion,
-                },
-                { aggressive: true }
-              );
-              state.messages = result.messages as Message[];
-              await runLifecycleHook(
-                'compaction.after',
-                {
-                  sessionId: ctx.identity.sessionId,
-                  messages: state.messages,
-                },
-                {}
-              );
-            }
-            return 'continue';
-          }
-          break;
-      }
-    }
-
-    return 'fatal';
-  }
 
   // ============================================================
   // Tool Execution
@@ -532,11 +445,38 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       details: { toolCallId: tc.id },
     });
 
+    // ── File Snapshot: take before-snapshot for tools that modify files ──
+    const filePaths = extractPathsFromArgs(tc.args);
+    let beforeSnapshot = null;
+    if (filePaths.length > 0) {
+      beforeSnapshot = await fileTracker.takeSnapshotOf(filePaths);
+    }
+
     try {
       const result = await ctx.core.tools.execute(tc.name, tc.args, {
         toolCallId: tc.id,
         parentSessionId: ctx.identity.sessionId,
       });
+
+      // ── File Snapshot: diff after successful execution ──
+      if (beforeSnapshot && filePaths.length > 0) {
+        const afterSnapshot = await fileTracker.takeSnapshotOf(filePaths);
+        const changes = fileTracker.diff(beforeSnapshot, afterSnapshot);
+        if (changes.length > 0) {
+          void emitter.emit({
+            type: 'file.change',
+            timestamp: Date.now(),
+            sessionId: ctx.identity.sessionId,
+            changes: changes.map(c => ({
+              path: c.path,
+              type: c.type,
+              before: c.before,
+              after: c.after,
+            })),
+          } as AgentEvent);
+          fileTracker.notify(changes, ctx.identity.sessionId);
+        }
+      }
 
       await runLifecycleHook(
         'tool.execute.after',
@@ -738,6 +678,9 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
     // ── State Machine: pending → running ──
     stateMachine.transition('running');
 
+    // ── Doom loop detector ──
+    const doomLoop: DoomLoopDetector = createDoomLoopDetector();
+
     // ── Cancel previous run, create new AbortController ──
     abortController?.abort();
     abortController = new AbortController();
@@ -784,8 +727,28 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
     const tokenBudget = config.tokenBudget ?? 200_000;
     const budgetTracker = createBudgetTracker();
 
-    // ── Emit agent.start ──
-    void emitter.emit({
+    // ── Deps for extracted loop modules (must be after state init) ──
+    const errorRecoveryDeps: ErrorRecoveryDeps = {
+      ctx,
+      config,
+      state,
+      recoveryState,
+      emitter,
+      runLifecycleHook,
+    };
+    const llmCallDeps: LLMCallDeps = {
+      ctx,
+      config,
+      hooks,
+      emitter,
+      state,
+      recoveryState,
+      errorRecoveryDeps,
+      runLifecycleHook,
+    };
+
+    // ── Emit agent.start (awaited — plugins load memory/skills here) ──
+    await emitter.emit({
       type: 'agent.start',
       timestamp: Date.now(),
       sessionId: ctx.identity.sessionId,
@@ -806,10 +769,9 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
     );
 
     // ====================================================================
-    // Plan-Then-Execute (LLM-driven planning, controlled by executionMode)
+    // Plan-Then-Execute (delegated to plan-executor.ts)
     // ====================================================================
     const execMode = config.executionMode ?? 'react';
-    let plannerSucceeded = false;
 
     const cleanupRun: () => void = (): void => {
       if (onExternalAbort) {
@@ -820,140 +782,24 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       abortController = null;
     };
 
-    const strictFail = (reason: string, planningError?: unknown): void => {
-      const causeMsg = planningError instanceof Error ? planningError.message : '';
-      const fullMessage = causeMsg
-        ? `Plan-then-execute (strict mode) failed: ${causeMsg} — ${reason}`
-        : `Plan-then-execute (strict mode) failed: ${reason}`;
-      ctx.core.logger?.error(`[strict plan-then-execute] ${fullMessage}`);
-      const plannedError: SerializedError = {
-        name: 'PlannerError',
-        message: fullMessage,
-        stack: planningError instanceof Error ? planningError.stack : undefined,
-      };
-      stateMachine.transition('error');
-      void emitter.emit({
-        type: 'agent.error',
-        timestamp: Date.now(),
-        sessionId: ctx.identity.sessionId,
-        error: plannedError,
-      } as AgentEvent);
-      void emitter.emit({
-        type: 'done',
-        reason: 'error',
-        timestamp: Date.now(),
-        sessionId: ctx.identity.sessionId,
-      });
-      cleanupRun();
-    };
+    const planResult = await runPlanThenExecute({
+      ctx,
+      state,
+      input,
+      emitter,
+      stateMachine,
+      executionMode: execMode,
+      maxSteps: config.maxSteps ?? 10,
+      cleanupRun,
+    });
 
-    if (execMode !== 'react' && ctx.extensions.planner) {
-      try {
-        const toolNames =
-          ctx.core.tools?.getFunctionDefs().map((f: { name: string }) => f.name) ?? [];
-        const plan = await ctx.extensions.planner.plan(input, {
-          availableTools: toolNames,
-          maxSteps: config.maxSteps ?? 10,
-        });
-
-        if (!plan || plan.steps.length === 0) {
-          if (execMode === 'plan-then-execute-strict') {
-            strictFail(
-              ctx.extensions.planner.lastDiagnostic ??
-                'Planner produced an empty plan (no steps generated)'
-            );
-            return '';
-          }
-        } else {
-          const validation = await ctx.extensions.planner.validate(plan, {
-            availableTools: toolNames,
-            maxSteps: config.maxSteps ?? 10,
-          });
-
-          if (!validation.valid) {
-            if (execMode === 'plan-then-execute-strict') {
-              const errorDetail = validation.errors.map(e => `${e.path}: ${e.message}`).join('; ');
-              strictFail(`Plan validation failed: ${errorDetail}`);
-              return '';
-            }
-          } else if (ctx.core.tools) {
-            // Dynamic import PlanExecutorImpl to avoid circular deps
-            const { PlanExecutorImpl } = await import('../planning/plan-executor.js');
-            const executor = new PlanExecutorImpl();
-            let result = await executor.execute(plan, ctx.core.tools);
-
-            // Re-plan on failure (up to 2 retries)
-            let replanAttempts = 0;
-            const maxReplanAttempts = 2;
-            while (result.status === 'failed' && replanAttempts < maxReplanAttempts) {
-              let failedStepId: string | undefined;
-              for (const [stepId, stepResult] of result.stepResults) {
-                if (stepResult.status === 'failed') {
-                  failedStepId = stepId;
-                  break;
-                }
-              }
-              if (!failedStepId) break;
-
-              replanAttempts++;
-              const newPlan = await ctx.extensions.planner.replan(
-                input,
-                { availableTools: toolNames, maxSteps: config.maxSteps ?? 10 },
-                failedStepId,
-                result.stepResults
-              );
-              result = await executor.resume(newPlan, ctx.core.tools, result.stepResults);
-            }
-
-            // Build final output from step results
-            const outputs: string[] = [];
-            for (const [, stepResult] of result.stepResults) {
-              if (stepResult.status === 'completed' && stepResult.output) {
-                outputs.push(stepResult.output);
-              }
-            }
-            if (outputs.length > 0) {
-              plannerSucceeded = true;
-              const finalOutput = outputs.join('\n');
-              stateMachine.transition('completed');
-              void emitter.emit({
-                type: 'agent.complete',
-                timestamp: Date.now(),
-                sessionId: ctx.identity.sessionId,
-                output: finalOutput,
-                steps: state?.step ?? 0,
-              } as AgentEvent);
-              void emitter.emit({
-                type: 'done',
-                reason: 'stop',
-                timestamp: Date.now(),
-                sessionId: ctx.identity.sessionId,
-              });
-              state.output = finalOutput;
-              cleanupRun();
-            } else if (execMode === 'plan-then-execute-strict') {
-              strictFail(
-                'Plan execution produced no output (all steps completed but returned empty)'
-              );
-              return '';
-            }
-          }
-        }
-      } catch (planningError) {
-        if (execMode === 'plan-then-execute-strict') {
-          strictFail(
-            ctx.extensions.planner.lastDiagnostic ?? 'Planner threw an exception',
-            planningError
-          );
-          return '';
-        }
-
-        // Plan-then-execute (non-strict): fall through to ReAct loop
-        if (ctx.core.logger) {
-          ctx.core.logger.warn('Plan-then-execute failed, falling back to ReAct loop');
-        }
-      }
+    if (planResult.shouldTerminate) {
+      return '';
     }
+    if (planResult.finalOutput !== undefined) {
+      state.output = planResult.finalOutput;
+    }
+    const plannerSucceeded = planResult.plannerSucceeded;
 
     // ====================================================================
     // MAIN LOOP (ReAct — fallback or default)
@@ -1047,6 +893,13 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
               maxTokens: config.tokenBudget ?? 200_000,
             });
             if (needsCompact) {
+              void emitter.emit({
+                type: 'compaction.start',
+                timestamp: Date.now(),
+                sessionId: ctx.identity.sessionId,
+                strategy: ctx.memory.compactionManager.getConfig().strategy,
+                tokensBefore: state.tokens.prompt + state.tokens.completion,
+              } as AgentEvent);
               const result = await ctx.memory.compactionManager.compact({
                 sessionId: ctx.identity.sessionId,
                 messages: state.messages,
@@ -1054,6 +907,13 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
                 maxTokens: config.tokenBudget ?? 200_000,
               });
               state.messages = result.messages as Message[];
+              void emitter.emit({
+                type: 'compaction.complete',
+                timestamp: Date.now(),
+                sessionId: ctx.identity.sessionId,
+                tokensAfter: result.tokensAfter,
+                removedMessages: result.removedCount,
+              } as AgentEvent);
             }
           }
 
@@ -1097,59 +957,17 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             return state.output;
           }
 
-          // ── 2. LLM Call ──
-          // ── MPU M5: Audit LLM request ──
-          ctx.security.auditLogger?.append({
-            sessionId: ctx.identity.sessionId,
-            agentName: ctx.identity.agentName,
-            eventType: 'llm.request',
-            action: 'llm.request',
-            resource: config.model.model,
-            result: 'success',
-            details: { messages: msgs.length, model: config.model },
-          });
+          // ── 2. LLM Call (streaming or non-streaming, same result type) ──
+          const llmResult = config.streaming
+            ? await performStreamingLLMCall(msgs, signal, llmCallDeps)
+            : await performLLMCall(msgs, signal, llmCallDeps);
 
-          // ── Emit llm.request for backward compat ──
-          void emitter.emit({
-            type: 'llm.request',
-            timestamp: Date.now(),
-            sessionId: ctx.identity.sessionId,
-            messages: msgs,
-            model: config.model,
-          } as AgentEvent);
-
-          // ── ToolProvider Hooks: per-call dynamic tool injection ──
-          let toolDefs = ctx.core.tools?.getFunctionDefs() ?? [];
-          for (const h of hooks.getToolProviderHooks()) {
-            toolDefs = await h.filter(toolDefs, state);
+          if (llmResult.status === 'recoverable') {
+            state.step++;
+            continue;
           }
-
-          let response;
-          try {
-            const llmOpts: LLMOptions = { signal, tools: toolDefs as LLMOptions['tools'] };
-            if (recoveryState.escalatedMaxTokens) {
-              llmOpts.maxTokens = recoveryState.escalatedMaxTokens;
-            }
-            response = await ctx.core.llm.chat(msgs, llmOpts);
-            state.tokens.prompt += response.usage?.promptTokens ?? 0;
-            state.tokens.completion += response.usage?.completionTokens ?? 0;
-
-            // ── MPU M7: Quota consumption tracking ──
-            if (ctx.controls.quota && response.usage) {
-              ctx.controls.quota.consume(ctx.identity.sessionId, {
-                promptTokens: response.usage.promptTokens ?? 0,
-                completionTokens: response.usage.completionTokens ?? 0,
-              });
-            }
-          } catch (error) {
-            await runLifecycleHook('llm.error', { error, messages: msgs }, {});
-            const recovery = await handleLLMError(error, signal);
-            if (recovery === 'continue') {
-              state.step++;
-              continue;
-            }
-            // R1: errors-as-events, never throw — handle LLM errors inline
-            const err = serializeError(error);
+          if (llmResult.status === 'fatal') {
+            const err = serializeError(llmResult.error);
             stateMachine.transition('error');
             void emitter.emit({
               type: 'agent.error',
@@ -1174,6 +992,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             });
             return state?.output ?? '';
           }
+          const response = llmResult.response;
 
           // ── Emit llm.response ──
           void emitter.emit({
@@ -1277,6 +1096,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
 
           // ── 3. Completion check + Token Budget ──
           if (response.finishReason === 'stop' || !response.toolCalls?.length) {
+            doomLoop.reset();
             const decision = checkTokenBudget(budgetTracker, tokenBudget, state.tokens);
             if (decision === 'continue') {
               // Nudge the LLM to continue with more output
@@ -1322,6 +1142,32 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           }
 
           // ── 4. Tool Execution ──
+
+          // Doom loop detection: record each tool call and check for infinite loop
+          for (const tc of response.toolCalls) {
+            doomLoop.record(tc.name, tc.args);
+          }
+          if (doomLoop.isDoomLoop()) {
+            const details = doomLoop.getDetails();
+            stateMachine.transition('error');
+            void emitter.emit({
+              type: 'agent.error',
+              timestamp: Date.now(),
+              sessionId: ctx.identity.sessionId,
+              error: {
+                name: 'DoomLoopDetectedError',
+                message: `Doom loop detected: ${details?.repeatCount ?? 3} consecutive identical calls to tool "${details?.toolName ?? 'unknown'}"`,
+              },
+            });
+            void emitter.emit({
+              type: 'done',
+              timestamp: Date.now(),
+              sessionId: ctx.identity.sessionId,
+              reason: 'error',
+            });
+            return state.output;
+          }
+
           // Add assistant response to messages
           state.messages = [
             ...state.messages,
@@ -1346,6 +1192,14 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           // ── 5. Append tool results, increment step ──
           state.messages = [...state.messages, ...toolResults];
           state.step++;
+
+          // Reset doom loop detector on tool errors (normal error recovery)
+          const hasToolError = toolResults.some(
+            m => typeof m.content === 'string' && m.content.startsWith('Error:')
+          );
+          if (hasToolError) {
+            doomLoop.reset();
+          }
 
           await runLifecycleHook(
             'step.end',
@@ -1396,6 +1250,13 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
               {}
             );
             if (ctx.memory.compactionManager) {
+              void emitter.emit({
+                type: 'compaction.start',
+                timestamp: Date.now(),
+                sessionId: ctx.identity.sessionId,
+                strategy: ctx.memory.compactionManager.getConfig().strategy,
+                tokensBefore: state.tokens.prompt + state.tokens.completion,
+              } as AgentEvent);
               const result = await ctx.memory.compactionManager.compact({
                 sessionId: ctx.identity.sessionId,
                 messages: state.messages,
@@ -1403,6 +1264,13 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
                 currentTokenEstimate: state.tokens.prompt + state.tokens.completion,
               });
               state.messages = result.messages as Message[];
+              void emitter.emit({
+                type: 'compaction.complete',
+                timestamp: Date.now(),
+                sessionId: ctx.identity.sessionId,
+                tokensAfter: result.tokensAfter,
+                removedMessages: result.removedCount,
+              } as AgentEvent);
             }
             await runLifecycleHook(
               'compaction.after',

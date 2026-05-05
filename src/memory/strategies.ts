@@ -33,6 +33,7 @@ export const CompactionStrategySchema = z.enum([
   'importance-weighted',
   'snip',
   'pointer-indexed',
+  'microcompact',
 ]);
 
 export type CompactionStrategy = z.infer<typeof CompactionStrategySchema>;
@@ -61,6 +62,9 @@ export const CompactionResultSchema = z.object({
 
   /** Summary text (for summarize strategy) */
   summary: z.string().optional(),
+
+  /** Number of messages trimmed in-place (microcompact strategy) */
+  trimmedCount: z.number().optional(),
 });
 
 export type CompactionResult = z.infer<typeof CompactionResultSchema>;
@@ -705,5 +709,77 @@ export async function pointerIndexed(
     tokensBefore,
     tokensAfter,
     strategy: 'pointer-indexed',
+  };
+}
+
+// ============================================================
+// Microcompact Strategy
+// ============================================================
+
+/**
+ * Microcompact configuration.
+ */
+export interface MicrocompactConfig {
+  /** Max chars per tool result (default 2000) */
+  maxToolResultChars?: number;
+  /** Max chars per assistant message (default: no limit) */
+  maxAssistantChars?: number;
+  /** Preserve system messages untouched */
+  preserveSystem?: boolean;
+}
+
+/**
+ * Microcompact compaction strategy.
+ *
+ * Truncates large tool results and assistant messages in-place without
+ * removing any messages from the conversation. This is a cheap, no-LLM
+ * operation that reduces token usage while preserving conversation structure.
+ *
+ * Designed to be the second stage in a multi-layer compaction pipeline:
+ *   snip (remove old turns) → microcompact (trim long results) → full compact
+ *
+ * @param messages - Original message array
+ * @param config - Microcompact configuration
+ * @returns Compaction result with trimmed messages
+ */
+export function microcompact(
+  messages: Message[],
+  config: MicrocompactConfig = {}
+): CompactionResult {
+  const tokensBefore = estimateTokens(messages);
+  const maxToolChars = config.maxToolResultChars ?? 2000;
+  const maxAsstChars = config.maxAssistantChars ?? 0; // 0 = no limit
+  const preserveSystem = config.preserveSystem ?? true;
+
+  let trimmedCount = 0;
+  const compacted = messages.map(msg => {
+    if (preserveSystem && msg.role === 'system') return msg;
+
+    let maxChars: number | undefined;
+    if (msg.role === 'tool') {
+      maxChars = maxToolChars;
+    } else if (msg.role === 'assistant' && maxAsstChars > 0) {
+      maxChars = maxAsstChars;
+    } else {
+      return msg;
+    }
+
+    const content = typeof msg.content === 'string' ? msg.content : extractText(msg.content);
+    if (content.length <= maxChars) return msg;
+
+    trimmedCount++;
+    const half = Math.floor(maxChars / 2);
+    const truncated = content.slice(0, half) + '\n\n[...truncated...]\n\n' + content.slice(-half);
+
+    return { ...msg, content: truncated };
+  });
+
+  return {
+    messages: compacted,
+    removedCount: 0, // No messages removed — in-place trimming
+    tokensBefore,
+    tokensAfter: estimateTokens(compacted),
+    strategy: 'microcompact',
+    trimmedCount,
   };
 }

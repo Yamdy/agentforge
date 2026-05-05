@@ -57,6 +57,8 @@ export interface PromptsConfig {
   subagent: boolean;
   /** Enable MCP client */
   mcp: boolean;
+  /** Include Docker deployment templates and scripts */
+  deployment: boolean;
   /** API level: L2 (simple) or L3 (advanced) */
   apiMode: APIMode;
   /** Initialize git repository */
@@ -104,6 +106,7 @@ export const DEFAULT_VALUES = {
   compaction: false,
   subagent: false,
   mcp: false,
+  deployment: false,
   apiMode: 'simple' as const,
   gitInit: true,
 };

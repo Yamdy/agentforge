@@ -8,7 +8,12 @@
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "build": "tsc",
-    "test": "vitest run"
+    "test": "vitest run",
+    "docker:build": "docker build -t {{config.projectName}}:latest .",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs",
+    "docker:logs:follow": "docker compose logs -f"
   },
   "dependencies": {
   {{#each dependencies}}

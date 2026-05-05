@@ -23,13 +23,24 @@ export type { Message } from './events.js';
 // ============================================================
 
 /**
- * LLM chunk for streaming responses
+ * LLM chunk for streaming responses.
+ *
+ * Covers three kinds of stream events:
+ * - Text delta: `{ text: '...' }`
+ * - Tool call lifecycle: `{ toolCallId, toolName, argsDelta }` for start/delta/end
+ * - Stream completion: `{ finishReason, usage }`
  */
 export interface LLMChunk {
   text?: string;
   toolCallId?: string;
   toolName?: string;
   argsDelta?: string;
+  /** Tool call started (tool-input-start). argsDelta will follow. */
+  toolCallStart?: boolean;
+  /** Tool call args complete (tool-input-end). Consumer can execute the tool. */
+  toolCallEnd?: boolean;
+  finishReason?: 'stop' | 'tool_calls' | 'length' | 'error' | 'cancelled';
+  usage?: LLMUsage;
 }
 
 /**

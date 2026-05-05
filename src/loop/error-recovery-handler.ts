@@ -11,8 +11,9 @@
  * so the recovery logic is testable independently of the agent loop.
  */
 
-import type { Message } from '../core/index.js';
+import type { Message, AgentEvent } from '../core/index.js';
 import type { AgentContext, AgentState } from '../core/index.js';
+import type { AgentEventEmitter } from '../core/events.js';
 import type { HookName } from '../core/hooks.js';
 import type { AgentLoopConfig } from './agent-loop.js';
 import { analyzeLLMError, RECOVERY_LIMITS, ESCALATED_MAX_OUTPUT_TOKENS } from './error-analyzer.js';
@@ -26,6 +27,7 @@ export interface ErrorRecoveryDeps {
   config: AgentLoopConfig;
   state: AgentState | null;
   recoveryState: { escalatedMaxTokens: number | undefined };
+  emitter: AgentEventEmitter;
   runLifecycleHook: (name: HookName, input: unknown, output: unknown) => Promise<void>;
 }
 
@@ -40,7 +42,7 @@ export async function handleLLMError(
 ): Promise<'continue' | 'fatal'> {
   if (signal.aborted) return 'fatal';
 
-  const { ctx, config, state, recoveryState, runLifecycleHook } = deps;
+  const { ctx, config, state, recoveryState, emitter, runLifecycleHook } = deps;
 
   const errStatus =
     error instanceof Error ? (error as Error & { status?: number }).status : undefined;
@@ -91,25 +93,41 @@ export async function handleLLMError(
           state.recovery.compactionRetryCount < RECOVERY_LIMITS.compactionRetry
         ) {
           state.recovery.compactionRetryCount++;
+          const currentTokens = state.tokens.prompt + state.tokens.completion;
           await runLifecycleHook(
             'compaction.before',
             {
               sessionId: ctx.identity.sessionId,
               messages: state.messages,
-              tokenCount: state.tokens.prompt + state.tokens.completion,
+              tokenCount: currentTokens,
             },
             {}
           );
-          const result = await ctx.memory.compactionManager.compact(
-            {
-              sessionId: ctx.identity.sessionId,
-              messages: state.messages,
-              maxTokens: config.tokenBudget ?? 200_000,
-              currentTokenEstimate: state.tokens.prompt + state.tokens.completion,
-            },
-            { aggressive: true }
-          );
+          // Use reactive (multi-layer) compaction for error recovery
+          const reactiveCtx = {
+            sessionId: ctx.identity.sessionId,
+            messages: state.messages,
+            maxTokens: config.tokenBudget ?? 200_000,
+            currentTokenEstimate: currentTokens,
+          };
+          const result =
+            ctx.memory.compactionManager.reactiveCompact(reactiveCtx) ??
+            ctx.memory.compactionManager.multiLayerCompact(reactiveCtx);
           state.messages = result.messages as Message[];
+          void emitter.emit({
+            type: 'compaction.start',
+            timestamp: Date.now(),
+            sessionId: ctx.identity.sessionId,
+            strategy: result.strategy,
+            tokensBefore: currentTokens,
+          } as AgentEvent);
+          void emitter.emit({
+            type: 'compaction.complete',
+            timestamp: Date.now(),
+            sessionId: ctx.identity.sessionId,
+            tokensAfter: result.tokensAfter,
+            removedMessages: result.removedCount,
+          } as AgentEvent);
           await runLifecycleHook(
             'compaction.after',
             { sessionId: ctx.identity.sessionId, messages: state.messages },

@@ -61,7 +61,7 @@ import type { SecurityGuard } from '../security/guard.js';
 import type { Planner } from '../planning/types.js';
 import type { HITLAskOptions } from './interfaces.js';
 import type { HookRegistry } from './hooks.js';
-import type { CheckpointRegistry } from './checkpoint-registry.js';
+
 // ============================================================
 // Application Services (Global Singleton)
 // ============================================================
@@ -175,7 +175,6 @@ export interface AgentExtensions {
 export interface AgentHarness {
   hookRegistry: HookRegistry;
   pluginManager?: PluginManager;
-  checkpointRegistry?: CheckpointRegistry;
 }
 
 /**

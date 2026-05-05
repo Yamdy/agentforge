@@ -68,13 +68,6 @@ export function applyPlugins(
       }
     }
 
-    // ── Lifecycle hooks ──
-    if (plugin.lifecycleHooks) {
-      for (const h of plugin.lifecycleHooks) {
-        unregisters.push(hookRegistry.on(h.name, h.fn, h.priority));
-      }
-    }
-
     // ── Checkpoint hooks ──
     if (plugin.checkpointHooks) {
       for (const ch of plugin.checkpointHooks) {
@@ -93,11 +86,9 @@ export function applyPlugins(
       for (const sub of plugin.eventSubscriptions) {
         unregisters.push(
           emitter.on(sub.event, event => {
-            void Promise.resolve()
-              .then(() => sub.handler(event))
-              .catch(() => {
-                /* isolate */
-              });
+            void Promise.resolve(sub.handler(event)).catch(() => {
+              /* isolate */
+            });
           })
         );
       }

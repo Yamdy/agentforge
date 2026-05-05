@@ -32,6 +32,7 @@ describe('config', () => {
       expect(DEFAULT_VALUES.compaction).toBe(false);
       expect(DEFAULT_VALUES.subagent).toBe(false);
       expect(DEFAULT_VALUES.mcp).toBe(false);
+      expect(DEFAULT_VALUES.deployment).toBe(false);
       expect(DEFAULT_VALUES.apiMode).toBe('simple');
       expect(DEFAULT_VALUES.gitInit).toBe(true);
     });
@@ -67,6 +68,7 @@ describe('config', () => {
         compaction: false,
         subagent: false,
         mcp: false,
+        deployment: false,
         apiMode: 'simple',
         gitInit: true,
       };

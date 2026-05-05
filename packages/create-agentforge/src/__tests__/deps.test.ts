@@ -19,6 +19,7 @@ function createConfig(overrides: Partial<PromptsConfig> = {}): PromptsConfig {
     compaction: false,
     subagent: false,
     mcp: false,
+    deployment: false,
     apiMode: 'simple',
     gitInit: false,
     ...overrides,

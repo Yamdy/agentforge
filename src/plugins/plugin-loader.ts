@@ -343,9 +343,6 @@ export class PluginLoader {
             hooks.registerToolProvider(hook);
           }
         }
-        if (plugin.lifecycleHooks) {
-          hooks.registerLifecycle(plugin.lifecycleHooks);
-        }
         if (plugin.eventSubscriptions) {
           for (const sub of plugin.eventSubscriptions) {
             emitter.on(sub.event, event => {

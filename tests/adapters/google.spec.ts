@@ -31,6 +31,11 @@ vi.mock('ai', () => ({
       yield ' from';
       yield ' Gemini';
     })(),
+    fullStream: (async function* () {
+      yield { type: 'text-delta', text: 'Hello', id: '1' };
+      yield { type: 'text-delta', text: ' from', id: '1' };
+      yield { type: 'text-delta', text: ' Gemini', id: '1' };
+    })(),
   }),
   jsonSchema: vi.fn().mockReturnValue({ type: 'object' }),
 }));
@@ -126,6 +131,9 @@ describe('GoogleAdapter', () => {
     it('should throw errors from stream', async () => {
       vi.mocked(mockStreamText).mockReturnValueOnce({
         textStream: (async function* () {
+          throw new Error('Stream Error');
+        })(),
+        fullStream: (async function* () {
           throw new Error('Stream Error');
         })(),
       } as any);

@@ -81,11 +81,19 @@ function createMockMemory(content: string): PersistentMemory {
   };
 }
 
-async function triggerAgentStart(registry: HookRegistry): Promise<void> {
-  const lifecycles = registry.getLifecycleHooks('session.start');
-  for (const fn of lifecycles) {
-    await fn({ sessionId: 'test-session', agentName: 'test-agent' }, {});
-  }
+async function triggerAgentStart(emitter: AgentEventEmitter): Promise<void> {
+  await emitter.emit({
+    type: 'agent.start',
+    timestamp: Date.now(),
+    sessionId: 'test-session',
+    input: 'Hello',
+    agentName: 'test-agent',
+    model: { provider: 'openai', model: 'gpt-4o' },
+  } as AgentEvent);
+  // Let async event handlers (memory loading via loadAgentsMd) settle.
+  // Event handlers are fire-and-forget via void Promise.resolve().then(),
+  // so we must yield to the event loop for filesystem I/O to complete.
+  await new Promise<void>(r => setTimeout(r, 50));
 }
 
 async function applyRequestHooks(registry: HookRegistry, msgs: Message[]): Promise<Message[]> {
@@ -294,7 +302,7 @@ describe('MemoryPlugin with autoDiscover', () => {
     applyPlugins([plugin], registry, emitter, ctx);
 
     // Trigger agent.start (auto-discovers AGENTS.md)
-    await triggerAgentStart(registry);
+    await triggerAgentStart(emitter);
 
     // Apply request hooks
     const msgs = await applyRequestHooks(registry, [{ role: 'user', content: 'Hello' }]);
@@ -324,7 +332,7 @@ describe('MemoryPlugin with autoDiscover', () => {
     applyPlugins([plugin], registry, emitter, ctx);
 
     // Trigger agent.start
-    await triggerAgentStart(registry);
+    await triggerAgentStart(emitter);
 
     const msgs = await applyRequestHooks(registry, [{ role: 'user', content: 'What is async?' }]);
 
@@ -350,7 +358,7 @@ describe('MemoryPlugin with autoDiscover', () => {
     applyPlugins([plugin], registry, emitter, ctx);
 
     // Trigger agent.start
-    await triggerAgentStart(registry);
+    await triggerAgentStart(emitter);
 
     const msgs = await applyRequestHooks(registry, [{ role: 'user', content: 'Hello' }]);
 
@@ -373,7 +381,7 @@ describe('MemoryPlugin with autoDiscover', () => {
     applyPlugins([plugin], registry, emitter, ctx);
 
     // Trigger agent.start
-    await triggerAgentStart(registry);
+    await triggerAgentStart(emitter);
 
     const msgs = await applyRequestHooks(registry, [{ role: 'user', content: 'Hello' }]);
 
@@ -398,7 +406,7 @@ describe('MemoryPlugin with autoDiscover', () => {
     applyPlugins([plugin], registry, emitter, ctx);
 
     // Trigger agent.start
-    await triggerAgentStart(registry);
+    await triggerAgentStart(emitter);
 
     const msgs = await applyRequestHooks(registry, [{ role: 'user', content: 'Hello' }]);
 
@@ -425,8 +433,8 @@ describe('MemoryPlugin with autoDiscover', () => {
     applyPlugins([plugin], registry, emitter, ctx);
 
     // Trigger agent.start twice
-    await triggerAgentStart(registry);
-    await triggerAgentStart(registry);
+    await triggerAgentStart(emitter);
+    await triggerAgentStart(emitter);
 
     const msgs = await applyRequestHooks(registry, [{ role: 'user', content: 'Hello' }]);
 

@@ -22,6 +22,14 @@ export interface AgentLoop {
   on(type: string, listener: (event: AgentEvent) => void): () => void;
   /** Subscribe to all events */
   onAny(listener: (event: AgentEvent) => void): () => void;
+  /**
+   * Cancel execution.
+   *
+   * Only available on isolated subagent loops.
+   * Primary agent loops do not expose this method — cancellation
+   * of the top-level agent is handled through the Agent interface.
+   */
+  cancel?(): void;
 }
 
 /**
@@ -53,6 +61,25 @@ export interface SubagentConfig {
 
   /** Optional configuration passed to the agent */
   config?: Record<string, unknown>;
+
+  /**
+   * Tool isolation: restrict this subagent to only these tools.
+   * When set, the subagent cannot access tools outside this list,
+   * even if the parent tool registry has more tools available.
+   * When omitted (default), the subagent inherits all parent tools.
+   */
+  allowedTools?: string[];
+
+  /**
+   * Enable full context isolation for this subagent.
+   * When true, the subagent gets:
+   * - Independent abort controller (cancel subagent ≠ cancel parent)
+   * - Independent token budget
+   * - Isolated event namespace
+   *
+   * @default false
+   */
+  isolated?: boolean;
 
   /** Compiled mode configuration */
   compiledConfig?: {

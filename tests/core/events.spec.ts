@@ -42,7 +42,7 @@ describe('AgentEventTypeSchema', () => {
   it('should have all event types (slimmed per P1 cleanup)', () => {
     const types = AgentEventTypeSchema.options;
     expect(types.length).toBeGreaterThan(22);
-    expect(types.length).toBeLessThanOrEqual(30);
+    expect(types.length).toBeLessThanOrEqual(32);
   });
 
   it('should validate core agent loop events', () => {

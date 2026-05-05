@@ -85,14 +85,20 @@ function createTestSkillsPlugin(skills: Array<{ name: string; description: strin
 }
 
 // ============================================================
-// Helper to simulate agent.start via lifecycle hooks
+// Helper to simulate agent.start via event emitter
 // ============================================================
 
-async function triggerAgentStart(registry: HookRegistry): Promise<void> {
-  const lifecycles = registry.getLifecycleHooks('session.start');
-  for (const fn of lifecycles) {
-    await fn({ sessionId: 'test-session', agentName: 'test-agent' }, {});
-  }
+async function triggerAgentStart(emitter: AgentEventEmitter): Promise<void> {
+  await emitter.emit({
+    type: 'agent.start',
+    timestamp: Date.now(),
+    sessionId: 'test-session',
+    input: 'Hello',
+    agentName: 'test-agent',
+    model: { provider: 'openai', model: 'gpt-4o' },
+  } as AgentEvent);
+  // Let async event handlers (memory loading) settle
+  await new Promise<void>(r => setTimeout(r, 0));
 }
 
 async function applyRequestHooks(registry: HookRegistry, msgs: Message[]): Promise<Message[]> {
@@ -128,7 +134,7 @@ describe('MemoryPlugin (real implementation)', () => {
     applyPlugins([plugin], registry, emitter, ctx);
 
     // Trigger agent.start (loads memory)
-    await triggerAgentStart(registry);
+    await triggerAgentStart(emitter);
 
     // Apply request hooks to llm.request messages
     const msgs = await applyRequestHooks(registry, [{ role: 'user', content: 'Hello' }]);
@@ -243,7 +249,7 @@ describe('Plugin Chain (Skills + Memory)', () => {
     applyPlugins([skillsPlugin, memoryPlugin], registry, emitter, ctx);
 
     // Trigger agent.start for memory loading
-    await triggerAgentStart(registry);
+    await triggerAgentStart(emitter);
 
     // Apply request hooks
     const msgs = await applyRequestHooks(registry, [{ role: 'user', content: 'Hello' }]);
@@ -279,9 +285,8 @@ describe('Plugin Chain (Skills + Memory)', () => {
     const hooks = registry.getRequestHooks();
     expect(hooks).toHaveLength(2);
 
-    // Memory has lifecycle hook for agent.start
-    const lifecycles = registry.getLifecycleHooks('session.start');
-    expect(lifecycles).toHaveLength(1);
+    // Memory plugin registers event subscription for agent.start
+    // (verified by emitting agent.start and checking memory loads)
   });
 
   it('should handle disabled plugin', async () => {

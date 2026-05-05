@@ -105,11 +105,11 @@ describe('applyPlugins', () => {
     expect(hooks[0]!.name).toBe('test-hook');
   });
 
-  it('registers lifecycle hooks into hookRegistry', () => {
-    const lifecycleFn = vi.fn();
+  it('registers event subscriptions that fire on emit', async () => {
+    const handler = vi.fn();
     const plugin = createPlugin('test', {
-      lifecycleHooks: [
-        { name: 'session.start', fn: lifecycleFn },
+      eventSubscriptions: [
+        { event: 'agent.start', handler },
       ],
     });
 
@@ -117,8 +117,16 @@ describe('applyPlugins', () => {
     const emitter = new AgentEventEmitter();
     applyPlugins([plugin], hookRegistry, emitter, mockCtx);
 
-    const lifecycles = hookRegistry.getLifecycleHooks('session.start');
-    expect(lifecycles).toHaveLength(1);
+    await emitter.emit({
+      type: 'agent.start',
+      timestamp: Date.now(),
+      sessionId: 'test',
+      input: 'Hello',
+      agentName: 'test',
+      model: { provider: 'openai', model: 'gpt-4o' },
+    } as AgentEvent);
+
+    expect(handler).toHaveBeenCalledTimes(1);
   });
 
   it('registers event subscriptions on emitter', async () => {
@@ -161,15 +169,16 @@ describe('applyPlugins', () => {
     expect(hookRegistry.getRequestHooks()).toHaveLength(0);
   });
 
-  it('returns an unregister function that removes all hooks', () => {
+  it('returns an unregister function that removes all hooks', async () => {
+    const handler = vi.fn();
     const plugin = createPlugin('test', {
       requestHooks: [{
         name: 'test-hook',
         priority: 50,
         apply(messages: Message[]): Message[] { return messages; },
       }],
-      lifecycleHooks: [
-        { name: 'session.start', fn: () => {} },
+      eventSubscriptions: [
+        { event: 'agent.start', handler },
       ],
     });
 
@@ -178,12 +187,20 @@ describe('applyPlugins', () => {
     const { unregister } = applyPlugins([plugin], hookRegistry, emitter, mockCtx);
 
     expect(hookRegistry.getRequestHooks()).toHaveLength(1);
-    expect(hookRegistry.getLifecycleHooks('session.start')).toHaveLength(1);
 
     unregister();
 
     expect(hookRegistry.getRequestHooks()).toHaveLength(0);
-    expect(hookRegistry.getLifecycleHooks('session.start')).toHaveLength(0);
+    // After unregister, handler should not fire
+    await emitter.emit({
+      type: 'agent.start',
+      timestamp: Date.now(),
+      sessionId: 'test',
+      input: 'Hello',
+      agentName: 'test',
+      model: { provider: 'openai', model: 'gpt-4o' },
+    } as AgentEvent);
+    expect(handler).not.toHaveBeenCalled();
   });
 });
 

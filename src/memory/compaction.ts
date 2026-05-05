@@ -18,6 +18,7 @@ import {
   importanceWeighted,
   snipCompaction,
   pointerIndexed,
+  microcompact,
   type PointerIndexedConfig,
   CompactionStrategySchema,
   CompactionResultSchema,
@@ -309,6 +310,10 @@ export class CompactionManager {
         result = await this.executePointerIndexed(context, options);
         break;
 
+      case 'microcompact':
+        result = this.executeMicrocompact(context, options);
+        break;
+
       default:
         // Fallback to truncate-oldest for unknown strategies
         result = this.executeTruncateOldest(context);
@@ -456,6 +461,106 @@ export class CompactionManager {
       this.vectorStore,
       this.embeddingModel
     );
+  }
+
+  /**
+   * Execute microcompact strategy (in-place truncation, no message removal).
+   */
+  private executeMicrocompact(
+    context: CompactionContext,
+    _options?: { aggressive?: boolean }
+  ): CompactionResult {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+    return microcompact(context.messages as Message[], {
+      maxToolResultChars: 2000,
+      preserveSystem: true,
+    });
+  }
+
+  /**
+   * Multi-layer compaction pipeline.
+   *
+   * Runs a sequence of increasingly aggressive compaction strategies:
+   *   1. snip — remove old conversation turns (cheap, no data loss)
+   *   2. microcompact — trim large tool results in-place (cheap, no removal)
+   *   3. truncate-oldest — remove oldest messages (data loss, last resort)
+   *
+   * Each layer reduces tokens further. Stops early if tokens drop below target.
+   *
+   * @returns Single CompactionResult reflecting cumulative effect of all layers.
+   */
+  multiLayerCompact(context: CompactionContext): CompactionResult {
+    const targetTokens = Math.floor(context.maxTokens * this.config.targetTokenRatio);
+    let currentMessages = [...(context.messages as Message[])];
+    let totalRemoved = 0;
+    const tokensBefore = estimateTokens(currentMessages);
+
+    // Layer 1: snip — preserve 5 most recent turns
+    const snipResult = snipCompaction(currentMessages, 5);
+    currentMessages = snipResult.messages as Message[];
+    totalRemoved += snipResult.removedCount;
+    if (estimateTokens(currentMessages) <= targetTokens && currentMessages.length > 0) {
+      return {
+        messages: currentMessages,
+        removedCount: totalRemoved,
+        tokensBefore,
+        tokensAfter: estimateTokens(currentMessages),
+        strategy: 'snip',
+      };
+    }
+
+    // Layer 2: microcompact — trim tool results to 2000 chars
+    // Reports 'microcompact' as the most aggressive layer applied (snip also ran)
+    const microResult = microcompact(currentMessages, { maxToolResultChars: 2000 });
+    currentMessages = microResult.messages as Message[];
+    if (estimateTokens(currentMessages) <= targetTokens && currentMessages.length > 0) {
+      return {
+        messages: currentMessages,
+        removedCount: totalRemoved,
+        tokensBefore,
+        tokensAfter: estimateTokens(currentMessages),
+        strategy: 'microcompact',
+      };
+    }
+
+    // Layer 3: truncate-oldest — aggressive removal
+    // Reports 'truncate-oldest' as the most aggressive layer applied (snip + microcompact also ran)
+    const truncResult = truncateOldest(currentMessages, Math.max(2, this.config.preserveRecent));
+    totalRemoved += truncResult.removedCount;
+    currentMessages = truncResult.messages as Message[];
+
+    return {
+      messages: currentMessages,
+      removedCount: totalRemoved,
+      tokensBefore,
+      tokensAfter: estimateTokens(currentMessages),
+      strategy: 'truncate-oldest',
+    };
+  }
+
+  /**
+   * Reactive compaction — triggered by token overflow errors (e.g., HTTP 413).
+   *
+   * More aggressive than normal compaction: uses 30% lower trigger threshold,
+   * 50% lower target ratio, and runs the multi-layer pipeline.
+   *
+   * @param context - Compaction context (typically from the error path)
+   * @returns Compaction result, or null if compaction is not possible
+   */
+  reactiveCompact(context: CompactionContext): CompactionResult | null {
+    const validMessages = filterValidMessages(context.messages as unknown[]);
+    if (validMessages.length <= 2) {
+      // Cannot compact further — only system + user remain
+      return null;
+    }
+
+    // Aggressive: trigger at 50% tokens
+    if (context.currentTokenEstimate < context.maxTokens * 0.5) {
+      return null; // Nothing to compact
+    }
+
+    // Use multi-layer pipeline for maximum reduction
+    return this.multiLayerCompact(context);
   }
 
   /**

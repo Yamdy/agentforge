@@ -22,6 +22,7 @@ const MODULE_OPTIONS = [
   { name: 'Memory compaction', value: 'compaction' },
   { name: 'Sub-agent delegation', value: 'subagent' },
   { name: 'MCP client', value: 'mcp' },
+  { name: 'Docker deployment (Dockerfile + Compose)', value: 'deployment' },
 ] as const;
 
 type ModuleValue = (typeof MODULE_OPTIONS)[number]['value'];
@@ -165,10 +166,11 @@ export async function collectPrompts(cliOverrides: Partial<PromptsConfig> = {}):
   if (answers.compaction) selectedModules.add('compaction');
   if (answers.subagent) selectedModules.add('subagent');
   if (answers.mcp) selectedModules.add('mcp');
+  if (answers.deployment) selectedModules.add('deployment');
 
   // Only prompt if module selections were NOT explicitly provided via CLI
   // Check if ALL module keys are present in cliOverrides (even if false)
-  const moduleKeys: (keyof PromptsConfig)[] = ['tools', 'checkpoint', 'observability', 'hitl', 'plugins', 'compaction', 'subagent', 'mcp'];
+  const moduleKeys: (keyof PromptsConfig)[] = ['tools', 'checkpoint', 'observability', 'hitl', 'plugins', 'compaction', 'subagent', 'mcp', 'deployment'];
   const allModulesProvided = moduleKeys.every(key => key in cliOverrides);
 
   if (!allModulesProvided) {
@@ -194,6 +196,7 @@ export async function collectPrompts(cliOverrides: Partial<PromptsConfig> = {}):
   answers.compaction = selectedModules.has('compaction');
   answers.subagent = selectedModules.has('subagent');
   answers.mcp = selectedModules.has('mcp');
+  answers.deployment = selectedModules.has('deployment');
 
   // Step 7b: Checkpoint storage (only if checkpoint selected)
   if (answers.checkpoint && !isProvided(answers, 'checkpointStorage')) {

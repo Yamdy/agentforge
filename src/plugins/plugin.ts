@@ -4,7 +4,8 @@
  * Plugin system using hooks for interception points:
  * - RequestHook: modify messages before LLM call
  * - ToolHook: check/block tool execution
- * - LifecycleHook: (input, output) => Promise<void> at cut-points
+ * - ToolProviderHook: per-call dynamic tool injection/filtering
+ * - CheckpointHook: cross-cutting lifecycle checks that can block
  * - Event subscriptions: pure observation, non-blocking
  *
  * Design principles:
@@ -16,14 +17,7 @@
  */
 
 import type { AgentEventType, AgentEvent } from '../core/events.js';
-import type {
-  RequestHook,
-  ToolHook,
-  ToolProviderHook,
-  HookFn,
-  HookName,
-  CheckpointHook,
-} from '../core/hooks.js';
+import type { RequestHook, ToolHook, ToolProviderHook, CheckpointHook } from '../core/hooks.js';
 import type { Tracer, Metrics } from '../core/interfaces.js';
 
 // ============================================================
@@ -84,9 +78,6 @@ export interface Plugin {
 
   /** ToolProvider hooks — per-call dynamic tool injection/filtering */
   toolProviderHooks?: ToolProviderHook[];
-
-  /** Lifecycle hooks — observe lifecycle cut-points */
-  lifecycleHooks?: Array<{ name: HookName; fn: HookFn; priority?: number }>;
 
   /** Event subscriptions — pure observation, non-blocking */
   eventSubscriptions?: Array<{

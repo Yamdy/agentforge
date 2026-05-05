@@ -40,6 +40,11 @@ const { mockGenerateText, mockStreamText, mockJsonSchema } = vi.hoisted(() => {
     }),
     mockStreamText: vi.fn().mockImplementation(() => ({
       textStream: makeTextStream(),
+      fullStream: (async function* () {
+        yield { type: 'text-delta', text: 'Hello', id: '1' };
+        yield { type: 'text-delta', text: ' from', id: '1' };
+        yield { type: 'text-delta', text: ' test', id: '1' };
+      })(),
     })),
     mockJsonSchema: vi.fn().mockReturnValue({ type: 'object' }),
   };

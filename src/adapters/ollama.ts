@@ -17,6 +17,7 @@ import type {
   FunctionDefinition,
   ToolChoice,
 } from '../core/interfaces.js';
+import { fullStreamToChunks } from './stream-utils.js';
 import type { JSONSchema7 } from 'json-schema';
 import type { Message, ToolCall } from '../core/events.js';
 import { extractText } from '../core/content-utils.js';
@@ -185,9 +186,9 @@ export class OllamaAdapter implements LLMAdapter {
     }
 
     const result = streamText(config as Parameters<typeof streamText>[0]);
-    for await (const textPart of result.textStream) {
-      yield { text: textPart };
-    }
+    yield* fullStreamToChunks(
+      result.fullStream as AsyncIterable<{ type: string; [key: string]: unknown }>
+    );
   }
 
   formatTools(tools: FunctionDefinition[]): unknown {

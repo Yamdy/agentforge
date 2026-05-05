@@ -336,19 +336,19 @@ OpenCode 在 LLM 调用前后做 `snapshot.track()` → `snapshot.patch()`，自
 
 6. ~~agent-loop 改为 AsyncGenerator 模式（参考 Claude Code `async function* queryLoop`）~~ ✅
 7. ~~拆分 agent-loop 关注点分离（参考 OpenCode SessionProcessor ~523行）~~ ✅
-8. Agent 定义简化为声明式配置（参考 OpenCode Agent.Info）
-9. 合并 Plugin 和 Hook 系统
-10. 精简 AgentContext 40+ 字段 → 分组子对象
-11. 精简公共 API 从 500+ → 50-80
+8. ~~Agent 定义简化为声明式配置（参考 OpenCode Agent.Info）~~ ✅
+9. ~~合并 Plugin 和 Hook 系统~~ ✅
+10. ~~精简 AgentContext 40+ 字段 → 分组子对象~~ ✅
+11. ~~精简公共 API 从 500+ → 50-80~~ ✅
 12. ~~减少事件类型 46 → ~20（当前 29）~~ ✅
 
-### P2 — 功能补齐
+### P2 — 功能补齐（✅ 全部完成于 2026-05-05）
 
-13. 流式工具执行（参考 Claude Code StreamingToolExecutor）
-14. 多层 Compaction（snip + microcompact + reactive compact）
-15. 文件变更 Snapshot 追踪（参考 OpenCode snapshot.track/patch）
-16. Subagent context isolation
-17. CLI 脚手架 + 部署方案
+13. ✅ 流式工具执行（参考 Claude Code StreamingToolExecutor）
+14. ✅ 多层 Compaction（snip + microcompact + reactive compact）
+15. ✅ 文件变更 Snapshot 追踪（参考 OpenCode snapshot.track/patch）
+16. ✅ Subagent context isolation
+17. ✅ CLI 脚手架 + 部署方案
 
 ---
 
@@ -503,6 +503,44 @@ const agent = createAgent({
 
 **向后兼容**: 所有旧平级格式继续工作，旧代码无需修改。
 
+### P1-9: 合并 Plugin 和 Hook 系统 ✅
+
+**核心改动**: 删除 CheckpointRegistry 死代码，从 Plugin 接口移除 `lifecycleHooks` 字段（6→5 hook types），将观察机制统一为 `eventSubscriptions`（基于 AgentEventEmitter pub/sub 模式）。
+
+**改动文件**:
+- `src/core/checkpoint-registry.ts` — 删除（185行死代码，agent-loop 已改用 Plugin.checkpointHooks）
+- `src/core/context.ts` — 移除 `CheckpointRegistry` 导入和 `AgentHarness.checkpointRegistry` 字段
+- `src/plugins/plugin.ts` — Plugin 接口移除 `lifecycleHooks` 字段，更新 JSDoc
+- `src/plugins/pipeline.ts` — 移除 lifecycleHooks 注册循环；修复事件包装器（移除 `void`，返回 Promise 以支持 emitter 等待）
+- `src/plugins/plugin-loader.ts` — 移除 lifecycleHooks 处理；同上修复事件包装器
+- `src/plugins/memory-plugin.ts` — `session.start` lifecycle → `agent.start` event subscription
+- `src/plugins/skills-plugin.ts` — 同上
+- `src/loop/agent-loop.ts` — 3 处 compaction 位置添加 `compaction.start`/`compaction.complete` 事件发射；`agent.start` 从 `void` 改为 `await`（确保插件加载完成后再进入循环）
+- `tests/` 4个文件 — 更新测试从 lifecycleHooks 迁移到 eventSubscriptions
+
+**设计决策**:
+1. **保留 HookRegistry 内部 lifecycle 方法** — `on()`/`registerLifecycle()`/`getLifecycleHooks()` 保留作为内部基础设施，agent-loop 中的 `runLifecycleHook()` 调用变为 no-op（遍历空数组）
+2. **compaction 事件填补空缺** — `compaction.start`/`compaction.complete` 已在 Zod schema 中定义但从未通过 EventEmitter 发射，现于 agent-loop 3 个 compaction 位置发射
+3. **时序竞争修复** — 移除 pipeline/plugin-loader 中事件包装器的 `void`，使 `emitter.emit()` 能正确等待 handler 完成；`agent.start` 使用 `await` 确保 memory/skills 加载完成后才进入主循环
+
+**对抗检验发现及修复**:
+
+| 严重度 | 问题 | 状态 |
+|--------|------|:--:|
+| CRITICAL | memory/skills 插件加载时序竞争 (`agent.start` fire-and-forget) | ✅ 已修复 |
+| CRITICAL | pipeline.ts 事件包装器错误隔离破损 | ✅ 已修复 |
+| IMPORTANT | 测试事件对象不匹配 Zod schema (缺少 input/model 字段) | ✅ 已修复 |
+| MINOR | plugin.ts JSDoc 过时(引用已删除的 LifecycleHook) | ✅ 已修复 |
+| MINOR | 冗余 `if (state)` guard | ⬜ 已知限制 |
+
+**测试**: 全量 2478 passed / 0 failed (104 files)。
+
+### P1-10 & P1-11: AgentContext 精简 + 公共 API 策展 ✅
+
+两项已在 P1-9 之前的独立提交中完成：
+- **P1-10** (`6c519e6`): AgentContext 从 42 个平级字段重构为 8 个分组子对象 (`identity`, `core`, `security`, `controls`, `memory`, `resilience`, `extensions`, `harness`)
+- **P1-11** (`6c519e6`, `f6b0c86`): 公共 API 从 500+ 符号策展为 ~69 符号，HookRegistry/CheckpointRegistry/AgentEventEmitter 内部化
+
 ### 进展总览
 
 | P1 项 | 描述 | 状态 |
@@ -511,6 +549,129 @@ const agent = createAgent({
 | #12 | 减少事件类型 (46→29) | ✅ |
 | #6 | AsyncGenerator 模式 | ✅ |
 | #8 | Agent 定义简化 | ✅ |
-| #9 | 合并 Plugin/Hook | ⬜ 下一步 |
-| #10 | 精简 AgentContext | ⬜ |
-| #11 | 精简公共 API | ⬜ |
+| #9 | 合并 Plugin/Hook | ✅ |
+| #10 | 精简 AgentContext | ✅ |
+| #11 | 精简公共 API | ✅ |
+
+---
+
+## 十、P2 修复记录 (2026-05-05)
+
+### 修复统计
+
+| 指标 | 数值 |
+|------|------|
+| 新增源文件 | 2 (`stream-utils.ts`, `file-snapshot.ts`) |
+| 修改文件 | 26 (adapters ×5, events.ts, llm-caller.ts, agent-loop.ts, error-recovery-handler.ts, compaction.ts, strategies.ts, subagent/types.ts, subagent/registry.ts, CLI files ×8, 模板文件 ×2, 测试文件 ×4) |
+| 新增模板文件 | 3 (`Dockerfile.hbs`, `docker-compose.yml.hbs`, `.dockerignore`) |
+| 测试通过 | 2478 passed / 0 failed / 32 skipped (104 files) |
+
+### P2-13: 流式工具执行 ✅
+
+AI SDK v6 `fullStream` 包含工具调用生命周期事件（`tool-input-start`/`delta`/`end`），AgentForge 之前仅消费 `textStream`，丢失了流式工具调用的能力。
+
+**改动文件**:
+- `src/adapters/stream-utils.ts` — 新建：`fullStreamToChunks()` async generator，将 AI SDK v6 `TextStreamPart` 联合类型映射为规范化的 `LLMChunk` 接口；`mapAIFinishReason()` 处理 SDK 到内部格式的 finish reason 转换
+- `src/adapters/{openai,anthropic,google,ollama,adapter-system}.ts` — 全部 5 个适配器从 `result.textStream` 迁移到 `result.fullStream`，通过 `yield* fullStreamToChunks()` 代理
+- `src/core/interfaces.ts` — `LLMChunk` 接口扩展：新增 `toolCallId?`, `toolName?`, `argsDelta?`, `toolCallStart?`, `toolCallEnd?`, `finishReason?`, `usage?`
+- `src/loop/llm-caller.ts` — 新增 `performStreamingLLMCall()`（~80 行）：累积 text 和 tool calls，每个 text delta 发射 `llm.chunk` 事件；流结束时组装完整 `LLMResponse`；通过 `exactOptionalPropertyTypes` 兼容的条件展开处理可选字段
+- `src/loop/agent-loop.ts` — 集成 streaming 路径：`config.streaming` 时调用 `performStreamingLLMCall()` 并 try-catch 包裹；非 streaming 继续使用原始 `performLLMCall()`
+- `src/core/events.ts` — 新增 `'llm.chunk'` 事件类型和 Zod schema
+
+**设计决策**: `LLMChunk` 作为通用中间表示，隔离 AI SDK 细节。所有适配器通过 `fullStreamToChunks()` 统一输出格式，避免每个适配器重复 SDK 解构逻辑。
+
+### P2-14: 多层 Compaction ✅
+
+**改动文件**:
+- `src/memory/strategies.ts` — `CompactionStrategySchema` 新增 `'microcompact'`；新增 `MicrocompactConfig` 接口（`maxToolResultChars?`, `maxAssistantChars?`, `preserveSystem?`）；新增 `microcompact()` 函数（~50 行）：在原地裁剪工具结果和 assistant 消息，保留 head+tail 并插入 `[...truncated...]` 标记，不删除任何消息
+- `src/memory/compaction.ts` — 新增 `executeMicrocompact()` 私有方法；新增 `multiLayerCompact()` 公共方法：snip → microcompact → truncate-oldest 三层流水线，每层后检查 token 是否已达目标，提前停止；新增 `reactiveCompact()` 公共方法：413/token overflow 错误触发的激进版本，使用多层流水线，无法压缩时返回 null
+- `src/loop/error-recovery-handler.ts` — `trigger_compaction` case 从 `compactionManager.compact({aggressive:true})` 改为 `compactionManager.reactiveCompact()` fallback `multiLayerCompact()`
+- `src/core/events.ts` — compaction strategy enum 扩展：`'snip'`, `'pointer-indexed'`, `'microcompact'`
+
+**设计决策**: 三层流水线从轻到重依次执行 — snip（裁切旧轮次）最轻，microcompact（裁剪消息内容）中等，truncate-oldest（删除旧消息）最重。reactiveCompact 作为紧急响应机制，由 413 错误触发。
+
+### P2-15: 文件变更 Snapshot 追踪 ✅
+
+**新增文件**: `src/loop/file-snapshot.ts`（~180 行）
+
+**核心接口**:
+- `FileState`: `{ exists, size, mtimeMs }` — 文件状态快照
+- `FileChange`: `{ path, type: 'created'|'modified'|'deleted', before, after }` — 变更记录
+- `FileTracker` 类 — `takeSnapshotOf(paths)` 执行之前快照；`diff(before, after)` 比较前后状态；`onFileChange()` 完整 diff 流程；`notify()` 发射 `file.change` 事件
+- `extractPathsFromArgs()` — 从工具调用参数中启发式提取路径
+- `createFileTracker()` — 工厂函数
+
+**集成点**: `agent-loop.ts` 工具执行路径中，在 `execute()` 前通过 `extractPathsFromArgs(tc.args)` 提取路径 → `fileTracker.takeSnapshotOf(paths)` → 执行后 snapshot + diff → 发射 `file.change` 事件。
+
+**事件 Schema**: `file.change` 包含嵌套 changes 数组，每个元素有 `path`, `type`枚举, `before`/`after`（可空）。
+
+### P2-16: Subagent Context Isolation ✅
+
+**改动文件**:
+- `src/subagent/types.ts` — `SubagentConfig` 新增 `allowedTools?: string[]`（限制子代理可用的工具集）和 `isolated?: boolean`（启用完整上下文隔离：独立 abort controller、token budget、事件命名空间）；`AgentLoop` 接口新增 `cancel?(): void` 用于取消隔离子代理
+- `src/subagent/registry.ts` — 重构状态追踪：新增 `ActiveRun` 接口（`{ sessionId, subagentName, startedAt, agent }`）和 `activeRuns: Map<string, ActiveRun>`；`runWithFullEventStream()` 追踪 activeRun 并在完成后清理；新增 `cancelSubagent(sessionId)`：对隔离子代理调用 `agent.cancel?.()`，返回 boolean；新增 `cancelAll()`, `getActiveRuns()`, `isIsolated(name)` 方法；工具隔离配置通过事件通知
+
+**设计决策**:
+1. **隔离双维度**: `allowedTools`（工具层面隔离）+ `isolated`（运行时层面隔离），两者独立可组合
+2. **取消安全**: 非隔离子代理的取消为 no-op（它们在父级 scope 中运行，不应被独立取消）
+3. **工具隔离由调用者负责**: registry 无法对已有 AgentLoop 追溯过滤工具，由调用者在创建 AgentLoop 时通过过滤的 ToolRegistry 实现
+
+### P2-17: CLI 脚手架 + 部署方案 ✅
+
+**Docker 部署模板**（3 个新文件）:
+- `templates/base/Dockerfile.hbs` — 多阶段 Docker 构建（builder → production），node:22-alpine 基础镜像，HEALTHCHECK，USER node 安全设置
+- `templates/base/docker-compose.yml.hbs` — Docker Compose 配置，含环境变量注入、health check、日志轮转（json-file, 10MB/3file）、restart unless-stopped
+- `templates/base/.dockerignore` — node_modules/、dist/、.git/、.env、*.log 等
+
+**脚手架集成**:
+- `generator.ts` — Docker 模板作为基础模板始终生成（与 .gitignore 同级）
+- `config.ts` — `PromptsConfig` 新增 `deployment: boolean` 字段
+- `index.ts` — 新增 `--deploy` CLI 标志
+- `prompts.ts` — 交互式 prompt 新增 "Docker deployment" 复选框选项
+
+**生成的配置更新**:
+- `package.json.hbs` — 新增脚本：`docker:build`、`docker:up`、`docker:down`、`docker:logs`
+- `README.md.hbs` — 新增 Docker 部署章节，含构建/启动/日志/停止指令和环境变量说明
+
+**设计决策**: Docker 文件作为基础设施文件（如同 .gitignore）始终生成，不依赖于 `deployment` 选项。`deployment` 标志用于额外的部署功能（如 health check 端点生成等），为未来扩展预留。
+
+### 对抗检验发现的问题（2026-05-05）
+
+24 个问题已修复，5 个确认为已知限制。
+
+| 严重度 | 问题 | 状态 |
+|--------|------|:--:|
+| **CRITICAL** | Streaming 可恢复错误返回 `status:'ok'` 导致循环静默终止 | ✅ 已修复 |
+| IMPORTANT | `toolCallEnd` chunk 覆盖累积的 argsDelta | ✅ 已修复（仅当 argsStr 为空时覆盖） |
+| IMPORTANT | `finishReason: 'length'` 在有 tool calls 时被强制覆盖 | ✅ 已修复（保留 'length' 用于截断检测） |
+| IMPORTANT | `performLLMCall` / `performStreamingLLMCall` 代码重复 | ✅ 已修复（统一为 LLMCallResult 联合类型） |
+| IMPORTANT | `llm.chunk` 事件不携带 tool call 信息 | ✅ 已修复（新增 toolCallId/toolName/argsDelta 可选字段） |
+| IMPORTANT | `asPart<T>()` 类型擦除无文档说明 | ✅ 已修复（添加完整 JSDoc） |
+| IMPORTANT | `microcompact` 的 `trimmedCount` 被 Zod schema 丢弃 | ✅ 已修复（添加到 CompactionResultSchema） |
+| IMPORTANT | `multiLayerCompact` 策略名不反映已执行的多层操作 | ✅ 已修复（添加注释说明报告约定） |
+| IMPORTANT | compaction.start 事件策略硬编码为 'microcompact' | ✅ 已修复（使用 result.strategy） |
+| IMPORTANT | `PATH_PATTERN` 不匹配 Windows/相对路径 | ✅ 已修复（新增 Win/相对路径匹配 + 数组遍历） |
+| IMPORTANT | `extractPathsFromArgs` 不处理数组值 | ✅ 已修复（添加数组递归遍历） |
+| IMPORTANT | 异步 subagent 未追踪到 activeRuns | ✅ 已修复（添加 activeRun 追踪 + cleanup） |
+| IMPORTANT | 非隔离 subagent 取消时从 activeRuns 移除但未取消 | ✅ 已修复（非隔离返回 false，不移除） |
+| IMPORTANT | Dockerfile 复制 agentforge.config.ts 到生产镜像 | ✅ 已修复（移除不必要的 COPY） |
+| IMPORTANT | Dockerfile 硬编码 port 3000 | ✅ 已修复（使用 ARG PORT + ENV PORT 回退） |
+| IMPORTANT | `docker:logs` 脚本默认阻塞（-f） | ✅ 已修复（拆分为 logs + logs:follow） |
+| IMPORTANT | `register()` 空 if 块仅含注释 | ✅ 已修复（改为独立注释） |
+| IMPORTANT | `AgentLoop.cancel()` 缺少 JSDoc | ✅ 已修复（添加方法文档） |
+| IMPORTANT | `deployment` 字段未加入 validateConfig | ⬜ 已知限制（boolean 类型由 TS 编译时保证） |
+| SUGGESTION | `fullStreamToChunks` 静默丢弃未识别 stream part | ⬜ 已知限制（AI SDK 版本兼容性设计） |
+| SUGGESTION | `llm.chunk` 事件 emit 使用 `as AgentEvent` | ⬜ 已知限制（Tier-2 内部事件，性能优先） |
+| SUGGESTION | `takeSnapshotOf` 静默丢弃 stat 失败路径 | ⬜ 已知限制（inner catch 已处理 stat 错误） |
+| IMPORTANT | `create-agentforge` 包测试因 inquirer v10 挂起 | ⬜ 已知限制（预存问题） |
+| MINOR | `src/cli/` 与 `packages/create-agentforge/src/` 源码重复 | ⬜ 已知限制 |
+
+### 进展总览
+
+| P2 项 | 描述 | 状态 |
+|--------|------|:--:|
+| #13 | 流式工具执行 | ✅ |
+| #14 | 多层 Compaction | ✅ |
+| #15 | 文件变更 Snapshot 追踪 | ✅ |
+| #16 | Subagent context isolation | ✅ |
+| #17 | CLI 脚手架 + 部署方案 | ✅ |

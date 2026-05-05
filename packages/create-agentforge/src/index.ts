@@ -41,6 +41,7 @@ export async function main(): Promise<void> {
     .option('--compaction', 'Enable memory compaction')
     .option('--subagent', 'Enable sub-agent delegation')
     .option('--mcp', 'Enable MCP client')
+    .option('--deploy', 'Include Docker deployment templates and scripts')
     .option('--dry-run', 'Preview files without creating')
     .option('--skip-install', 'Skip npm install')
     .option('--force', 'Overwrite existing directory')
@@ -109,6 +110,9 @@ export async function runAction(
   }
   if (opts.mcp === true) {
     cliOverrides.mcp = true;
+  }
+  if (opts.deploy === true) {
+    cliOverrides.deployment = true;
   }
   if (typeof opts.gitInit === 'boolean') {
     cliOverrides.gitInit = opts.gitInit as boolean;

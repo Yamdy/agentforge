@@ -37,9 +37,6 @@ export const server = async (input, options) => ({
       return [{ role: 'system', content: 'TEST_PLUGIN_ACTIVE:' + opts }, ...messages];
     },
   }],
-  lifecycleHooks: [
-    { name: 'session.start', fn: () => { /* noop */ } },
-  ],
   toolProviderHooks: [{
     name: 'test-tool-provider',
     priority: 50,
@@ -187,7 +184,7 @@ describe('PluginLoader Integration (E2E)', () => {
     expect(result[1]!.name).toBe('injected_tool');
   });
 
-  it('should register lifecycle hooks', async () => {
+  it('should register request hooks from dynamically loaded plugin', async () => {
     await PluginLoader.loadAll(
       [{ source: FIXTURE_DIR }],
       ctx,
@@ -195,8 +192,8 @@ describe('PluginLoader Integration (E2E)', () => {
       emitter,
     );
 
-    const lifecycleHooks = hooks.getLifecycleHooks('session.start');
-    expect(lifecycleHooks.length).toBeGreaterThan(0);
+    const requestHooks = hooks.getRequestHooks();
+    expect(requestHooks.length).toBeGreaterThan(0);
   });
 
   it('should isolate load failures — second spec loads even if first fails', async () => {

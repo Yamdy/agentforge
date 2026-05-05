@@ -46,10 +46,10 @@ export function createSkillsPlugin(sources: string[]): Plugin {
     name: 'skills',
     enabled: true,
 
-    lifecycleHooks: [
+    eventSubscriptions: [
       {
-        name: 'session.start',
-        fn: async () => {
+        event: 'agent.start',
+        handler: async () => {
           const discovered = await registry.discover(sources);
           skills = discovered.map(s => {
             const meta: SkillMetadata = {

@@ -32,6 +32,11 @@ vi.mock('ai', () => ({
       yield ' from';
       yield ' Ollama';
     })(),
+    fullStream: (async function* () {
+      yield { type: 'text-delta', text: 'Hello', id: '1' };
+      yield { type: 'text-delta', text: ' from', id: '1' };
+      yield { type: 'text-delta', text: ' Ollama', id: '1' };
+    })(),
   }),
   jsonSchema: vi.fn().mockReturnValue({ type: 'object' }),
 }));
