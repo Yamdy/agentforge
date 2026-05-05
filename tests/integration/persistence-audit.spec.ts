@@ -31,10 +31,8 @@ import {
   type CheckpointStorage,
   type Checkpoint,
   type AuditLogger,
-  InMemoryStore,
-  DefaultPauseController,
-  SimpleSchemaRegistry,
 } from '../../src/core/index.js';
+import { InMemoryStore, DefaultPauseController, SimpleSchemaRegistry } from '../../src/core/context.js';
 import { HookRegistry } from '../../src/core/hooks.js';
 
 // ============================================================

@@ -9,7 +9,7 @@ import { describe, it, expect } from 'vitest';
 import type { LLMAdapter, ToolDefinition, MemoryStore } from '../../src/core/interfaces.js';
 import { AgentContextBuilder, type ModelConfig } from '../../src/api/context-builder.js';
 import { ContextBuilder } from '../../src/core/context-builder.js';
-import { InMemoryStore, DefaultPauseController } from '../../src/core/index.js';
+import { InMemoryStore, DefaultPauseController } from '../../src/core/context.js';
 import type { AgentContext } from '../../src/core/context.js';
 import type { CompactionManager } from '../../src/memory/index.js';
 

@@ -34,29 +34,9 @@
       "types": "./dist/resilience/index.d.ts",
       "import": "./dist/resilience/index.js"
     },
-    "./audit": {
-      "types": "./dist/audit/index.d.ts",
-      "import": "./dist/audit/index.js"
-    },
     "./security": {
       "types": "./dist/security/index.d.ts",
       "import": "./dist/security/index.js"
-    },
-    "./quota": {
-      "types": "./dist/quota/index.d.ts",
-      "import": "./dist/quota/index.js"
-    },
-    "./observability": {
-      "types": "./dist/observability/index.d.ts",
-      "import": "./dist/observability/index.js"
-    },
-    "./lifecycle": {
-      "types": "./dist/lifecycle/index.d.ts",
-      "import": "./dist/lifecycle/index.js"
-    },
-    "./validation": {
-      "types": "./dist/validation/index.d.ts",
-      "import": "./dist/validation/index.js"
     },
     "./integration": {
       "types": "./dist/integration/index.d.ts",
@@ -117,10 +97,6 @@
     "./workflow": {
       "types": "./dist/workflow/index.d.ts",
       "import": "./dist/workflow/index.js"
-    },
-    "./quickstart": {
-      "types": "./dist/quickstart.d.ts",
-      "import": "./dist/quickstart.js"
     }
   },
   "sideEffects": false,

@@ -19,7 +19,7 @@ import type {
   ToolRegistry,
   ToolDefinition,
 } from '../../src/core/index.js';
-import { InMemoryStore, DefaultPauseController, SimpleSchemaRegistry } from '../../src/core/index.js';
+import { InMemoryStore, DefaultPauseController, SimpleSchemaRegistry } from '../../src/core/context.js';
 import { HookRegistry } from '../../src/core/hooks.js';
 import type {
   Planner,

@@ -5,8 +5,9 @@
  * executes via PlanExecutorImpl, and handles re-planning on failure.
  */
 
-import type { AgentContext, AgentState } from '../core/index.js';
-import type { AgentEventEmitter, SerializedError, AgentEvent } from '../core/index.js';
+import type { AgentContext } from '../core/context.js';
+import type { AgentState } from '../core/state.js';
+import type { AgentEventEmitter, SerializedError, AgentEvent } from '../core/events.js';
 import type { AgentStateMachine } from '../core/state-machine.js';
 
 export interface PlanExecutorDeps {

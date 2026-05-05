@@ -21,12 +21,12 @@ import {
   type ToolCall,
   type SerializedError,
   AgentEventEmitter,
-  AgentStateMachine,
-  type AgentStateEnum,
   serializeError,
   generateId,
-} from '../core/index.js';
-import type { AgentContext, AgentState } from '../core/index.js';
+} from '../core/events.js';
+import type { AgentContext } from '../core/context.js';
+import type { AgentState } from '../core/state.js';
+import { AgentStateMachine, type AgentStateEnum } from '../core/state-machine.js';
 import { extractText } from '../core/content-utils.js';
 import {
   HookRegistry,

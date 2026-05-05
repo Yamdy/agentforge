@@ -12,15 +12,3 @@
 export { DefaultErrorClassifier } from './error-classifier.js';
 export { DefaultCircuitBreaker } from './circuit-breaker.js';
 export { DefaultAutoRepairer } from './auto-repairer.js';
-
-// Re-export types from contracts
-export type {
-  ErrorSeverity,
-  ErrorClassifier,
-  CircuitBreakerState,
-  CircuitBreakerConfig,
-  CircuitBreaker,
-  AutoRepairer,
-  RepairResult,
-  RepairHandler,
-} from '../contracts/mpu-interfaces.js';

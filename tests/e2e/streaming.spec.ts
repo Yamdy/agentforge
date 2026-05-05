@@ -28,7 +28,7 @@ import {
   InMemoryStore,
   DefaultPauseController,
   SimpleSchemaRegistry,
-} from '../../src/core/index.js';
+} from '../../src/core/context.js';
 import {
   resolveApiConfig,
   shouldRunE2E,

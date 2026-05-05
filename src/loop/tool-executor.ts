@@ -5,9 +5,10 @@
  * ToolHook → PermissionController → SecurityGuard → Sandbox → Execute.
  */
 
-import type { Message, ToolCall } from '../core/index.js';
-import type { AgentContext, AgentState } from '../core/index.js';
-import type { AgentEventEmitter } from '../core/index.js';
+import type { Message, ToolCall } from '../core/events.js';
+import type { AgentContext } from '../core/context.js';
+import type { AgentState } from '../core/state.js';
+import type { AgentEventEmitter } from '../core/events.js';
 import { extractText } from '../core/content-utils.js';
 import type { HookRegistry } from '../core/hooks.js';
 import type { ToolDefinition } from '../core/interfaces.js';

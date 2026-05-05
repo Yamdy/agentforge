@@ -27,11 +27,13 @@ import {
   type PermissionController,
   type PermissionDecision,
   type PermissionPolicy,
+} from '../../src/core/index.js';
+import {
   InMemoryStore,
   DefaultPauseController,
   DefaultHITLController,
   SimpleSchemaRegistry,
-} from '../../src/core/index.js';
+} from '../../src/core/context.js';
 import { evaluatePermission } from '../../src/security/permission/permission-policy.js';
 
 // ============================================================

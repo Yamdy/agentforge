@@ -29,11 +29,13 @@ import {
   type LLMAdapter,
   type ToolRegistry,
   type ToolDefinition,
+  serializeError,
+} from '../../src/core/index.js';
+import {
   InMemoryStore,
   DefaultPauseController,
   SimpleSchemaRegistry,
-  serializeError,
-} from '../../src/core/index.js';
+} from '../../src/core/context.js';
 import { HookRegistry } from '../../src/core/hooks.js';
 
 // Cached executor helpers — imported once in beforeAll

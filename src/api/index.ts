@@ -96,15 +96,6 @@ export {
   createContextWithHITL,
 } from './context-builder.js';
 
-export {
-  ContextBuilder,
-  SimpleToolRegistry,
-  InMemoryStore,
-  DefaultPauseController,
-  DefaultHITLController,
-  generateSessionId,
-} from '../core/index.js';
-
 export type { ModelConfig } from './context-builder.js';
 
 // ============================================================

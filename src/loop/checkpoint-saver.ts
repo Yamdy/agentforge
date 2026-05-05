@@ -4,8 +4,9 @@
  * Fire-and-forget checkpoint persistence. Never blocks the agent loop.
  */
 
-import type { AgentEventEmitter } from '../core/index.js';
-import type { AgentContext, AgentState } from '../core/index.js';
+import type { AgentEventEmitter } from '../core/events.js';
+import type { AgentContext } from '../core/context.js';
+import type { AgentState } from '../core/state.js';
 import { generateId } from '../core/events.js';
 
 export interface CheckpointSaverDeps {

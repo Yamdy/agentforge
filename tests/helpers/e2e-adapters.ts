@@ -19,12 +19,10 @@ import {
   type ToolRegistry,
   type FunctionDefinition,
   type Message,
-  InMemoryStore,
-  DefaultPauseController,
-  SimpleSchemaRegistry,
   ContextBuilder,
   generateSessionId,
 } from '../../src/core/index.js';
+import { InMemoryStore, DefaultPauseController, SimpleSchemaRegistry } from '../../src/core/context.js';
 import {
   createAgentLoop,
   type AgentLoopConfig,

@@ -1,7 +1,9 @@
 /**
  * AgentForge Core - Public API
  *
- * Re-exports all core types and utilities.
+ * Re-exports all core types and utilities, plus merged thin sub-path types.
+ * Internal implementation classes and Zod schemas are NOT exported —
+ * import those directly from their source files.
  *
  * @module
  */
@@ -10,25 +12,19 @@
 // Events
 // ============================================================
 
+export type {
+  AgentEventType,
+  MessageRole,
+  MessageContent,
+  ContentPart,
+  Message,
+  ToolCall,
+  FinishReason,
+  SerializedError,
+  AgentEvent,
+} from './events.js';
+
 export {
-  AgentEventTypeSchema,
-  type AgentEventType,
-  MessageRoleSchema,
-  type MessageRole,
-  MessageContentSchema,
-  type MessageContent,
-  ContentPartSchema,
-  type ContentPart,
-  MessageSchema,
-  type Message,
-  ToolCallSchema,
-  type ToolCall,
-  FinishReasonSchema,
-  type FinishReason,
-  SerializedErrorSchema,
-  type SerializedError,
-  AgentEventSchema,
-  type AgentEvent,
   isAgentEvent,
   isLLMEvent,
   isToolEvent,
@@ -37,29 +33,24 @@ export {
   isCompactionEvent,
   serializeError,
   generateId,
-  AgentEventEmitter,
 } from './events.js';
 
 // ============================================================
 // State
 // ============================================================
 
+export type {
+  BatchContext,
+  ContextManagement,
+  CheckpointReference,
+  ModelConfig,
+  TokenStats,
+  AgentState,
+  RecoveryState,
+  CreateInitialStateOptions,
+} from './state.js';
+
 export {
-  BatchContextSchema,
-  type BatchContext,
-  ContextManagementSchema,
-  type ContextManagement,
-  CheckpointReferenceSchema,
-  type CheckpointReference,
-  ModelConfigSchema,
-  type ModelConfig,
-  TokenStatsSchema,
-  type TokenStats,
-  AgentStateSchema,
-  type AgentState,
-  RecoveryStateSchema,
-  type RecoveryState,
-  type CreateInitialStateOptions,
   createInitialState,
   updateState,
   appendMessage,
@@ -81,20 +72,17 @@ export {
 // Checkpoint
 // ============================================================
 
+export type {
+  CheckpointPosition,
+  A2APendingRequest,
+  ExecutedTool,
+  RecoveryMetadata,
+  CompactionHistory,
+  Checkpoint,
+  CreateCheckpointOptions,
+} from './checkpoint.js';
+
 export {
-  CheckpointPositionSchema,
-  type CheckpointPosition,
-  A2APendingRequestSchema,
-  type A2APendingRequest,
-  ExecutedToolSchema,
-  type ExecutedTool,
-  RecoveryMetadataSchema,
-  type RecoveryMetadata,
-  CompactionHistorySchema,
-  type CompactionHistory,
-  CheckpointSchema,
-  type Checkpoint,
-  type CreateCheckpointOptions,
   createCheckpoint,
   generateIdempotencyKey,
   isToolExecuted,
@@ -153,6 +141,15 @@ export type {
   PromptBuildOptions,
   BuiltPrompt,
   PromptBuilder,
+  PermissionDecision,
+  PolicyDecision,
+  PermissionAskOptions,
+  PermissionPolicy,
+  PermissionController,
+  SandboxExecutor,
+  AuditLogger,
+  RateLimiter,
+  InputSanitizer,
 } from './interfaces.js';
 
 // ============================================================
@@ -166,33 +163,19 @@ export type {
   StepContext,
 } from './context.js';
 
-export {
-  InMemoryStore,
-  DefaultPauseController,
-  DefaultHITLController,
-  SimpleSchemaRegistry,
-  generateSessionId,
-  createDefaultAppServices,
-  createToolContext,
-} from './context.js';
+export { generateSessionId, createDefaultAppServices, createToolContext } from './context.js';
 
 // ============================================================
 // Context Builder
 // ============================================================
 
-export {
-  ContextBuilder,
-  SimpleToolRegistry,
-  DelegatingToolRegistry,
-  createApplicationServices,
-} from './context-builder.js';
+export { ContextBuilder, createApplicationServices } from './context-builder.js';
 
 // ============================================================
 // Logger
 // ============================================================
 
 export type { Logger } from './logger.js';
-export { DefaultLogger, NoopLogger } from './logger.js';
 
 // ============================================================
 // Hooks
@@ -206,69 +189,14 @@ export {
   type LifecycleHookEntry,
   type RequestHook,
   type ToolHook,
-  HookRegistry,
 } from './hooks.js';
-
-// ============================================================
-// Defaults (Tracer / Metrics implementations for DI)
-// ============================================================
-
-export {
-  NoopTracer,
-  ConsoleTracer,
-  NoopMetrics,
-  ConsoleMetrics,
-  BridgeMetrics,
-} from './defaults.js';
-
-// ============================================================
-// Zod to Schema
-// ============================================================
-
-export {
-  zodToJsonSchema,
-  zodToFunctionDef,
-  toolToFunctionDef,
-  toolsToFunctionDefs,
-} from './zod-to-schema.js';
-
-// ============================================================
-// Prompt Builder
-// ============================================================
-
-export {
-  DefaultPromptBuilder,
-  DEFAULT_SYSTEM_TEMPLATE,
-  TOOL_INSTRUCTIONS_TEMPLATE,
-} from './prompt-builder.js';
 
 // ============================================================
 // State Machine
 // ============================================================
 
 export type { AgentStateEnum } from './state-machine.js';
-export { AgentStateMachine, isValidTransition, getValidTransitions } from './state-machine.js';
-
-// ============================================================
-// Security Types (from interfaces.ts)
-// ============================================================
-
-export type { PermissionDecision, PolicyDecision, PermissionAskOptions } from './interfaces.js';
-
-export type {
-  PermissionPolicy,
-  PermissionController,
-  SandboxExecutor,
-  AuditLogger,
-  RateLimiter,
-  InputSanitizer,
-} from './interfaces.js';
-
-// ============================================================
-// Quota Controller (re-exported from quota module)
-// ============================================================
-
-export type { QuotaUsage, QuotaLimits, QuotaController } from '../quota/quota-controller.js';
+export { isValidTransition, getValidTransitions } from './state-machine.js';
 
 // ============================================================
 // Approval Channel
@@ -280,11 +208,51 @@ export type {
   ApprovalPrompt,
   ApprovalChannel,
 } from './approval-channel.js';
-export { DefaultApprovalChannel } from './approval-channel.js';
 
-// ============================================================
 // ============================================================
 // Content Utilities (Multimodal message content access)
 // ============================================================
 
 export { extractText, hasImages, isContentArray } from './content-utils.js';
+
+// ============================================================
+// Merged thin sub-paths — lifecycle
+// ============================================================
+
+export { GracefulShutdown } from '../lifecycle/index.js';
+export type { ShutdownResult } from '../lifecycle/index.js';
+
+// ============================================================
+// Merged thin sub-paths — observability
+// ============================================================
+
+export type { ResourceMetrics } from '../observability/resource-monitor.js';
+export type { HealthCheckerOptions } from '../observability/health-checker.js';
+export type { MetricsCollectorOptions } from '../observability/metrics-collector.js';
+
+// ============================================================
+// Merged thin sub-paths — quota
+// ============================================================
+
+export type { QuotaUsage, QuotaLimits, QuotaController } from '../quota/quota-controller.js';
+export { MemoryQuotaController } from '../quota/memory-quota-controller.js';
+
+// ============================================================
+// Merged thin sub-paths — validation
+// ============================================================
+
+export {
+  QualityGate,
+  DEFAULT_QUALITY_GATE_CONFIG,
+  type QualityGateConfig,
+  type QualityGateCheck,
+  type QualityGateReason,
+  type PatternRule,
+} from '../validation/quality-gate.js';
+
+// ============================================================
+// Merged thin sub-paths — audit
+// ============================================================
+
+export { SqliteAuditStore } from '../audit/sqlite-audit-store.js';
+export { sha256, computeEntryHash, verifyChain } from '../audit/hash-chain.js';

@@ -50,14 +50,14 @@ import type { CompactionManager } from '../memory/index.js';
 import { createCompactionManager } from '../memory/index.js';
 import type { QuotaController } from '../quota/quota-controller.js';
 import type { QualityGate } from '../validation/quality-gate.js';
+import { SimpleToolRegistry } from '../core/context-builder.js';
 import {
-  SimpleToolRegistry,
   InMemoryStore,
   DefaultPauseController,
   DefaultHITLController,
   createDefaultAppServices,
   generateSessionId,
-} from '../core/index.js';
+} from '../core/context.js';
 import { HookRegistry } from '../core/hooks.js';
 
 // ============================================================

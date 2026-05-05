@@ -54,15 +54,6 @@ export { MEMORY_SYSTEM_PROMPT } from './guidelines.js';
 export { HistoryOffloadManager } from './history-offload.js';
 
 // ============================================================
-// RequestHook Priority Convention (Progressive Disclosure)
-// ============================================================
-
-export {
-  RequestHookPriority,
-  type RequestHookPriority as RequestHookPriorityType,
-} from '../core/hooks.js';
-
-// ============================================================
 // Strategies
 // ============================================================
 

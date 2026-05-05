@@ -54,17 +54,10 @@ export {
 } from './builtin-checkpoints.js';
 
 // ============================================================
-// TodoList Plugin (re-exported from tools for convenience)
+// TodoList Plugin
 // ============================================================
 
-export {
-  createTodoListPlugin,
-  formatTodoState,
-  type TodoItem,
-  type TodoListState,
-  type TodoStatus,
-  type TodoPriority,
-} from '../tools/todo-list.js';
+export { createTodoListPlugin, formatTodoState } from '../tools/todo-list.js';
 
 // ============================================================
 // Plugin Loader (dynamic installation)
