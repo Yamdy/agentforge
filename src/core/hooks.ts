@@ -5,10 +5,12 @@
  * Provides cut-points for plugins to intercept and modify agent behavior
  * without event-stream interception.
  *
- * Three hook categories:
+ * Hook categories:
  * - LifecycleHook: (input, output) => Promise<void> — observe lifecycle events
+ * - RecoveryHook: (input, output) => Promise<void> — observe error/recovery events
  * - RequestHook: modify LLM messages before each call
- * - ToolHook: check/block tool execution before it runs
+ * - CheckpointHook: block/continue at checkpoint phases
+ * - ToolHook: filter tool definitions + check/modify tool execution (unified in Task 4)
  *
  * @see docs/design/24-ARCH-REFACTOR.md
  */
@@ -79,6 +81,15 @@ export interface LifecycleHookEntry {
   phase: LifecyclePhase;
   fn: HookFn;
   /** Lower number = earlier execution */
+  priority: number;
+}
+
+/**
+ * Registered recovery hook entry.
+ */
+export interface RecoveryHookEntry {
+  phase: RecoveryPhase;
+  fn: HookFn;
   priority: number;
 }
 
@@ -203,27 +214,49 @@ export interface ToolProviderHook {
 // Checkpoint Hook (cross-cutting lifecycle checks — quota, rate-limit, quality)
 // ============================================================================
 
+// ============================================================================
+// Lifecycle Phase Types (Three Semantically Distinct Categories)
+// ============================================================================
+
 /**
- * Lifecycle phase where hooks execute.
+ * Checkpoint Phase — blocking hooks that can terminate the agent loop.
  *
- * - pre-llm / post-llm: blocking checkpoint hooks (quota, rate-limit, quality gate)
- * - All others: fire-and-forget observation hooks
+ * Used exclusively by CheckpointHook. A hook registered for a CheckpointPhase
+ * can return { action: 'block' } to stop the loop.
+ *
+ * checkpoints run at these two cut-points:
+ * - pre-llm: before each LLM call (quota, rate-limit)
+ * - post-llm: after each LLM response (quality gate, circuit breaker)
+ */
+export type CheckpointPhase = 'pre-llm' | 'post-llm';
+
+/**
+ * Lifecycle Phase — observational fire-and-forget hooks.
+ *
+ * Used by LifecycleHookEntry. These hooks observe lifecycle events but
+ * CANNOT block the loop. Errors are silently caught.
  */
 export type LifecyclePhase =
   | 'session.start'
   | 'session.end'
   | 'step.begin'
   | 'step.end'
-  | 'pre-llm'
-  | 'post-llm'
   | 'llm.request.before'
   | 'llm.response.after'
-  | 'llm.error'
   | 'tool.before'
   | 'tool.after'
-  | 'tool.error'
   | 'compaction.before'
-  | 'compaction.after'
+  | 'compaction.after';
+
+/**
+ * Recovery Phase — error and recovery lifecycle hooks.
+ *
+ * Used by RecoveryHookEntry. Triggered when errors occur or recovery
+ * actions are taken (escalation, compaction-based recovery, fallback).
+ */
+export type RecoveryPhase =
+  | 'llm.error'
+  | 'tool.error'
   | 'recovery.escalate'
   | 'recovery.compact'
   | 'recovery.fallback'
@@ -236,6 +269,16 @@ export type LifecyclePhase =
  * - block: Stop the current phase. The agent loop terminates with the given reason.
  */
 export type CheckpointResult = { action: 'continue' } | { action: 'block'; reason: string };
+
+/** Known checkpoint block reasons produced by built-in plugins. */
+export const CheckpointBlockReason = {
+  /** Token/cost quota exceeded (QuotaPlugin) */
+  QUOTA_EXCEEDED: 'quota_exceeded',
+  /** Quality gate rejected output, retry with correction injected (QualityGatePlugin) */
+  QUALITY_GATE_RETRY: 'quality_gate_retry',
+} as const;
+export type CheckpointBlockReason =
+  (typeof CheckpointBlockReason)[keyof typeof CheckpointBlockReason];
 
 /**
  * Checkpoint function signature.
@@ -263,8 +306,8 @@ export type CheckpointFn = (
 export interface CheckpointHook {
   /** Unique hook name for debugging */
   name: string;
-  /** Lifecycle phase when this checkpoint executes */
-  phase: LifecyclePhase;
+  /** Checkpoint phase when this checkpoint executes */
+  phase: CheckpointPhase;
   /** Execution order (lower = earlier) */
   priority: number;
   /** Check function — returns 'continue' or 'block' */
@@ -306,6 +349,11 @@ export class HookRegistry {
    */
   private toolProviders: ToolProviderHook[] = [];
 
+  /**
+   * Recovery hooks indexed by phase.
+   */
+  private recovery = new Map<RecoveryPhase, RecoveryHookEntry[]>();
+
   // ── Lifecycle Hooks ──
 
   /**
@@ -342,10 +390,39 @@ export class HookRegistry {
   }
 
   /**
-   * Get all lifecycle hooks for a given name, sorted by priority.
+   * Get all lifecycle hooks for a given phase, sorted by priority.
    */
   getLifecycleHooks(phase: LifecyclePhase): HookFn[] {
     return (this.lifecycle.get(phase) ?? []).map(e => e.fn);
+  }
+
+  // ── Recovery Hooks ──
+
+  /**
+   * Register a recovery hook.
+   */
+  onRecovery(
+    phase: RecoveryPhase,
+    fn: HookFn,
+    priority = DEFAULT_REQUEST_HOOK_PRIORITY
+  ): () => void {
+    const entry: RecoveryHookEntry = { phase, fn, priority };
+    const existing = this.recovery.get(phase) ?? [];
+    existing.push(entry);
+    existing.sort((a, b) => a.priority - b.priority);
+    this.recovery.set(phase, existing);
+    return () => {
+      const arr = this.recovery.get(phase);
+      if (arr) {
+        const idx = arr.indexOf(entry);
+        if (idx >= 0) arr.splice(idx, 1);
+      }
+    };
+  }
+
+  /** Get all recovery hooks for a given phase, sorted by priority. */
+  getRecoveryHooks(phase: RecoveryPhase): HookFn[] {
+    return (this.recovery.get(phase) ?? []).map(e => e.fn);
   }
 
   // ── Request Hooks ──
@@ -424,6 +501,7 @@ export class HookRegistry {
    */
   clear(): void {
     this.lifecycle.clear();
+    this.recovery.clear();
     this.requests = [];
     this.tools = [];
     this.toolProviders = [];
