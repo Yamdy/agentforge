@@ -12,7 +12,7 @@ import { extractText } from '../core/content-utils.js';
 import type { HookRegistry } from '../core/hooks.js';
 import type { ToolDefinition } from '../core/interfaces.js';
 import { evaluatePermission } from '../security/permission/permission-policy.js';
-import { generateId } from '../core/events.js';
+import { generateId, serializeError } from '../core/events.js';
 import { truncateOutput } from './tool-truncation.js';
 
 // ============================================================
@@ -52,16 +52,16 @@ export async function executeSingleTool(
   void emitter.emit({
     type: 'tool.call',
     timestamp: Date.now(),
-    sessionId: ctx.identity.sessionId,
+    sessionId: ctx.sessionId,
     toolCallId: tc.id,
     toolName: tc.name,
     args: tc.args,
   });
 
   // Audit tool call
-  ctx.security.auditLogger?.append({
-    sessionId: ctx.identity.sessionId,
-    agentName: ctx.identity.agentName,
+  ctx.auditLogger?.append({
+    sessionId: ctx.sessionId,
+    agentName: ctx.agentName,
     eventType: 'tool.call',
     action: 'tool.call',
     resource: tc.name,
@@ -88,7 +88,7 @@ export async function executeSingleTool(
     void emitter.emit({
       type: 'tool.result',
       timestamp: Date.now(),
-      sessionId: ctx.identity.sessionId,
+      sessionId: ctx.sessionId,
       toolCallId: tc.id,
       toolName: tc.name,
       result: extractText(deniedMsg.content),
@@ -98,11 +98,11 @@ export async function executeSingleTool(
   }
 
   // Get tool definition for subsequent checks
-  const toolDef: ToolDefinition | undefined = ctx.core.tools.get(tc.name);
+  const toolDef: ToolDefinition | undefined = ctx.tools.get(tc.name);
 
   // HITL PermissionController: primary gate
-  if (toolDef && ctx.security.permissionController && ctx.security.permissionPolicy) {
-    const policyDecision = evaluatePermission(toolDef, ctx.security.permissionPolicy);
+  if (toolDef && ctx.permissionController && ctx.permissionPolicy) {
+    const policyDecision = evaluatePermission(toolDef, ctx.permissionPolicy);
 
     if (policyDecision === 'deny') {
       const deniedMsg: Message = {
@@ -114,15 +114,15 @@ export async function executeSingleTool(
       void emitter.emit({
         type: 'tool.result',
         timestamp: Date.now(),
-        sessionId: ctx.identity.sessionId,
+        sessionId: ctx.sessionId,
         toolCallId: tc.id,
         toolName: tc.name,
         result: extractText(deniedMsg.content),
         isError: true,
       });
-      ctx.security.auditLogger?.append({
-        sessionId: ctx.identity.sessionId,
-        agentName: ctx.identity.agentName,
+      ctx.auditLogger?.append({
+        sessionId: ctx.sessionId,
+        agentName: ctx.agentName,
         eventType: 'tool.call',
         action: 'tool.call',
         resource: tc.name,
@@ -137,7 +137,7 @@ export async function executeSingleTool(
       void emitter.emit({
         type: 'permission.prompt',
         timestamp: Date.now(),
-        sessionId: ctx.identity.sessionId,
+        sessionId: ctx.sessionId,
         promptId,
         permission: tc.name,
         context: {
@@ -149,7 +149,7 @@ export async function executeSingleTool(
 
       let permDecision: 'allow' | 'deny' | 'allow_always';
       try {
-        permDecision = await ctx.security.permissionController.ask({
+        permDecision = await ctx.permissionController.ask({
           promptId,
           permission: tc.name,
           toolName: tc.name,
@@ -166,14 +166,14 @@ export async function executeSingleTool(
       void emitter.emit({
         type: 'permission.decision',
         timestamp: Date.now(),
-        sessionId: ctx.identity.sessionId,
+        sessionId: ctx.sessionId,
         promptId,
         decision: permDecision,
       });
 
-      ctx.security.auditLogger?.append({
-        sessionId: ctx.identity.sessionId,
-        agentName: ctx.identity.agentName,
+      ctx.auditLogger?.append({
+        sessionId: ctx.sessionId,
+        agentName: ctx.agentName,
         eventType: 'tool.call',
         action: 'tool.call',
         resource: tc.name,
@@ -194,7 +194,7 @@ export async function executeSingleTool(
         void emitter.emit({
           type: 'tool.result',
           timestamp: Date.now(),
-          sessionId: ctx.identity.sessionId,
+          sessionId: ctx.sessionId,
           toolCallId: tc.id,
           toolName: tc.name,
           result: extractText(deniedMsg.content),
@@ -206,8 +206,8 @@ export async function executeSingleTool(
   }
 
   // Security check before tool execution
-  if (toolDef && ctx.security.securityGuard) {
-    const cmdCheck = ctx.security.securityGuard.checkCommand(tc.name);
+  if (toolDef && ctx.securityGuard) {
+    const cmdCheck = ctx.securityGuard.checkCommand(tc.name);
     if (!cmdCheck.allowed) {
       const blockedMsg: Message = {
         role: 'tool',
@@ -218,15 +218,15 @@ export async function executeSingleTool(
       void emitter.emit({
         type: 'tool.result',
         timestamp: Date.now(),
-        sessionId: ctx.identity.sessionId,
+        sessionId: ctx.sessionId,
         toolCallId: tc.id,
         toolName: tc.name,
         result: `Blocked: ${cmdCheck.reason}`,
         isError: true,
       });
-      ctx.security.auditLogger?.append({
-        sessionId: ctx.identity.sessionId,
-        agentName: ctx.identity.agentName,
+      ctx.auditLogger?.append({
+        sessionId: ctx.sessionId,
+        agentName: ctx.agentName,
         eventType: 'tool.call',
         action: 'tool.call',
         resource: tc.name,
@@ -238,10 +238,10 @@ export async function executeSingleTool(
   }
 
   // Sandbox routing
-  if (toolDef?.sandboxRequired && ctx.security.sandboxExecutor) {
-    const sandboxResult = await ctx.security.sandboxExecutor.execute(
+  if (toolDef?.sandboxRequired && ctx.sandboxExecutor) {
+    const sandboxResult = await ctx.sandboxExecutor.execute(
       { toolName: tc.name, args: tc.args },
-      { sessionId: ctx.identity.sessionId, signal, timeoutMs: 30000 }
+      { sessionId: ctx.sessionId, signal, timeoutMs: 30000 }
     );
     let sbResultStr = sandboxResult.success
       ? (sandboxResult.result ?? '')
@@ -251,7 +251,7 @@ export async function executeSingleTool(
     void emitter.emit({
       type: 'tool.result',
       timestamp: Date.now(),
-      sessionId: ctx.identity.sessionId,
+      sessionId: ctx.sessionId,
       toolCallId: tc.id,
       toolName: tc.name,
       result: sbResultStr,
@@ -271,19 +271,19 @@ export async function executeSingleTool(
   // Execute tool
   await runLifecycleHook(
     'tool.execute.before',
-    { sessionId: ctx.identity.sessionId, toolName: tc.name, callId: tc.id, args: tc.args },
+    { sessionId: ctx.sessionId, toolName: tc.name, callId: tc.id, args: tc.args },
     {}
   );
 
   try {
-    const result = await ctx.core.tools.execute(tc.name, tc.args, {
+    const result = await ctx.tools.execute(tc.name, tc.args, {
       toolCallId: tc.id,
-      parentSessionId: ctx.identity.sessionId,
+      parentSessionId: ctx.sessionId,
     });
 
     await runLifecycleHook(
       'tool.execute.after',
-      { sessionId: ctx.identity.sessionId, toolName: tc.name, callId: tc.id, args: tc.args },
+      { sessionId: ctx.sessionId, toolName: tc.name, callId: tc.id, args: tc.args },
       { result }
     );
 
@@ -293,7 +293,7 @@ export async function executeSingleTool(
     void emitter.emit({
       type: 'tool.result',
       timestamp: Date.now(),
-      sessionId: ctx.identity.sessionId,
+      sessionId: ctx.sessionId,
       toolCallId: tc.id,
       toolName: tc.name,
       result: resultStr,
@@ -303,9 +303,9 @@ export async function executeSingleTool(
         : {}),
     });
 
-    ctx.security.auditLogger?.append({
-      sessionId: ctx.identity.sessionId,
-      agentName: ctx.identity.agentName,
+    ctx.auditLogger?.append({
+      sessionId: ctx.sessionId,
+      agentName: ctx.agentName,
       eventType: 'tool.result',
       action: 'tool.result',
       resource: tc.name,
@@ -313,16 +313,19 @@ export async function executeSingleTool(
       details: { toolCallId: tc.id },
     });
 
-    if (ctx.core.services.resultValidator) {
+    if (ctx.services.resultValidator) {
       try {
-        const validation = ctx.core.services.resultValidator.validate(tc.name, resultStr);
+        const validation = ctx.services.resultValidator.validate(tc.name, resultStr);
         if (!validation.valid) {
-          ctx.core.logger?.warn(`Tool result validation failed for ${tc.name}:`, {
+          ctx.logger?.warn(`Tool result validation failed for ${tc.name}:`, {
             errors: validation.errors,
           });
         }
-      } catch {
-        /* isolate */
+      } catch (err) {
+        ctx.logger?.warn('Tool execution error', {
+          toolName: tc.name,
+          error: serializeError(err),
+        });
       }
     }
 
@@ -339,14 +342,14 @@ export async function executeSingleTool(
 
     await runLifecycleHook(
       'tool.execute.error',
-      { sessionId: ctx.identity.sessionId, toolName: tc.name, callId: tc.id, error: err },
+      { sessionId: ctx.sessionId, toolName: tc.name, callId: tc.id, error: err },
       { retry: false }
     );
 
     void emitter.emit({
       type: 'tool.result',
       timestamp: Date.now(),
-      sessionId: ctx.identity.sessionId,
+      sessionId: ctx.sessionId,
       toolCallId: tc.id,
       toolName: tc.name,
       result: errStr,
@@ -356,9 +359,9 @@ export async function executeSingleTool(
         : {}),
     });
 
-    ctx.security.auditLogger?.append({
-      sessionId: ctx.identity.sessionId,
-      agentName: ctx.identity.agentName,
+    ctx.auditLogger?.append({
+      sessionId: ctx.sessionId,
+      agentName: ctx.agentName,
       eventType: 'tool.result',
       action: 'tool.result',
       resource: tc.name,
@@ -366,16 +369,19 @@ export async function executeSingleTool(
       details: { toolCallId: tc.id, error: errStr },
     });
 
-    if (ctx.resilience.errorClassifier && ctx.resilience.circuitBreaker) {
+    if (ctx.errorClassifier && ctx.circuitBreaker) {
       try {
-        const severity = ctx.resilience.errorClassifier.classify({
+        const severity = ctx.errorClassifier.classify({
           name: 'ToolExecutionError',
           message: errStr,
           stack: undefined,
         });
-        ctx.resilience.circuitBreaker.recordFailure(severity);
-      } catch {
-        /* isolate */
+        ctx.circuitBreaker.recordFailure(severity);
+      } catch (err) {
+        ctx.logger?.warn('Tool execution error', {
+          toolName: tc.name,
+          error: serializeError(err),
+        });
       }
     }
 
@@ -404,7 +410,7 @@ export async function executeToolBatchParallel(
   void emitter.emit({
     type: 'tool.batch.start',
     timestamp: Date.now(),
-    sessionId: ctx.identity.sessionId,
+    sessionId: ctx.sessionId,
     batchId,
     totalCalls: batch.calls.length,
   });
@@ -419,7 +425,7 @@ export async function executeToolBatchParallel(
   void emitter.emit({
     type: 'tool.batch.complete',
     timestamp: Date.now(),
-    sessionId: ctx.identity.sessionId,
+    sessionId: ctx.sessionId,
     batchId,
     totalCalls: batch.calls.length,
     successCount,

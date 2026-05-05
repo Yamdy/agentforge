@@ -109,89 +109,60 @@ export interface ApplicationServices {
 // Agent Context (Session-Level Instance)
 // ============================================================
 
-// ============================================================
-// Agent Context Sub-Interfaces
-// ============================================================
-
-/** Agent identity — session and agent name */
-export interface AgentIdentity {
+/**
+ * Agent Context
+ *
+ * Created per agent session, contains session-specific state and dependencies.
+ * All fields are optional unless noted as required in JSDoc groupings.
+ */
+export interface AgentContext {
+  // Identity (required)
   sessionId: string;
   agentName: string;
-}
 
-/** Core services — always available */
-export interface AgentCore {
+  // Core (required)
   llm: LLMAdapter;
   tools: ToolRegistry;
   memory: MemoryStore;
   pauseController: PauseController;
   services: ApplicationServices;
   logger?: Logger;
-}
 
-/** Security controls */
-export interface AgentSecurity {
+  // Security
   permissionPolicy?: PermissionPolicy;
   permissionController?: PermissionController;
   sandboxExecutor?: SandboxExecutor;
   auditLogger?: AuditLogger;
   inputSanitizer?: InputSanitizer;
   securityGuard?: SecurityGuard;
-}
 
-/** Flow controls */
-export interface AgentControls {
+  // Controls
   hitl?: HITLController;
   rateLimiter?: RateLimiter;
   quota?: QuotaController;
   checkpoint?: CheckpointStorage;
   abortSignal?: AbortSignal;
-}
 
-/** Memory management (compaction, working memory, quality gate) */
-export interface AgentMemoryContext {
+  // Memory management
   compactionManager?: CompactionManager;
   workingMemory?: WorkingMemory;
   workingMemoryProcessor?: WorkingMemoryProcessor;
   qualityGate?: QualityGate;
-}
 
-/** Resilience (error handling, circuit breaker, auto-repair) */
-export interface AgentResilience {
+  // Resilience
   errorClassifier?: ErrorClassifier;
   circuitBreaker?: CircuitBreaker;
   autoRepairer?: AutoRepairer;
   onError?: ErrorHandler;
-}
 
-/** Extensions (MCP, subagents, planning) */
-export interface AgentExtensions {
+  // Extensions
   mcpClients?: Map<string, MCPClient>;
   subagents?: SubagentRegistry;
   planner?: Planner;
-}
 
-/** Harness runtime — internal plugin wiring */
-export interface AgentHarness {
+  // Harness
   hookRegistry: HookRegistry;
   pluginManager?: PluginManager;
-}
-
-/**
- * Agent Context
- *
- * Created per agent session, contains session-specific state and dependencies.
- * Grouped into 8 sub-objects by concern.
- */
-export interface AgentContext {
-  identity: AgentIdentity;
-  core: AgentCore;
-  security: AgentSecurity;
-  controls: AgentControls;
-  memory: AgentMemoryContext;
-  resilience: AgentResilience;
-  extensions: AgentExtensions;
-  harness: AgentHarness;
 }
 
 // ============================================================
@@ -523,7 +494,7 @@ export function createToolContext(
     metadata?: Record<string, unknown>;
   } = {
     toolCallId,
-    parentSessionId: agentCtx.identity.sessionId,
+    parentSessionId: agentCtx.sessionId,
   };
 
   if (options?.timeout !== undefined) {
@@ -532,8 +503,8 @@ export function createToolContext(
   if (options?.metadata !== undefined) {
     result.metadata = options.metadata;
   }
-  if (agentCtx.controls.abortSignal) {
-    result.signal = agentCtx.controls.abortSignal;
+  if (agentCtx.abortSignal) {
+    result.signal = agentCtx.abortSignal;
   }
 
   return result;

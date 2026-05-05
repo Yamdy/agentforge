@@ -10,6 +10,7 @@ import {
   createAgentLoop,
   type AgentLoopConfig,
   type AgentLoop,
+  type RunResult,
   type StepContext,
 } from '../../src/loop/agent-loop.js';
 import { createAgent } from '../../src/api/create-agent.js';
@@ -231,24 +232,18 @@ function createTestContext(
   const sessionId = `test-session-${Date.now()}`;
 
   return {
-    identity: { sessionId, agentName: 'test-agent' },
-    core: {
-      llm,
-      tools: toolRegistry,
-      memory: new InMemoryStore(),
-      pauseController: new DefaultPauseController(),
-      services: {
-        schemaRegistry: new SimpleSchemaRegistry(),
-        llmFactory: { create: () => llm },
-        toolRegistry,
-      },
+    sessionId,
+    agentName: 'test-agent',
+    llm,
+    tools: toolRegistry,
+    memory: new InMemoryStore(),
+    pauseController: new DefaultPauseController(),
+    services: {
+      schemaRegistry: new SimpleSchemaRegistry(),
+      llmFactory: { create: () => llm },
+      toolRegistry,
     },
-    security: {},
-    controls: {},
-    memory: {},
-    resilience: {},
-    extensions: {},
-    harness: { hookRegistry: new HookRegistry() },
+    hookRegistry: new HookRegistry(),
   };
 }
 
@@ -827,7 +822,7 @@ describe('Phase 2a: Agent Loop', () => {
       const agent = createAgentLoop(ctx, config);
 
       // Pause before running
-      ctx.core.pauseController.pause();
+      ctx.pauseController.pause();
 
       // Start the loop - it should block
       vi.useFakeTimers();
@@ -835,7 +830,7 @@ describe('Phase 2a: Agent Loop', () => {
 
       // Resume after a short delay
       setTimeout(() => {
-        ctx.core.pauseController.resume();
+        ctx.pauseController.resume();
       }, 50);
 
       await vi.advanceTimersByTimeAsync(50);
@@ -1107,7 +1102,7 @@ describe('Phase 2a: Agent Loop', () => {
       const baseCtx = createTestContext(llm, toolRegistry);
       const ctx: AgentContext = {
         ...baseCtx,
-        controls: { ...baseCtx.controls, checkpoint: mockStorage },
+        checkpoint: mockStorage,
       };
       const config = createTestConfig({
         checkpoint: { enabled: true, interval: 'llm_response' },
@@ -1134,7 +1129,7 @@ describe('Phase 2a: Agent Loop', () => {
       // Verify the saved checkpoint has the right position
       expect(mockStorage.save).toHaveBeenCalledWith(expect.objectContaining({
         position: 'after_llm',
-        sessionId: ctx.identity.sessionId,
+        sessionId: ctx.sessionId,
       }));
     });
 
@@ -1154,7 +1149,7 @@ describe('Phase 2a: Agent Loop', () => {
       const baseCtx = createTestContext(llm, toolRegistry);
       const ctx: AgentContext = {
         ...baseCtx,
-        controls: { ...baseCtx.controls, checkpoint: mockStorage },
+        checkpoint: mockStorage,
       };
       // Explicitly disabled
       const config = createTestConfig({
@@ -1212,7 +1207,7 @@ describe('Phase 2a: Agent Loop', () => {
       const baseCtx = createTestContext(llm, toolRegistry);
       const ctx: AgentContext = {
         ...baseCtx,
-        controls: { ...baseCtx.controls, checkpoint: mockStorage },
+        checkpoint: mockStorage,
       };
       const config = createTestConfig({
         parallelToolCalls: false,
@@ -1260,7 +1255,7 @@ describe('Phase 2a: Agent Loop', () => {
       const baseCtx = createTestContext(llm, toolRegistry);
       const ctx: AgentContext = {
         ...baseCtx,
-        controls: { ...baseCtx.controls, checkpoint: mockStorage },
+        checkpoint: mockStorage,
       };
       const config = createTestConfig({
         parallelToolCalls: false,
@@ -1297,7 +1292,7 @@ describe('Phase 2a: Agent Loop', () => {
       const baseCtx = createTestContext(llm, toolRegistry);
       const ctx: AgentContext = {
         ...baseCtx,
-        controls: { ...baseCtx.controls, checkpoint: mockStorage },
+        checkpoint: mockStorage,
       };
       const config = createTestConfig({
         checkpoint: { enabled: true, interval: 'llm_response' },
@@ -1476,15 +1471,15 @@ describe('Phase 2a: Agent Loop', () => {
       const eventsPromise = runAndCollect(agent, 'Hello');
 
       // Rapid pause/resume cycles
-      ctx.core.pauseController.pause();
-      ctx.core.pauseController.resume();
-      ctx.core.pauseController.pause();
-      ctx.core.pauseController.resume();
-      ctx.core.pauseController.pause();
+      ctx.pauseController.pause();
+      ctx.pauseController.resume();
+      ctx.pauseController.pause();
+      ctx.pauseController.resume();
+      ctx.pauseController.pause();
 
       // Finally resume
       setTimeout(() => {
-        ctx.core.pauseController.resume();
+        ctx.pauseController.resume();
       }, 10);
 
       await vi.advanceTimersByTimeAsync(10);
@@ -1630,7 +1625,7 @@ describe('Phase 2c: ToolProviderHook Integration', () => {
 
   function createContextWithHooks(toolProviders: ToolProviderHook[]): AgentContext {
     const ctx = createTestContext(llm, toolRegistry);
-    ctx.harness.hookRegistry = hookRegistry;
+    ctx.hookRegistry = hookRegistry;
     for (const h of toolProviders) {
       hookRegistry.registerToolProvider(h);
     }
@@ -1727,8 +1722,8 @@ describe('Scenario 15: HITL PermissionController integration', () => {
 
   function createContextWithPermission(): AgentContext {
     const ctx = createTestContext(llm, toolRegistry);
-    ctx.security.permissionController = permController;
-    ctx.security.permissionPolicy = TEST_PERMISSION_POLICY;
+    ctx.permissionController = permController;
+    ctx.permissionPolicy = TEST_PERMISSION_POLICY;
     return ctx;
   }
 
@@ -1864,8 +1859,8 @@ describe('Scenario 15b: Critical-risk tool blocked at policy layer', () => {
     // Create context with both permissionController and permissionPolicy
     // (both are needed for the if-guard to enter the permission logic path)
     const ctx = createTestContext(llm, toolRegistry);
-    ctx.security.permissionController = permController;
-    ctx.security.permissionPolicy = TEST_PERMISSION_POLICY;
+    ctx.permissionController = permController;
+    ctx.permissionPolicy = TEST_PERMISSION_POLICY;
 
     const agent = createAgentLoop(ctx, createTestConfig());
     const events = await runAndCollect(agent, 'Do something dangerous');
@@ -2093,11 +2088,12 @@ describe('AsyncGenerator iterate()', () => {
     const agent = createAgentLoop(ctx, config);
     const iter = agent.iterate('Hi');
 
-    let result: IteratorResult<AgentEvent, string> = await iter.next();
+    let result: IteratorResult<AgentEvent, RunResult> = await iter.next();
     while (!result.done) {
       result = await iter.next();
     }
-    expect(result.value).toBe('Bonjour!');
+    expect(result.value.output).toBe('Bonjour!');
+    expect(result.value.status).toBe('success');
   });
 
   it('should emit events to both generator and emitter subscribers', async () => {
@@ -2139,13 +2135,14 @@ describe('AsyncGenerator iterate()', () => {
 
     const events: AgentEvent[] = [];
     const iter = agent.iterate('test');
-    let result: IteratorResult<AgentEvent, string> = await iter.next();
+    let result: IteratorResult<AgentEvent, RunResult> = await iter.next();
     while (!result.done) {
       events.push(result.value);
       result = await iter.next();
     }
 
-    expect(result.value).toBe('API test');
+    expect(result.value.output).toBe('API test');
+    expect(result.value.status).toBe('success');
     expect(events.some(e => e.type === 'agent.start')).toBe(true);
     expect(events.some(e => e.type === 'done')).toBe(true);
   });
@@ -2170,13 +2167,14 @@ describe('AsyncGenerator iterate()', () => {
     const agent = createAgentLoop(ctx, config);
     const iter = agent.iterate('Hi');
 
-    let result: IteratorResult<AgentEvent, string> = await iter.next();
+    let result: IteratorResult<AgentEvent, RunResult> = await iter.next();
     while (!result.done) {
       result = await iter.next();
     }
     // Must complete — if deadlocked, this test hangs forever
     expect(result.done).toBe(true);
-    expect(typeof result.value).toBe('string');
+    expect(typeof result.value).toBe('object');
+    expect(result.value.status).toBe('max_steps');
   });
 
   it('should yield error events when LLM fails unrecoverably', async () => {
@@ -2237,7 +2235,9 @@ describe('AsyncGenerator iterate()', () => {
 
     const r2_3 = await iter2.next();
     expect(r2_3.done).toBe(true);
-    expect(r2_3.value).toBe('');
+    expect(r2_3.value.output).toBe('');
+    expect(r2_3.value.status).toBe('error');
+    expect(r2_3.value.error?.name).toBe('AgentAlreadyRunningError');
 
     // Clean up first iteration
     agent.cancel();

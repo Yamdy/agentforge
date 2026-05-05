@@ -53,9 +53,9 @@ export async function performLLMCall(
   const st = state!;
 
   // Audit LLM request
-  ctx.security.auditLogger?.append({
-    sessionId: ctx.identity.sessionId,
-    agentName: ctx.identity.agentName,
+  ctx.auditLogger?.append({
+    sessionId: ctx.sessionId,
+    agentName: ctx.agentName,
     eventType: 'llm.request',
     action: 'llm.request',
     resource: config.model.model,
@@ -67,13 +67,13 @@ export async function performLLMCall(
   void emitter.emit({
     type: 'llm.request',
     timestamp: Date.now(),
-    sessionId: ctx.identity.sessionId,
+    sessionId: ctx.sessionId,
     messages: msgs,
     model: config.model,
   } as AgentEvent);
 
   // ToolProvider Hooks: per-call dynamic tool injection
-  let toolDefs = ctx.core.tools?.getFunctionDefs() ?? [];
+  let toolDefs = ctx.tools?.getFunctionDefs() ?? [];
   for (const h of hooks.getToolProviderHooks()) {
     toolDefs = await h.filter(toolDefs, st);
   }
@@ -83,13 +83,13 @@ export async function performLLMCall(
     if (recoveryState.escalatedMaxTokens) {
       llmOpts.maxTokens = recoveryState.escalatedMaxTokens;
     }
-    const response = await ctx.core.llm.chat(msgs, llmOpts);
+    const response = await ctx.llm.chat(msgs, llmOpts);
     st.tokens.prompt += response.usage?.promptTokens ?? 0;
     st.tokens.completion += response.usage?.completionTokens ?? 0;
 
     // Quota consumption tracking
-    if (ctx.controls.quota && response.usage) {
-      ctx.controls.quota.consume(ctx.identity.sessionId, {
+    if (ctx.quota && response.usage) {
+      ctx.quota.consume(ctx.sessionId, {
         promptTokens: response.usage.promptTokens ?? 0,
         completionTokens: response.usage.completionTokens ?? 0,
       });
@@ -113,7 +113,7 @@ export async function performLLMCall(
 /**
  * Perform a streaming LLM call, accumulating chunks into a complete response.
  *
- * Uses `ctx.core.llm.stream()` to produce an AsyncGenerator<LLMChunk>.
+ * Uses `ctx.llm.stream()` to produce an AsyncGenerator<LLMChunk>.
  * Accumulates text deltas and tool call args as they arrive.
  * Emits `llm.chunk` events for each text delta so UIs can stream output.
  * Once the stream ends, returns the assembled LLMResponse with all tool calls.
@@ -136,9 +136,9 @@ export async function performStreamingLLMCall(
   const st = state!;
 
   // Audit LLM request
-  ctx.security.auditLogger?.append({
-    sessionId: ctx.identity.sessionId,
-    agentName: ctx.identity.agentName,
+  ctx.auditLogger?.append({
+    sessionId: ctx.sessionId,
+    agentName: ctx.agentName,
     eventType: 'llm.request',
     action: 'llm.request',
     resource: config.model.model,
@@ -149,13 +149,13 @@ export async function performStreamingLLMCall(
   void emitter.emit({
     type: 'llm.request',
     timestamp: Date.now(),
-    sessionId: ctx.identity.sessionId,
+    sessionId: ctx.sessionId,
     messages: msgs,
     model: config.model,
   } as AgentEvent);
 
   // ToolProvider Hooks: per-call dynamic tool injection
-  let toolDefs = ctx.core.tools?.getFunctionDefs() ?? [];
+  let toolDefs = ctx.tools?.getFunctionDefs() ?? [];
   for (const h of hooks.getToolProviderHooks()) {
     toolDefs = await h.filter(toolDefs, st);
   }
@@ -172,7 +172,7 @@ export async function performStreamingLLMCall(
     let finishReason: LLMResponse['finishReason'] = 'stop';
     let usage: LLMResponse['usage'] | undefined;
 
-    const stream = ctx.core.llm.stream(msgs, llmOpts);
+    const stream = ctx.llm.stream(msgs, llmOpts);
 
     for await (const chunk of stream) {
       if (signal.aborted) break;
@@ -183,7 +183,7 @@ export async function performStreamingLLMCall(
         void emitter.emit({
           type: 'llm.chunk',
           timestamp: Date.now(),
-          sessionId: ctx.identity.sessionId,
+          sessionId: ctx.sessionId,
           text: chunk.text,
         } as AgentEvent);
       }
@@ -259,8 +259,8 @@ export async function performStreamingLLMCall(
     st.tokens.prompt += response.usage?.promptTokens ?? 0;
     st.tokens.completion += response.usage?.completionTokens ?? 0;
 
-    if (ctx.controls.quota && response.usage) {
-      ctx.controls.quota.consume(ctx.identity.sessionId, {
+    if (ctx.quota && response.usage) {
+      ctx.quota.consume(ctx.sessionId, {
         promptTokens: response.usage.promptTokens ?? 0,
         completionTokens: response.usage.completionTokens ?? 0,
       });

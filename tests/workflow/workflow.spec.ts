@@ -169,24 +169,18 @@ function createTestContext(llm: MockLLMAdapter, toolRegistry: MockToolRegistry):
   const sessionId = `test-session-${Date.now()}`;
 
   return {
-    identity: { sessionId, agentName: 'test-agent' },
-    core: {
-      llm,
-      tools: toolRegistry,
-      memory: new InMemoryStore(),
-      pauseController: new DefaultPauseController(),
-      services: {
-        schemaRegistry: new SimpleSchemaRegistry(),
-        llmFactory: { create: () => llm },
-        toolRegistry,
-      },
+    sessionId,
+    agentName: 'test-agent',
+    llm,
+    tools: toolRegistry,
+    memory: new InMemoryStore(),
+    pauseController: new DefaultPauseController(),
+    services: {
+      schemaRegistry: new SimpleSchemaRegistry(),
+      llmFactory: { create: () => llm },
+      toolRegistry,
     },
-    security: {},
-    controls: {},
-    memory: {},
-    resilience: {},
-    extensions: {},
-    harness: { hookRegistry: new HookRegistry() },
+    hookRegistry: new HookRegistry(),
   };
 }
 

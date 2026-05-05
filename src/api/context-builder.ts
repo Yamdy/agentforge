@@ -51,7 +51,6 @@ import { createCompactionManager } from '../memory/index.js';
 import type { QuotaController } from '../quota/quota-controller.js';
 import type { QualityGate } from '../validation/quality-gate.js';
 import {
-  ContextBuilder,
   SimpleToolRegistry,
   InMemoryStore,
   DefaultPauseController,
@@ -309,61 +308,43 @@ export class AgentContextBuilder {
 
     // Build context with required fields
     const ctx: AgentContext = {
-      identity: { sessionId, agentName },
-      core: { llm: this.state.llm, tools, memory, pauseController, services: appServices },
-      security: {},
-      controls: {},
-      memory: {},
-      resilience: {},
-      extensions: {},
-      harness: { hookRegistry: this.state.hookRegistry ?? new HookRegistry() },
+      sessionId,
+      agentName,
+      llm: this.state.llm,
+      tools,
+      memory,
+      pauseController,
+      services: appServices,
+      compactionManager: this.state.compactionManager ?? createCompactionManager(),
+      hookRegistry: this.state.hookRegistry ?? new HookRegistry(),
     };
 
     // Attach optional fields
-    if (this.state.checkpoint !== undefined) ctx.controls.checkpoint = this.state.checkpoint;
-    if (this.state.hitl !== undefined) ctx.controls.hitl = this.state.hitl;
-    if (this.state.mcpClients !== undefined) ctx.extensions.mcpClients = this.state.mcpClients;
-    if (this.state.subagents !== undefined) ctx.extensions.subagents = this.state.subagents;
-    if (this.state.abortSignal !== undefined) ctx.controls.abortSignal = this.state.abortSignal;
-    if (this.state.onError !== undefined) ctx.resilience.onError = this.state.onError;
-
-    // MPU session-level
-    if (this.state.securityGuard !== undefined)
-      ctx.security.securityGuard = this.state.securityGuard;
-    if (this.state.errorClassifier !== undefined)
-      ctx.resilience.errorClassifier = this.state.errorClassifier;
-    if (this.state.circuitBreaker !== undefined)
-      ctx.resilience.circuitBreaker = this.state.circuitBreaker;
-    if (this.state.autoRepairer !== undefined)
-      ctx.resilience.autoRepairer = this.state.autoRepairer;
-    if (this.state.planner !== undefined) ctx.extensions.planner = this.state.planner;
-
-    // Security & sandbox
-    if (this.state.rateLimiter !== undefined) ctx.controls.rateLimiter = this.state.rateLimiter;
-    if (this.state.inputSanitizer !== undefined)
-      ctx.security.inputSanitizer = this.state.inputSanitizer;
+    if (this.state.checkpoint !== undefined) ctx.checkpoint = this.state.checkpoint;
+    if (this.state.hitl !== undefined) ctx.hitl = this.state.hitl;
+    if (this.state.mcpClients !== undefined) ctx.mcpClients = this.state.mcpClients;
+    if (this.state.subagents !== undefined) ctx.subagents = this.state.subagents;
+    if (this.state.abortSignal !== undefined) ctx.abortSignal = this.state.abortSignal;
+    if (this.state.onError !== undefined) ctx.onError = this.state.onError;
+    if (this.state.securityGuard !== undefined) ctx.securityGuard = this.state.securityGuard;
+    if (this.state.errorClassifier !== undefined) ctx.errorClassifier = this.state.errorClassifier;
+    if (this.state.circuitBreaker !== undefined) ctx.circuitBreaker = this.state.circuitBreaker;
+    if (this.state.autoRepairer !== undefined) ctx.autoRepairer = this.state.autoRepairer;
+    if (this.state.planner !== undefined) ctx.planner = this.state.planner;
+    if (this.state.rateLimiter !== undefined) ctx.rateLimiter = this.state.rateLimiter;
+    if (this.state.inputSanitizer !== undefined) ctx.inputSanitizer = this.state.inputSanitizer;
     if (this.state.permissionController !== undefined)
-      ctx.security.permissionController = this.state.permissionController;
+      ctx.permissionController = this.state.permissionController;
     if (this.state.permissionPolicy !== undefined)
-      ctx.security.permissionPolicy = this.state.permissionPolicy;
-    if (this.state.sandboxExecutor !== undefined)
-      ctx.security.sandboxExecutor = this.state.sandboxExecutor;
-    if (this.state.auditLogger !== undefined) ctx.security.auditLogger = this.state.auditLogger;
-
-    // Memory & validation — default compaction manager for automatic compaction
-    ctx.memory.compactionManager = this.state.compactionManager ?? createCompactionManager();
-    if (this.state.qualityGate !== undefined) ctx.memory.qualityGate = this.state.qualityGate;
-
-    // Quota
-    if (this.state.quota !== undefined) ctx.controls.quota = this.state.quota;
-
-    // Hooks & logging
-    if (this.state.hookRegistry !== undefined) ctx.harness.hookRegistry = this.state.hookRegistry;
-    if (this.state.logger !== undefined) ctx.core.logger = this.state.logger;
-
-    // Application services extras
+      ctx.permissionPolicy = this.state.permissionPolicy;
+    if (this.state.sandboxExecutor !== undefined) ctx.sandboxExecutor = this.state.sandboxExecutor;
+    if (this.state.auditLogger !== undefined) ctx.auditLogger = this.state.auditLogger;
+    if (this.state.qualityGate !== undefined) ctx.qualityGate = this.state.qualityGate;
+    if (this.state.quota !== undefined) ctx.quota = this.state.quota;
+    if (this.state.logger !== undefined) ctx.logger = this.state.logger;
+    if (this.state.hookRegistry !== undefined) ctx.hookRegistry = this.state.hookRegistry;
     if (this.state.healthChecker !== undefined) {
-      ctx.core.services.healthChecker = this.state.healthChecker;
+      ctx.services.healthChecker = this.state.healthChecker;
     }
 
     return ctx;
@@ -396,15 +377,4 @@ export function createContextWithHITL(llm: LLMAdapter, tools: ToolDefinition[]):
   return AgentContextBuilder.create().with({ llm, tools }).withDefaultHITL().build();
 }
 
-// ============================================================
-// Re-exports from core
-// ============================================================
-
-export {
-  ContextBuilder,
-  SimpleToolRegistry,
-  InMemoryStore,
-  DefaultPauseController,
-  DefaultHITLController,
-  generateSessionId,
-};
+// (Re-exports from core removed — use direct import from agentforge/core)

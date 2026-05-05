@@ -77,7 +77,7 @@ export class Workflow {
   async run(input: unknown, listener: (event: AgentEvent) => void): Promise<WorkflowResult> {
     const startTime = Date.now();
     const workflowId = `wf-${generateId()}`;
-    const sessionId = this.agentContext.identity.sessionId;
+    const sessionId = this.agentContext.sessionId;
 
     // Initialize execution context
     this.executionContext = {

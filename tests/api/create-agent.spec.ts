@@ -39,35 +39,38 @@ describe('createAgent — preset activation', () => {
   it('applies debugPreset when preset is "debug"', async () => {
     const agent = createAgent(makeConfig({ preset: 'debug' }), { llm });
     const result = await agent.run('hello');
-    expect(result).toBe('Default response');
+    expect(result.output).toBe('Default response');
+    expect(result.status).toBe('success');
     expect(agent.ctx).toBeDefined();
-    expect(agent.ctx.identity.agentName).toBe('test-agent');
+    expect(agent.ctx.agentName).toBe('test-agent');
   });
 
   it('applies testPreset when preset is "test"', async () => {
     const agent = createAgent(makeConfig({ preset: 'test' }), { llm });
     const result = await agent.run('hello');
-    expect(result).toBe('Default response');
+    expect(result.output).toBe('Default response');
+    expect(result.status).toBe('success');
     expect(agent.ctx).toBeDefined();
   });
 
   it('applies productionPreset when preset is "production" and services are configured', async () => {
     const agent = createAgent(makeConfig({ preset: 'production' }), { llm });
     const result = await agent.run('hello');
-    expect(result).toBe('Default response');
+    expect(result.output).toBe('Default response');
+    expect(result.status).toBe('success');
     expect(agent.ctx).toBeDefined();
   });
 
   it('does not apply any preset when preset is undefined', async () => {
     const agent = createAgent(makeConfig({ tracing: true }), { llm });
     await agent.run('hello');
-    expect(agent.ctx.core.services.tracer).toBeDefined();
+    expect(agent.ctx.services.tracer).toBeDefined();
   });
 
   it('passes correct config to productionPreset', async () => {
     const agent = createAgent(makeConfig({ preset: 'production' }), { llm });
     await agent.run('hello');
-    expect(agent.ctx.identity.agentName).toBe('test-agent');
+    expect(agent.ctx.agentName).toBe('test-agent');
   });
 
   it('wires streaming handlers — onToken receives stream chunks via agent.run()', async () => {
@@ -118,8 +121,8 @@ describe('createAgent — preset activation', () => {
   it('configures services based on tracing and metrics flags', async () => {
     const agent = createAgent(makeConfig({ tracing: true, metrics: true }), { llm });
 
-    expect(agent.ctx.core.services.tracer).toBeDefined();
-    expect(agent.ctx.core.services.metrics).toBeDefined();
+    expect(agent.ctx.services.tracer).toBeDefined();
+    expect(agent.ctx.services.metrics).toBeDefined();
   });
 });
 
@@ -143,7 +146,8 @@ describe('createAgent — grouped config format', () => {
       { llm }
     );
     const result = await agent.run('hello');
-    expect(result).toBe('Default response');
+    expect(result.output).toBe('Default response');
+    expect(result.status).toBe('success');
   });
 
   it('accepts controls group', async () => {
@@ -154,7 +158,8 @@ describe('createAgent — grouped config format', () => {
       { llm }
     );
     const result = await agent.run('hello');
-    expect(result).toBe('Default response');
+    expect(result.output).toBe('Default response');
+    expect(result.status).toBe('success');
   });
 
   it('accepts observability group with tracing and metrics', async () => {
@@ -165,8 +170,8 @@ describe('createAgent — grouped config format', () => {
       { llm }
     );
     await agent.run('hello');
-    expect(agent.ctx.core.services.tracer).toBeDefined();
-    expect(agent.ctx.core.services.metrics).toBeDefined();
+    expect(agent.ctx.services.tracer).toBeDefined();
+    expect(agent.ctx.services.metrics).toBeDefined();
   });
 
   it('grouped fields override legacy flat fields', async () => {
@@ -179,7 +184,7 @@ describe('createAgent — grouped config format', () => {
     );
     await agent.run('hello');
     // Grouped takes precedence — tracing should be enabled
-    expect(agent.ctx.core.services.tracer).toBeDefined();
+    expect(agent.ctx.services.tracer).toBeDefined();
   });
 
   it('execution group overrides legacy flat streaming', async () => {
@@ -191,6 +196,7 @@ describe('createAgent — grouped config format', () => {
       { llm }
     );
     const result = await agent.run('hello');
-    expect(result).toBe('Default response');
+    expect(result.output).toBe('Default response');
+    expect(result.status).toBe('success');
   });
 });

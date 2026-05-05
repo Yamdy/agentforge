@@ -48,6 +48,13 @@ import { createFileTracker, extractPathsFromArgs, type FileTracker } from './fil
 // Types
 // ============================================================
 
+/** Structured result returned by AgentLoop.run() and AgentLoop.iterate() */
+export interface RunResult {
+  output: string;
+  status: 'success' | 'error' | 'aborted' | 'max_steps' | 'cancelled';
+  error?: SerializedError;
+}
+
 export interface AgentLoopConfig {
   model: { provider: string; model: string };
   maxSteps?: number;
@@ -77,14 +84,14 @@ export interface AgentLoopConfig {
  * Agent Loop instance returned by createAgentLoop()
  */
 export interface AgentLoop {
-  /** Run the agent loop with user input. Returns final output text. */
-  run(input: string): Promise<string>;
+  /** Run the agent loop with user input. Returns structured result with status. */
+  run(input: string): Promise<RunResult>;
   /**
    * AsyncGenerator-based iteration. Captures all emitted events and yields them
-   * to the caller. Returns the final output string. Subscribe via on()/onAny()
+   * to the caller. Returns structured result. Subscribe via on()/onAny()
    * for events outside the generator context.
    */
-  iterate(input: string): AsyncGenerator<AgentEvent, string, void>;
+  iterate(input: string): AsyncGenerator<AgentEvent, RunResult, void>;
   /** Subscribe to typed events */
   on<T extends AgentEvent['type']>(
     type: T,
@@ -94,6 +101,8 @@ export interface AgentLoop {
   onAny(fn: (e: AgentEvent) => void): () => void;
   /** Emit an external event through this loop's emitter (e.g., from subsystems) */
   emit(event: AgentEvent): Promise<void>;
+  /** Direct access to the underlying event emitter (for Plugin wiring) */
+  readonly emitter: AgentEventEmitter;
   /** Cancel current execution */
   cancel(): void;
   /** Pause execution (blocks the loop) */
@@ -115,8 +124,8 @@ export interface AgentLoop {
 // ============================================================
 
 export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): AgentLoop {
-  const emitter = new AgentEventEmitter();
-  const hooks = ctx.harness.hookRegistry ?? new HookRegistry();
+  const emitter = new AgentEventEmitter(ctx.logger);
+  const hooks = ctx.hookRegistry ?? new HookRegistry();
   let abortController: AbortController | null = null;
   let onExternalAbort: (() => void) | null = null;
   let state: AgentState | null = null;
@@ -128,23 +137,23 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
     void emitter.emit({
       type: 'state.change',
       timestamp: Date.now(),
-      sessionId: ctx.identity.sessionId,
+      sessionId: ctx.sessionId,
       from,
       to,
     });
   });
   // ── Checkpoints: from plugin pipeline (primary) or config fallback ──
   const preLlmCheckpoints =
-    ctx.harness.pluginManager?.getCheckpoints('pre-llm') ?? config.preLlmCheckpoints ?? [];
+    ctx.pluginManager?.getCheckpoints('pre-llm') ?? config.preLlmCheckpoints ?? [];
   const postLlmCheckpoints =
-    ctx.harness.pluginManager?.getCheckpoints('post-llm') ?? config.postLlmCheckpoints ?? [];
+    ctx.pluginManager?.getCheckpoints('post-llm') ?? config.postLlmCheckpoints ?? [];
 
   // ── Working Memory: register system injection RequestHook ──
   // When working memory is configured, inject <working-memory> XML before each LLM call.
   // Priority 25 — sits between MEMORY_CONTEXT (20) and SKILL_INSTRUCTIONS (30).
-  if (ctx.memory.workingMemoryProcessor && ctx.memory.workingMemory) {
-    const wmHook = ctx.memory.workingMemoryProcessor.createSystemInjectionHook(
-      ctx.memory.workingMemory,
+  if (ctx.workingMemoryProcessor && ctx.workingMemory) {
+    const wmHook = ctx.workingMemoryProcessor.createSystemInjectionHook(
+      ctx.workingMemory,
       RequestHookPriority.WORKING_MEMORY
     );
     hooks.registerRequest(wmHook);
@@ -173,8 +182,11 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
     for (const h of hooks.getLifecycleHooks(name)) {
       try {
         await h(input, output);
-      } catch {
-        /* isolate */
+      } catch (err) {
+        ctx.logger?.warn('Lifecycle hook error', {
+          hookName: name,
+          error: serializeError(err),
+        });
       }
     }
   }
@@ -197,16 +209,16 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
     void emitter.emit({
       type: 'tool.call',
       timestamp: Date.now(),
-      sessionId: ctx.identity.sessionId,
+      sessionId: ctx.sessionId,
       toolCallId: tc.id,
       toolName: tc.name,
       args: tc.args,
     });
 
     // ── MPU M5: Audit tool call ──
-    ctx.security.auditLogger?.append({
-      sessionId: ctx.identity.sessionId,
-      agentName: ctx.identity.agentName,
+    ctx.auditLogger?.append({
+      sessionId: ctx.sessionId,
+      agentName: ctx.agentName,
       eventType: 'tool.call',
       action: 'tool.call',
       resource: tc.name,
@@ -233,7 +245,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       void emitter.emit({
         type: 'tool.result',
         timestamp: Date.now(),
-        sessionId: ctx.identity.sessionId,
+        sessionId: ctx.sessionId,
         toolCallId: tc.id,
         toolName: tc.name,
         result: extractText(deniedMsg.content),
@@ -243,7 +255,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
     }
 
     // Get tool definition for subsequent checks
-    const toolDef = ctx.core.tools.get(tc.name);
+    const toolDef = ctx.tools.get(tc.name);
 
     // ── HITL PermissionController: primary gate (A2 iron law) ──
     // Inserted between ToolHook (secondary check) and SecurityGuard.
@@ -251,8 +263,8 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
     //   deny → block immediately
     //   allow → proceed
     //   ask  → human-in-the-loop via PermissionController (with rejection isolation)
-    if (toolDef && ctx.security.permissionController && ctx.security.permissionPolicy) {
-      const policyDecision = evaluatePermission(toolDef, ctx.security.permissionPolicy);
+    if (toolDef && ctx.permissionController && ctx.permissionPolicy) {
+      const policyDecision = evaluatePermission(toolDef, ctx.permissionPolicy);
 
       if (policyDecision === 'deny') {
         const deniedMsg: Message = {
@@ -264,15 +276,15 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         void emitter.emit({
           type: 'tool.result',
           timestamp: Date.now(),
-          sessionId: ctx.identity.sessionId,
+          sessionId: ctx.sessionId,
           toolCallId: tc.id,
           toolName: tc.name,
           result: extractText(deniedMsg.content),
           isError: true,
         });
-        ctx.security.auditLogger?.append({
-          sessionId: ctx.identity.sessionId,
-          agentName: ctx.identity.agentName,
+        ctx.auditLogger?.append({
+          sessionId: ctx.sessionId,
+          agentName: ctx.agentName,
           eventType: 'tool.call',
           action: 'tool.call',
           resource: tc.name,
@@ -287,7 +299,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         void emitter.emit({
           type: 'permission.prompt',
           timestamp: Date.now(),
-          sessionId: ctx.identity.sessionId,
+          sessionId: ctx.sessionId,
           promptId,
           permission: tc.name,
           context: {
@@ -301,7 +313,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         // Treat controller rejection as per-tool deny, not loop crash.
         let permDecision: 'allow' | 'deny' | 'allow_always';
         try {
-          permDecision = await ctx.security.permissionController.ask({
+          permDecision = await ctx.permissionController.ask({
             promptId,
             permission: tc.name,
             toolName: tc.name,
@@ -319,15 +331,15 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         void emitter.emit({
           type: 'permission.decision',
           timestamp: Date.now(),
-          sessionId: ctx.identity.sessionId,
+          sessionId: ctx.sessionId,
           promptId,
           decision: permDecision,
         });
 
         // Audit the HITL decision regardless of outcome
-        ctx.security.auditLogger?.append({
-          sessionId: ctx.identity.sessionId,
-          agentName: ctx.identity.agentName,
+        ctx.auditLogger?.append({
+          sessionId: ctx.sessionId,
+          agentName: ctx.agentName,
           eventType: 'tool.call',
           action: 'tool.call',
           resource: tc.name,
@@ -348,7 +360,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           void emitter.emit({
             type: 'tool.result',
             timestamp: Date.now(),
-            sessionId: ctx.identity.sessionId,
+            sessionId: ctx.sessionId,
             toolCallId: tc.id,
             toolName: tc.name,
             result: extractText(deniedMsg.content),
@@ -364,8 +376,8 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
     // ── MPU M6: Security check before tool execution ──
 
     // Check command/path/network blocklist
-    if (toolDef && ctx.security.securityGuard) {
-      const cmdCheck = ctx.security.securityGuard.checkCommand(tc.name);
+    if (toolDef && ctx.securityGuard) {
+      const cmdCheck = ctx.securityGuard.checkCommand(tc.name);
       if (!cmdCheck.allowed) {
         const blockedMsg: Message = {
           role: 'tool',
@@ -376,16 +388,16 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         void emitter.emit({
           type: 'tool.result',
           timestamp: Date.now(),
-          sessionId: ctx.identity.sessionId,
+          sessionId: ctx.sessionId,
           toolCallId: tc.id,
           toolName: tc.name,
           result: `Blocked: ${cmdCheck.reason}`,
           isError: true,
         });
         // ── MPU M5: Audit blocked tool call ──
-        ctx.security.auditLogger?.append({
-          sessionId: ctx.identity.sessionId,
-          agentName: ctx.identity.agentName,
+        ctx.auditLogger?.append({
+          sessionId: ctx.sessionId,
+          agentName: ctx.agentName,
           eventType: 'tool.call',
           action: 'tool.call',
           resource: tc.name,
@@ -397,10 +409,10 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
     }
 
     // Sandbox routing
-    if (toolDef?.sandboxRequired && ctx.security.sandboxExecutor) {
-      const sandboxResult = await ctx.security.sandboxExecutor.execute(
+    if (toolDef?.sandboxRequired && ctx.sandboxExecutor) {
+      const sandboxResult = await ctx.sandboxExecutor.execute(
         { toolName: tc.name, args: tc.args },
-        { sessionId: ctx.identity.sessionId, signal, timeoutMs: 30000 }
+        { sessionId: ctx.sessionId, signal, timeoutMs: 30000 }
       );
       const sbResultStr = sandboxResult.success
         ? (sandboxResult.result ?? '')
@@ -408,7 +420,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       void emitter.emit({
         type: 'tool.result',
         timestamp: Date.now(),
-        sessionId: ctx.identity.sessionId,
+        sessionId: ctx.sessionId,
         toolCallId: tc.id,
         toolName: tc.name,
         result: sbResultStr,
@@ -426,7 +438,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
     await runLifecycleHook(
       'tool.execute.before',
       {
-        sessionId: ctx.identity.sessionId,
+        sessionId: ctx.sessionId,
         toolName: tc.name,
         callId: tc.id,
         args: tc.args,
@@ -435,9 +447,9 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
     );
 
     // ── MPU M5: Audit tool execution ──
-    ctx.security.auditLogger?.append({
-      sessionId: ctx.identity.sessionId,
-      agentName: ctx.identity.agentName,
+    ctx.auditLogger?.append({
+      sessionId: ctx.sessionId,
+      agentName: ctx.agentName,
       eventType: 'tool.call',
       action: 'tool.call',
       resource: tc.name,
@@ -453,9 +465,9 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
     }
 
     try {
-      const result = await ctx.core.tools.execute(tc.name, tc.args, {
+      const result = await ctx.tools.execute(tc.name, tc.args, {
         toolCallId: tc.id,
-        parentSessionId: ctx.identity.sessionId,
+        parentSessionId: ctx.sessionId,
       });
 
       // ── File Snapshot: diff after successful execution ──
@@ -466,7 +478,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           void emitter.emit({
             type: 'file.change',
             timestamp: Date.now(),
-            sessionId: ctx.identity.sessionId,
+            sessionId: ctx.sessionId,
             changes: changes.map(c => ({
               path: c.path,
               type: c.type,
@@ -474,14 +486,14 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
               after: c.after,
             })),
           } as AgentEvent);
-          fileTracker.notify(changes, ctx.identity.sessionId);
+          fileTracker.notify(changes, ctx.sessionId);
         }
       }
 
       await runLifecycleHook(
         'tool.execute.after',
         {
-          sessionId: ctx.identity.sessionId,
+          sessionId: ctx.sessionId,
           toolName: tc.name,
           callId: tc.id,
           args: tc.args,
@@ -493,7 +505,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       void emitter.emit({
         type: 'tool.result',
         timestamp: Date.now(),
-        sessionId: ctx.identity.sessionId,
+        sessionId: ctx.sessionId,
         toolCallId: tc.id,
         toolName: tc.name,
         result: resultStr,
@@ -501,9 +513,9 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       });
 
       // ── MPU M5: Audit tool result (success) ──
-      ctx.security.auditLogger?.append({
-        sessionId: ctx.identity.sessionId,
-        agentName: ctx.identity.agentName,
+      ctx.auditLogger?.append({
+        sessionId: ctx.sessionId,
+        agentName: ctx.agentName,
         eventType: 'tool.result',
         action: 'tool.result',
         resource: tc.name,
@@ -512,16 +524,19 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       });
 
       // ── MPU M10: Result validation ──
-      if (ctx.core.services.resultValidator) {
+      if (ctx.services.resultValidator) {
         try {
-          const validation = ctx.core.services.resultValidator.validate(tc.name, resultStr);
+          const validation = ctx.services.resultValidator.validate(tc.name, resultStr);
           if (!validation.valid) {
-            ctx.core.logger?.warn(`Tool result validation failed for ${tc.name}:`, {
+            ctx.logger?.warn(`Tool result validation failed for ${tc.name}:`, {
               errors: validation.errors,
             });
           }
-        } catch {
-          /* isolate */
+        } catch (err) {
+          ctx.logger?.warn('Tool result validation error', {
+            toolName: tc.name,
+            error: serializeError(err),
+          });
         }
       }
 
@@ -537,7 +552,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       await runLifecycleHook(
         'tool.execute.error',
         {
-          sessionId: ctx.identity.sessionId,
+          sessionId: ctx.sessionId,
           toolName: tc.name,
           callId: tc.id,
           error: err,
@@ -548,7 +563,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       void emitter.emit({
         type: 'tool.result',
         timestamp: Date.now(),
-        sessionId: ctx.identity.sessionId,
+        sessionId: ctx.sessionId,
         toolCallId: tc.id,
         toolName: tc.name,
         result: errStr,
@@ -556,9 +571,9 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       });
 
       // ── MPU M5 + M4: Audit + circuit breaker on tool error ──
-      ctx.security.auditLogger?.append({
-        sessionId: ctx.identity.sessionId,
-        agentName: ctx.identity.agentName,
+      ctx.auditLogger?.append({
+        sessionId: ctx.sessionId,
+        agentName: ctx.agentName,
         eventType: 'tool.result',
         action: 'tool.result',
         resource: tc.name,
@@ -566,16 +581,18 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         details: { toolCallId: tc.id, error: errStr },
       });
 
-      if (ctx.resilience.errorClassifier && ctx.resilience.circuitBreaker) {
+      if (ctx.errorClassifier && ctx.circuitBreaker) {
         try {
-          const severity = ctx.resilience.errorClassifier.classify({
+          const severity = ctx.errorClassifier.classify({
             name: 'ToolExecutionError',
             message: errStr,
             stack: undefined,
           });
-          ctx.resilience.circuitBreaker.recordFailure(severity);
-        } catch {
-          /* isolate */
+          ctx.circuitBreaker.recordFailure(severity);
+        } catch (err) {
+          ctx.logger?.warn('Error classification / circuit breaker error', {
+            error: serializeError(err),
+          });
         }
       }
 
@@ -603,7 +620,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
     void emitter.emit({
       type: 'tool.batch.start',
       timestamp: Date.now(),
-      sessionId: ctx.identity.sessionId,
+      sessionId: ctx.sessionId,
       batchId,
       totalCalls: batch.calls.length,
     });
@@ -621,7 +638,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
     void emitter.emit({
       type: 'tool.batch.complete',
       timestamp: Date.now(),
-      sessionId: ctx.identity.sessionId,
+      sessionId: ctx.sessionId,
       batchId,
       totalCalls: batch.calls.length,
       successCount,
@@ -652,26 +669,76 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
   }
 
   // ============================================================
+  // Auto-Repair Helper
+  // ============================================================
+
+  const MAX_AUTO_REPAIR_ATTEMPTS = 3;
+
+  async function attemptAutoRepair(error: unknown, state: AgentState): Promise<boolean> {
+    if (!ctx.autoRepairer) return false;
+    if (state.autoRepairAttempts >= MAX_AUTO_REPAIR_ATTEMPTS) return false;
+
+    try {
+      const err = serializeError(error);
+      const repairCtx: import('../contracts/mpu-interfaces.js').RepairContext = {
+        error: err,
+        retryCount: state.autoRepairAttempts,
+        sessionId: ctx.sessionId,
+        llm: ctx.llm,
+        ...(ctx.compactionManager ? { compactionManager: ctx.compactionManager } : {}),
+        messages: state.messages,
+        currentTokenEstimate: state.tokens.prompt + state.tokens.completion,
+        config: {
+          ...(config.fallbackModel
+            ? { fallbackModel: `${config.fallbackModel.provider}/${config.fallbackModel.model}` }
+            : {}),
+        },
+      };
+      const result = await ctx.autoRepairer.attemptRepair(repairCtx);
+      if (result.success) {
+        ctx.logger?.info('Auto-repair succeeded, retrying', {
+          description: result.description,
+          attempt: state.autoRepairAttempts + 1,
+        });
+        return true;
+      }
+      ctx.logger?.warn('Auto-repair failed', {
+        description: result.description,
+      });
+      return false;
+    } catch (repairErr) {
+      ctx.logger?.warn('Auto-repair attempt error', {
+        error: serializeError(repairErr),
+      });
+      return false;
+    }
+  }
+
+  // ============================================================
   // Main Run Function
   // ============================================================
 
-  async function run(input: string): Promise<string> {
+  async function run(input: string): Promise<RunResult> {
     // ── Re-entry guard ──
     if (isRunning) {
       const errEvent: AgentEvent = {
         type: 'agent.error',
         timestamp: Date.now(),
-        sessionId: ctx.identity.sessionId,
+        sessionId: ctx.sessionId,
         error: { name: 'AgentAlreadyRunningError', message: 'Agent is already running' },
       };
       void emitter.emit(errEvent);
       void emitter.emit({
         type: 'done',
         timestamp: Date.now(),
-        sessionId: ctx.identity.sessionId,
+        sessionId: ctx.sessionId,
         reason: 'error',
       });
-      return '';
+      return {
+        output: '',
+        status: 'error',
+        error: { name: 'AgentAlreadyRunningError', message: 'Agent is already running' },
+      };
     }
     isRunning = true;
 
@@ -687,13 +754,13 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
     const signal = abortController.signal;
 
     // ── Wire external abort signal ──
-    if (ctx.controls.abortSignal) {
-      if (ctx.controls.abortSignal.aborted) {
+    if (ctx.abortSignal) {
+      if (ctx.abortSignal.aborted) {
         isRunning = false;
-        return '';
+        return { output: '', status: 'aborted' };
       }
       onExternalAbort = () => abortController?.abort();
-      ctx.controls.abortSignal.addEventListener('abort', onExternalAbort, { once: true });
+      ctx.abortSignal.addEventListener('abort', onExternalAbort, { once: true });
     }
 
     paused = false;
@@ -710,14 +777,12 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
     }
 
     // ── MPU M6: Sanitize user input for prompt injection ──
-    const sanitizedInput = ctx.security.inputSanitizer
-      ? ctx.security.inputSanitizer.sanitize(input)
-      : input;
+    const sanitizedInput = ctx.inputSanitizer ? ctx.inputSanitizer.sanitize(input) : input;
     messages.push({ role: 'user', content: sanitizedInput });
 
     state = createInitialState({
-      sessionId: ctx.identity.sessionId,
-      agentName: ctx.identity.agentName,
+      sessionId: ctx.sessionId,
+      agentName: ctx.agentName,
       model: config.model,
       initialMessages: messages,
       maxSteps: config.maxSteps ?? 10,
@@ -751,17 +816,17 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
     await emitter.emit({
       type: 'agent.start',
       timestamp: Date.now(),
-      sessionId: ctx.identity.sessionId,
+      sessionId: ctx.sessionId,
       input,
-      agentName: ctx.identity.agentName,
+      agentName: ctx.agentName,
       model: config.model,
     });
 
     await runLifecycleHook(
       'session.start',
       {
-        sessionId: ctx.identity.sessionId,
-        agentName: ctx.identity.agentName,
+        sessionId: ctx.sessionId,
+        agentName: ctx.agentName,
         input,
         model: config.model,
       },
@@ -775,7 +840,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
 
     const cleanupRun: () => void = (): void => {
       if (onExternalAbort) {
-        ctx.controls.abortSignal?.removeEventListener('abort', onExternalAbort);
+        ctx.abortSignal?.removeEventListener('abort', onExternalAbort);
         onExternalAbort = null;
       }
       isRunning = false;
@@ -794,7 +859,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
     });
 
     if (planResult.shouldTerminate) {
-      return '';
+      return { output: state?.output ?? '', status: 'success' };
     }
     if (planResult.finalOutput !== undefined) {
       state.output = planResult.finalOutput;
@@ -824,34 +889,34 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             void emitter.emit({
               type: 'agent.complete',
               timestamp: Date.now(),
-              sessionId: ctx.identity.sessionId,
+              sessionId: ctx.sessionId,
               output: state.output,
               steps: state.step,
             });
             void emitter.emit({
               type: 'done',
               timestamp: Date.now(),
-              sessionId: ctx.identity.sessionId,
+              sessionId: ctx.sessionId,
               reason: 'length',
             });
             await runLifecycleHook(
               'session.end',
               {
-                sessionId: ctx.identity.sessionId,
+                sessionId: ctx.sessionId,
                 reason: 'max_steps',
                 steps: state.step,
                 tokens: state.tokens,
               },
               {}
             );
-            return state.output;
+            return { output: state.output, status: 'max_steps' };
           }
 
           // ── Lifecycle: step.begin ──
           await runLifecycleHook(
             'step.begin',
             {
-              sessionId: ctx.identity.sessionId,
+              sessionId: ctx.sessionId,
               step: state.step,
               maxSteps,
               messageCount: state.messages.length,
@@ -863,7 +928,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           void emitter.emit({
             type: 'agent.step',
             timestamp: Date.now(),
-            sessionId: ctx.identity.sessionId,
+            sessionId: ctx.sessionId,
             step: state.step,
             maxSteps,
           } as AgentEvent);
@@ -877,7 +942,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           await runLifecycleHook(
             'llm.request.before',
             {
-              sessionId: ctx.identity.sessionId,
+              sessionId: ctx.sessionId,
               messages: msgs,
               model: config.model,
             },
@@ -885,9 +950,9 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           );
 
           // ── MPU M8: Auto-compaction check ──
-          if (ctx.memory.compactionManager) {
-            const needsCompact = ctx.memory.compactionManager.needsCompaction({
-              sessionId: ctx.identity.sessionId,
+          if (ctx.compactionManager) {
+            const needsCompact = ctx.compactionManager.needsCompaction({
+              sessionId: ctx.sessionId,
               messages: state.messages,
               currentTokenEstimate: state.tokens.prompt + state.tokens.completion,
               maxTokens: config.tokenBudget ?? 200_000,
@@ -896,12 +961,12 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
               void emitter.emit({
                 type: 'compaction.start',
                 timestamp: Date.now(),
-                sessionId: ctx.identity.sessionId,
-                strategy: ctx.memory.compactionManager.getConfig().strategy,
+                sessionId: ctx.sessionId,
+                strategy: ctx.compactionManager.getConfig().strategy,
                 tokensBefore: state.tokens.prompt + state.tokens.completion,
               } as AgentEvent);
-              const result = await ctx.memory.compactionManager.compact({
-                sessionId: ctx.identity.sessionId,
+              const result = await ctx.compactionManager.compact({
+                sessionId: ctx.sessionId,
                 messages: state.messages,
                 currentTokenEstimate: state.tokens.prompt + state.tokens.completion,
                 maxTokens: config.tokenBudget ?? 200_000,
@@ -910,7 +975,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
               void emitter.emit({
                 type: 'compaction.complete',
                 timestamp: Date.now(),
-                sessionId: ctx.identity.sessionId,
+                sessionId: ctx.sessionId,
                 tokensAfter: result.tokensAfter,
                 removedMessages: result.removedCount,
               } as AgentEvent);
@@ -939,7 +1004,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             void emitter.emit({
               type: 'agent.error',
               timestamp: Date.now(),
-              sessionId: ctx.identity.sessionId,
+              sessionId: ctx.sessionId,
               error: {
                 name:
                   blockReason === 'quota_exceeded'
@@ -952,9 +1017,19 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
               type: 'done',
               reason: 'error',
               timestamp: Date.now(),
-              sessionId: ctx.identity.sessionId,
+              sessionId: ctx.sessionId,
             });
-            return state.output;
+            return {
+              output: state.output,
+              status: 'error',
+              error: {
+                name:
+                  blockReason === 'quota_exceeded'
+                    ? 'QuotaExceededError'
+                    : 'RateLimitExceededError',
+                message: errMsg,
+              },
+            };
           }
 
           // ── 2. LLM Call (streaming or non-streaming, same result type) ──
@@ -967,30 +1042,38 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             continue;
           }
           if (llmResult.status === 'fatal') {
+            // Try auto-repair before giving up (P0-4 fix)
+            const repaired = await attemptAutoRepair(llmResult.error, state);
+            if (repaired) {
+              state.autoRepairAttempts++;
+              state.step++;
+              continue;
+            }
+
             const err = serializeError(llmResult.error);
             stateMachine.transition('error');
             void emitter.emit({
               type: 'agent.error',
               timestamp: Date.now(),
-              sessionId: ctx.identity.sessionId,
+              sessionId: ctx.sessionId,
               error: err,
             });
             void emitter.emit({
               type: 'done',
               timestamp: Date.now(),
-              sessionId: ctx.identity.sessionId,
+              sessionId: ctx.sessionId,
               reason: 'error',
             });
-            ctx.security.auditLogger?.append({
-              sessionId: ctx.identity.sessionId,
-              agentName: ctx.identity.agentName,
+            ctx.auditLogger?.append({
+              sessionId: ctx.sessionId,
+              agentName: ctx.agentName,
               eventType: 'agent.error',
               action: 'agent.error',
               resource: config.model.model,
               result: 'error',
               details: { error: err },
             });
-            return state?.output ?? '';
+            return { output: state?.output ?? '', status: 'error', error: err };
           }
           const response = llmResult.response;
 
@@ -998,7 +1081,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           void emitter.emit({
             type: 'llm.response',
             timestamp: Date.now(),
-            sessionId: ctx.identity.sessionId,
+            sessionId: ctx.sessionId,
             content: response.content,
             toolCalls: response.toolCalls,
             finishReason: response.finishReason,
@@ -1008,7 +1091,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           await runLifecycleHook(
             'llm.response.after',
             {
-              sessionId: ctx.identity.sessionId,
+              sessionId: ctx.sessionId,
               step: state.step,
               response,
               usage: response.usage,
@@ -1038,22 +1121,26 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             void emitter.emit({
               type: 'agent.error',
               timestamp: Date.now(),
-              sessionId: ctx.identity.sessionId,
+              sessionId: ctx.sessionId,
               error: { name: 'CheckpointBlockedError', message: postBlockReason },
             });
             void emitter.emit({
               type: 'done',
               reason: 'error',
               timestamp: Date.now(),
-              sessionId: ctx.identity.sessionId,
+              sessionId: ctx.sessionId,
             });
-            return state.output;
+            return {
+              output: state.output,
+              status: 'error',
+              error: { name: 'CheckpointBlockedError', message: postBlockReason },
+            };
           }
 
           // ── MPU M5: Audit LLM response ──
-          ctx.security.auditLogger?.append({
-            sessionId: ctx.identity.sessionId,
-            agentName: ctx.identity.agentName,
+          ctx.auditLogger?.append({
+            sessionId: ctx.sessionId,
+            agentName: ctx.agentName,
             eventType: 'llm.response',
             action: 'llm.response',
             resource: config.model.model,
@@ -1068,16 +1155,16 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             void emitter.emit({
               type: 'checkpoint',
               timestamp: Date.now(),
-              sessionId: ctx.identity.sessionId,
+              sessionId: ctx.sessionId,
               checkpointId: cpId,
               position: 'after_llm',
               state: state,
             } as AgentEvent);
             // Fire-and-forget: never block the loop on checkpoint save
-            ctx.controls.checkpoint
+            ctx.checkpoint
               ?.save({
                 id: cpId,
-                sessionId: ctx.identity.sessionId,
+                sessionId: ctx.sessionId,
                 position: 'after_llm',
                 state,
                 timestamp: Date.now(),
@@ -1088,9 +1175,9 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
               })
               .catch(() => {});
           }
-          if (ctx.core.services.costTracker && response.usage) {
-            ctx.core.services.costTracker
-              .record(ctx.identity.sessionId, config.model.model, response.usage)
+          if (ctx.services.costTracker && response.usage) {
+            ctx.services.costTracker
+              .record(ctx.sessionId, config.model.model, response.usage)
               .catch(() => {});
           }
 
@@ -1116,7 +1203,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             await runLifecycleHook(
               'session.end',
               {
-                sessionId: ctx.identity.sessionId,
+                sessionId: ctx.sessionId,
                 reason: 'token_budget',
                 steps: state.step,
                 tokens: state.tokens,
@@ -1127,7 +1214,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             void emitter.emit({
               type: 'agent.complete',
               timestamp: Date.now(),
-              sessionId: ctx.identity.sessionId,
+              sessionId: ctx.sessionId,
               output: state.output,
               steps: state.step,
               tokens: { input: state.tokens.prompt, output: state.tokens.completion },
@@ -1135,7 +1222,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             void emitter.emit({
               type: 'done',
               timestamp: Date.now(),
-              sessionId: ctx.identity.sessionId,
+              sessionId: ctx.sessionId,
               reason: 'length',
             });
             break;
@@ -1153,7 +1240,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             void emitter.emit({
               type: 'agent.error',
               timestamp: Date.now(),
-              sessionId: ctx.identity.sessionId,
+              sessionId: ctx.sessionId,
               error: {
                 name: 'DoomLoopDetectedError',
                 message: `Doom loop detected: ${details?.repeatCount ?? 3} consecutive identical calls to tool "${details?.toolName ?? 'unknown'}"`,
@@ -1162,10 +1249,17 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             void emitter.emit({
               type: 'done',
               timestamp: Date.now(),
-              sessionId: ctx.identity.sessionId,
+              sessionId: ctx.sessionId,
               reason: 'error',
             });
-            return state.output;
+            return {
+              output: state.output,
+              status: 'error',
+              error: {
+                name: 'DoomLoopDetectedError',
+                message: `Doom loop detected: ${details?.repeatCount ?? 3} consecutive identical calls to tool "${details?.toolName ?? 'unknown'}"`,
+              },
+            };
           }
 
           // Add assistant response to messages
@@ -1178,7 +1272,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           const toolCalls = response.toolCalls;
           const batches = partitionToolCalls(
             toolCalls,
-            ctx.core.tools as unknown as { isConcurrencySafe?: (name: string) => boolean } | null
+            ctx.tools as unknown as { isConcurrencySafe?: (name: string) => boolean } | null
           );
           const toolResults: Message[] = [];
 
@@ -1204,7 +1298,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
           await runLifecycleHook(
             'step.end',
             {
-              sessionId: ctx.identity.sessionId,
+              sessionId: ctx.sessionId,
               step: state.step,
               toolCallsExecuted: toolCalls.length,
             },
@@ -1218,15 +1312,15 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             void emitter.emit({
               type: 'checkpoint',
               timestamp: Date.now(),
-              sessionId: ctx.identity.sessionId,
+              sessionId: ctx.sessionId,
               checkpointId: cpId2,
               position: 'after_tool',
               state: state,
             } as AgentEvent);
-            ctx.controls.checkpoint
+            ctx.checkpoint
               ?.save({
                 id: cpId2,
-                sessionId: ctx.identity.sessionId,
+                sessionId: ctx.sessionId,
                 position: 'after_tool',
                 state,
                 timestamp: Date.now(),
@@ -1243,22 +1337,22 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             await runLifecycleHook(
               'compaction.before',
               {
-                sessionId: ctx.identity.sessionId,
+                sessionId: ctx.sessionId,
                 messages: state.messages,
                 tokenCount: state.tokens.prompt + state.tokens.completion,
               },
               {}
             );
-            if (ctx.memory.compactionManager) {
+            if (ctx.compactionManager) {
               void emitter.emit({
                 type: 'compaction.start',
                 timestamp: Date.now(),
-                sessionId: ctx.identity.sessionId,
-                strategy: ctx.memory.compactionManager.getConfig().strategy,
+                sessionId: ctx.sessionId,
+                strategy: ctx.compactionManager.getConfig().strategy,
                 tokensBefore: state.tokens.prompt + state.tokens.completion,
               } as AgentEvent);
-              const result = await ctx.memory.compactionManager.compact({
-                sessionId: ctx.identity.sessionId,
+              const result = await ctx.compactionManager.compact({
+                sessionId: ctx.sessionId,
                 messages: state.messages,
                 maxTokens: config.tokenBudget ?? 200_000,
                 currentTokenEstimate: state.tokens.prompt + state.tokens.completion,
@@ -1267,7 +1361,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
               void emitter.emit({
                 type: 'compaction.complete',
                 timestamp: Date.now(),
-                sessionId: ctx.identity.sessionId,
+                sessionId: ctx.sessionId,
                 tokensAfter: result.tokensAfter,
                 removedMessages: result.removedCount,
               } as AgentEvent);
@@ -1275,7 +1369,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
             await runLifecycleHook(
               'compaction.after',
               {
-                sessionId: ctx.identity.sessionId,
+                sessionId: ctx.sessionId,
                 messages: state.messages,
               },
               {}
@@ -1289,92 +1383,61 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
         const errEvent: AgentEvent = {
           type: 'agent.error',
           timestamp: Date.now(),
-          sessionId: ctx.identity.sessionId,
+          sessionId: ctx.sessionId,
           error: err,
         };
         void emitter.emit(errEvent);
         void emitter.emit({
           type: 'done',
           timestamp: Date.now(),
-          sessionId: ctx.identity.sessionId,
+          sessionId: ctx.sessionId,
           reason: 'error',
         });
 
         // ── MPU M5: Audit error ──
-        ctx.security.auditLogger?.append({
-          sessionId: ctx.identity.sessionId,
-          agentName: ctx.identity.agentName,
+        ctx.auditLogger?.append({
+          sessionId: ctx.sessionId,
+          agentName: ctx.agentName,
           eventType: 'agent.error',
           action: 'agent.error',
-          resource: ctx.identity.agentName,
+          resource: ctx.agentName,
           result: 'error',
           details: { error: err },
         });
 
-        // ── MPU M4: Auto-repairer attempt before circuit breaker ──
-        if (ctx.resilience.autoRepairer) {
-          try {
-            const repairCtx: import('../contracts/mpu-interfaces.js').RepairContext = {
-              error: err,
-              retryCount: 0,
-              sessionId: ctx.identity.sessionId,
-              llm: ctx.core.llm,
-              ...(ctx.memory.compactionManager
-                ? { compactionManager: ctx.memory.compactionManager }
-                : {}),
-              messages: state?.messages ?? [],
-              currentTokenEstimate: state ? state.tokens.prompt + state.tokens.completion : 0,
-              config: {
-                ...(config.fallbackModel
-                  ? {
-                      fallbackModel: `${config.fallbackModel.provider}/${config.fallbackModel.model}`,
-                    }
-                  : {}),
-              },
-            };
-            const repairResult = await ctx.resilience.autoRepairer.attemptRepair(repairCtx);
-            if (repairResult.success) {
-              // Repair succeeded — don't trip circuit breaker, let loop retry
-              ctx.core.logger?.info('Auto-repair succeeded', {
-                description: repairResult.description,
-              });
-            }
-          } catch {
-            /* isolate */
-          }
-        }
-
         // ── MPU M4: Circuit breaker ──
-        if (ctx.resilience.errorClassifier && ctx.resilience.circuitBreaker) {
+        if (ctx.errorClassifier && ctx.circuitBreaker) {
           try {
-            const severity = ctx.resilience.errorClassifier.classify(err);
+            const severity = ctx.errorClassifier.classify(err);
             if (severity === 'moderate' || severity === 'severe') {
-              ctx.resilience.circuitBreaker.recordFailure(severity);
+              ctx.circuitBreaker.recordFailure(severity);
             }
-          } catch {
-            /* isolate */
+          } catch (err) {
+            ctx.logger?.warn('Error classifier / circuit breaker error', {
+              error: serializeError(err),
+            });
           }
         }
 
         // ── Notify error handler ──
         const errorObj = error instanceof Error ? error : new Error(String(error));
-        ctx.resilience.onError?.(errorObj, errEvent, 'unknown');
-        ctx.core.logger?.error('Agent loop unexpected error', errorObj);
+        ctx.onError?.(errorObj, errEvent, 'unknown');
+        ctx.logger?.error('Agent loop unexpected error', errorObj);
 
-        return state?.output ?? ''; // R1: errors-as-events, never throw
+        return { output: state?.output ?? '', status: 'error', error: err }; // R1: errors-as-events, never throw
       } finally {
         if (onExternalAbort) {
-          ctx.controls.abortSignal?.removeEventListener('abort', onExternalAbort);
+          ctx.abortSignal?.removeEventListener('abort', onExternalAbort);
           onExternalAbort = null;
         }
         isRunning = false;
         abortController = null;
       }
 
-      return state?.output ?? '';
+      return { output: state?.output ?? '', status: 'success' };
     } // end if (!plannerSucceeded)
 
-    return state?.output ?? '';
+    return { output: state?.output ?? '', status: 'success' };
   }
 
   // ============================================================
@@ -1383,7 +1446,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
 
   let iterationActive = false;
 
-  async function* iterate(input: string): AsyncGenerator<AgentEvent, string, void> {
+  async function* iterate(input: string): AsyncGenerator<AgentEvent, RunResult, void> {
     // Re-entrancy guard — run() also checks isRunning, but iterate()
     // replaces emitter.emit globally. Concurrent iterate() calls produce
     // stacked overrides that leak events between generators.
@@ -1394,18 +1457,22 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       yield {
         type: 'agent.error',
         timestamp: now,
-        sessionId: ctx.identity.sessionId,
-        agentName: ctx.identity.agentName,
+        sessionId: ctx.sessionId,
+        agentName: ctx.agentName,
         error: { name: 'AgentAlreadyRunningError', message: 'Agent is already running' },
       } as AgentEvent;
       yield {
         type: 'done',
         timestamp: now,
-        sessionId: ctx.identity.sessionId,
+        sessionId: ctx.sessionId,
         reason: 'error',
-        agentName: ctx.identity.agentName,
+        agentName: ctx.agentName,
       } as AgentEvent;
-      return '';
+      return {
+        output: '',
+        status: 'error',
+        error: { name: 'AgentAlreadyRunningError', message: 'Agent is already running' },
+      };
     }
 
     const eventQueue: AgentEvent[] = [];
@@ -1424,7 +1491,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
     iterationActive = true;
     let runDone = false;
     try {
-      let runResult: string;
+      let runResult: RunResult;
       const runPromise = Promise.resolve()
         .then(() => run(input))
         .then(v => {
@@ -1477,6 +1544,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
     on: emitter.on.bind(emitter),
     onAny: emitter.onAny.bind(emitter),
     emit: (event: AgentEvent): Promise<void> => emitter.emit(event),
+    emitter,
     cancel: cancelLoop,
     pause: (): void => {
       paused = true;
@@ -1497,7 +1565,7 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
     onStateChange: (fn: (from: string, to: string) => void): (() => void) =>
       stateMachine.onChange((from, to) => fn(from, to)),
     destroy: (): void => {
-      ctx.resilience.circuitBreaker?.destroy();
+      ctx.circuitBreaker?.destroy();
       abortController?.abort();
       emitter.clear();
       hooks.clear();

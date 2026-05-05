@@ -31,7 +31,7 @@ export async function runPlanThenExecute(
 ): Promise<{ plannerSucceeded: boolean; shouldTerminate: boolean; finalOutput?: string }> {
   const { ctx, emitter, stateMachine, executionMode, maxSteps, cleanupRun } = deps;
 
-  if (executionMode === 'react' || !ctx.extensions.planner) {
+  if (executionMode === 'react' || !ctx.planner) {
     return { plannerSucceeded: false, shouldTerminate: false };
   }
 
@@ -42,7 +42,7 @@ export async function runPlanThenExecute(
     const fullMessage = causeMsg
       ? `Plan-then-execute (strict mode) failed: ${causeMsg} — ${reason}`
       : `Plan-then-execute (strict mode) failed: ${reason}`;
-    ctx.core.logger?.error(`[strict plan-then-execute] ${fullMessage}`);
+    ctx.logger?.error(`[strict plan-then-execute] ${fullMessage}`);
     const plannedError: SerializedError = {
       name: 'PlannerError',
       message: fullMessage,
@@ -52,22 +52,22 @@ export async function runPlanThenExecute(
     void emitter.emit({
       type: 'agent.error',
       timestamp: Date.now(),
-      sessionId: ctx.identity.sessionId,
+      sessionId: ctx.sessionId,
       error: plannedError,
     } as AgentEvent);
     void emitter.emit({
       type: 'done',
       reason: 'error',
       timestamp: Date.now(),
-      sessionId: ctx.identity.sessionId,
+      sessionId: ctx.sessionId,
     });
     cleanupRun();
     shouldTerminate = true;
   };
 
   try {
-    const toolNames = ctx.core.tools?.getFunctionDefs().map((f: { name: string }) => f.name) ?? [];
-    const plan = await ctx.extensions.planner.plan(deps.input, {
+    const toolNames = ctx.tools?.getFunctionDefs().map((f: { name: string }) => f.name) ?? [];
+    const plan = await ctx.planner.plan(deps.input, {
       availableTools: toolNames,
       maxSteps,
     });
@@ -75,16 +75,15 @@ export async function runPlanThenExecute(
     if (!plan || plan.steps.length === 0) {
       if (executionMode === 'plan-then-execute-strict') {
         strictFail(
-          ctx.extensions.planner.lastDiagnostic ??
-            'Planner produced an empty plan (no steps generated)'
+          ctx.planner.lastDiagnostic ?? 'Planner produced an empty plan (no steps generated)'
         );
         return { plannerSucceeded: false, shouldTerminate };
       }
-      ctx.core.logger?.warn('Plan-then-execute produced empty plan, falling back to ReAct loop');
+      ctx.logger?.warn('Plan-then-execute produced empty plan, falling back to ReAct loop');
       return { plannerSucceeded: false, shouldTerminate };
     }
 
-    const validation = await ctx.extensions.planner.validate(plan, {
+    const validation = await ctx.planner.validate(plan, {
       availableTools: toolNames,
       maxSteps,
     });
@@ -97,18 +96,18 @@ export async function runPlanThenExecute(
         strictFail(`Plan validation failed: ${errorDetail}`);
         return { plannerSucceeded: false, shouldTerminate };
       }
-      ctx.core.logger?.warn('Plan validation failed, falling back to ReAct loop');
+      ctx.logger?.warn('Plan validation failed, falling back to ReAct loop');
       return { plannerSucceeded: false, shouldTerminate };
     }
 
-    if (!ctx.core.tools) {
+    if (!ctx.tools) {
       return { plannerSucceeded: false, shouldTerminate };
     }
 
     // Dynamic import PlanExecutorImpl to avoid circular deps
     const { PlanExecutorImpl } = await import('../planning/plan-executor.js');
     const executor = new PlanExecutorImpl();
-    let result = await executor.execute(plan, ctx.core.tools);
+    let result = await executor.execute(plan, ctx.tools);
 
     // Re-plan on failure (up to 2 retries)
     let replanAttempts = 0;
@@ -124,13 +123,13 @@ export async function runPlanThenExecute(
       if (!failedStepId) break;
 
       replanAttempts++;
-      const newPlan = await ctx.extensions.planner.replan(
+      const newPlan = await ctx.planner.replan(
         deps.input,
         { availableTools: toolNames, maxSteps },
         failedStepId,
         result.stepResults
       );
-      result = await executor.resume(newPlan, ctx.core.tools, result.stepResults);
+      result = await executor.resume(newPlan, ctx.tools, result.stepResults);
     }
 
     // Build final output from step results
@@ -147,7 +146,7 @@ export async function runPlanThenExecute(
       void emitter.emit({
         type: 'agent.complete',
         timestamp: Date.now(),
-        sessionId: ctx.identity.sessionId,
+        sessionId: ctx.sessionId,
         output: finalOutput,
         steps: deps.state.step,
       } as AgentEvent);
@@ -155,7 +154,7 @@ export async function runPlanThenExecute(
         type: 'done',
         reason: 'stop',
         timestamp: Date.now(),
-        sessionId: ctx.identity.sessionId,
+        sessionId: ctx.sessionId,
       });
       deps.state.output = finalOutput;
       cleanupRun();
@@ -170,15 +169,12 @@ export async function runPlanThenExecute(
     return { plannerSucceeded: false, shouldTerminate };
   } catch (planningError) {
     if (executionMode === 'plan-then-execute-strict') {
-      strictFail(
-        ctx.extensions.planner.lastDiagnostic ?? 'Planner threw an exception',
-        planningError
-      );
+      strictFail(ctx.planner.lastDiagnostic ?? 'Planner threw an exception', planningError);
       return { plannerSucceeded: false, shouldTerminate };
     }
 
-    if (ctx.core.logger) {
-      ctx.core.logger.warn('Plan-then-execute failed, falling back to ReAct loop');
+    if (ctx.logger) {
+      ctx.logger.warn('Plan-then-execute failed, falling back to ReAct loop');
     }
     return { plannerSucceeded: false, shouldTerminate };
   }

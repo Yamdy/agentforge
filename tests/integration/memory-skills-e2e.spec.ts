@@ -41,9 +41,20 @@ vi.mock('../../src/adapters/index.js', () => ({
 
 vi.mock('../../src/loop/agent-loop.js', () => ({
   createAgentLoop: () => ({
-    run: async () => 'ok',
+    run: async () => ({ output: 'ok', status: 'success' as const }),
+    iterate: async function* () {
+      yield { type: 'agent.start' } as any;
+      return { output: 'ok', status: 'success' as const };
+    },
     on: () => () => {},
     onAny: () => () => {},
+    emit: async () => {},
+    emitter: {
+      on: () => () => {},
+      onAny: () => () => {},
+      emit: async () => {},
+      clear: () => {},
+    },
     cancel: () => {},
     pause: () => {},
     resume: () => {},
@@ -98,11 +109,11 @@ description: A test skill for verification
       maxSteps: 1,
     });
 
-    expect(agent.ctx.identity.sessionId).toBeDefined();
-    expect(agent.ctx.identity.agentName).toBe('bare-agent');
+    expect(agent.ctx.sessionId).toBeDefined();
+    expect(agent.ctx.agentName).toBe('bare-agent');
     expect(agent.getStatus()).toBe('pending');
 
-    const hooks = agent.ctx.harness.hookRegistry as HookRegistry;
+    const hooks = agent.ctx.hookRegistry as HookRegistry;
     expect(hooks).toBeInstanceOf(HookRegistry);
     // No auto-plugins, no planner → 0 request hooks
     expect(hooks.getRequestHooks()).toHaveLength(0);
@@ -123,10 +134,10 @@ description: A test skill for verification
       },
     });
 
-    expect(agent.ctx.identity.agentName).toBe('memory-agent');
+    expect(agent.ctx.agentName).toBe('memory-agent');
     expect(agent.getStatus()).toBe('pending');
 
-    const hooks = agent.ctx.harness.hookRegistry as HookRegistry;
+    const hooks = agent.ctx.hookRegistry as HookRegistry;
     const requestHooks = hooks.getRequestHooks();
     const memoryHook = requestHooks.find(h => h.name === 'memory-context');
     expect(memoryHook).toBeDefined();
@@ -144,7 +155,7 @@ description: A test skill for verification
       },
     });
 
-    const hooks = agent.ctx.harness.hookRegistry as HookRegistry;
+    const hooks = agent.ctx.hookRegistry as HookRegistry;
     const requestHooks = hooks.getRequestHooks();
     const memoryHook = requestHooks.find(h => h.name === 'memory-context');
     expect(memoryHook).toBeDefined();
@@ -165,9 +176,9 @@ description: A test skill for verification
       },
     });
 
-    expect(agent.ctx.identity.agentName).toBe('skills-agent');
+    expect(agent.ctx.agentName).toBe('skills-agent');
 
-    const hooks = agent.ctx.harness.hookRegistry as HookRegistry;
+    const hooks = agent.ctx.hookRegistry as HookRegistry;
     const requestHooks = hooks.getRequestHooks();
     const skillsHook = requestHooks.find(h => h.name === 'skills-context');
     expect(skillsHook).toBeDefined();
@@ -184,7 +195,7 @@ description: A test skill for verification
       },
     });
 
-    const hooks = agent.ctx.harness.hookRegistry as HookRegistry;
+    const hooks = agent.ctx.hookRegistry as HookRegistry;
     const requestHooks = hooks.getRequestHooks();
     const skillsHook = requestHooks.find(h => h.name === 'skills-context');
     expect(skillsHook).toBeDefined();
@@ -209,7 +220,7 @@ description: A test skill for verification
       },
     });
 
-    const hooks = agent.ctx.harness.hookRegistry as HookRegistry;
+    const hooks = agent.ctx.hookRegistry as HookRegistry;
     const requestHooks = hooks.getRequestHooks();
 
     expect(requestHooks.length).toBeGreaterThanOrEqual(2);
@@ -248,7 +259,7 @@ description: A test skill for verification
       },
     });
 
-    const hooks = agent.ctx.harness.hookRegistry as HookRegistry;
+    const hooks = agent.ctx.hookRegistry as HookRegistry;
     const requestHooks = hooks.getRequestHooks();
 
     expect(requestHooks.length).toBeGreaterThanOrEqual(3);
@@ -292,9 +303,9 @@ description: A test skill for verification
       },
     });
 
-    expect(agent.ctx.identity.agentName).toBe('hybrid-agent');
+    expect(agent.ctx.agentName).toBe('hybrid-agent');
 
-    const hooks = agent.ctx.harness.hookRegistry as HookRegistry;
+    const hooks = agent.ctx.hookRegistry as HookRegistry;
     const requestHooks = hooks.getRequestHooks();
 
     // Should have the auto-created memory hook
@@ -310,8 +321,8 @@ description: A test skill for verification
     const a1 = createAgent({ name: 'u1', model: { provider: 'mock', model: 'm' }, maxSteps: 1 });
     const a2 = createAgent({ name: 'u2', model: { provider: 'mock', model: 'm' }, maxSteps: 1 });
 
-    expect(a1.ctx.identity.sessionId).not.toBe(a2.ctx.identity.sessionId);
-    expect(typeof a1.ctx.identity.sessionId).toBe('string');
-    expect(a1.ctx.identity.sessionId.length).toBeGreaterThan(0);
+    expect(a1.ctx.sessionId).not.toBe(a2.ctx.sessionId);
+    expect(typeof a1.ctx.sessionId).toBe('string');
+    expect(a1.ctx.sessionId.length).toBeGreaterThan(0);
   });
 });

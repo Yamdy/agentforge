@@ -94,13 +94,16 @@ export {
   AgentContextBuilder,
   createMinimalContext,
   createContextWithHITL,
+} from './context-builder.js';
+
+export {
   ContextBuilder,
   SimpleToolRegistry,
   InMemoryStore,
   DefaultPauseController,
   DefaultHITLController,
   generateSessionId,
-} from './context-builder.js';
+} from '../core/index.js';
 
 export type { ModelConfig } from './context-builder.js';
 

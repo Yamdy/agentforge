@@ -217,24 +217,20 @@ function createTestContext(
   const sessionId = `test-session-${Date.now()}`;
 
   return {
-    identity: { sessionId, agentName: 'test-agent' },
-    core: {
-      llm,
-      tools: toolRegistry,
-      memory: new InMemoryStore(),
-      pauseController: new DefaultPauseController(),
-      services: {
-        schemaRegistry: new SimpleSchemaRegistry(),
-        llmFactory: { create: () => llm },
-        toolRegistry,
-      },
+    sessionId,
+    agentName: 'test-agent',
+    llm,
+    tools: toolRegistry,
+    memory: new InMemoryStore(),
+    pauseController: new DefaultPauseController(),
+    services: {
+      schemaRegistry: new SimpleSchemaRegistry(),
+      llmFactory: { create: () => llm },
+      toolRegistry,
     },
-    security: options?.auditLogger ? { auditLogger: options.auditLogger } : {},
-    controls: options?.checkpointStorage ? { checkpoint: options.checkpointStorage } : {},
-    memory: {},
-    resilience: {},
-    extensions: {},
-    harness: { hookRegistry: new HookRegistry() },
+    hookRegistry: new HookRegistry(),
+    ...(options?.auditLogger ? { auditLogger: options.auditLogger } : {}),
+    ...(options?.checkpointStorage ? { checkpoint: options.checkpointStorage } : {}),
   };
 }
 
@@ -475,7 +471,7 @@ describe('Integration: Persistence + Audit Logging', () => {
       ]);
 
       const ctx = createTestContext(llm, toolRegistry, { auditLogger });
-      const expectedSessionId = ctx.identity.sessionId;
+      const expectedSessionId = ctx.sessionId;
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);

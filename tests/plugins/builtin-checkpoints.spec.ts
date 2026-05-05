@@ -28,7 +28,7 @@ describe('Built-in Checkpoint Plugins', () => {
     it('continues when no quota is configured', async () => {
       const plugin = createQuotaPlugin();
       const result = await plugin.checkpointHooks![0]!.check(
-        { controls: { quota: undefined }, identity: { sessionId: 'test' } },
+        { quota: undefined, sessionId: 'test' },
         {}
       );
       expect(result).toEqual({ action: 'continue' });
@@ -37,12 +37,10 @@ describe('Built-in Checkpoint Plugins', () => {
     it('blocks when quota is exceeded', async () => {
       const plugin = createQuotaPlugin();
       const ctx = {
-        identity: { sessionId: 'test' },
-        controls: {
-          quota: {
-            getUsage: () => ({ promptTokens: 9000, completionTokens: 0 }),
-            check: async () => false,
-          },
+        sessionId: 'test',
+        quota: {
+          getUsage: () => ({ promptTokens: 9000, completionTokens: 0 }),
+          check: async () => false,
         },
       };
       const result = await plugin.checkpointHooks![0]!.check(ctx, {});
@@ -52,12 +50,10 @@ describe('Built-in Checkpoint Plugins', () => {
     it('continues when quota allows', async () => {
       const plugin = createQuotaPlugin();
       const ctx = {
-        identity: { sessionId: 'test' },
-        controls: {
-          quota: {
-            getUsage: () => ({ promptTokens: 100, completionTokens: 0 }),
-            check: async () => true,
-          },
+        sessionId: 'test',
+        quota: {
+          getUsage: () => ({ promptTokens: 100, completionTokens: 0 }),
+          check: async () => true,
         },
       };
       const result = await plugin.checkpointHooks![0]!.check(ctx, {});
@@ -76,7 +72,7 @@ describe('Built-in Checkpoint Plugins', () => {
     it('continues when no rate limiter is configured', async () => {
       const plugin = createRateLimitPlugin();
       const result = await plugin.checkpointHooks![0]!.check(
-        { controls: { rateLimiter: undefined }, identity: { sessionId: 'test' } },
+        { rateLimiter: undefined, sessionId: 'test' },
         {}
       );
       expect(result).toEqual({ action: 'continue' });
@@ -85,12 +81,10 @@ describe('Built-in Checkpoint Plugins', () => {
     it('blocks when rate limit is exceeded', async () => {
       const plugin = createRateLimitPlugin();
       const ctx = {
-        identity: { sessionId: 'test' },
-        controls: {
-          rateLimiter: {
-            check: () => false,
-            consume: () => {},
-          },
+        sessionId: 'test',
+        rateLimiter: {
+          check: () => false,
+          consume: () => {},
         },
       };
       const result = await plugin.checkpointHooks![0]!.check(ctx, {});
@@ -109,7 +103,7 @@ describe('Built-in Checkpoint Plugins', () => {
     it('continues when no quality gate is configured', async () => {
       const plugin = createQualityGatePlugin();
       const result = await plugin.checkpointHooks![0]!.check(
-        { memory: { qualityGate: undefined } },
+        { qualityGate: undefined },
         { messages: [], step: 0 }
       );
       expect(result).toEqual({ action: 'continue' });
@@ -118,7 +112,7 @@ describe('Built-in Checkpoint Plugins', () => {
     it('continues when response has no content', async () => {
       const plugin = createQualityGatePlugin();
       const ctx = {
-        memory: { qualityGate: { check: () => ({ passed: true }) } },
+        qualityGate: { check: () => ({ passed: true }) },
       };
       const result = await plugin.checkpointHooks![0]!.check(
         ctx,
@@ -131,10 +125,8 @@ describe('Built-in Checkpoint Plugins', () => {
     it('blocks and injects retry message when quality gate fails', async () => {
       const plugin = createQualityGatePlugin();
       const ctx = {
-        memory: {
-          qualityGate: {
-            check: () => ({ passed: false, feedback: 'Too vague.' }),
-          },
+        qualityGate: {
+          check: () => ({ passed: false, feedback: 'Too vague.' }),
         },
       };
       const state = { messages: [{ role: 'user', content: 'hello' }], step: 5 };
@@ -159,7 +151,7 @@ describe('Built-in Checkpoint Plugins', () => {
       let called = false;
       const plugin = createCircuitBreakerPlugin();
       const ctx = {
-        resilience: { circuitBreaker: { recordSuccess: () => { called = true; } } },
+        circuitBreaker: { recordSuccess: () => { called = true; } },
       };
       const result = await plugin.checkpointHooks![0]!.check(ctx, {});
       expect(result).toEqual({ action: 'continue' });
@@ -169,7 +161,7 @@ describe('Built-in Checkpoint Plugins', () => {
     it('does not crash when circuit breaker is not configured', async () => {
       const plugin = createCircuitBreakerPlugin();
       const result = await plugin.checkpointHooks![0]!.check(
-        { resilience: { circuitBreaker: undefined } },
+        { circuitBreaker: undefined },
         {}
       );
       expect(result).toEqual({ action: 'continue' });

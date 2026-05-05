@@ -20,9 +20,9 @@ describe('MCP Config Wiring (createAgent)', () => {
       model: 'openai/gpt-4o-mini',
     });
     expect(agent).toBeDefined();
-    expect(agent.ctx.identity.sessionId).toBeDefined();
-    expect(agent.ctx.identity.agentName).toBe('no-mcp-agent');
-    expect(typeof agent.ctx.identity.sessionId).toBe('string');
+    expect(agent.ctx.sessionId).toBeDefined();
+    expect(agent.ctx.agentName).toBe('no-mcp-agent');
+    expect(typeof agent.ctx.sessionId).toBe('string');
   });
 
   it('should create agent with empty MCP array', () => {
@@ -32,7 +32,7 @@ describe('MCP Config Wiring (createAgent)', () => {
       mcp: [],
     });
     expect(agent).toBeDefined();
-    expect(agent.ctx.identity.sessionId).toBeDefined();
+    expect(agent.ctx.sessionId).toBeDefined();
   });
 
   it('should create agent with MCP stdio config', () => {
@@ -48,7 +48,7 @@ describe('MCP Config Wiring (createAgent)', () => {
       ],
     });
     expect(agent).toBeDefined();
-    expect(agent.ctx.identity.agentName).toBe('stdio-mcp-agent');
+    expect(agent.ctx.agentName).toBe('stdio-mcp-agent');
   });
 
   it('should create agent with multiple MCP servers', () => {
@@ -61,7 +61,7 @@ describe('MCP Config Wiring (createAgent)', () => {
       ],
     });
     expect(agent).toBeDefined();
-    expect(agent.ctx.identity.agentName).toBe('multi-mcp-agent');
+    expect(agent.ctx.agentName).toBe('multi-mcp-agent');
   });
 
   it('should create agent with MCP config including env vars', () => {
@@ -83,6 +83,6 @@ describe('MCP Config Wiring (createAgent)', () => {
   it('should produce unique session IDs for different MCP agents', () => {
     const agent1 = createAgent({ name: 'mcp-a', model: 'openai/gpt-4o-mini', mcp: [] });
     const agent2 = createAgent({ name: 'mcp-b', model: 'openai/gpt-4o-mini', mcp: [] });
-    expect(agent1.ctx.identity.sessionId).not.toBe(agent2.ctx.identity.sessionId);
+    expect(agent1.ctx.sessionId).not.toBe(agent2.ctx.sessionId);
   });
 });

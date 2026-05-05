@@ -89,7 +89,7 @@ export async function handleLLMError(
 
       case 'trigger_compaction':
         if (
-          ctx.memory.compactionManager &&
+          ctx.compactionManager &&
           state.recovery.compactionRetryCount < RECOVERY_LIMITS.compactionRetry
         ) {
           state.recovery.compactionRetryCount++;
@@ -97,7 +97,7 @@ export async function handleLLMError(
           await runLifecycleHook(
             'compaction.before',
             {
-              sessionId: ctx.identity.sessionId,
+              sessionId: ctx.sessionId,
               messages: state.messages,
               tokenCount: currentTokens,
             },
@@ -105,32 +105,32 @@ export async function handleLLMError(
           );
           // Use reactive (multi-layer) compaction for error recovery
           const reactiveCtx = {
-            sessionId: ctx.identity.sessionId,
+            sessionId: ctx.sessionId,
             messages: state.messages,
             maxTokens: config.tokenBudget ?? 200_000,
             currentTokenEstimate: currentTokens,
           };
           const result =
-            ctx.memory.compactionManager.reactiveCompact(reactiveCtx) ??
-            ctx.memory.compactionManager.multiLayerCompact(reactiveCtx);
+            ctx.compactionManager.reactiveCompact(reactiveCtx) ??
+            ctx.compactionManager.multiLayerCompact(reactiveCtx);
           state.messages = result.messages as Message[];
           void emitter.emit({
             type: 'compaction.start',
             timestamp: Date.now(),
-            sessionId: ctx.identity.sessionId,
+            sessionId: ctx.sessionId,
             strategy: result.strategy,
             tokensBefore: currentTokens,
           } as AgentEvent);
           void emitter.emit({
             type: 'compaction.complete',
             timestamp: Date.now(),
-            sessionId: ctx.identity.sessionId,
+            sessionId: ctx.sessionId,
             tokensAfter: result.tokensAfter,
             removedMessages: result.removedCount,
           } as AgentEvent);
           await runLifecycleHook(
             'compaction.after',
-            { sessionId: ctx.identity.sessionId, messages: state.messages },
+            { sessionId: ctx.sessionId, messages: state.messages },
             {}
           );
           return 'continue';

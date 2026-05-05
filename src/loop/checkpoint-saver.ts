@@ -25,16 +25,16 @@ export function saveCheckpoint(
   void deps.emitter.emit({
     type: 'checkpoint',
     timestamp: Date.now(),
-    sessionId: deps.ctx.identity.sessionId,
+    sessionId: deps.ctx.sessionId,
     checkpointId: cpId,
     position,
     state,
   } as import('../core/events.js').AgentEvent);
 
-  deps.ctx.controls.checkpoint
+  deps.ctx.checkpoint
     ?.save({
       id: cpId,
-      sessionId: deps.ctx.identity.sessionId,
+      sessionId: deps.ctx.sessionId,
       position,
       state,
       timestamp: Date.now(),

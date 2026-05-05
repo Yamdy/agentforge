@@ -183,10 +183,10 @@ class SimpleAuditStore implements AuditStore {
  *   .with({
  *     llm: myLLM,
  *     tools: myTools,
- *     securityGuard: mpu.context.security?.securityGuard!,
- *     circuitBreaker: mpu.context.resilience?.circuitBreaker!,
- *     errorClassifier: mpu.context.resilience?.errorClassifier!,
- *     planner: mpu.context.extensions?.planner!,
+ *     securityGuard: mpu.context.securityGuard!,
+ *     circuitBreaker: mpu.context.circuitBreaker!,
+ *     errorClassifier: mpu.context.errorClassifier!,
+ *     planner: mpu.context.planner!,
  *     healthChecker: mpu.services.healthChecker!,
  *   })
  *   .build();
@@ -219,25 +219,22 @@ export function createMPUServices(config: MPUConfig): MPUServiceResult {
 
   // Security guard
   if (config.enableSecurity) {
-    context.security = { ...context.security, securityGuard: new SecurityGuard() };
+    context.securityGuard = new SecurityGuard();
   }
 
   // Circuit breaker + error classifier
   if (config.enableCircuitBreaker) {
-    context.resilience = {
-      ...context.resilience,
-      errorClassifier: new DefaultErrorClassifier(),
-      circuitBreaker: new DefaultCircuitBreaker({
-        failureThreshold: 3,
-        resetTimeoutMs: 60000,
-        halfOpenMaxAttempts: 1,
-      }),
-    };
+    context.errorClassifier = new DefaultErrorClassifier();
+    context.circuitBreaker = new DefaultCircuitBreaker({
+      failureThreshold: 3,
+      resetTimeoutMs: 60000,
+      halfOpenMaxAttempts: 1,
+    });
   }
 
   // Planning
   if (config.enablePlanning) {
-    context.extensions = { ...context.extensions, planner: new PlannerImpl() };
+    context.planner = new PlannerImpl();
   }
 
   return { services, context };

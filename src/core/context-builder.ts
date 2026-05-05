@@ -127,33 +127,23 @@ export class ContextBuilder {
     }
 
     const ctx: AgentContext = {
-      identity: {
-        sessionId,
-        agentName: this.state.agentName ?? 'agent',
-      },
-      core: {
-        llm: this.state.llm,
-        tools,
-        memory,
-        pauseController,
-        services,
-      },
-      security: {},
-      controls: {},
-      memory: {
-        compactionManager: this.state.compactionManager ?? createTruncateCompactionManager(),
-      },
-      resilience: {},
-      extensions: {},
-      harness: { hookRegistry: new HookRegistry() },
+      sessionId,
+      agentName: this.state.agentName ?? 'agent',
+      llm: this.state.llm,
+      tools,
+      memory,
+      pauseController,
+      services,
+      compactionManager: this.state.compactionManager ?? createTruncateCompactionManager(),
+      hookRegistry: new HookRegistry(),
     };
 
-    if (this.state.checkpoint) ctx.controls.checkpoint = this.state.checkpoint;
-    if (this.state.hitl) ctx.controls.hitl = this.state.hitl;
-    if (this.state.mcpClients !== undefined) ctx.extensions.mcpClients = this.state.mcpClients;
-    if (this.state.subagents) ctx.extensions.subagents = this.state.subagents;
-    if (this.state.abortSignal) ctx.controls.abortSignal = this.state.abortSignal;
-    if (this.state.onError) ctx.resilience.onError = this.state.onError;
+    if (this.state.checkpoint) ctx.checkpoint = this.state.checkpoint;
+    if (this.state.hitl) ctx.hitl = this.state.hitl;
+    if (this.state.mcpClients !== undefined) ctx.mcpClients = this.state.mcpClients;
+    if (this.state.subagents) ctx.subagents = this.state.subagents;
+    if (this.state.abortSignal) ctx.abortSignal = this.state.abortSignal;
+    if (this.state.onError) ctx.onError = this.state.onError;
 
     return ctx;
   }

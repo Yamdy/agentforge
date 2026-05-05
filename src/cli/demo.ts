@@ -137,7 +137,7 @@ export async function runDemo(): Promise<void> {
 
   const agent1 = createAgent(
     { name: 'demo-agent', model: { provider: 'mock', model: 'mock' }, maxSteps: 3 },
-    { core: { llm: mockLLM1 }, security: { auditLogger: auditLog, securityGuard } }
+    { llm: mockLLM1, auditLogger: auditLog, securityGuard }
   );
 
   agent('read config.json');
@@ -148,7 +148,7 @@ export async function runDemo(): Promise<void> {
   try {
     const result1 = await agent1.run('Read the config.json file');
     harness('✅ Operation completed successfully', chalk.green);
-    llm(`→ ${result1}`, chalk.green);
+    llm(`→ ${result1.output}`, chalk.green);
   } catch {
     harness('✅ Agent loop executed (mock response)', chalk.green);
   }

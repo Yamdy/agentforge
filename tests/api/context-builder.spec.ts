@@ -43,8 +43,8 @@ describe('AgentContextBuilder.with()', () => {
       .with({ llm: mockLLMAdapter(), tools: [mockTool] })
       .build();
 
-    expect(ctx.core.llm.provider).toBe('mock');
-    expect(ctx.core.tools.list()).toContain('echo');
+    expect(ctx.llm.provider).toBe('mock');
+    expect(ctx.tools.list()).toContain('echo');
   });
 
   it('sets identity fields', () => {
@@ -52,8 +52,8 @@ describe('AgentContextBuilder.with()', () => {
       .with({ sessionId: 'my-session', agentName: 'my-agent', llm: mockLLMAdapter(), tools: [] })
       .build();
 
-    expect(ctx.identity.sessionId).toBe('my-session');
-    expect(ctx.identity.agentName).toBe('my-agent');
+    expect(ctx.sessionId).toBe('my-session');
+    expect(ctx.agentName).toBe('my-agent');
   });
 
   it('sets model config', () => {
@@ -71,7 +71,7 @@ describe('AgentContextBuilder.with()', () => {
       .with({ llm: mockLLMAdapter(), tools: [], auditLogger: mockAudit })
       .build();
 
-    expect(ctx.security.auditLogger).toBe(mockAudit);
+    expect(ctx.auditLogger).toBe(mockAudit);
   });
 
   it('sets optional resilience fields', () => {
@@ -81,8 +81,8 @@ describe('AgentContextBuilder.with()', () => {
       .with({ llm: mockLLMAdapter(), tools: [], quota: mockQuota, circuitBreaker: mockBreaker })
       .build();
 
-    expect(ctx.controls.quota).toBe(mockQuota);
-    expect(ctx.resilience.circuitBreaker).toBe(mockBreaker);
+    expect(ctx.quota).toBe(mockQuota);
+    expect(ctx.circuitBreaker).toBe(mockBreaker);
   });
 
   it('maps onError correctly', () => {
@@ -91,7 +91,7 @@ describe('AgentContextBuilder.with()', () => {
       .with({ llm: mockLLMAdapter(), tools: [], onError: handler })
       .build();
 
-    expect(ctx.resilience.onError).toBe(handler);
+    expect(ctx.onError).toBe(handler);
   });
 
   it('multiple with() calls merge incrementally (last wins)', () => {
@@ -100,7 +100,7 @@ describe('AgentContextBuilder.with()', () => {
       .with({ sessionId: 'second' })
       .build();
 
-    expect(ctx.identity.sessionId).toBe('second');
+    expect(ctx.sessionId).toBe('second');
   });
 
   it('chaining with() and withTool() works', () => {
@@ -112,8 +112,8 @@ describe('AgentContextBuilder.with()', () => {
       .withTool(toolB)
       .build();
 
-    expect(ctx.core.tools.list()).toContain('a');
-    expect(ctx.core.tools.list()).toContain('b');
+    expect(ctx.tools.list()).toContain('a');
+    expect(ctx.tools.list()).toContain('b');
   });
 
   it('throws when LLM is not set', () => {
@@ -132,7 +132,7 @@ describe('AgentContextBuilder.with()', () => {
       .withDefaultHITL()
       .build();
 
-    expect(ctx.controls.hitl).toBeDefined();
+    expect(ctx.hitl).toBeDefined();
   });
 
   it('withAbortController() extracts signal', () => {
@@ -142,7 +142,7 @@ describe('AgentContextBuilder.with()', () => {
       .withAbortController(controller)
       .build();
 
-    expect(ctx.controls.abortSignal).toBe(controller.signal);
+    expect(ctx.abortSignal).toBe(controller.signal);
   });
 
   it('tracer and metrics override appServices defaults', () => {
@@ -153,8 +153,8 @@ describe('AgentContextBuilder.with()', () => {
       .with({ llm: mockLLMAdapter(), tools: [], tracer: mockTracer, metrics: mockMetrics })
       .build();
 
-    expect(ctx.core.services.tracer).toBe(mockTracer);
-    expect(ctx.core.services.metrics).toBe(mockMetrics);
+    expect(ctx.services.tracer).toBe(mockTracer);
+    expect(ctx.services.metrics).toBe(mockMetrics);
   });
 
   it('healthChecker is placed into services', () => {
@@ -164,7 +164,7 @@ describe('AgentContextBuilder.with()', () => {
       .with({ llm: mockLLMAdapter(), tools: [], healthChecker: checker })
       .build();
 
-    expect(ctx.core.services.healthChecker).toBe(checker);
+    expect(ctx.services.healthChecker).toBe(checker);
   });
 
   it('empty with({}) is safe and does not overwrite defaults', () => {
@@ -173,10 +173,10 @@ describe('AgentContextBuilder.with()', () => {
       .with({})
       .build();
 
-    expect(ctx.identity.sessionId).toBeDefined();
-    expect(ctx.identity.agentName).toBe('agent');
-    expect(ctx.core.memory).toBeDefined();
-    expect(ctx.core.pauseController).toBeDefined();
+    expect(ctx.sessionId).toBeDefined();
+    expect(ctx.agentName).toBe('agent');
+    expect(ctx.memory).toBeDefined();
+    expect(ctx.pauseController).toBeDefined();
   });
 
   it('provides a default compactionManager when none is specified', () => {
@@ -184,8 +184,8 @@ describe('AgentContextBuilder.with()', () => {
       .with({ llm: mockLLMAdapter(), tools: [] })
       .build();
 
-    expect(ctx.memory.compactionManager).toBeDefined();
-    const cfg = ctx.memory.compactionManager?.getConfig();
+    expect(ctx.compactionManager).toBeDefined();
+    const cfg = ctx.compactionManager?.getConfig();
     expect(cfg?.enabled).toBe(true);
     expect(cfg?.strategy).toBe('truncate-oldest');
   });
@@ -197,7 +197,7 @@ describe('AgentContextBuilder.with()', () => {
       .with({ llm: mockLLMAdapter(), tools: [], compactionManager: custom })
       .build();
 
-    expect(ctx.memory.compactionManager).toBe(custom);
+    expect(ctx.compactionManager).toBe(custom);
   });
 });
 
@@ -212,8 +212,8 @@ describe('ContextBuilder.with()', () => {
       .withTools([mockTool])
       .build();
 
-    expect(ctx.core.llm.provider).toBe('mock');
-    expect(ctx.core.tools.list()).toContain('echo');
+    expect(ctx.llm.provider).toBe('mock');
+    expect(ctx.tools.list()).toContain('echo');
   });
 
   it('sets identity and optional fields', () => {
@@ -224,10 +224,10 @@ describe('ContextBuilder.with()', () => {
       .withTools([mockTool])
       .build();
 
-    expect(ctx.identity.sessionId).toBe('test');
-    expect(ctx.identity.agentName).toBe('test-agent');
-    expect(ctx.core.memory).toBe(mem);
-    expect(ctx.core.pauseController).toBe(pause);
+    expect(ctx.sessionId).toBe('test');
+    expect(ctx.agentName).toBe('test-agent');
+    expect(ctx.memory).toBe(mem);
+    expect(ctx.pauseController).toBe(pause);
   });
 
   it('sets onError directly (not errorHandler)', () => {
@@ -237,7 +237,7 @@ describe('ContextBuilder.with()', () => {
       .withTools([mockTool])
       .build();
 
-    expect(ctx.resilience.onError).toBe(handler);
+    expect(ctx.onError).toBe(handler);
   });
 
   it('multiple with() calls merge (last wins)', () => {
@@ -247,7 +247,7 @@ describe('ContextBuilder.with()', () => {
       .withTools([mockTool])
       .build();
 
-    expect(ctx.identity.sessionId).toBe('second');
+    expect(ctx.sessionId).toBe('second');
   });
 
   it('withAppServices() sets services', () => {
@@ -262,7 +262,7 @@ describe('ContextBuilder.with()', () => {
       .withTools([mockTool])
       .build();
 
-    expect(ctx.core.services).toBe(appServices);
+    expect(ctx.services).toBe(appServices);
   });
 
   it('throws when LLM is missing', () => {

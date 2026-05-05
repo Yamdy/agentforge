@@ -147,24 +147,19 @@ function createTestContext(
 ): AgentContext {
   const sessionId = `test-session-${Date.now()}`;
   return {
-    identity: { sessionId, agentName: 'test-agent' },
-    core: {
-      llm,
-      tools,
-      memory: new InMemoryStore(),
-      pauseController: new DefaultPauseController(),
-      services: {
-        schemaRegistry: new SimpleSchemaRegistry(),
-        llmFactory: { create: () => llm },
-        toolRegistry: tools,
-      },
+    sessionId,
+    agentName: 'test-agent',
+    llm,
+    tools,
+    memory: new InMemoryStore(),
+    pauseController: new DefaultPauseController(),
+    services: {
+      schemaRegistry: new SimpleSchemaRegistry(),
+      llmFactory: { create: () => llm },
+      toolRegistry: tools,
     },
-    security: {},
-    controls: {},
-    memory: {},
-    resilience: {},
-    extensions: planner ? { planner } : {},
-    harness: { hookRegistry: new HookRegistry() },
+    hookRegistry: new HookRegistry(),
+    ...(planner ? { planner } : {}),
   };
 }
 
@@ -190,7 +185,7 @@ describe('Planner Enforcement — executionMode', () => {
   // ── react mode ──
 
   describe('executionMode: react', () => {
-    it('never invokes the planner even when ctx.extensions.planner is present', async () => {
+    it('never invokes the planner even when ctx.planner is present', async () => {
       const llm = new MockLLMAdapter({ content: 'ReAct response', finishReason: 'stop' });
       const tools = new MockToolRegistry(['read', 'write']);
       const planner = new MockPlanner();
@@ -409,8 +404,9 @@ describe('Planner Enforcement — executionMode', () => {
       const output = await loop.run('do something');
       subscribe();
 
-      // Output should be empty (error path returns '')
-      expect(output).toBe('');
+      // Output should be empty (planner termination returns success with empty output)
+      expect(output.output).toBe('');
+      expect(output.status).toBe('success');
       // No LLM requests should have been made (didn't enter ReAct)
       const llmEvents = events.filter((e: any) => e.type === 'llm.request');
       expect(llmEvents.length).toBe(0);
