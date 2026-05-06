@@ -1,13 +1,13 @@
 /**
  * Production Agent - Entry Point
  *
- * A production-ready agent using the L3 API with full Observable control,
+ * A production-ready agent using the L3 API with event-driven control,
  * observability, resilience, and security layers.
  */
 
 import 'dotenv/config';
 import { runAgent, AgentContextBuilder } from 'agentforge/api';
-import { filter, tap, takeUntilTerminal, timeoutOnEventType, retryOnEventType, collectMetrics } from 'agentforge';
+import type { AgentEvent } from 'agentforge/api';
 import config from '../agentforge.config.js';
 import { logger } from './observability/index.js';
 import { resilienceConfig } from './resilience/config.js';
@@ -20,18 +20,11 @@ const ctx = AgentContextBuilder.create()
   })
   .build();
 
-// Metrics collector for production monitoring
-const metricsCollector = collectMetrics({
-  increment: (key: string) => {
-    logger.info(`Metric: ${key}`);
-  },
-});
-
 async function main(): Promise<void> {
-  logger.info('🏭 Production Agent starting...');
+  logger.info('Production Agent starting...');
   logger.info(`Resilience config: ${JSON.stringify(resilienceConfig)}`);
 
-  // Handle graceful shutdown (M9)
+  // Handle graceful shutdown
   const shutdown = (): void => {
     logger.info('Received shutdown signal, cleaning up...');
     process.exit(0);
@@ -39,37 +32,34 @@ async function main(): Promise<void> {
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
 
+  // Run with full production pipeline using L3 API
+  const agent = runAgent(ctx, 'Analyze the current project structure and provide recommendations.', {
+    maxSteps: 30,
+  });
+
+  // Observe agent events
+  agent.onAny((event: AgentEvent) => {
+    if (event.type === 'agent.step') return; // skip noisy step events
+    if (event.type === 'agent.error') {
+      logger.error(`Agent error: ${JSON.stringify(event)}`);
+      return;
+    }
+    logger.info(`Event: ${event.type}`);
+  });
+
+  // Set up timeout guard
+  const timeoutId = setTimeout(() => {
+    logger.warn(`Timeout after ${resilienceConfig.timeoutMs}ms, cancelling agent`);
+    agent.cancel();
+  }, resilienceConfig.timeoutMs);
+
   try {
-    // Run with full production pipeline using L3 API
-    await new Promise<void>((resolve, reject) => {
-      runAgent(ctx, 'Analyze the current project structure and provide recommendations.', {
-        maxSteps: 30,
-      }).pipe(
-        // M8: Observability — filter out step events for cleaner logs
-        filter((event: { type: string }) => event.type !== 'agent.step'),
-        // M4: Resilience — timeout and retry
-        timeoutOnEventType('done', resilienceConfig.timeoutMs),
-        retryOnEventType('agent.error', resilienceConfig.maxRetries),
-        // M8: Observability — collect metrics
-        metricsCollector,
-        // M8: Observability — log all events
-        tap({
-          next: (event: { type: string }) => {
-            logger.info(`Event: ${event.type}`);
-          },
-          complete: () => {
-            logger.info('Agent execution completed');
-            resolve();
-          },
-          error: (err: unknown) => {
-            logger.error(`Agent error: ${err}`);
-            reject(err);
-          },
-        }),
-        takeUntilTerminal(),
-      ).subscribe();
-    });
+    const result = await agent.run('Analyze the current project structure and provide recommendations.');
+    clearTimeout(timeoutId);
+    logger.info('Agent execution completed');
+    logger.info(`Result: ${result}`);
   } catch (error: unknown) {
+    clearTimeout(timeoutId);
     logger.error(`Fatal error: ${error}`);
     process.exit(1);
   }

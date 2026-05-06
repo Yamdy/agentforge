@@ -12,6 +12,7 @@ export {
   type RunResult,
   type ExecutionMode,
   createAgentLoop,
+  resumeAgentLoop,
 } from './agent-loop.js';
 
 export { type PromptTemplates, DEFAULT_PROMPT_TEMPLATES } from './prompt-templates.js';

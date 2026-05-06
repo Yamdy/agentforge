@@ -272,7 +272,6 @@ export function createTestContext(
 
 export interface AgentWithEvent {
   run(input: string): Promise<string>;
-  run$(input: string): { subscribe: (obs: { next(v: AgentEvent): void; error?(e: unknown): void; complete?(): void }) => { unsubscribe(): void } };
   onAny(listener: (event: AgentEvent) => void): () => void;
 }
 

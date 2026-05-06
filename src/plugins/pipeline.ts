@@ -88,6 +88,34 @@ export function applyPlugins(
       }
     }
 
+    // ── System prompt hooks ──
+    if (plugin.systemPromptHooks) {
+      for (const hook of plugin.systemPromptHooks) {
+        unregisters.push(hookRegistry.registerSystemPrompt(hook));
+      }
+    }
+
+    // ── LLM params hooks ──
+    if (plugin.llmParamsHooks) {
+      for (const hook of plugin.llmParamsHooks) {
+        unregisters.push(hookRegistry.registerLLMParams(hook));
+      }
+    }
+
+    // ── Message hooks ──
+    if (plugin.messageHooks) {
+      for (const hook of plugin.messageHooks) {
+        unregisters.push(hookRegistry.registerMessage(hook));
+      }
+    }
+
+    // ── Tool execute hooks ──
+    if (plugin.toolExecuteHooks) {
+      for (const hook of plugin.toolExecuteHooks) {
+        unregisters.push(hookRegistry.registerToolExecute(hook));
+      }
+    }
+
     // ── Event subscriptions ──
     if (plugin.eventSubscriptions) {
       for (const sub of plugin.eventSubscriptions) {

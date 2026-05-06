@@ -103,7 +103,7 @@ export async function clearSession(ctx: RequestContext): Promise<Response> {
  * POST /api/sessions/:id/chat/stream — SSE streaming chat
  *
  * Creates an ephemeral agent from the session's config, appends the user
- * message, and pipes agent.run$() to SSE.
+ * message, and streams agent events to SSE.
  */
 export async function chatStream(ctx: RequestContext): Promise<Response> {
   const id = ctx.params.id;
@@ -154,7 +154,7 @@ export async function chatStream(ctx: RequestContext): Promise<Response> {
   session.activeRun = abortController;
 
   // Build message history for agent (exclude the last message which is the
-  // current user input — agent.run$() will append it automatically)
+  // current user input — agent.run() will append it automatically)
   const history = session.messages.slice(0, -1).map((m) => ({
     role: m.role,
     content: m.content,

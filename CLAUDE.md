@@ -11,16 +11,17 @@ Built on **event-driven architecture + Zod type safety**. Uses an imperative `wh
 ## Essential Commands
 
 ```bash
-npm run build          # tsc — compiles src/ to dist/
-npm run test           # vitest run — all tests (globals: true — describe/it/expect auto-available)
-npm run test:watch     # vitest watch mode
-npx vitest tests/core/events.spec.ts   # run a single spec file
-npx vitest tests/core/events.spec.ts -t "isAgentEvent"  # run a single test by name
-npm run test:coverage  # vitest run --coverage
-npm run lint           # eslint src --ext .ts
-npm run lint:fix       # eslint src --ext .ts --fix
-npm run format         # prettier --write "src/**/*.ts"
-npm run clean          # rimraf dist
+# 包管理器: pnpm (有 pnpm-workspace.yaml + pnpm-lock.yaml)
+pnpm build          # tsc — compiles src/ to dist/
+pnpm test           # vitest run — all tests (globals: true — describe/it/expect auto-available)
+pnpm test:watch     # vitest watch mode
+pnpm vitest tests/core/events.spec.ts   # run a single spec file
+pnpm vitest tests/core/events.spec.ts -t "isAgentEvent"  # run a single test by name
+pnpm test:coverage  # vitest run --coverage
+pnpm lint           # eslint src --ext .ts
+pnpm lint:fix       # eslint src --ext .ts --fix
+pnpm format         # prettier --write "src/**/*.ts"
+pnpm clean          # rimraf dist
 ```
 
 ## TypeScript Strictness (Critical — tsc will fail otherwise)
@@ -98,18 +99,22 @@ catch (error) {
 
 ### 5. Plugin System — The One True Extension API
 
-**Plugin is the sole public extension mechanism.** All cross-cutting behavior registers through a single `Plugin` interface. HookRegistry, CheckpointRegistry, and EventEmitter are internal implementation details — never exported to users.
+**Plugin is the sole public extension mechanism.** All cross-cutting behavior registers through a single `Plugin` interface. `AgentEventEmitter` is an internal implementation detail — not exported to users. `HookRegistry` is exported from `agentforge/core` for advanced L3 use cases (custom loops, tool executors).
 
-A Plugin can register 6 kinds of hooks:
+A Plugin can register 10 kinds of hooks:
 
 | Hook Type | Purpose | Interface |
 |-----------|---------|-----------|
 | **requestHooks** | Modify LLM messages before each call | `apply(messages[], state) → messages[]` |
 | **toolHooks** | Filter tool defs + check/modify tool execution | `filter?(tools[], state) → tools[]` / `beforeExecute?(tc, state) → ToolBeforeResult` |
 | **lifecycleHooks** | Observe at key cut-points | `(input, output) → void` |
-| **checkpointHooks** | Register for lifecycle phases (pre-llm, post-llm, etc.) | `{ phase, fn(ctx, state) → CheckpointResult }` |
+| **checkpointHooks** | Register for lifecycle phases (pre-llm, post-llm) | `{ phase, fn(ctx, state) → CheckpointResult }` |
 | **recoveryHooks** | Observe error/recovery events | `{ phase, fn(input, output) → void }` |
 | **eventSubscriptions** | Subscribe to event emitter events | `{ event: AgentEventType, handler(event) → void }` |
+| **systemPromptHooks** | Transform system prompt before LLM call | `transform(prompt, state) → string` |
+| **llmParamsHooks** | Modify LLM call parameters | `transform(params, state) → LLMParams` |
+| **messageHooks** | Transform user messages before conversation | `transform(message, state) → Message` |
+| **toolExecuteHooks** | Wrap tool execution (before/after) | `beforeExecute?(tc, state) → ToolBeforeResult` / `afterExecute?(tc, result, state) → ToolExecuteResult` |
 
 All hook errors are silently caught — plugin isolation is safety-critical.
 
@@ -185,7 +190,7 @@ completed/cancelled/error → [] (terminal, irreversible)
 | `src/core/events.ts` | 50+ Zod event schemas, AgentEventEmitter (internal-only), type guards |
 | `src/core/state.ts` | AgentState + immutable update helpers |
 | `src/core/interfaces.ts` | DI interfaces (LLMAdapter, ToolRegistry, HITLController, etc.) |
-| `src/core/hooks.ts` | HookRegistry + Hook types (RequestHook, ToolHook, CheckpointHook, etc.) — internal |
+| `src/core/hooks.ts` | HookRegistry + Hook types (RequestHook, ToolHook, CheckpointHook, SystemPromptHook, LLMParamsHook, MessageHook, ToolExecuteHook, etc.) |
 | `src/core/context.ts` | AgentContext (8 sub-objects), ApplicationServices, ToolContext |
 | `src/core/context-builder.ts` | ContextBuilder (L3) — BuilderState flat → AgentContext grouped |
 | `src/core/state-machine.ts` | 6-state lifecycle with transition validation |
@@ -198,6 +203,11 @@ completed/cancelled/error → [] (terminal, irreversible)
 | `src/api/context-builder.ts` | AgentContextBuilder (L2) — maps flat overrides to grouped context |
 | `src/plugins/` | Plugin interface + built-in plugin factories (memory, skills, logging, etc.) |
 | `src/adapters/` | LLM provider adapters (OpenAI, Anthropic, Google, Ollama, OpenAI-compatible) |
+| `src/a2a/` | Agent-to-Agent communication (Transport, Connection, Client) — callback-based |
+| `src/subagent/` | Subagent spawning, registry, and lifecycle management |
+| `src/workflow/` | Multi-step workflow orchestration |
+| `src/session/` | Session state persistence and management |
+| `src/mcp/` | MCP (Model Context Protocol) client integration |
 | `src/contracts/` | Tier 1 validation with graceful degradation |
 | `src/memory/` | Compaction, semantic memory, vector stores, working memory |
 | `src/index.ts` | Curated public API (~69 symbols, 7 categories) |
@@ -205,7 +215,7 @@ completed/cancelled/error → [] (terminal, irreversible)
 
 ## Public API (~69 symbols from `agentforge`)
 
-The main entry (`src/index.ts`) exports a curated subset organized in 7 categories. Internal implementation details (HookRegistry, EventEmitter, CheckpointRegistry, InProcessSandboxExecutor, etc.) are NOT exported.
+The main entry (`src/index.ts`) exports a curated subset organized in 7 categories. Internal implementation details (`AgentEventEmitter`, `InProcessSandboxExecutor`, etc.) are NOT exported from the main entry. `HookRegistry` is accessible via `agentforge/core` sub-path for advanced L3 use.
 
 **Agent Creation (L2 API):** `createAgent`, `Agent`, `AgentConfig`, `NormalizedAgentConfig`, `RunHandlers`, `StreamHandlers`, `PluginSpec`, `AgentConfigError`
 
@@ -226,12 +236,22 @@ The main entry (`src/index.ts`) exports a curated subset organized in 7 categori
 For full subsystem access, use sub-path imports defined in `package.json` exports map:
 
 ```typescript
-import { ... } from 'agentforge/core';       // All core types, events, hooks, state
+import { ... } from 'agentforge/api';         // L2 API types (Agent, RunHandlers, StreamHandlers)
+import { ... } from 'agentforge/core';        // All core types, events, hooks, state
 import { ... } from 'agentforge/loop';        // Agent loop + sub-modules
-import { ... } from 'agentforge/memory';      // Compaction, semantic memory, vector stores
+import { ... } from 'agentforge/plugins';     // Plugin interface + pipeline
 import { ... } from 'agentforge/adapters';    // All LLM provider adapters
+import { ... } from 'agentforge/contracts';   // Tier-1 validation contracts
+import { ... } from 'agentforge/security';    // Security guards and sandbox
+import { ... } from 'agentforge/memory';      // Compaction, semantic memory, vector stores
+import { ... } from 'agentforge/planning';    // Task planning and decomposition
+import { ... } from 'agentforge/resilience';  // Circuit breaker, retry, error classification
 import { ... } from 'agentforge/evaluation';  // Evaluation framework
-import { ... } from 'agentforge/l1';          // L1 zero-code config layer
+import { ... } from 'agentforge/a2a';         // Agent-to-Agent communication
+import { ... } from 'agentforge/workflow';    // Multi-step workflow orchestration
+import { ... } from 'agentforge/session';     // Session management
+import { ... } from 'agentforge/subagent';    // Subagent spawning and registry (alias: agentforge/multi-agent)
+import { ... } from 'agentforge/mcp';         // MCP (Model Context Protocol) integration
 ```
 
 Sub-paths export their full subsystem surface — use them when you need internal types not in the curated main entry.
@@ -253,9 +273,18 @@ Sub-paths export their full subsystem surface — use them when you need interna
 6. **AgentEventEmitter**: Internal-only. Simple ~50-line implementation. `on()`/`onAny()`/`emit()`. All return unsubscribe functions. Users subscribe via `Plugin.eventSubscriptions`, never directly.
 7. **`as any` is forbidden** (`no-explicit-any: "error"`). The only exception is the plugin pipeline files which have explicit eslint overrides.
 8. **AgentContext is grouped**: Access via sub-objects — `ctx.core.llm`, `ctx.security.securityGuard`, `ctx.controls.hitl`, `ctx.identity.sessionId`. Flat access (`ctx.llm`, `ctx.sessionId`) will fail type-check.
-9. **Public API is curated**: Only ~69 symbols exported from `agentforge`. Internal types (HookRegistry, EventEmitter, CheckpointRegistry) are NOT exported. For full subsystem access, use sub-path imports: `agentforge/core`, `agentforge/loop`, `agentforge/memory`, `agentforge/adapters`, `agentforge/evaluation`, `agentforge/l1`.
+9. **Public API is curated**: Only ~69 symbols exported from `agentforge`. `AgentEventEmitter` is NOT exported — use `Plugin.eventSubscriptions` for event observation. `HookRegistry` is available from `agentforge/core` for L3 custom loops. For full subsystem access, use sub-path imports (see Sub-path Imports section above).
+10. **Unified callback convention**: All event/progress notifications use `onX(callback: (data: T) => void) => () => void` (returns unsubscribe function). No Subscribable/Observable/RxJS patterns anywhere. `AgentLoop.run()` returns `Promise<string>`, not an Observable. Use `agent.onAny(cb)` + `agent.run(input)` for streaming event collection.
+11. **Listener notification safety**: When notifying multiple listeners from a Set/array, always snapshot with `[...set]` and wrap each callback in try/catch: `for (const cb of [...this._listeners]) { try { cb(data); } catch { /* isolate */ } }`. This prevents concurrent-modification crashes and isolates listener errors. Additionally, `onStatusChange`-style subscriptions must replay the current value immediately on subscribe (`callback(currentStatus)`).
+12. **Agent.run() signatures**: The L3 `AgentLoop.run(input)` returns `Promise<string>`. The L2 `Agent.run(input, handlers?)` returns `Promise<RunResult>` and accepts optional `RunHandlers` with `onEvent`, `onComplete`, `onError`, `onToken` (deprecated), `onToolCall`, `onToolResult` callbacks. There is no `run$()` method. The L2 Agent also supports `iterate(input): AsyncGenerator` for streaming event iteration.
 
 ## Design Documentation
 
-- `docs/design/00-OVERVIEW.md` — 15 iron laws (5 architecture + 6 runtime + 4 implementation)
-- `docs/design/README.md` — full design doc index
+- `docs/design/README.md` — full design doc index and navigation
+- `docs/design/00-OVERVIEW.md` — 15 iron laws (5 architecture + 6 runtime + 4 implementation) with grading
+- `docs/design/01-CORE-TYPES.md` — core type system design
+- `docs/design/07-PLUGIN-SYSTEM.md` — Plugin architecture and hook contracts
+- `docs/design/08-SUBSYSTEMS.md` — Subsystems (subagent, workflow, session, MCP, A2A)
+- `docs/design/09-A2A.md` — Agent-to-Agent protocol design
+- `docs/design/15-ARCHITECTURE.md` — overall architecture decisions
+- `docs/design/harness.md` — Harness philosophy and safety model

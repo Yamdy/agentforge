@@ -4,17 +4,9 @@
  * Defines the interface for transport implementations.
  * Supports WebSocket, HTTP, and gRPC transports.
  *
+ * All subscription APIs use the project's standard callback pattern:
+ * `onX(callback) → () => void` — consistent with EventEmitter and HookRegistry.
  */
-
-// Callback-based subscribable type — used only for interface signatures.
-// Event-based communication via callbacks.
-export interface Subscribable<T> {
-  subscribe(observer: {
-    next: (v: T) => void;
-    error?: (e: unknown) => void;
-    complete?: () => void;
-  }): { unsubscribe(): void };
-}
 
 import type { A2AMessage } from './types.js';
 import { type A2ATransportType, A2ATransportTypeSchema } from './types.js';
@@ -138,11 +130,18 @@ export interface A2ATransport {
   /** Current connection status */
   readonly status: TransportStatus;
 
-  /** Connection status stream */
-  readonly status$: Subscribable<TransportStatus>;
+  /**
+   * Register a callback for status changes.
+   * Immediately calls callback with the current status on subscribe.
+   * Returns an unsubscribe function.
+   */
+  onStatusChange(callback: (status: TransportStatus) => void): () => void;
 
-  /** Incoming message stream */
-  readonly messages$: Subscribable<A2AMessage>;
+  /**
+   * Register a callback for incoming messages.
+   * Returns an unsubscribe function.
+   */
+  onMessage(callback: (message: A2AMessage) => void): () => void;
 
   /** Agent ID for this transport */
   readonly agentId: string;

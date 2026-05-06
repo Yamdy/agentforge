@@ -20,7 +20,6 @@ import {
   DEFAULT_BACKLOG_CONFIG,
   TransportError,
 } from './transport.js';
-import type { Subscribable } from './transport.js';
 import { createHeartbeat, createError, createResponse, isMessageExpired } from './message.js';
 
 // ============================================================
@@ -189,10 +188,10 @@ export class A2AConnection {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** Transport status subscription cleanup */
-  private transportStatusUnsub: { unsubscribe(): void } | null = null;
+  private transportStatusUnsub: (() => void) | null = null;
 
   /** Transport message subscription cleanup */
-  private transportMessageUnsub: { unsubscribe(): void } | null = null;
+  private transportMessageUnsub: (() => void) | null = null;
 
   /** Stopped flag (for takeUntil replacement) */
   private _stopped = false;
@@ -372,9 +371,9 @@ export class A2AConnection {
     this.cancelAllPendingRequests();
 
     // Unsubscribe from transport
-    this.transportStatusUnsub?.unsubscribe();
+    this.transportStatusUnsub?.();
     this.transportStatusUnsub = null;
-    this.transportMessageUnsub?.unsubscribe();
+    this.transportMessageUnsub?.();
     this.transportMessageUnsub = null;
 
     // Clear all listeners
@@ -415,115 +414,102 @@ export class A2AConnection {
   }
 
   /**
-   * Send a request and subscribe to the response.
-   * Returns a Subscribable for callback-based consumption.
+   * Send a request and receive the response via callback.
+   *
+   * The callback is called exactly once with either the response
+   * or an error message. Returns an unsubscribe function for cancellation.
    */
   request(
     targetId: string,
     payload: unknown,
+    callback: (message: A2AMessage) => void,
     options?: { timeout?: number }
-  ): Subscribable<A2AMessage> {
+  ): () => void {
     const timeoutMs = options?.timeout ?? this.defaultRequestTimeout;
     const correlationId = generateId('req');
+    let settled = false;
 
-    const self = this;
-
-    return {
-      subscribe(observer: {
-        next?: (v: A2AMessage) => void;
-        error?: (e: Error) => void;
-        complete?: () => void;
-      }): { unsubscribe(): void } {
-        const next = observer.next ?? (() => {});
-        const error = observer.error ?? (() => {});
-        const complete = observer.complete ?? (() => {});
-        let settled = false;
-
-        const request: A2AMessage = {
-          id: correlationId,
-          from: self.agentId,
-          to: targetId,
-          timestamp: Date.now(),
-          ttl: timeoutMs,
-          type: 'request',
-          payload,
-          version: '1.0.0',
-        };
-
-        // Track pending request
-        const pending: PendingRequest = {
-          requestId: correlationId,
-          correlationId,
-          targetId,
-          sentAt: Date.now(),
-          timeout: timeoutMs,
-          resolve: msg => {
-            if (settled) return;
-            settled = true;
-            cleanup();
-            next(msg);
-            complete();
-          },
-          reject: err => {
-            if (settled) return;
-            settled = true;
-            cleanup();
-            // Errors-as-events: convert to error message
-            const errorResponse: A2AMessage = {
-              id: generateId('err'),
-              from: targetId,
-              to: self.agentId,
-              timestamp: Date.now(),
-              ttl: 0,
-              correlationId,
-              type: 'error',
-              payload: {
-                code: 'REQUEST_ERROR',
-                message: err.message,
-              },
-              version: '1.0.0',
-            };
-            next(errorResponse);
-            complete();
-          },
-          timeoutTimer: null,
-        };
-
-        self.pendingRequests.set(correlationId, pending);
-
-        // Setup timeout
-        pending.timeoutTimer = setTimeout(() => {
-          if (!self._stopped) {
-            self.pendingRequests.delete(correlationId);
-            pending.reject(new Error(`Request timeout after ${timeoutMs}ms`));
-          }
-        }, timeoutMs);
-
-        // Cleanup function
-        const cleanup = (): void => {
-          if (pending.timeoutTimer !== null) {
-            clearTimeout(pending.timeoutTimer);
-          }
-          self.pendingRequests.delete(correlationId);
-        };
-
-        // Send request
-        self.send(request).catch(err => {
-          if (!settled) {
-            settled = true;
-            cleanup();
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-            error(err);
-          }
-        });
-
-        return {
-          unsubscribe() {
-            cleanup();
-          },
-        };
-      },
+    const cleanup = (): void => {
+      if (pending.timeoutTimer !== null) {
+        clearTimeout(pending.timeoutTimer);
+      }
+      this.pendingRequests.delete(correlationId);
     };
+
+    const resolve = (msg: A2AMessage): void => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      try {
+        callback(msg);
+      } catch {
+        /* isolate — callback errors must not crash the connection */
+      }
+    };
+
+    const reject = (err: Error): void => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      const errorResponse: A2AMessage = {
+        id: generateId('err'),
+        from: targetId,
+        to: this.agentId,
+        timestamp: Date.now(),
+        ttl: 0,
+        correlationId,
+        type: 'error',
+        payload: {
+          code: 'REQUEST_ERROR',
+          message: err.message,
+        },
+        version: '1.0.0',
+      };
+      try {
+        callback(errorResponse);
+      } catch {
+        /* isolate */
+      }
+    };
+
+    const request: A2AMessage = {
+      id: correlationId,
+      from: this.agentId,
+      to: targetId,
+      timestamp: Date.now(),
+      ttl: timeoutMs,
+      type: 'request',
+      payload,
+      version: '1.0.0',
+    };
+
+    const pending: PendingRequest = {
+      requestId: correlationId,
+      correlationId,
+      targetId,
+      sentAt: Date.now(),
+      timeout: timeoutMs,
+      resolve,
+      reject,
+      timeoutTimer: null,
+    };
+
+    this.pendingRequests.set(correlationId, pending);
+
+    pending.timeoutTimer = setTimeout(() => {
+      if (!this._stopped) {
+        this.pendingRequests.delete(correlationId);
+        pending.reject(new Error(`Request timeout after ${timeoutMs}ms`));
+      }
+    }, timeoutMs);
+
+    this.send(request).catch(err => {
+      if (!settled) {
+        reject(err instanceof Error ? err : new Error(String(err)));
+      }
+    });
+
+    return cleanup;
   }
 
   /**
@@ -633,38 +619,26 @@ export class A2AConnection {
    * Setup transport subscriptions.
    */
   private setupTransportSubscriptions(): void {
-    // Subscribe to transport status
-    this.transportStatusUnsub = this.transport.status$.subscribe({
-      next: (status: TransportStatus) => {
-        if (this._stopped) return;
-        if (status !== this._status) {
-          this.setStatus(status);
+    this.transportStatusUnsub = this.transport.onStatusChange((status: TransportStatus) => {
+      if (this._stopped) return;
+      if (status !== this._status) {
+        this.setStatus(status);
 
-          if (status === 'connected') {
-            this.flushMessageQueue();
-          } else if (
-            status === 'error' &&
-            this.reconnectConfig.enabled &&
-            !this.intentionallyClosed
-          ) {
-            this.scheduleReconnect();
-          }
+        if (status === 'connected') {
+          this.flushMessageQueue();
+        } else if (
+          status === 'error' &&
+          this.reconnectConfig.enabled &&
+          !this.intentionallyClosed
+        ) {
+          this.scheduleReconnect();
         }
-      },
-      error: () => {
-        // Never propagate to error channel
-      },
+      }
     });
 
-    // Subscribe to incoming messages
-    this.transportMessageUnsub = this.transport.messages$.subscribe({
-      next: (message: A2AMessage) => {
-        if (this._stopped) return;
-        this.handleIncomingMessage(message);
-      },
-      error: () => {
-        // Never propagate to error channel
-      },
+    this.transportMessageUnsub = this.transport.onMessage((message: A2AMessage) => {
+      if (this._stopped) return;
+      this.handleIncomingMessage(message);
     });
   }
 
@@ -704,8 +678,12 @@ export class A2AConnection {
     }
 
     // Emit to message listeners
-    for (const listener of this._messageListeners) {
-      listener(message);
+    for (const listener of [...this._messageListeners]) {
+      try {
+        listener(message);
+      } catch {
+        /* isolate */
+      }
     }
   }
 
@@ -871,8 +849,12 @@ export class A2AConnection {
    */
   private setStatus(status: TransportStatus): void {
     this._status = status;
-    for (const listener of this._statusListeners) {
-      listener(status);
+    for (const listener of [...this._statusListeners]) {
+      try {
+        listener(status);
+      } catch {
+        /* isolate */
+      }
     }
   }
 
@@ -887,8 +869,12 @@ export class A2AConnection {
       agentId: this.agentId,
       details,
     };
-    for (const listener of this._eventListeners) {
-      listener(event);
+    for (const listener of [...this._eventListeners]) {
+      try {
+        listener(event);
+      } catch {
+        /* isolate */
+      }
     }
   }
 
@@ -903,8 +889,12 @@ export class A2AConnection {
       agentId: this.agentId,
       error: { code, message, recoverable },
     };
-    for (const listener of this._eventListeners) {
-      listener(errorEvent);
+    for (const listener of [...this._eventListeners]) {
+      try {
+        listener(errorEvent);
+      } catch {
+        /* isolate */
+      }
     }
   }
 

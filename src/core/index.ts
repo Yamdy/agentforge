@@ -184,19 +184,28 @@ export type { Logger } from './logger.js';
 // ============================================================
 
 export {
+  HookRegistry,
   RequestHookPriority,
   DEFAULT_REQUEST_HOOK_PRIORITY,
   type LifecyclePhase,
   type CheckpointPhase,
   type RecoveryPhase,
+  type AnyPhase,
   type HookFn,
   type LifecycleHookEntry,
   type RecoveryHookEntry,
   type RequestHook,
   type ToolHook,
+  type ToolBeforeResult,
   type CheckpointHook,
   type CheckpointResult,
   type CheckpointFn,
+  type SystemPromptHook,
+  type LLMParamsHook,
+  type LLMParams,
+  type MessageHook,
+  type ToolExecuteHook,
+  type ToolExecuteResult,
 } from './hooks.js';
 
 // ============================================================

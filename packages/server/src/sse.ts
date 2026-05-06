@@ -1,13 +1,23 @@
 import type { AgentEvent } from '@primo512109/agentforge';
 
-interface Subscribable<T> {
-  subscribe(observer: { next(v: T): void; error?(e: unknown): void; complete?(): void }): { unsubscribe(): void };
-}
-
 const encoder = new TextEncoder();
 
 /**
- * Convert an Observable<AgentEvent> stream to an SSE Response.
+ * Callback-based event stream subscriber.
+ *
+ * @param onEvent — called for each event in the stream
+ * @param onError — called if the stream encounters an unrecoverable error
+ * @param onComplete — called when the stream ends normally
+ * @returns unsubscribe function — call to stop receiving events
+ */
+export type EventSubscriber = (
+  onEvent: (event: AgentEvent) => void,
+  onError: (err: unknown) => void,
+  onComplete: () => void,
+) => () => void;
+
+/**
+ * Convert a callback-based event stream to an SSE Response.
  *
  * Handles:
  * - Normal events → `data: <JSON>\n\n`
@@ -15,15 +25,9 @@ const encoder = new TextEncoder();
  * - Errors → `data: {"type":"agent.error",...}\n\n` + `data: [DONE]\n\n`
  * - Client disconnect (AbortSignal) → unsubscribe and close
  * - Memory cleanup → remove abort listener on all exit paths
- *
- * Note on error handling: The SSE error callback (in the Observable's error
- * handler below) only fires when the Observable itself throws an error (e.g.
- * agent.run$() throws before any events are emitted). Agent Loop internal
- * errors are emitted as `agent.error` events through the normal event channel,
- * which are mutually exclusive with this error handler.
  */
-export function observableToSSE(
-  events$: Subscribable<AgentEvent>,
+export function streamToSSE(
+  subscribe: EventSubscriber,
   signal?: AbortSignal,
 ): Response {
   const stream = new ReadableStream({
@@ -35,7 +39,7 @@ export function observableToSSE(
       };
 
       const onAbort = () => {
-        subscription.unsubscribe();
+        unsubscribe();
         try {
           controller.close();
         } catch {
@@ -44,12 +48,12 @@ export function observableToSSE(
         cleanup();
       };
 
-      const subscription = events$.subscribe({
-        next: (event: AgentEvent) => {
+      const unsubscribe = subscribe(
+        (event: AgentEvent) => {
           const data = JSON.stringify(event);
           controller.enqueue(encoder.encode(`data: ${data}\n\n`));
         },
-        error: (err: unknown) => {
+        (err: unknown) => {
           const errorEvent = {
             type: 'agent.error' as const,
             timestamp: new Date().toISOString(),
@@ -63,12 +67,12 @@ export function observableToSSE(
           controller.close();
           cleanup();
         },
-        complete: () => {
+        () => {
           controller.enqueue(encoder.encode('data: [DONE]\n\n'));
           controller.close();
           cleanup();
         },
-      });
+      );
 
       if (signal) {
         signal.addEventListener('abort', onAbort, { once: true });

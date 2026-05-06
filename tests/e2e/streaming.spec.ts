@@ -39,72 +39,12 @@ import {
 import type { AgentLoopConfig } from '../../src/loop/agent-loop.js';
 
 // ============================================================
-// Lightweight Subscribable factories (for testing)
-// ============================================================
-
-interface Subscribable<T> {
-  subscribe(observer: { next(v: T): void; error?(e: unknown): void; complete?(): void }): { unsubscribe(): void };
-}
-
-function createSubscribable<T>(fn: (observer: { next(v: T): void; error(e: unknown): void; complete(): void }) => void | (() => void)): Subscribable<T> {
-  let cleanup: (() => void) | void;
-  let subscribed = false;
-  return {
-    subscribe(observer) {
-      if (subscribed) return { unsubscribe() {} };
-      subscribed = true;
-      try {
-        cleanup = fn({ next: v => observer.next(v), error: e => observer.error?.(e), complete: () => observer.complete?.() });
-      } catch (e) {
-        observer.error?.(e);
-      }
-      return { unsubscribe() { cleanup?.(); } };
-    }
-  };
-}
-
-function createSubject<T>() {
-  let subscribers: Array<{ next(v: T): void; error?(e: unknown): void; complete?(): void }> = [];
-  let closed = false;
-  return {
-    subscribe(observer: { next(v: T): void; error?(e: unknown): void; complete?(): void }) {
-      if (closed) { observer.complete?.(); return { unsubscribe() {} }; }
-      subscribers.push(observer);
-      return { unsubscribe() { subscribers = subscribers.filter(s => s !== observer); } };
-    },
-    next(v: T) { for (const s of subscribers) s.next(v); },
-    error(e: unknown) { for (const s of subscribers) s.error?.(e); subscribers = []; closed = true; },
-    complete() { for (const s of subscribers) s.complete?.(); subscribers = []; closed = true; },
-    get observed() { return subscribers.length > 0; },
-  };
-}
-
-async function collectUntil<T>(src: Subscribable<T>, cancel$?: { subscribe: (obs: any) => any }): Promise<T[]> {
-  return new Promise((resolve) => {
-    const events: T[] = [];
-    let cancelUnsub: (() => void) | undefined;
-    const sub = src.subscribe({
-      next: (v: T) => events.push(v),
-      error: () => sub?.unsubscribe() || resolve(events),
-      complete: () => { cancelUnsub?.(); resolve(events); },
-    });
-    if (cancel$) {
-      cancelUnsub = cancel$.subscribe({ next: () => { sub?.unsubscribe(); resolve(events); } });
-    }
-  });
-}
-
-// ============================================================
-// API Configuration
+// Test Helpers
 // ============================================================
 
 // Inline env check to avoid fixture-side-effect timing issues with dotenv
 const API_CONFIG = resolveApiConfig();
 const HAS_API_KEY = (process.env.LLM_API_KEY?.length ?? 0) > 0;
-
-// ============================================================
-// Test Helpers
-// ============================================================
 
 function createTestContext(llm: LLMAdapter, toolRegistry: ToolRegistry) {
   return {
@@ -337,23 +277,22 @@ describe.skipIf(!HAS_API_KEY)('E2E Streaming Tests', () => {
   // Scenario 3: Stream Interruption/Resume
   // ========================================
   describe('Scenario 3: Stream Interruption/Resume', () => {
-    it('should handle subscription cancellation gracefully', async () => {
+    it('should handle cancellation gracefully', async () => {
       const ctx = createTestContext(llm, toolRegistry);
       const config = createTestConfig();
 
       const agent = createAgentLoop(ctx, config);
-      const cancel$ = createSubject<void>();
 
-      const eventsPromise = collectUntil(agent.run$('Write a long story about a cat.'), cancel$);
-
-      // Event-driven: cancel after first stream text event
+      const events: any[] = [];
       const unsub = agent.onAny((e: any) => {
+        events.push(e);
         if (e.type === 'llm.stream.text') {
-          cancel$.next();
+          agent.cancel();
         }
       });
 
-      const events = await eventsPromise;
+      try { await agent.run('Write a long story about a cat.'); } catch {}
+
       unsub();
 
       // Should have received some events before cancellation
@@ -372,13 +311,12 @@ describe.skipIf(!HAS_API_KEY)('E2E Streaming Tests', () => {
 
       const agent = createAgentLoop(ctx, config);
 
-      // First subscription - cancelled
-      const cancel$ = createSubject<void>();
-
-      // Start and immediately cancel (event-driven)
-      const firstRunPromise = collectUntil(agent.run$('Say hello.'), cancel$).catch(() => {});
-      cancel$.next(); // Cancel synchronously after subscription is set up
-      await firstRunPromise;
+      // First run — cancelled immediately
+      const unsub1 = agent.onAny(() => {});
+      const firstRunPromise = agent.run('Say hello.');
+      agent.cancel();
+      try { await firstRunPromise; } catch {}
+      unsub1();
 
       // Wait for cleanup using fake timers
       vi.useFakeTimers();
@@ -463,13 +401,11 @@ describe.skipIf(!HAS_API_KEY)('E2E Streaming Tests', () => {
         name: 'error-llm',
         provider: 'test',
         chat: async () => ({ content: 'test', finishReason: 'stop' }),
-          stream: () => createSubscribable<LLMChunk>(observer => {
-            observer.next({ text: 'Starting...' });
-            const t = setTimeout(() => {
-              observer.error(new Error('Connection lost'));
-            }, 50);
-            return () => clearTimeout(t);
-          }),
+        stream: async function*() {
+          yield { text: 'Starting...' };
+          await new Promise(r => setTimeout(r, 50));
+          throw new Error('Connection lost');
+        },
       };
 
       const ctx = createTestContext(errorLlm, toolRegistry);
@@ -501,11 +437,10 @@ describe.skipIf(!HAS_API_KEY)('E2E Streaming Tests', () => {
         name: 'timeout-llm',
         provider: 'test',
         chat: async () => ({ content: 'test', finishReason: 'stop' }),
-        stream: () => createSubscribable<LLMChunk>(observer => {
-          observer.next({ text: 'Starting...' });
-          // Never completes - simulates timeout
-          // The test timeout will catch this
-        }),
+        stream: async function*() {
+          yield { text: 'Starting...' };
+          await new Promise(() => {}); // never resolves — simulates timeout
+        },
       };
 
       const ctx = createTestContext(timeoutLlm, toolRegistry);
@@ -513,16 +448,17 @@ describe.skipIf(!HAS_API_KEY)('E2E Streaming Tests', () => {
 
       const agent = createAgentLoop(ctx, config);
 
-      // Use fake timers to ensure test doesn't hang
-      const timeoutCancel$ = createSubject<void>();
+      const events: any[] = [];
+      const unsub = agent.onAny((e: any) => events.push(e));
 
       vi.useFakeTimers();
-      setTimeout(() => { timeoutCancel$.next(); }, 2000);
+      setTimeout(() => { agent.cancel(); }, 2000);
 
-      const eventsPromise = collectUntil(agent.run$('Hello.'), timeoutCancel$);
+      const runPromise = agent.run('Hello.');
       await vi.advanceTimersByTimeAsync(2000);
+      try { await runPromise; } catch {}
 
-      const events = await eventsPromise;
+      unsub();
       vi.useRealTimers();
 
       // Should have received some events before timeout
@@ -534,10 +470,9 @@ describe.skipIf(!HAS_API_KEY)('E2E Streaming Tests', () => {
         name: 'empty-llm',
         provider: 'test',
         chat: async () => ({ content: '', finishReason: 'stop' }),
-        stream: () => createSubscribable<LLMChunk>(observer => {
+        async *stream() {
           // Immediately complete with no chunks
-          observer.complete();
-        }),
+        },
       };
 
       const ctx = createTestContext(emptyLlm, toolRegistry);

@@ -70,6 +70,6 @@ agent.on('agent.error', (event: AgentEvent) => {
   console.error('Agent error:', event);
 });
 
-await agent.run$('Hello! How can I help you today?');
+await agent.run('Hello! How can I help you today?');
 console.log('Agent execution completed');
 {{/if}}

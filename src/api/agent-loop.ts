@@ -31,7 +31,6 @@ export interface AgentLoopOptions {
 export type LoopStatus = 'idle' | 'running' | 'completed' | 'error' | 'cancelled';
 
 export interface AgentLoopInstance {
-  run$(input: string): Promise<string>;
   on<T extends AgentEvent['type']>(
     type: T,
     fn: (e: Extract<AgentEvent, { type: T }>) => void
@@ -68,17 +67,6 @@ export function AgentLoop(ctx: AgentContext, options: AgentLoopOptions): AgentLo
   let currentState: LoopStatus = 'idle';
 
   return {
-    async run$(input: string): Promise<string> {
-      currentState = 'running';
-      try {
-        const result = await loop.run(input);
-        currentState = 'completed';
-        return result.output;
-      } catch {
-        currentState = 'error';
-        throw new Error('Agent execution failed');
-      }
-    },
     on: loop.on.bind(loop),
     onAny: loop.onAny.bind(loop),
     cancel: () => {

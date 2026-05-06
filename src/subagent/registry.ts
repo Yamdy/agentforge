@@ -14,6 +14,7 @@ import type { AgentEvent, Message } from '../core/events.js';
 import {
   type SubagentRegistry as ISubagentRegistry,
   type SubagentInfo,
+  type ToolDefinition,
 } from '../core/interfaces.js';
 import { serializeError, generateId } from '../core/events.js';
 import type {
@@ -22,7 +23,10 @@ import type {
   AgentLoop,
   AsyncSubagentHandle,
   SubagentAsyncResult,
+  RemoteSubagentConfig,
 } from './types.js';
+import type { RunResult } from '../loop/agent-loop.js';
+import { A2AClient } from '../a2a/client.js';
 
 /**
  * Internal implementation of AsyncSubagentHandle.
@@ -104,6 +108,7 @@ export class SubagentRegistry implements ISubagentRegistry {
   private readonly subagents: Map<string, SubagentEntry> = new Map();
   private readonly asyncRuns: Map<string, AsyncHandleImpl> = new Map();
   private readonly activeRuns: Map<string, ActiveRun> = new Map();
+  private readonly a2aClients: Map<string, A2AClient> = new Map();
 
   // ============================================================
   // SubagentRegistry Interface Implementation
@@ -137,6 +142,58 @@ export class SubagentRegistry implements ISubagentRegistry {
       }
       return info;
     });
+  }
+
+  /**
+   * Expose all registered subagents as ToolDefinition objects.
+   *
+   * When registered in the agent's ToolRegistry, the LLM sees each subagent
+   * as a regular tool (e.g. `delegate-to-researcher`). When the LLM invokes
+   * the tool, the subagent runs inside the parent's tool execution pipeline,
+   * meaning all 5 security layers (ToolHook → Permission → SecurityGuard →
+   * Sandbox → Execute) still apply.
+   *
+   * This follows the Mastra listAgentTools pattern — subagent = tool.
+   */
+  listAsTools(): ToolDefinition[] {
+    const tools: ToolDefinition[] = [];
+    for (const [name, entry] of this.subagents) {
+      const description = entry.config.description ?? `Delegate a task to the "${name}" subagent.`;
+
+      tools.push({
+        name: `delegate-to-${name}`,
+        description,
+        parameters: {
+          type: 'object',
+          properties: {
+            task: {
+              type: 'string',
+              description: `The task for the "${name}" subagent to perform.`,
+            },
+          },
+          required: ['task'],
+        },
+        execute: async (args: unknown) => {
+          const task =
+            typeof args === 'object' && args !== null
+              ? String((args as Record<string, unknown>).task ?? '')
+              : String(args ?? '');
+
+          let errorMsg = '';
+          const listener = (event: AgentEvent): void => {
+            if (event.type === 'agent.error' && event.source === 'subagent') {
+              errorMsg = event.error?.message ?? 'Subagent execution failed';
+            }
+          };
+          const result = await this.run(name, task, listener);
+          if (errorMsg) {
+            return `Error delegating to subagent "${name}": ${errorMsg}`;
+          }
+          return result;
+        },
+      });
+    }
+    return tools;
   }
 
   /**
@@ -247,7 +304,8 @@ export class SubagentRegistry implements ISubagentRegistry {
       });
 
       try {
-        finalOutput = await agent.run(input);
+        const runResult = await agent.run(input);
+        finalOutput = runResult.output;
       } catch (error) {
         hadError = true;
         listener({
@@ -387,6 +445,77 @@ export class SubagentRegistry implements ISubagentRegistry {
   }
 
   /**
+   * Register a remote subagent accessible via A2A transport.
+   *
+   * Creates an A2AClient from the transport, wraps it as a synthetic
+   * AgentLoop, and delegates through {@link register}. Once registered,
+   * the remote agent is exposed as a tool via {@link listAsTools} —
+   * the agent loop sees no difference between local and remote subagents.
+   *
+   * A2A clients are created lazily on first run and cached for reuse.
+   *
+   * @param config - Remote subagent configuration
+   */
+  registerRemote(config: RemoteSubagentConfig): void {
+    const { a2aClients } = this;
+
+    const syntheticAgent: AgentLoop = {
+      async run(input: string): Promise<RunResult> {
+        let client = a2aClients.get(config.name);
+
+        if (!client) {
+          client = new A2AClient({
+            agentId: config.name,
+            transport: config.transport,
+            ...(config.clientOptions?.defaultTimeout !== undefined
+              ? { defaultTimeout: config.clientOptions.defaultTimeout }
+              : {}),
+            ...(config.clientOptions?.debug !== undefined
+              ? { debug: config.clientOptions.debug }
+              : {}),
+          });
+          a2aClients.set(config.name, client);
+        }
+
+        try {
+          await client.start();
+          const response = await client.requestAsync(config.name, { task: input });
+          const payload = response.payload as Record<string, unknown> | undefined;
+          return { output: String(payload?.output ?? ''), status: 'success' as const };
+        } catch (err) {
+          return {
+            output: '',
+            status: 'error' as const,
+            error: serializeError(err),
+          };
+        }
+      },
+
+      on(_type: string, _listener: (event: AgentEvent) => void): () => void {
+        return () => {};
+      },
+
+      onAny(_listener: (event: AgentEvent) => void): () => void {
+        return () => {};
+      },
+
+      cancel(): void {
+        const client = a2aClients.get(config.name);
+        if (client) {
+          client.stop().catch(() => {});
+        }
+      },
+    };
+
+    this.register({
+      name: config.name,
+      description: config.description ?? `Remote agent: ${config.name}`,
+      agent: syntheticAgent,
+      mode: config.mode ?? 'subagent',
+    });
+  }
+
+  /**
    * Get number of registered subagents.
    */
   get size(): number {
@@ -445,7 +574,8 @@ export class SubagentRegistry implements ISubagentRegistry {
 
     // Fire-and-forget background execution
     entry.config.agent.run(input).then(
-      (output: string) => {
+      runResult => {
+        const output = runResult.output;
         unreg();
         cleanup();
         handle.setCompleted(output, events);
@@ -531,7 +661,13 @@ export class SubagentRegistry implements ISubagentRegistry {
    * Remove all registered subagents.
    */
   clear(): void {
+    for (const client of this.a2aClients.values()) {
+      client.stop().catch(() => {});
+    }
+    this.a2aClients.clear();
     this.subagents.clear();
+    this.asyncRuns.clear();
+    this.activeRuns.clear();
   }
 
   /**

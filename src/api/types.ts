@@ -547,10 +547,6 @@ export interface Agent {
     input: string
   ): AsyncGenerator<AgentEvent | LLMChunkEvent, import('../loop/agent-loop.js').RunResult, void>;
 
-  /** @deprecated wrapper for backward compat */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  run$?(input: string): any;
-
   // ----- Control -----
 
   /** Cancel current execution */

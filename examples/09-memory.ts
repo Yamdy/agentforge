@@ -52,18 +52,32 @@ function createMockMessages(count: number): Message[] {
     { role: 'tool', content: '项目包含 src/、tests/、docs/ 三个主要目录。', toolCallId: 'tc-001' },
     // 更多对话...
     { role: 'user', content: '请详细说明 src 目录下的模块划分。' },
-    { role: 'assistant', content: 'src 目录包含以下核心模块：core（核心类型）、loop（Agent 循环）、operators（操作符）...' },
+    {
+      role: 'assistant',
+      content:
+        'src 目录包含以下核心模块：core（核心类型）、loop（Agent 循环）、operators（操作符）...',
+    },
   ];
 
   // 添加更多历史消息
   for (let i = 0; i < count - 7; i++) {
     const roleIndex = i % 3;
     if (roleIndex === 0) {
-      messages.push({ role: 'user', content: `用户问题 #${i + 1}：请解释第 ${i + 1} 个功能模块的作用。` });
+      messages.push({
+        role: 'user',
+        content: `用户问题 #${i + 1}：请解释第 ${i + 1} 个功能模块的作用。`,
+      });
     } else if (roleIndex === 1) {
-      messages.push({ role: 'assistant', content: `助手回答 #${i + 1}：第 ${i + 1} 个模块负责...` });
+      messages.push({
+        role: 'assistant',
+        content: `助手回答 #${i + 1}：第 ${i + 1} 个模块负责...`,
+      });
     } else {
-      messages.push({ role: 'tool', content: `工具结果 #${i + 1}：执行成功，返回数据...`, toolCallId: `tc-${i + 1}` });
+      messages.push({
+        role: 'tool',
+        content: `工具结果 #${i + 1}：执行成功，返回数据...`,
+        toolCallId: `tc-${i + 1}`,
+      });
     }
   }
 
@@ -131,7 +145,9 @@ async function example1_truncateOldest(): Promise<void> {
   console.log('压缩前状态:');
   console.log(`  消息数: ${messages.length}`);
   console.log(`  Token 估算: ${context.currentTokenEstimate}`);
-  console.log(`  阈值: ${maxTokens} (触发阈值: ${(manager.getConfig().triggerThreshold * maxTokens).toFixed(0)})`);
+  console.log(
+    `  阈值: ${maxTokens} (触发阈值: ${(manager.getConfig().triggerThreshold * maxTokens).toFixed(0)})`
+  );
 
   // 检查是否需要压缩
   const needsCompaction = manager.needsCompaction(context);
@@ -288,9 +304,9 @@ async function example4_customPreserveConfig(): Promise<void> {
 
   // 自定义保留配置
   const preserveConfig: PreserveConfig = {
-    systemPrompt: true,      // 保留系统提示
-    lastNUserMessages: 3,     // 保留最近 3 条用户消息
-    lastNToolResults: 5,      // 保留最近 5 条工具结果
+    systemPrompt: true, // 保留系统提示
+    lastNUserMessages: 3, // 保留最近 3 条用户消息
+    lastNToolResults: 5, // 保留最近 5 条工具结果
     preserveIndices: [5, 10], // 额外保留特定索引的消息
   };
 
@@ -341,21 +357,19 @@ async function example5_eventObservability(): Promise<void> {
     triggerThreshold: 0.75,
   });
 
-  // 订阅压缩事件 (使用 callback 模式)
+  // 订阅压缩事件 (callback 模式)
   const eventLog: CompactionEventPayload[] = [];
-  const unsubscribe = manager.events.subscribe({
-    next: (event) => {
-      eventLog.push(event);
-      console.log(`[事件] ${event.type}`);
-      if (event.type === 'compaction.start') {
-        console.log(`  策略: ${event.strategy}`);
-        console.log(`  Token 阈值: ${event.tokensBefore}`);
-      }
-      if (event.type === 'compaction.complete') {
-        console.log(`  移除消息: ${event.removedMessages}`);
-        console.log(`  Token 变化: ${event.tokensBefore} → ${event.tokensAfter}`);
-      }
-    },
+  const unsubscribe = manager.on(event => {
+    eventLog.push(event);
+    console.log(`[事件] ${event.type}`);
+    if (event.type === 'compaction.start') {
+      console.log(`  策略: ${event.strategy}`);
+      console.log(`  Token 阈值: ${event.tokensBefore}`);
+    }
+    if (event.type === 'compaction.complete') {
+      console.log(`  移除消息: ${event.removedMessages}`);
+      console.log(`  Token 变化: ${event.tokensBefore} → ${event.tokensAfter}`);
+    }
   });
 
   // 创建上下文
@@ -467,7 +481,9 @@ async function example8_tokenEstimation(): Promise<void> {
   console.log(`  内容: "${singleMessage.content}"`);
   console.log(`  字符数: ${singleMessage.content.length}`);
   console.log(`  Token 估算: ${estimateMessageTokens(singleMessage)}`);
-  console.log(`  计算公式: Math.ceil(${singleMessage.content.length} / 4) = ${Math.ceil(singleMessage.content.length / 4)}`);
+  console.log(
+    `  计算公式: Math.ceil(${singleMessage.content.length} / 4) = ${Math.ceil(singleMessage.content.length / 4)}`
+  );
 
   // 多条消息的 Token 估算
   const messages: Message[] = [

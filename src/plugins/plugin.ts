@@ -27,22 +27,32 @@ import type {
   CheckpointHook,
   RecoveryHookEntry,
   LifecycleHookEntry,
+  SystemPromptHook,
+  LLMParamsHook,
+  MessageHook,
+  ToolExecuteHook,
 } from '../core/hooks.js';
 import type { AgentState } from '../core/state.js';
-import type { Tracer, Metrics, ToolDefinition } from '../core/interfaces.js';
+import type {
+  Tracer,
+  Metrics,
+  ToolDefinition,
+  LLMAdapter,
+  MemoryStore,
+} from '../core/interfaces.js';
 
 // ============================================================
 // Plugin Context (Restricted - prevents capability bypass)
 // ============================================================
 
 /**
- * Plugin context - restricted access to prevent bypassing DI
+ * Plugin context — capabilities available to plugins.
  *
- * IMPORTANT: This context intentionally does NOT provide:
- * - llm: LLMAdapter - plugins should not call LLM directly
- * - tools: ToolRegistry - plugins should not execute tools directly
- * - memory: MemoryStore - plugins should not read/write memory directly
- * - checkpoint: CheckpointStorage - plugins should not manipulate checkpoints
+ * Plugins can observe, participate, and extend agent behavior.
+ * All capabilities are optional — a plugin that only observes events
+ * doesn't need tool execution or LLM access.
+ *
+ * Inspired by Pi-Mono ExtensionAPI (11 capability groups).
  */
 export interface PluginContext {
   /** Read-only session identifier */
@@ -59,10 +69,23 @@ export interface PluginContext {
   readonly emitter: AgentEventEmitter;
   /** Get a read-only snapshot of the current agent state */
   getState(): Readonly<AgentState>;
-  /** List registered tool definitions (read-only -- cannot execute) */
+  /** List registered tool definitions (read-only — cannot execute) */
   listTools(): ToolDefinition[];
   /** Inject messages into the conversation flow */
   addMessages(messages: Message[]): void;
+
+  // ── Extended capabilities (Phase 2.1 — Pi-Mono parity) ──
+
+  /** Execute a tool by name — lets plugins delegate work through the agent's tool pipeline */
+  executeTool?(toolName: string, args: unknown): Promise<string>;
+  /** Get the LLM adapter — lets plugins make independent LLM calls */
+  getLLM?(): LLMAdapter;
+  /** Dynamically register a new tool — lets plugins extend agent capabilities at runtime */
+  registerTool?(tool: ToolDefinition): void;
+  /** Modify agent state — lets plugins update runtime state (model, tokens, etc.) */
+  setState?(patch: Partial<AgentState>): void;
+  /** Get the memory store — lets plugins read/write persistent context */
+  getMemory?(): MemoryStore | undefined;
 }
 
 // ============================================================
@@ -112,6 +135,18 @@ export interface Plugin {
   /** Lifecycle hooks — observe lifecycle events (fire-and-forget, non-blocking) */
   lifecycleHooks?: LifecycleHookEntry[];
 
+  /** System prompt hooks — transform the system prompt before LLM calls */
+  systemPromptHooks?: SystemPromptHook[];
+
+  /** LLM params hooks — modify LLM call parameters (temperature, maxTokens, etc.) */
+  llmParamsHooks?: LLMParamsHook[];
+
+  /** Message hooks — transform user messages before they enter the conversation */
+  messageHooks?: MessageHook[];
+
+  /** Tool execute hooks — wrap tool execution with before/after handlers */
+  toolExecuteHooks?: ToolExecuteHook[];
+
   /**
    * Initialize plugin with restricted context.
    * Called once when plugin is registered.
@@ -139,10 +174,16 @@ export interface CreatePluginContextOptions {
   getState?: () => Readonly<AgentState>;
   listTools?: () => ToolDefinition[];
   addMessages?: (messages: Message[]) => void;
+  // Extended capabilities (optional — plugins that don't need them omit them)
+  executeTool?: (toolName: string, args: unknown) => Promise<string>;
+  getLLM?: () => LLMAdapter;
+  registerTool?: (tool: ToolDefinition) => void;
+  setState?: (patch: Partial<AgentState>) => void;
+  getMemory?: () => MemoryStore | undefined;
 }
 
 export function createPluginContext(options: CreatePluginContextOptions): PluginContext {
-  const base = {
+  return {
     sessionId: options.sessionId,
     agentName: options.agentName,
     emitter: options.emitter ?? new AgentEventEmitter(),
@@ -153,14 +194,15 @@ export function createPluginContext(options: CreatePluginContextOptions): Plugin
       }),
     listTools: options.listTools ?? (() => []),
     addMessages: options.addMessages ?? (() => {}),
+    // Extended capabilities (optional)
+    ...(options.executeTool !== undefined ? { executeTool: options.executeTool } : {}),
+    ...(options.getLLM !== undefined ? { getLLM: options.getLLM } : {}),
+    ...(options.registerTool !== undefined ? { registerTool: options.registerTool } : {}),
+    ...(options.setState !== undefined ? { setState: options.setState } : {}),
+    ...(options.getMemory !== undefined ? { getMemory: options.getMemory } : {}),
+    // Observability
+    ...(options.tracer !== undefined ? { tracer: options.tracer } : {}),
+    ...(options.metrics !== undefined ? { metrics: options.metrics } : {}),
     ...(options.logger !== undefined ? { logger: options.logger } : {}),
   };
-  if (options.tracer !== undefined || options.metrics !== undefined) {
-    return {
-      ...base,
-      ...(options.tracer !== undefined ? { tracer: options.tracer } : {}),
-      ...(options.metrics !== undefined ? { metrics: options.metrics } : {}),
-    };
-  }
-  return base;
 }

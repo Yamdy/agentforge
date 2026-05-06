@@ -9,15 +9,17 @@
 
 import type { AgentEvent, Message } from '../core/events.js';
 import type { AgentMode } from '../core/interfaces.js';
+import type { RunResult } from '../loop/agent-loop.js';
+import type { A2ATransport } from '../a2a/transport.js';
 
 /**
  * Agent Loop type reference.
  *
- * Matches the real AgentLoop interface from loop/agent-loop.ts (Promise-based).
+ * Matches the real AgentLoop interface from loop/agent-loop.ts (RunResult-based).
  */
 export interface AgentLoop {
-  /** Run the agent with input, returns output via Promise */
-  run(input: string): Promise<string>;
+  /** Run the agent with input, returns structured result */
+  run(input: string): Promise<RunResult>;
   /** Subscribe to specific event types */
   on(type: string, listener: (event: AgentEvent) => void): () => void;
   /** Subscribe to all events */
@@ -93,6 +95,29 @@ export interface SubagentConfig {
   asyncConfig?: {
     onComplete?: (result: SubagentAsyncResult) => void;
     onError?: (error: Error) => void;
+  };
+}
+
+/**
+ * Configuration for registering a remote subagent via A2A.
+ *
+ * Remote subagents are accessed through an A2A transport and wrapped
+ * as local AgentLoop instances, allowing them to participate in the
+ * standard subagent tool delegation pipeline.
+ */
+export interface RemoteSubagentConfig {
+  /** Unique name for the subagent */
+  name: string;
+  /** Human-readable description */
+  description?: string;
+  /** A2A transport for communicating with the remote agent */
+  transport: A2ATransport;
+  /** Agent mode (defaults to 'subagent') */
+  mode?: AgentMode;
+  /** Options forwarded to the underlying A2AClient */
+  clientOptions?: {
+    defaultTimeout?: number;
+    debug?: boolean;
   };
 }
 

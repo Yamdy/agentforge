@@ -127,6 +127,13 @@ export {
 } from './connection.js';
 
 // ============================================================
+// Transport Implementations
+// ============================================================
+
+export { HTTPTransport } from './http-transport.js';
+export { WebSocketTransport } from './ws-transport.js';
+
+// ============================================================
 // Client
 // ============================================================
 

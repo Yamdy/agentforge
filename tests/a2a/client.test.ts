@@ -20,7 +20,6 @@ import type {
   A2AClientEvent,
   A2AClientErrorEvent,
 } from '../../src/a2a/index.js';
-import type { Subscribable } from '../../src/a2a/transport.js';
 import { A2A_BROADCAST_TARGET, A2A_PROTOCOL_VERSION } from '../../src/a2a/index.js';
 import { TransportError } from '../../src/a2a/transport.js';
 
@@ -28,23 +27,15 @@ import { TransportError } from '../../src/a2a/transport.js';
 // Test Utilities
 // ============================================================
 
-/** Get the first emitted value from a Subscribable (Promise-based). */
-function firstValue<T>(subscribable: Subscribable<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const sub = subscribable.subscribe({
-      next: (value: T) => {
-        sub.unsubscribe();
-        resolve(value);
-      },
-      error: (err: unknown) => {
-        sub.unsubscribe();
-        reject(err instanceof Error ? err : new Error(String(err)));
-      },
-      complete: () => {
-        sub.unsubscribe();
-        reject(new Error('Completed without emitting value'));
-      },
-    });
+/** Send a request via client and get the first response as a Promise. */
+function requestAsPromise(
+  client: A2AClient,
+  targetId: string,
+  payload: unknown,
+  options?: { timeout?: number }
+): Promise<A2AMessage> {
+  return new Promise((resolve) => {
+    client.request(targetId, payload, (msg) => resolve(msg), options);
   });
 }
 
@@ -70,50 +61,21 @@ class TestMockTransport implements A2ATransport {
   private shouldFailSend = false;
   private shouldFailConnect = false;
 
-  get status$(): Subscribable<TransportStatus> {
-    const self = this;
-    return {
-      subscribe(observer: {
-        next?: (v: TransportStatus) => void;
-        error?: (e: unknown) => void;
-        complete?: () => void;
-      }): { unsubscribe(): void } {
-        const next = observer.next ?? (() => {});
-        // Replay current value
-        next(self._status);
-        const listener = (s: TransportStatus) => next(s);
-        self._statusListeners.add(listener);
-        return {
-          unsubscribe() {
-            self._statusListeners.delete(listener);
-          },
-        };
-      },
-    };
+  onStatusChange(callback: (status: TransportStatus) => void): () => void {
+    callback(this._status); // replay current value
+    const listener = (s: TransportStatus) => callback(s);
+    this._statusListeners.add(listener);
+    return () => { this._statusListeners.delete(listener); };
   }
 
   get status(): TransportStatus {
     return this._status;
   }
 
-  get messages$(): Subscribable<A2AMessage> {
-    const self = this;
-    return {
-      subscribe(observer: {
-        next?: (v: A2AMessage) => void;
-        error?: (e: unknown) => void;
-        complete?: () => void;
-      }): { unsubscribe(): void } {
-        const next = observer.next ?? (() => {});
-        const listener = (msg: A2AMessage) => next(msg);
-        self._messageListeners.add(listener);
-        return {
-          unsubscribe() {
-            self._messageListeners.delete(listener);
-          },
-        };
-      },
-    };
+  onMessage(callback: (msg: A2AMessage) => void): () => void {
+    const listener = (msg: A2AMessage) => callback(msg);
+    this._messageListeners.add(listener);
+    return () => { this._messageListeners.delete(listener); };
   }
 
   get sentMessagesList(): A2AMessage[] {
@@ -360,8 +322,7 @@ describe('A2AClient Request', () => {
     await client.start();
     await vi.advanceTimersByTimeAsync(100);
 
-    const subscribable = client.request('target-agent', { action: 'test' });
-    const subscription = subscribable.subscribe({});
+    const unsub = client.request('target-agent', { action: 'test' }, () => {});
 
     await vi.advanceTimersByTimeAsync(100);
 
@@ -371,15 +332,17 @@ describe('A2AClient Request', () => {
     expect(requestMsg!.to).toBe('target-agent');
     expect(requestMsg!.payload).toEqual({ action: 'test' });
 
-    subscription.unsubscribe();
+    unsub();
   });
 
   it('should receive response for request', async () => {
     await client.start();
     await vi.advanceTimersByTimeAsync(100);
 
-    const requestPromise = firstValue(
-      client.request('target-agent', { action: 'test' })
+    const requestPromise = requestAsPromise(
+      client,
+      'target-agent',
+      { action: 'test' }
     );
 
     await vi.advanceTimersByTimeAsync(100);
@@ -414,13 +377,13 @@ describe('A2AClient Request', () => {
       }
     });
 
-    const subscription = client.request('target-agent', {}).subscribe({});
+    const unsub = client.request('target-agent', {}, () => {});
     await vi.advanceTimersByTimeAsync(100);
 
     expect(events).toHaveLength(1);
     expect(events[0]!.details?.targetId).toBe('target-agent');
 
-    subscription.unsubscribe();
+    unsub();
   });
 
   it('should emit response_received event on success', async () => {
@@ -434,8 +397,10 @@ describe('A2AClient Request', () => {
       }
     });
 
-    const requestPromise = firstValue(
-      client.request('target-agent', {})
+    const requestPromise = requestAsPromise(
+      client,
+      'target-agent',
+      {}
     );
 
     await vi.advanceTimersByTimeAsync(100);
@@ -455,8 +420,10 @@ describe('A2AClient Request', () => {
     await client.start();
     await vi.advanceTimersByTimeAsync(100);
 
-    const requestPromise = firstValue(
-      client.request('target-agent', {})
+    const requestPromise = requestAsPromise(
+      client,
+      'target-agent',
+      {}
     );
 
     await vi.advanceTimersByTimeAsync(100);
@@ -491,8 +458,10 @@ describe('A2AClient Request', () => {
       }
     });
 
-    const requestPromise = firstValue(
-      client.request('target-agent', {})
+    const requestPromise = requestAsPromise(
+      client,
+      'target-agent',
+      {}
     );
 
     await vi.advanceTimersByTimeAsync(100);
@@ -537,8 +506,11 @@ describe('A2AClient Request', () => {
       }
     });
 
-    const resultPromise = firstValue(
-      client.request('target-agent', {}, { timeout: 1000 })
+    const resultPromise = requestAsPromise(
+      client,
+      'target-agent',
+      {},
+      { timeout: 1000 }
     );
 
     await vi.advanceTimersByTimeAsync(1100);
@@ -1033,10 +1005,10 @@ describe('A2AClient Error Handling', () => {
 
     transport.setFailSend(true);
 
-    const requestPromise = firstValue(client.request('target-agent', {}));
-    
+    const requestPromise = requestAsPromise(client, 'target-agent', {});
+
     // With failSend, the connection.request send will fail,
-    // calling observer.error which client catches and converts
+    // calling callback with error which client catches and converts
     const result = await Promise.race([
       requestPromise,
       new Promise<A2AMessage>((resolve) => setTimeout(() => {
@@ -1089,7 +1061,7 @@ describe('A2AClient Connection Access', () => {
     await client.start();
     await vi.advanceTimersByTimeAsync(100);
 
-    client.request('target', {}).subscribe({});
+    client.request('target', {}, () => {});
     await vi.advanceTimersByTimeAsync(100);
 
     const pending = client.getPendingRequestIds();
@@ -1100,7 +1072,7 @@ describe('A2AClient Connection Access', () => {
     await client.start();
     await vi.advanceTimersByTimeAsync(100);
 
-    client.request('target', {}).subscribe({});
+    client.request('target', {}, () => {});
     await vi.advanceTimersByTimeAsync(100);
 
     const pending = client.getPendingRequestIds();
@@ -1171,9 +1143,7 @@ describe('MockTransport (exported)', () => {
     const transport = new MockTransport({ agentId: 'test' });
 
     const messages: A2AMessage[] = [];
-    transport.messages$.subscribe({
-      next: (msg) => messages.push(msg),
-    });
+    transport.onMessage((msg) => messages.push(msg));
 
     transport.simulateMessage({
       id: 'msg-1',

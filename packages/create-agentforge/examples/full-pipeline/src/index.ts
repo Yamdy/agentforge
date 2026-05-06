@@ -40,5 +40,5 @@ for (const type of eventTypes) {
 }
 
 // Run the agent
-const result = await agent.run$('Hello! How can I help you today?');
+const result = await agent.run('Hello! How can I help you today?');
 console.log('Agent execution completed:', result);

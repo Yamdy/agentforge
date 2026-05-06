@@ -41,7 +41,7 @@ const TEST_TIMEOUT = 60000;
 
 describe.skipIf(!HAS_API_KEY)('E2E: Real LLM Tests', () => {
   let llm: RealLLMAdapter;
-  let subscriptions: any[];
+  let subscriptions: (() => void)[];
 
   beforeEach(() => {
     llm = new RealLLMAdapter(API_CONFIG);
@@ -49,9 +49,9 @@ describe.skipIf(!HAS_API_KEY)('E2E: Real LLM Tests', () => {
   });
 
   afterEach(() => {
-    // Cleanup all subscriptions
-    for (const sub of subscriptions) {
-      sub.unsubscribe();
+    // Cleanup all subscriptions (each is an unsubscribe function)
+    for (const unsub of subscriptions) {
+      unsub();
     }
     subscriptions = [];
   });
@@ -486,50 +486,46 @@ describe.skipIf(!HAS_API_KEY)('E2E: Real LLM Tests', () => {
   // ========================================
   describe('Subscription Cleanup', () => {
     it(
-      'should properly cleanup subscriptions',
+      'should properly cleanup subscriptions via onAny',
       async () => {
         const ctx = createTestContext(llm);
-        const config = createTestConfig();
+        const config = createTestConfig({ maxSteps: 1 });
 
         const agent = createAgentLoop(ctx, config);
 
-        // Create subscription
-        const sub = agent.run$('Quick test.').subscribe({
-          next: () => {},
-          complete: () => {},
-        });
-        subscriptions.push(sub);
+        // Subscribe via onAny — returns unsubscribe function
+        const events: unknown[] = [];
+        const unsub = agent.onAny((e) => events.push(e));
+        subscriptions.push(unsub);
 
-        // Wait for completion
-        await new Promise<void>(resolve => {
-          sub.add(() => resolve());
-        });
+        // Run agent
+        const result = await agent.run('Quick test.');
+        unsub();
 
-        // Subscription should be closed
-        expect(sub.closed).toBe(true);
+        // Should have received events before unsubscribing
+        expect(events.length).toBeGreaterThan(0);
+        expect(typeof result).toBe('string');
       },
       TEST_TIMEOUT,
     );
 
     it(
-      'should handle destroy signal',
+      'should receive events during execution',
       async () => {
         const ctx = createTestContext(llm);
-        const config = createTestConfig();
+        const config = createTestConfig({ maxSteps: 1 });
 
         const agent = createAgentLoop(ctx, config);
 
-        // Subscribe and wait for first event (event-driven)
         let eventCount = 0;
-        await new Promise<void>(resolve => {
-          const sub = agent.run$('Long response requested.').subscribe({
-            next: () => {
-              eventCount++;
-              resolve();
-            },
-          });
-          subscriptions.push(sub);
+        const unsub = agent.onAny(() => {
+          eventCount++;
         });
+        subscriptions.push(unsub);
+
+        await agent.run('Say hello.');
+
+        unsub();
 
         // Should have received some events
         expect(eventCount).toBeGreaterThan(0);

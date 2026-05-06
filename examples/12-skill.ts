@@ -718,7 +718,7 @@ async function example5_HotReload(): Promise<void> {
 
     // 订阅事件
     const events: SkillReloadEvent[] = [];
-    const subscription = watcher.events$.subscribe(event => {
+    const unsub = watcher.onReload(event => {
       events.push(event);
     });
 
@@ -784,7 +784,7 @@ async function example5_HotReload(): Promise<void> {
     // 停止监听
     console.log('停止 Watcher...');
     watcher.stop();
-    subscription.unsubscribe();
+    unsub();
     console.log('Watcher 已停止\n');
 
     // 显示注册中心状态
@@ -799,14 +799,14 @@ async function example5_HotReload(): Promise<void> {
 
     // 使用便捷函数
     console.log('使用 watchSkills 便捷函数:');
-    const watch$ = watchSkills([tempDir], {
+    const { watcher: w } = watchSkills([tempDir], () => {}, {
       debounceMs: 100,
       debug: false,
     });
 
     // 注意：这里只是演示 API，实际使用时需要保持订阅
     console.log('  监听器已创建，调用 watcher.stop() 可停止\n');
-    watch$.watcher.stop();
+    w.stop();
   } finally {
     if (existsSync(tempDir)) {
       rmSync(tempDir, { recursive: true, force: true });

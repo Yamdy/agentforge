@@ -5,7 +5,7 @@
  *
  * @example
  * ```typescript
- * import { SubagentRegistry, createSubagentRegistry } from 'agentforge/extensions';
+ * import { SubagentRegistry, createSubagentRegistry } from 'agentforge/subagent';
  * import { createAgentLoop } from 'agentforge';
  *
  * // Create a subagent registry
@@ -22,17 +22,17 @@
  * });
  *
  * // Run the subagent
- * registry.run('research-agent', 'Search for AI news')
- *   .subscribe(event => console.log(event.type));
+ * registry.run('research-agent', 'Search for AI news', (event) => console.log(event.type));
  * ```
  *
- * @module agentforge/extensions
+ * @module agentforge/subagent
  */
 
 // Types
 export type {
   AgentLoop,
   SubagentConfig,
+  RemoteSubagentConfig,
   SubagentRunOptions,
   SubagentResult,
   SubagentEntry,

@@ -237,6 +237,14 @@ export type RecoveryPhase =
   | 'error';
 
 /**
+ * Union of all three phase types for backward compatibility.
+ *
+ * Code that previously accepted a flat LifecyclePhase can migrate
+ * to AnyPhase without breaking existing callers.
+ */
+export type AnyPhase = CheckpointPhase | LifecyclePhase | RecoveryPhase;
+
+/**
  * Result of a checkpoint execution.
  *
  * - continue: Proceed normally.
@@ -286,6 +294,73 @@ export interface CheckpointHook {
   priority: number;
   /** Check function — returns 'continue' or 'block' */
   check: CheckpointFn;
+}
+
+// ============================================================================
+// System Prompt Hook (modify system prompt before LLM call)
+// ============================================================================
+
+/** Hook that transforms the system prompt before it is sent to the LLM. */
+export interface SystemPromptHook {
+  name: string;
+  priority: number;
+  transform(systemPrompt: string, state: AgentState): string | Promise<string>;
+}
+
+// ============================================================================
+// LLM Params Hook (modify LLM call parameters)
+// ============================================================================
+
+/** LLM call parameters that can be modified by hooks. */
+export interface LLMParams {
+  temperature?: number;
+  topP?: number;
+  maxTokens?: number;
+  stop?: string[];
+  [key: string]: unknown;
+}
+
+/** Hook that transforms LLM call parameters before each LLM request. */
+export interface LLMParamsHook {
+  name: string;
+  priority: number;
+  transform(params: LLMParams, state: AgentState): LLMParams | Promise<LLMParams>;
+}
+
+// ============================================================================
+// Message Hook (transform user messages)
+// ============================================================================
+
+/** Hook that transforms a user message before it enters the conversation. */
+export interface MessageHook {
+  name: string;
+  priority: number;
+  transform(message: Message, state: AgentState): Message | Promise<Message>;
+}
+
+// ============================================================================
+// Tool Execute Hook (before/after tool execution)
+// ============================================================================
+
+/** Result of tool execution. */
+export interface ToolExecuteResult {
+  content: string;
+  isError?: boolean;
+}
+
+/** Hook that wraps tool execution — before and after. */
+export interface ToolExecuteHook {
+  name: string;
+  priority: number;
+  beforeExecute?(
+    toolCall: ToolCall,
+    state: AgentState
+  ): ToolBeforeResult | Promise<ToolBeforeResult>;
+  afterExecute?(
+    toolCall: ToolCall,
+    result: ToolExecuteResult,
+    state: AgentState
+  ): ToolExecuteResult | Promise<ToolExecuteResult>;
 }
 
 // ============================================================================
@@ -447,6 +522,74 @@ export class HookRegistry {
     return this.tools.filter(h => typeof h.filter === 'function');
   }
 
+  // ── System Prompt Hooks ──
+
+  private systemPromptHooks: SystemPromptHook[] = [];
+
+  registerSystemPrompt(hook: SystemPromptHook): () => void {
+    this.systemPromptHooks.push(hook);
+    this.systemPromptHooks.sort((a, b) => a.priority - b.priority);
+    return () => {
+      const idx = this.systemPromptHooks.indexOf(hook);
+      if (idx >= 0) this.systemPromptHooks.splice(idx, 1);
+    };
+  }
+
+  getSystemPromptHooks(): SystemPromptHook[] {
+    return this.systemPromptHooks;
+  }
+
+  // ── LLM Params Hooks ──
+
+  private llmParamsHooks: LLMParamsHook[] = [];
+
+  registerLLMParams(hook: LLMParamsHook): () => void {
+    this.llmParamsHooks.push(hook);
+    this.llmParamsHooks.sort((a, b) => a.priority - b.priority);
+    return () => {
+      const idx = this.llmParamsHooks.indexOf(hook);
+      if (idx >= 0) this.llmParamsHooks.splice(idx, 1);
+    };
+  }
+
+  getLLMParamsHooks(): LLMParamsHook[] {
+    return this.llmParamsHooks;
+  }
+
+  // ── Message Hooks ──
+
+  private messageHooks: MessageHook[] = [];
+
+  registerMessage(hook: MessageHook): () => void {
+    this.messageHooks.push(hook);
+    this.messageHooks.sort((a, b) => a.priority - b.priority);
+    return () => {
+      const idx = this.messageHooks.indexOf(hook);
+      if (idx >= 0) this.messageHooks.splice(idx, 1);
+    };
+  }
+
+  getMessageHooks(): MessageHook[] {
+    return this.messageHooks;
+  }
+
+  // ── Tool Execute Hooks ──
+
+  private toolExecuteHooks: ToolExecuteHook[] = [];
+
+  registerToolExecute(hook: ToolExecuteHook): () => void {
+    this.toolExecuteHooks.push(hook);
+    this.toolExecuteHooks.sort((a, b) => a.priority - b.priority);
+    return () => {
+      const idx = this.toolExecuteHooks.indexOf(hook);
+      if (idx >= 0) this.toolExecuteHooks.splice(idx, 1);
+    };
+  }
+
+  getToolExecuteHooks(): ToolExecuteHook[] {
+    return this.toolExecuteHooks;
+  }
+
   // ── Bulk Operations ──
 
   /**
@@ -457,5 +600,9 @@ export class HookRegistry {
     this.recovery.clear();
     this.requests = [];
     this.tools = [];
+    this.systemPromptHooks = [];
+    this.llmParamsHooks = [];
+    this.messageHooks = [];
+    this.toolExecuteHooks = [];
   }
 }

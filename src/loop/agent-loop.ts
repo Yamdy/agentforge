@@ -99,6 +99,8 @@ export interface AgentLoopConfig {
   onStateCreated?: ((state: AgentState) => void) | undefined;
   /** Queue of messages injected by plugins, consumed at top of each loop iteration */
   pendingMessages?: Message[] | undefined;
+  /** Subagent registry — subagents are exposed as tools (delegate-to-{name}) */
+  subagentRegistry?: import('../subagent/registry.js').SubagentRegistry | undefined;
 }
 
 /**
@@ -369,6 +371,12 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       agentName: ctx.agentName,
       model: config.model,
     });
+
+    // ── Register subagents as tools (Mastra listAgentTools pattern) ──
+    if (config.subagentRegistry && config.subagentRegistry.size > 0) {
+      const subagentTools = config.subagentRegistry.listAsTools();
+      ctx.tools.registerAll(subagentTools);
+    }
 
     await runLifecycleHook(
       'session.start',
@@ -1109,4 +1117,58 @@ export function createAgentLoop(ctx: AgentContext, config: AgentLoopConfig): Age
       state = null;
     },
   };
+}
+
+// ============================================================
+// Session Resume
+// ============================================================
+
+/**
+ * Resume an agent loop from a previously saved checkpoint.
+ *
+ * Loads the checkpoint via CheckpointStorage and creates a new AgentLoop
+ * with the saved conversational history. The loop picks up where it left off
+ * when you call `run()` with a follow-up input.
+ *
+ * The caller is responsible for providing tools, plugins, and other
+ * AgentContext dependencies. These are NOT serialized in the checkpoint —
+ * only the agent's conversational state is restored.
+ *
+ * @example
+ * ```typescript
+ * const storage = ctx.checkpoint;
+ * if (!storage) throw new Error('No checkpoint storage configured');
+ *
+ * const loop = await resumeAgentLoop('session-123', storage, ctx, {
+ *   model: { provider: 'openai', model: 'gpt-4o' },
+ *   maxSteps: 10,
+ * });
+ * const result = await loop.run('continue your work');
+ * ```
+ */
+export async function resumeAgentLoop(
+  sessionId: string,
+  storage: import('../core/interfaces.js').CheckpointStorage,
+  ctx: AgentContext,
+  config: AgentLoopConfig
+): Promise<AgentLoop> {
+  let checkpoint = null;
+  try {
+    checkpoint = await storage.load(sessionId);
+  } catch (err) {
+    ctx.logger?.warn('Failed to load checkpoint, starting fresh', {
+      sessionId,
+      error: serializeError(err),
+    });
+  }
+
+  const ctxWithStorage: AgentContext = {
+    ...ctx,
+    checkpoint: storage,
+  };
+
+  return createAgentLoop(ctxWithStorage, {
+    ...config,
+    history: checkpoint?.state.messages ?? [],
+  });
 }

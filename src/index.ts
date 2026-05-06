@@ -10,6 +10,7 @@
  *   agentforge/core         — Core interfaces, events, state, hooks, lifecycle, observability
  *   agentforge/loop         — Agent loop factory (createAgentLoop)
  *   agentforge/extensions   — Subagent delegation, MCP client, skill system
+ *   agentforge/subagent     — Subagent registry, remote subagent, async execution
  *   agentforge/planning     — Task planning engine
  *   agentforge/memory       — Compaction, vector stores, semantic memory, storage
  *   agentforge/security     — Security guard, sandbox executor, permission, audit, validation
@@ -51,8 +52,15 @@ export type {
   LifecyclePhase,
   CheckpointPhase,
   RecoveryPhase,
+  AnyPhase,
   LifecycleHookEntry,
   RecoveryHookEntry,
+  SystemPromptHook,
+  LLMParamsHook,
+  LLMParams,
+  MessageHook,
+  ToolExecuteHook,
+  ToolExecuteResult,
 } from './core/hooks.js';
 
 export { RequestHookPriority, DEFAULT_REQUEST_HOOK_PRIORITY } from './core/hooks.js';
@@ -128,7 +136,7 @@ export { ContextBuilder, createApplicationServices } from './core/context-builde
 
 export type { AgentLoop, AgentLoopConfig, RunResult } from './loop/index.js';
 
-export { createAgentLoop } from './loop/index.js';
+export { createAgentLoop, resumeAgentLoop } from './loop/index.js';
 
 // ============================================================
 // LLM Adapters

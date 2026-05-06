@@ -6,7 +6,8 @@
  */
 
 export { createAgentForgeServer } from './server.js';
-export { observableToSSE, parseSSEStream } from './sse.js';
+export { streamToSSE, parseSSEStream } from './sse.js';
+export type { EventSubscriber } from './sse.js';
 export { InMemorySessionStore } from './session-store.js';
 export { FileConfigStore } from './config-store.js';
 export { AgentFactory } from './agent-factory.js';

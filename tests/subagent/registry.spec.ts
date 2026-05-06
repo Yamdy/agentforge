@@ -14,6 +14,7 @@ import type {
   SubagentConfig,
   AgentLoop,
 } from '../../src/subagent/types.js';
+import type { RunResult } from '../../src/loop/agent-loop.js';
 import type { AgentEvent } from '../../src/core/events.js';
 
 // ============================================================
@@ -52,7 +53,7 @@ class MockAgentLoop implements AgentLoop {
     this.behavior = behavior;
   }
 
-  async run(input: string): Promise<string> {
+  async run(input: string): Promise<RunResult> {
     this.runCallCount++;
     this.runInputs.push(input);
 
@@ -68,7 +69,7 @@ class MockAgentLoop implements AgentLoop {
       }
     }
 
-    return this.behavior.output ?? 'mock output';
+    return { output: this.behavior.output ?? 'mock output', status: 'success' as const };
   }
 
   on(_type: string, _listener: (event: AgentEvent) => void): () => void {

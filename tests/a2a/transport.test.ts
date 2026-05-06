@@ -22,7 +22,6 @@ import {
   TransportParseError,
 } from '../../src/a2a/index.js';
 import type { A2ATransport, A2ATransportOptions } from '../../src/a2a/index.js';
-import type { Subscribable } from '../../src/a2a/transport.js';
 
 // ============================================================
 // Mock Transport for Factory Tests
@@ -37,39 +36,17 @@ function createMockTransport(options: A2ATransportOptions): A2ATransport {
     name: 'mock',
     agentId: options.agentId,
     status: 'disconnected' as const,
-    status$: {
-      subscribe(observer: {
-        next?: (v: import('../../src/a2a/index.js').TransportStatus) => void;
-        error?: (e: unknown) => void;
-        complete?: () => void;
-      }): { unsubscribe(): void } {
-        const next = observer.next ?? (() => {});
-        next(_status); // replay
-        const listener = (s: import('../../src/a2a/index.js').TransportStatus) => next(s);
-        statusListeners.add(listener);
-        return {
-          unsubscribe() {
-            statusListeners.delete(listener);
-          },
-        };
-      },
-    } as Subscribable<import('../../src/a2a/index.js').TransportStatus>,
-    messages$: {
-      subscribe(observer: {
-        next?: (v: import('../../src/a2a/index.js').A2AMessage) => void;
-        error?: (e: unknown) => void;
-        complete?: () => void;
-      }): { unsubscribe(): void } {
-        const next = observer.next ?? (() => {});
-        const listener = (m: import('../../src/a2a/index.js').A2AMessage) => next(m);
-        messageListeners.add(listener);
-        return {
-          unsubscribe() {
-            messageListeners.delete(listener);
-          },
-        };
-      },
-    } as Subscribable<import('../../src/a2a/index.js').A2AMessage>,
+    onStatusChange(callback: (status: import('../../src/a2a/index.js').TransportStatus) => void): () => void {
+      callback(_status); // replay
+      const listener = (s: import('../../src/a2a/index.js').TransportStatus) => callback(s);
+      statusListeners.add(listener);
+      return () => { statusListeners.delete(listener); };
+    },
+    onMessage(callback: (msg: import('../../src/a2a/index.js').A2AMessage) => void): () => void {
+      const listener = (m: import('../../src/a2a/index.js').A2AMessage) => callback(m);
+      messageListeners.add(listener);
+      return () => { messageListeners.delete(listener); };
+    },
     connect: async () => {
       _status = 'connected';
       for (const l of statusListeners) l('connected');
