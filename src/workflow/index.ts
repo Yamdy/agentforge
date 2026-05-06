@@ -87,3 +87,14 @@ export {
   createParallelPipeline,
   type PipelineResult,
 } from './pipeline.js';
+
+// ============================================================
+// Agent → Step Bridge
+// ============================================================
+
+export {
+  createStepFromAgent,
+  createWorkflowFromAgents,
+  type AgentStepOptions,
+  type AgentLike,
+} from './agent-step.js';

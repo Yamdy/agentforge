@@ -378,7 +378,7 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
     timestamp: z.number(),
     sessionId: z.string(),
     feedbackType: z.string(),
-    value: z.number(),
+    value: z.number().min(0).max(1),
     comment: z.string().optional(),
   }),
 ]);

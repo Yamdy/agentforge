@@ -135,13 +135,16 @@ export async function evaluateAgent(
             sessionId: `${runId}-case-${caseIdx}`,
             runId,
             compositeScore: evalResult.compositeScore,
-            scorers: evalResult.scores
-              .filter(s => s.success)
-              .map((s, idx) => ({
-                name: s.scorerName,
-                score: s.score,
-                weight: scorers[idx]?.weight ?? 1,
-              })),
+            scorers: ((): Array<{ name: string; score: number; weight: number }> => {
+              const weightMap = new Map(scorers.map(s => [s.name, s.weight]));
+              return evalResult.scores
+                .filter(s => s.success)
+                .map(s => ({
+                  name: s.scorerName,
+                  score: s.score,
+                  weight: weightMap.get(s.scorerName) ?? 1,
+                }));
+            })(),
           });
         }
 

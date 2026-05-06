@@ -81,7 +81,7 @@ export class MetricsCollectorImpl implements MetricsCollector {
    * @param name - Counter name
    * @param labels - Optional label key-value pairs
    */
-  incrementCounter(name: string, labels?: Record<string, string>): void {
+  incrementCounter(name: string, labels?: Record<string, string>, count = 1): void {
     const key = this._fullName(name);
     let state = this._metrics.get(key);
 
@@ -109,7 +109,7 @@ export class MetricsCollectorImpl implements MetricsCollector {
       }
     }
     const current = state.labelSets.get(labelKey) ?? 0;
-    state.labelSets.set(labelKey, current + 1);
+    state.labelSets.set(labelKey, current + count);
   }
 
   /**

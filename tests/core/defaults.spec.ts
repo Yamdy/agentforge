@@ -238,11 +238,11 @@ describe('BridgeMetrics', () => {
     });
   });
 
-  it('should call incrementCounter multiple times when value > 1', () => {
-    const counterCalls: string[] = [];
+  it('should call incrementCounter once with count when value > 1', () => {
+    const counterCalls: Array<{ name: string; count: number }> = [];
     const collector: MetricsCollector = {
-      incrementCounter: (name) => {
-        counterCalls.push(name);
+      incrementCounter: (name, _labels?, count?) => {
+        counterCalls.push({ name, count: count ?? 1 });
       },
       recordHistogram: () => {},
       recordGauge: () => {},
@@ -253,7 +253,8 @@ describe('BridgeMetrics', () => {
     const metrics = new BridgeMetrics(collector);
     metrics.increment('retries', 3);
 
-    expect(counterCalls).toHaveLength(3);
+    expect(counterCalls).toHaveLength(1);
+    expect(counterCalls[0]).toEqual({ name: 'retries', count: 3 });
   });
 
   it('should default value to 1 for increment', () => {

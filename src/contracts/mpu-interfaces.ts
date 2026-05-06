@@ -520,7 +520,7 @@ export interface HealthChecker {
  */
 export interface MetricsCollector {
   /** 增加计数器 */
-  incrementCounter(name: string, labels?: Record<string, string>): void;
+  incrementCounter(name: string, labels?: Record<string, string>, count?: number): void;
 
   /** 记录直方图 */
   recordHistogram(name: string, value: number, labels?: Record<string, string>): void;

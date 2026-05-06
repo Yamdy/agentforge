@@ -159,6 +159,11 @@ export class LLMScorer {
     }
   }
 
+  /** Scorer name from config. */
+  get name(): string {
+    return this.config.name;
+  }
+
   /**
    * Weight for composite scoring.
    *

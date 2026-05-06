@@ -195,6 +195,8 @@ export async function performStreamingLLMCall(
     let finishReason: LLMResponse['finishReason'] = 'stop';
     let usage: LLMResponse['usage'] | undefined;
 
+    const streamStartTime = Date.now();
+    let firstTokenEmitted = false;
     const stream = ctx.llm.stream(msgs, llmOpts);
 
     for await (const chunk of stream) {
@@ -202,6 +204,16 @@ export async function performStreamingLLMCall(
 
       // Text delta — lightweight callback + emitter fast path
       if (chunk.text) {
+        if (!firstTokenEmitted) {
+          firstTokenEmitted = true;
+          const ttftMs = Date.now() - streamStartTime;
+          void emitter.emit({
+            type: 'llm.first_token',
+            timestamp: Date.now(),
+            sessionId: ctx.sessionId,
+            ttftMs,
+          });
+        }
         textContent += chunk.text;
         onChunk?.({ content: chunk.text });
         emitter.emitChunk(chunk.text, { index: textContent.length - chunk.text.length });

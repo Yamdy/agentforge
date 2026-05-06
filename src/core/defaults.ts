@@ -196,13 +196,13 @@ export class ConsoleMetrics implements Metrics {
  */
 export class BridgeMetrics implements Metrics {
   private collector: {
-    incrementCounter(name: string, labels?: Record<string, string>): void;
+    incrementCounter(name: string, labels?: Record<string, string>, count?: number): void;
     recordHistogram(name: string, value: number, labels?: Record<string, string>): void;
     recordGauge(name: string, value: number, labels?: Record<string, string>): void;
   };
 
   constructor(collector: {
-    incrementCounter(name: string, labels?: Record<string, string>): void;
+    incrementCounter(name: string, labels?: Record<string, string>, count?: number): void;
     recordHistogram(name: string, value: number, labels?: Record<string, string>): void;
     recordGauge(name: string, value: number, labels?: Record<string, string>): void;
   }) {
@@ -210,12 +210,9 @@ export class BridgeMetrics implements Metrics {
   }
 
   increment(name: string, value?: number, tags?: Record<string, string>): void {
-    // Metrics.increment defaults to 1, MetricsCollector tracks counts
-    // Call incrementCounter 'value' times (default 1)
+    // Pass value through to collector — collector adds value to counter in one call
     const count = value ?? 1;
-    for (let i = 0; i < count; i++) {
-      this.collector.incrementCounter(name, tags);
-    }
+    this.collector.incrementCounter(name, tags, count);
   }
 
   histogram(name: string, value: number, tags?: Record<string, string>): void {

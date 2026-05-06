@@ -73,7 +73,7 @@ export class SensitiveDataFilter {
    * Deep-filter nested objects (max depth: 5 to avoid circular refs).
    */
   filterDeep(obj: Record<string, unknown>, depth = 0): Record<string, unknown> {
-    if (depth > 5) return obj;
+    if (depth > 5) return { '[max-depth]': true };
 
     const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(obj)) {

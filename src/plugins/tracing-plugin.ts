@@ -53,6 +53,8 @@ export function createTracingPlugin(options: TracingPluginOptions = {}): Plugin 
   const sessionStacks = new Map<string, SpanStack>();
   const sessionRootSpan = new Map<string, string>();
   const sessionSampled = new Map<string, boolean>();
+  // Tool spans keyed by toolCallId — stack pop would mis-match parallel tool calls
+  const toolSpans = new Map<string, Map<string, string>>();
 
   // ---- Sampling (per-session stable decision) ----
   function isSampled(sessionId: string): boolean {
@@ -116,7 +118,14 @@ export function createTracingPlugin(options: TracingPluginOptions = {}): Plugin 
     },
 
     destroy(): void {
-      // Force-end all open spans
+      // Force-end all open tool spans
+      for (const sessionTools of toolSpans.values()) {
+        for (const spanId of sessionTools.values()) {
+          tracer?.endSpan(spanId, { code: 'error' });
+        }
+      }
+      toolSpans.clear();
+      // Force-end all open stack spans
       for (const stack of sessionStacks.values()) {
         while (stack.length > 0) {
           const spanId = stack.pop()!;
@@ -125,6 +134,7 @@ export function createTracingPlugin(options: TracingPluginOptions = {}): Plugin 
       }
       sessionStacks.clear();
       sessionRootSpan.clear();
+      sessionSampled.clear();
       tracer = undefined;
     },
 
@@ -249,7 +259,12 @@ export function createTracingPlugin(options: TracingPluginOptions = {}): Plugin 
     });
 
     if (toolSpanId) {
-      pushSpan(event.sessionId, toolSpanId);
+      let sessionTools = toolSpans.get(event.sessionId);
+      if (!sessionTools) {
+        sessionTools = new Map();
+        toolSpans.set(event.sessionId, sessionTools);
+      }
+      sessionTools.set(event.toolCallId, toolSpanId);
     }
   }
 
@@ -257,8 +272,13 @@ export function createTracingPlugin(options: TracingPluginOptions = {}): Plugin 
     if (event.type !== 'tool.result') return;
     if (!tracer || !isSampled(event.sessionId)) return;
 
-    const spanId = popSpan(event.sessionId);
+    const sessionTools = toolSpans.get(event.sessionId);
+    if (!sessionTools) return;
+    const spanId = sessionTools.get(event.toolCallId);
     if (!spanId) return;
+
+    sessionTools.delete(event.toolCallId);
+    if (sessionTools.size === 0) toolSpans.delete(event.sessionId);
 
     const attrs: Record<string, string | number | boolean> = {};
     if (event.errorType) {
@@ -346,9 +366,17 @@ export function createTracingPlugin(options: TracingPluginOptions = {}): Plugin 
 
   function handleDone(event: AgentEvent): void {
     if (event.type !== 'done') return;
-    if (!tracer || !isSampled(event.sessionId)) return;
+    if (!tracer) return;
 
-    // Force-end all remaining open spans for this session
+    // Force-end all open tool spans for this session (unconditional cleanup)
+    const sessionTools = toolSpans.get(event.sessionId);
+    if (sessionTools) {
+      for (const spanId of sessionTools.values()) {
+        tracer.endSpan(spanId, { code: 'error' });
+      }
+    }
+
+    // Force-end all remaining stack spans for this session
     const stack = sessionStacks.get(event.sessionId);
     if (stack) {
       while (stack.length > 0) {
@@ -367,6 +395,7 @@ export function createTracingPlugin(options: TracingPluginOptions = {}): Plugin 
   }
 
   function cleanupSession(sessionId: string): void {
+    toolSpans.delete(sessionId);
     sessionStacks.delete(sessionId);
     sessionRootSpan.delete(sessionId);
     sessionSampled.delete(sessionId);

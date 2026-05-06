@@ -76,7 +76,7 @@ export {
   createSummarizationPlugin,
   createTodoListPlugin,
   loggingPlugin,
-  metricsPlugin,
+  createMetricsPlugin,
 } from './plugins/index.js';
 
 // ============================================================

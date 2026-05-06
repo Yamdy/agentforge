@@ -128,16 +128,9 @@ export function createCostEstimationPlugin(options: CostEstimationPluginOptions 
         );
         cacheSavings = calculateCacheSavings(provider, model, cacheReadTokens);
       } else {
-        // Try with a reasonable default
-        cost = calculateCost(
-          defaultProvider,
-          'gpt-4o',
-          promptTokens,
-          completionTokens,
-          cacheReadTokens,
-          cacheWriteTokens
-        );
-        cacheSavings = calculateCacheSavings(defaultProvider, 'gpt-4o', cacheReadTokens);
+        // Unknown model — cannot estimate cost accurately, return 0
+        cost = 0;
+        cacheSavings = 0;
       }
     }
 

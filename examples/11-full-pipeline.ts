@@ -53,7 +53,7 @@ import {
   PluginManager,
   createPluginManager,
   loggingPlugin,
-  metricsPlugin,
+  createMetricsPlugin,
   type ObserverPlugin,
   type PluginContext,
 } from '../src/plugins/index.js';
@@ -588,7 +588,7 @@ async function scenarioC_pluginsAndCompaction(): Promise<void> {
   // — 插件管理器 —
   const pluginManager = createPluginManager();
   pluginManager.register(loggingPlugin); // 内置日志插件
-  pluginManager.register(metricsPlugin); // 内置指标插件
+  pluginManager.register(createMetricsPlugin()); // 内置指标插件
   pluginManager.register(billingPlugin); // 自定义计费插件
 
   console.log(

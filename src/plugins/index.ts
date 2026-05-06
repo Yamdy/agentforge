@@ -33,7 +33,7 @@ export { PluginManager, createPluginManager } from './manager.js';
 // Built-in Plugins
 // ============================================================
 
-export { metricsPlugin } from './metrics-plugin.js';
+export { createMetricsPlugin } from './metrics-plugin.js';
 export { loggingPlugin } from './logging-plugin.js';
 export { createMemoryPlugin } from './memory-plugin.js';
 export { createSkillsPlugin, type SkillMetadata } from './skills-plugin.js';

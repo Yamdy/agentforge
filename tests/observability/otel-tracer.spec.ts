@@ -32,13 +32,17 @@ function createSpan() {
 vi.mock('@opentelemetry/api', () => ({
   trace: {
     getTracer: vi.fn(() => ({
-      startSpan: vi.fn(() => {
+      startSpan: vi.fn((_name: string, _opts?: unknown, _parentCtx?: unknown) => {
         const span = createSpan();
         mockSpans.push(span);
         return span;
       }),
     })),
     setGlobalTracerProvider: vi.fn(),
+    setSpan: vi.fn((_ctx: unknown, _span: unknown) => Symbol('parent-ctx')),
+  },
+  context: {
+    active: vi.fn(() => Symbol('active-ctx')),
   },
 }));
 

@@ -74,6 +74,12 @@ export class OTelTracer implements Tracer {
   /** OTel Tracer obtained via trace.getTracer() */
   private _otelTracer: unknown = null;
 
+  /** OTel Trace API (set during configure()) */
+  private _traceApi: unknown = null;
+
+  /** OTel Context API (set during configure()) */
+  private _contextApi: unknown = null;
+
   /** Active spans keyed by their OTel spanContext().spanId (16 hex chars) */
   private activeSpans: Map<string, unknown> = new Map();
 
@@ -122,7 +128,7 @@ export class OTelTracer implements Tracer {
 
     // ---- Phase 1: Core SDK imports ----
     const [
-      { trace },
+      { trace, context },
       { NodeTracerProvider },
       { BatchSpanProcessor, AlwaysOnSampler, AlwaysOffSampler, TraceIdRatioBasedSampler },
     ] = await Promise.all([
@@ -180,6 +186,8 @@ export class OTelTracer implements Tracer {
     this._otelTracer = (trace as { getTracer(name: string, version?: string): unknown }).getTracer(
       'agentforge'
     );
+    this._traceApi = trace;
+    this._contextApi = context;
     this._configured = true;
   }
 
@@ -212,6 +220,8 @@ export class OTelTracer implements Tracer {
 
     this._provider = null;
     this._otelTracer = null;
+    this._traceApi = null;
+    this._contextApi = null;
     this._configured = false;
   }
 
@@ -230,7 +240,8 @@ export class OTelTracer implements Tracer {
     const otelTracer = this._otelTracer as {
       startSpan(
         name: string,
-        opts?: Record<string, unknown>
+        opts?: Record<string, unknown>,
+        parentCtx?: unknown
       ): {
         spanContext(): { spanId: string };
       };
@@ -240,19 +251,23 @@ export class OTelTracer implements Tracer {
       attributes: options?.attributes ?? {},
     };
 
-    // Link to parent span if provided — enables span hierarchy
-    if (options?.parent) {
+    let parentCtx: unknown;
+
+    // Set parent span via OTel context propagation for true nested hierarchy.
+    // trace.setSpan(ctx, parentSpan) creates a new context with the parent span
+    // as active — startSpan then automatically creates a child-of relationship.
+    if (options?.parent && this._traceApi && this._contextApi) {
       const parentSpan = this.activeSpans.get(options.parent);
       if (parentSpan) {
-        const ctx = (
-          parentSpan as { spanContext(): { spanId: string; traceId: string; traceFlags: number } }
-        ).spanContext();
-        // Import OTel context API lazily to create a parent context
-        startOpts.links = [{ context: { spanContext: (): typeof ctx => ctx } }];
+        const activeCtx = (this._contextApi as { active(): unknown }).active();
+        parentCtx = (this._traceApi as { setSpan(ctx: unknown, span: unknown): unknown }).setSpan(
+          activeCtx,
+          parentSpan
+        );
       }
     }
 
-    const span = otelTracer.startSpan(name, startOpts);
+    const span = otelTracer.startSpan(name, startOpts, parentCtx);
 
     const spanId = span.spanContext().spanId;
     this.activeSpans.set(spanId, span);

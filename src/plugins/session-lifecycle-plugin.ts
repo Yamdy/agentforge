@@ -82,26 +82,28 @@ export function createSessionLifecyclePlugin(options: SessionLifecyclePluginOpti
     });
 
     // Build correlation context
-    const ctx: CorrelationContext = {
+    const corr: CorrelationContext = {
       sessionId: event.sessionId,
       ...(userId !== undefined ? { userId } : {}),
       ...(orgId !== undefined ? { orgId } : {}),
       ...(environment !== undefined ? { environment } : {}),
     };
 
-    // Emit session.start within correlation scope
-    runWithCorrelation(ctx, async () => {
-      if (emitter) {
-        await emitter.emit({
+    // Emit session.start within correlation scope.
+    // Capture emitter before async gap — destroy() may set it to undefined.
+    const capturedEmitter = emitter;
+    runWithCorrelation(corr, async () => {
+      if (capturedEmitter) {
+        await capturedEmitter.emit({
           type: 'session.start',
           timestamp: Date.now(),
           sessionId: event.sessionId,
           agentName: event.agentName,
           model: event.model,
           correlation: {
-            ...(userId !== undefined ? { userId } : {}),
-            ...(orgId !== undefined ? { orgId } : {}),
-            ...(environment !== undefined ? { environment } : {}),
+            userId: corr.userId,
+            orgId: corr.orgId,
+            environment: corr.environment,
           },
         });
       }
