@@ -381,7 +381,10 @@ export interface Tracer {
   startSpan(name: string, options?: SpanOptions): string;
 
   /** End a span */
-  endSpan(spanId: string, options?: { code?: string }): void;
+  endSpan(spanId: string, options?: { code?: string; duration?: number }): void;
+
+  /** Set a key-value attribute on a span */
+  setAttribute(spanId: string, key: string, value: string | number | boolean): void;
 
   /** Add event to span */
   addEvent(spanId: string, name: string, attributes?: Record<string, unknown>): void;

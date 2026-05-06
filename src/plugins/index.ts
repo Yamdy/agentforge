@@ -41,6 +41,23 @@ export {
   createSummarizationPlugin,
   type SummarizationPluginConfig,
 } from './summarization-plugin.js';
+export {
+  createTracingPlugin,
+  type TracingPluginOptions,
+  type SamplerConfig,
+} from './tracing-plugin.js';
+export {
+  createCostEstimationPlugin,
+  type CostEstimationPluginOptions,
+} from './cost-estimation-plugin.js';
+export {
+  createEvaluationTracingPlugin,
+  type EvaluationTracingPluginOptions,
+} from './evaluation-tracing-plugin.js';
+export {
+  createSessionLifecyclePlugin,
+  type SessionLifecyclePluginOptions,
+} from './session-lifecycle-plugin.js';
 
 // ============================================================
 // Built-in Checkpoint Plugins

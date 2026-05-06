@@ -33,6 +33,7 @@ export {
   isAgentLifecycleEvent,
   isTerminalEvent,
   isCompactionEvent,
+  isSessionEvent,
   serializeError,
   generateId,
 } from './events.js';

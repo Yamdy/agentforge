@@ -54,6 +54,22 @@ export const ATTR_AGENTFORGE_EVENT = 'agentforge.event';
 export const ATTR_AGENTFORGE_TOOL_RESULT = 'agentforge.tool.result';
 /** Error code for agent.error events */
 export const ATTR_AGENTFORGE_ERROR_CODE = 'agentforge.error.code';
+/** Cache read token count */
+export const ATTR_AGENTFORGE_CACHE_READ_TOKENS = 'agentforge.cache.read_tokens';
+/** Cache write token count */
+export const ATTR_AGENTFORGE_CACHE_WRITE_TOKENS = 'agentforge.cache.write_tokens';
+/** Time to first token in milliseconds */
+export const ATTR_AGENTFORGE_TTFT_MS = 'agentforge.ttft_ms';
+/** Estimated cost in USD */
+export const ATTR_AGENTFORGE_COST = 'agentforge.cost';
+/** Cache cost savings in USD */
+export const ATTR_AGENTFORGE_CACHE_SAVINGS = 'agentforge.cache_savings';
+/** Tool error type classification */
+export const ATTR_AGENTFORGE_TOOL_ERROR_TYPE = 'agentforge.tool.error_type';
+/** Evaluation composite score */
+export const ATTR_AGENTFORGE_EVAL_SCORE = 'agentforge.eval.score';
+/** Evaluation run identifier */
+export const ATTR_AGENTFORGE_EVAL_RUN_ID = 'agentforge.eval.run_id';
 
 // ============================================================
 // Operation Name Values

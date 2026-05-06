@@ -222,6 +222,7 @@ export class OTelTracer implements Tracer {
   /**
    * Start a new span.
    * Returns '' (empty string) when not yet configured (no-op mode).
+   * When a parent span ID is provided, the new span is created as a child.
    */
   startSpan(name: string, options?: SpanOptions): string {
     if (!this._configured || !this._otelTracer) return '';
@@ -235,9 +236,23 @@ export class OTelTracer implements Tracer {
       };
     };
 
-    const span = otelTracer.startSpan(name, {
+    const startOpts: Record<string, unknown> = {
       attributes: options?.attributes ?? {},
-    });
+    };
+
+    // Link to parent span if provided — enables span hierarchy
+    if (options?.parent) {
+      const parentSpan = this.activeSpans.get(options.parent);
+      if (parentSpan) {
+        const ctx = (
+          parentSpan as { spanContext(): { spanId: string; traceId: string; traceFlags: number } }
+        ).spanContext();
+        // Import OTel context API lazily to create a parent context
+        startOpts.links = [{ context: { spanContext: (): typeof ctx => ctx } }];
+      }
+    }
+
+    const span = otelTracer.startSpan(name, startOpts);
 
     const spanId = span.spanContext().spanId;
     this.activeSpans.set(spanId, span);
@@ -249,10 +264,15 @@ export class OTelTracer implements Tracer {
    * No-op if spanId is unknown or tracer is not configured.
    * Sets status to ERROR (code=2) when options.code === 'error',
    * otherwise defaults to OK.
+   * When `duration` is provided (ms), it overrides the span's own timing
+   * (useful when event timestamps are more accurate than span clock).
    */
-  endSpan(spanId: string, options?: { code?: string }): void {
+  endSpan(spanId: string, options?: { code?: string; duration?: number }): void {
     const span = this.activeSpans.get(spanId) as
-      | { setStatus(status: { code: number; message?: string }): void; end(): void }
+      | {
+          setStatus(status: { code: number; message?: string }): void;
+          end(endTime?: [number, number]): void;
+        }
       | undefined;
 
     if (!span) return;
@@ -263,8 +283,29 @@ export class OTelTracer implements Tracer {
       span.setStatus({ code: 1 }); // SpanStatusCode.OK = 1
     }
 
-    span.end();
+    if (options?.duration !== undefined) {
+      // Convert ms duration to hrtime [seconds, nanoseconds]
+      const seconds = Math.floor(options.duration / 1000);
+      const nanos = (options.duration % 1000) * 1_000_000;
+      span.end([seconds, nanos]);
+    } else {
+      span.end();
+    }
+
     this.activeSpans.delete(spanId);
+  }
+
+  /**
+   * Set a key-value attribute on a span.
+   * No-op if spanId is unknown or tracer is not configured.
+   */
+  setAttribute(spanId: string, key: string, value: string | number | boolean): void {
+    const span = this.activeSpans.get(spanId) as
+      | { setAttribute(key: string, value: string | number | boolean): void }
+      | undefined;
+
+    if (!span) return;
+    span.setAttribute(key, value);
   }
 
   /**

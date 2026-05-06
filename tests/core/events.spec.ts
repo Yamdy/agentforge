@@ -37,27 +37,32 @@ import {
 // ============================================================
 
 describe('AgentEventTypeSchema', () => {
-  it('should have exactly 14 event types (reduced from 31)', () => {
+  it('should have exactly 19 event types', () => {
     const types = AgentEventTypeSchema.options;
-    expect(types.length).toBe(14);
+    expect(types.length).toBe(19);
   });
 
-  it('should validate all 14 event types', () => {
+  it('should validate all 19 event types', () => {
     const allEvents = [
       'agent.start',
       'agent.complete',
       'agent.error',
       'llm.request',
       'llm.response',
+      'llm.first_token',
       'tool.call',
       'tool.result',
       'state.change',
       'done',
+      'session.start',
+      'session.end',
       'subagent.start',
       'subagent.complete',
       'compaction.start',
       'compaction.complete',
       'permission',
+      'evaluation.complete',
+      'feedback',
     ];
 
     for (const event of allEvents) {

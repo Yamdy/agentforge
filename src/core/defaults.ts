@@ -31,7 +31,11 @@ export class NoopTracer implements Tracer {
     return '';
   }
 
-  endSpan(_spanId: string, _options?: { code?: string }): void {
+  endSpan(_spanId: string, _options?: { code?: string; duration?: number }): void {
+    // no-op
+  }
+
+  setAttribute(_spanId: string, _key: string, _value: string | number | boolean): void {
     // no-op
   }
 
@@ -72,17 +76,20 @@ export class ConsoleTracer implements Tracer {
 
   startSpan(name: string, options?: SpanOptions): string {
     const spanId = `span-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
-    const attrs = options?.attributes
-      ? ` ${JSON.stringify(options.attributes)}`
-      : '';
+    const attrs = options?.attributes ? ` ${JSON.stringify(options.attributes)}` : '';
     const parent = options?.parent ? ` (parent: ${options.parent})` : '';
     console.info(`[${this.prefix}] START "${name}" (${spanId})${parent}${attrs}`);
     return spanId;
   }
 
-  endSpan(spanId: string, options?: { code?: string }): void {
+  endSpan(spanId: string, options?: { code?: string; duration?: number }): void {
     const code = options?.code ?? 'ok';
-    console.info(`[${this.prefix}] END (${spanId}) code=${code}`);
+    const dur = options?.duration !== undefined ? ` duration=${options.duration}ms` : '';
+    console.info(`[${this.prefix}] END (${spanId}) code=${code}${dur}`);
+  }
+
+  setAttribute(spanId: string, key: string, value: string | number | boolean): void {
+    console.info(`[${this.prefix}]   ATTR ${spanId} ${key}=${value}`);
   }
 
   addEvent(spanId: string, name: string, attributes?: Record<string, unknown>): void {
@@ -194,13 +201,11 @@ export class BridgeMetrics implements Metrics {
     recordGauge(name: string, value: number, labels?: Record<string, string>): void;
   };
 
-  constructor(
-    collector: {
-      incrementCounter(name: string, labels?: Record<string, string>): void;
-      recordHistogram(name: string, value: number, labels?: Record<string, string>): void;
-      recordGauge(name: string, value: number, labels?: Record<string, string>): void;
-    },
-  ) {
+  constructor(collector: {
+    incrementCounter(name: string, labels?: Record<string, string>): void;
+    recordHistogram(name: string, value: number, labels?: Record<string, string>): void;
+    recordGauge(name: string, value: number, labels?: Record<string, string>): void;
+  }) {
     this.collector = collector;
   }
 

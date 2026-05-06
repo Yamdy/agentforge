@@ -40,7 +40,14 @@ export const metricsPlugin: Plugin = {
   },
 
   eventSubscriptions: (
-    ['llm.response', 'tool.result', 'agent.complete', 'agent.error'] satisfies AgentEventType[]
+    [
+      'llm.response',
+      'llm.first_token',
+      'tool.result',
+      'agent.complete',
+      'agent.error',
+      'evaluation.complete',
+    ] satisfies AgentEventType[]
   ).map(evt => ({
     event: evt,
     handler(event: AgentEvent): void {
@@ -63,7 +70,30 @@ export const metricsPlugin: Plugin = {
               metrics.increment('llm.tokens.completion', event.usage.completionTokens, {
                 agent: _agentName,
               });
+              if (event.usage.cacheReadTokens !== undefined) {
+                metrics.increment('llm.tokens.cache_read', event.usage.cacheReadTokens, {
+                  agent: _agentName,
+                });
+              }
+              if (event.usage.cacheWriteTokens !== undefined) {
+                metrics.increment('llm.tokens.cache_write', event.usage.cacheWriteTokens, {
+                  agent: _agentName,
+                });
+              }
             }
+            // Record TTFT if available
+            if (event.ttftMs !== undefined) {
+              metrics.histogram('llm.ttft_ms', event.ttftMs, {
+                agent: _agentName,
+              });
+            }
+            break;
+          }
+
+          case 'llm.first_token': {
+            metrics.histogram('llm.ttft_ms', event.ttftMs, {
+              agent: _agentName,
+            });
             break;
           }
 
@@ -100,6 +130,14 @@ export const metricsPlugin: Plugin = {
             metrics.increment('agent.errors', 1, {
               agent: _agentName,
               errorName: event.error.name,
+            });
+            break;
+          }
+
+          case 'evaluation.complete': {
+            metrics.histogram('evaluation.score', event.compositeScore, {
+              agent: _agentName,
+              runId: event.runId,
             });
             break;
           }

@@ -7,7 +7,7 @@
  * @module evaluation/evaluator
  */
 
-import type { Message } from '../core/events.js';
+import type { Message, AgentEventEmitter } from '../core/events.js';
 import type { LLMScorer } from './llm-scorer.js';
 import { runScorerPipeline } from './pipeline.js';
 import type { ScoringContext, EvaluationResult } from './types.js';
@@ -42,6 +42,8 @@ export interface EvaluateAgentOptions {
   runId?: string;
   /** Hard cap on total LLM calls; stops early if reached (default: unlimited) */
   maxLLMCalls?: number;
+  /** Optional emitter for evaluation.complete event emission */
+  emitter?: AgentEventEmitter;
 }
 
 /** Aggregated result from a batch evaluation run. */
@@ -82,6 +84,7 @@ export async function evaluateAgent(
     concurrency = 2,
     runId = `eval-${Date.now()}`,
     maxLLMCalls,
+    emitter,
   } = options;
 
   const startTime = Date.now();
@@ -122,7 +125,27 @@ export async function evaluateAgent(
           sessionId: `${runId}-case-${caseIdx}`,
         };
 
-        return runScorerPipeline(scorers, ctx);
+        const evalResult = await runScorerPipeline(scorers, ctx);
+
+        // Emit evaluation.complete per test case
+        if (emitter) {
+          void emitter.emit({
+            type: 'evaluation.complete',
+            timestamp: Date.now(),
+            sessionId: `${runId}-case-${caseIdx}`,
+            runId,
+            compositeScore: evalResult.compositeScore,
+            scorers: evalResult.scores
+              .filter(s => s.success)
+              .map((s, idx) => ({
+                name: s.scorerName,
+                score: s.score,
+                weight: scorers[idx]?.weight ?? 1,
+              })),
+          });
+        }
+
+        return evalResult;
       })
     );
 

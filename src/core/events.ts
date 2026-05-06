@@ -26,15 +26,20 @@ export const AgentEventTypeSchema = z.enum([
   'agent.error',
   'llm.request',
   'llm.response',
+  'llm.first_token',
   'tool.call',
   'tool.result',
   'state.change',
   'done',
+  'session.start',
+  'session.end',
   'subagent.start',
   'subagent.complete',
   'compaction.start',
   'compaction.complete',
   'permission',
+  'evaluation.complete',
+  'feedback',
 ]);
 
 export type AgentEventType = z.infer<typeof AgentEventTypeSchema>;
@@ -165,6 +170,34 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
     source: z.enum(['agent', 'subagent']).optional(),
   }),
 
+  // ----- session.* -----
+  z.object({
+    type: z.literal('session.start'),
+    timestamp: z.number(),
+    sessionId: z.string(),
+    agentName: z.string(),
+    model: z.object({ provider: z.string(), model: z.string() }),
+    correlation: z
+      .object({
+        userId: z.string().optional(),
+        orgId: z.string().optional(),
+        environment: z.string().optional(),
+      })
+      .optional(),
+  }),
+
+  z.object({
+    type: z.literal('session.end'),
+    timestamp: z.number(),
+    sessionId: z.string(),
+    reason: z.string(),
+    summary: z.object({
+      steps: z.number(),
+      tokens: z.object({ input: z.number(), output: z.number() }).optional(),
+      duration: z.number(),
+    }),
+  }),
+
   // ----- llm.* -----
   z.object({
     type: z.literal('llm.request'),
@@ -186,8 +219,11 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
       .object({
         promptTokens: z.number(),
         completionTokens: z.number(),
+        cacheReadTokens: z.number().optional(),
+        cacheWriteTokens: z.number().optional(),
       })
       .optional(),
+    ttftMs: z.number().optional(),
     // P1: Reasoning capture for decision traceability
     reasoning: z
       .object({
@@ -197,6 +233,14 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
         confidence: z.number().min(0).max(1).optional(),
       })
       .optional(),
+  }),
+
+  // ----- llm.first_token -----
+  z.object({
+    type: z.literal('llm.first_token'),
+    timestamp: z.number(),
+    sessionId: z.string(),
+    ttftMs: z.number(),
   }),
 
   // ----- tool.* -----
@@ -219,6 +263,9 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
     toolName: z.string(),
     result: z.string(),
     isError: z.boolean().default(false),
+    errorType: z
+      .enum(['timeout', 'validation', 'execution', 'permission', 'not_found', 'network'])
+      .optional(),
     // P1: Structured output validation fields
     structuredOutput: z.unknown().optional(),
     isValid: z.boolean().optional(),
@@ -308,6 +355,32 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
     /** Context for the permission request (risk level, tool args, etc.) */
     context: z.record(z.string(), z.unknown()).optional(),
   }),
+
+  // ----- evaluation.complete -----
+  z.object({
+    type: z.literal('evaluation.complete'),
+    timestamp: z.number(),
+    sessionId: z.string(),
+    runId: z.string(),
+    compositeScore: z.number().min(0).max(1),
+    scorers: z.array(
+      z.object({
+        name: z.string(),
+        score: z.number(),
+        weight: z.number(),
+      })
+    ),
+  }),
+
+  // ----- feedback -----
+  z.object({
+    type: z.literal('feedback'),
+    timestamp: z.number(),
+    sessionId: z.string(),
+    feedbackType: z.string(),
+    value: z.number(),
+    comment: z.string().optional(),
+  }),
 ]);
 
 export type AgentEvent = z.infer<typeof AgentEventSchema>;
@@ -352,6 +425,13 @@ export function isCompactionEvent(
   event: AgentEvent
 ): event is Extract<AgentEvent, { type: `compaction.${string}` }> {
   return event.type.startsWith('compaction.');
+}
+
+/** Check if event is a session lifecycle event */
+export function isSessionEvent(
+  event: AgentEvent
+): event is Extract<AgentEvent, { type: `session.${string}` }> {
+  return event.type.startsWith('session.');
 }
 
 // ============================================================
