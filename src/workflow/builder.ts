@@ -21,10 +21,14 @@ export interface SubflowBuilder {
   branch(
     condition: (input: unknown) => boolean,
     thenFlow: (builder: SubflowBuilder) => void,
-    elseFlow?: (builder: SubflowBuilder) => void | undefined
+    elseFlow?: (builder: SubflowBuilder) => void
   ): this;
-  parallel(branches: ((builder: SubflowBuilder) => void)[]): this;
-  foreach(items: (input: unknown) => unknown[], body: (builder: SubflowBuilder) => void): this;
+  parallel(branches: ((builder: SubflowBuilder) => void)[], maxConcurrency?: number): this;
+  foreach(
+    items: (input: unknown) => unknown[],
+    body: (builder: SubflowBuilder) => void,
+    maxConcurrency?: number
+  ): this;
 }
 
 export interface WorkflowBuilder {
@@ -32,10 +36,14 @@ export interface WorkflowBuilder {
   branch(
     condition: (input: unknown) => boolean,
     thenFlow: (builder: SubflowBuilder) => void,
-    elseFlow?: (builder: SubflowBuilder) => void | undefined
+    elseFlow?: (builder: SubflowBuilder) => void
   ): this;
-  parallel(branches: ((builder: SubflowBuilder) => void)[]): this;
-  foreach(items: (input: unknown) => unknown[], body: (builder: SubflowBuilder) => void): this;
+  parallel(branches: ((builder: SubflowBuilder) => void)[], maxConcurrency?: number): this;
+  foreach(
+    items: (input: unknown) => unknown[],
+    body: (builder: SubflowBuilder) => void,
+    maxConcurrency?: number
+  ): this;
   commit(): WorkflowConfig;
 }
 
@@ -71,7 +79,7 @@ class BuilderCore {
     return this;
   }
 
-  parallel(branches: ((builder: SubflowBuilder) => void)[]): this {
+  parallel(branches: ((builder: SubflowBuilder) => void)[], maxConcurrency?: number): this {
     const branchEntries = branches.map(b => {
       const bBuilder = new SubflowBuilderImpl();
       b(bBuilder);
@@ -81,11 +89,16 @@ class BuilderCore {
       type: 'parallel',
       id: `parallel_${this._entries.length}`,
       branches: branchEntries,
+      ...(maxConcurrency !== undefined ? { maxConcurrency } : {}),
     });
     return this;
   }
 
-  foreach(items: (input: unknown) => unknown[], body: (builder: SubflowBuilder) => void): this {
+  foreach(
+    items: (input: unknown) => unknown[],
+    body: (builder: SubflowBuilder) => void,
+    maxConcurrency?: number
+  ): this {
     const bodyBuilder = new SubflowBuilderImpl();
     body(bodyBuilder);
     this._entries.push({
@@ -93,19 +106,17 @@ class BuilderCore {
       id: `foreach_${this._entries.length}`,
       items,
       body: bodyBuilder._entries,
+      ...(maxConcurrency !== undefined ? { maxConcurrency } : {}),
     });
     return this;
   }
 }
 
 /** Sub-builder impl — no .commit() */
-class SubflowBuilderImpl extends BuilderCore {
-  // Inherits then/branch/parallel/foreach from BuilderCore.
-  // No .commit() — consumed by parent builder via _entries.
-}
+class SubflowBuilderImpl extends BuilderCore implements SubflowBuilder {}
 
 /** Top-level builder impl — adds .commit() */
-class WorkflowBuilderImpl extends BuilderCore {
+class WorkflowBuilderImpl extends BuilderCore implements WorkflowBuilder {
   private _id: string;
   private _options: WorkflowBuilderOptions;
 

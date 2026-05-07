@@ -83,4 +83,8 @@ describe('WorkflowBuilder', () => {
     expect(config.id).toBe('minimal');
     expect(config.name).toBe('minimal');
   });
+
+  it('throws on .commit() with no steps', () => {
+    expect(() => workflow('empty').commit()).toThrow();
+  });
 });
