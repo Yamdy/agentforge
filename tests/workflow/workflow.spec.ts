@@ -22,6 +22,7 @@ import {
   isWorkflowEvent,
   getWorkflowIdFromEvent,
 } from '../../src/workflow/index.js';
+import { StepFlowEntrySchema, WorkflowConfigSchema } from '../../src/workflow/types.js';
 import {
   type AgentContext,
   type AgentEvent,
@@ -729,6 +730,94 @@ describe('Workflow Subsystem', () => {
       expect(events.some(e => e.type === 'workflow.complete')).toBe(true);
     });
 
+    it('should persist execution context on suspend', async () => {
+      // Use a blocking LLM so we can suspend during the first step
+      let resolveLLM: (() => void) | null = null;
+      let callCount = 0;
+      llm.chat = () =>
+        new Promise<LLMResponse>(resolve => {
+          callCount++;
+          if (callCount === 1) {
+            resolveLLM = () => resolve({ content: 'Step 1 done', finishReason: 'stop' });
+          } else {
+            resolve({ content: 'Step 2 done', finishReason: 'stop' });
+          }
+        });
+
+      const snapshots: Array<Record<string, unknown>> = [];
+
+      const config = createTestWorkflowConfig(); // 2 steps
+      const workflow = new Workflow(config, ctx, {
+        checkpointStorage: {
+          async save(snapshot: Record<string, unknown>): Promise<void> {
+            snapshots.push(snapshot);
+          },
+          async load(_sessionId: string): Promise<Record<string, unknown> | null> {
+            return null;
+          },
+        },
+      });
+
+      // Start execution — blocks on first LLM call
+      const runPromise = workflow.run('test', () => {});
+
+      // Wait for the loop to enter step 1 and hit the LLM call
+      await new Promise(r => setTimeout(r, 10));
+      workflow.suspend('Testing persistence');
+
+      // Resume and complete step 1 → step 2 runs automatically
+      workflow.resume();
+      resolveLLM?.();
+      const result = await runPromise;
+
+      expect(snapshots.length).toBeGreaterThanOrEqual(1);
+      const snapshot = snapshots[0]!;
+      expect(snapshot.state).toBe('suspended');
+      expect(snapshot.suspensionReason).toBe('Testing persistence');
+      expect(result.success).toBe(true);
+    });
+
+    it('should resume workflow from saved snapshot', async () => {
+      llm.setResponses([
+        { content: 'Step 1 result', finishReason: 'stop' },
+        { content: 'Step 2 result', finishReason: 'stop' },
+      ]);
+
+      const savedSnapshot: Record<string, unknown> = {
+        state: 'suspended',
+        workflowId: 'wf-resume-test',
+        currentStepIndex: 1,
+        totalSteps: 2,
+        suspensionReason: 'User paused',
+        stepOutputs: { 'step-1': 'Completed step 1 output' },
+      };
+
+      const config = createTestWorkflowConfig();
+      const workflow = new Workflow(config, ctx, {
+        resumeFrom: savedSnapshot,
+      });
+
+      const events = await collectEvents(listener =>
+        workflow.run('should not matter', listener)
+      );
+
+      // Should skip step-1, only execute step-2
+      const stepStarts = events.filter(
+        e =>
+          e.type === 'workflow.step.start' &&
+          'stepId' in e
+      );
+      expect(stepStarts).toHaveLength(1);
+      expect((stepStarts[0] as { stepId: string }).stepId).toBe('step-2');
+
+      // Should complete
+      expect(events.some(e => e.type === 'workflow.complete')).toBe(true);
+
+      // Should have step-1 output in context
+      const execCtx = workflow.getExecutionContext();
+      expect(execCtx?.stepOutputs.get('step-1')).toBe('Completed step 1 output');
+    });
+
     it('should handle empty config gracefully', () => {
       const config: WorkflowConfig = {
         id: 'empty',
@@ -739,5 +828,197 @@ describe('Workflow Subsystem', () => {
       // Should not throw on construction
       expect(() => new Workflow(config, ctx)).not.toThrow();
     });
+
+    it('should invoke request hooks from context during step execution', async () => {
+      llm.setResponses([{ content: 'Response', finishReason: 'stop' }]);
+
+      // Register a request hook on the context's hook registry
+      let hookInvoked = false;
+      ctx.hookRegistry.registerRequest({
+        name: 'test-request-hook',
+        priority: 10,
+        apply(messages) {
+          hookInvoked = true;
+          return messages;
+        },
+      });
+
+      const executor = new WorkflowExecutor(ctx);
+      const step: WorkflowStep = {
+        id: 'hook-test',
+        prompt: () => 'Test prompt',
+      };
+
+      await collectEvents(listener =>
+        executor.executeStep(step, 'input', 'wf-hook-test', listener)
+      );
+
+      expect(hookInvoked).toBe(true);
+    });
+
+    it('should retry failed step up to retryCount times', async () => {
+      // Fail first attempt, succeed on retry
+      let attempts = 0;
+      llm.chat = async () => {
+        attempts++;
+        if (attempts < 2) {
+          throw new Error('LLM API Error');
+        }
+        return { content: 'Recovered', finishReason: 'stop' as const };
+      };
+
+      const executor = new WorkflowExecutor(ctx);
+      const step: WorkflowStep = {
+        id: 'retry-test',
+        prompt: () => 'Test prompt',
+        retryCount: 2,
+      };
+
+      const events = await collectEvents(listener =>
+        executor.executeStep(step, 'input', 'wf-retry', listener)
+      );
+
+      // Should succeed after retry
+      const successEnd = events.find(
+        e =>
+          e.type === 'workflow.step.end' &&
+          'result' in e &&
+          e.result === 'success'
+      );
+      expect(successEnd).toBeDefined();
+      expect(attempts).toBe(2);
+    });
+
+    it('should fail step when retries exhausted', async () => {
+      // Always fail
+      llm.chat = async () => {
+        throw new Error('LLM API Error');
+      };
+
+      const executor = new WorkflowExecutor(ctx);
+      const step: WorkflowStep = {
+        id: 'retry-exhausted-test',
+        prompt: () => 'Test prompt',
+        retryCount: 1,
+      };
+
+      const events = await collectEvents(listener =>
+        executor.executeStep(step, 'input', 'wf-exhausted', listener)
+      );
+
+      // Should fail because 1 retry means 2 attempts (initial + 1 retry), all fail
+      const failEnd = events.find(
+        e =>
+          e.type === 'workflow.step.end' &&
+          'result' in e &&
+          e.result === 'failure'
+      );
+      expect(failEnd).toBeDefined();
+    });
+
+    it('should enforce step timeout', async () => {
+      vi.useFakeTimers();
+      let resolved = false;
+
+      // Make LLM take forever
+      llm.chat = async () => {
+        await new Promise(resolve => setTimeout(resolve, 10000));
+        return { content: 'Too late', finishReason: 'stop' as const };
+      };
+
+      const executor = new WorkflowExecutor(ctx);
+      const step: WorkflowStep = {
+        id: 'timeout-test',
+        prompt: () => 'Test prompt',
+        timeout: 5000,
+      };
+
+      const promise = collectEvents(listener =>
+        executor.executeStep(step, 'input', 'wf-timeout', listener)
+      ).then(events => {
+        resolved = true;
+        return events;
+      });
+
+      // Advance past timeout
+      await vi.advanceTimersByTimeAsync(6000);
+      const events = await promise;
+
+      vi.useRealTimers();
+
+      expect(resolved).toBe(true);
+      const failEnd = events.find(
+        e =>
+          e.type === 'workflow.step.end' &&
+          'result' in e &&
+          e.result === 'failure'
+      );
+      expect(failEnd).toBeDefined();
+    });
+  });
+});
+
+// ============================================================
+// StepFlowEntrySchema — declarative flow type validation
+// ============================================================
+
+describe('StepFlowEntrySchema', () => {
+  it('rejects a step without type field', () => {
+    const result = StepFlowEntrySchema.safeParse({
+      id: 's1',
+      prompt: () => 'hello',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts a valid StepEntry', () => {
+    const result = StepFlowEntrySchema.safeParse({
+      type: 'step',
+      id: 's1',
+      prompt: () => 'hello',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a valid BranchEntry with nested steps', () => {
+    const result = StepFlowEntrySchema.safeParse({
+      type: 'branch',
+      id: 'b1',
+      condition: (input: unknown) => true,
+      then: [{ type: 'step', id: 's1', prompt: () => 'yes' }],
+      else: [{ type: 'step', id: 's2', prompt: () => 'no' }],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a valid ParallelEntry', () => {
+    const result = StepFlowEntrySchema.safeParse({
+      type: 'parallel',
+      id: 'p1',
+      branches: [
+        [{ type: 'step', id: 'a', prompt: () => 'A' }],
+        [{ type: 'step', id: 'b', prompt: () => 'B' }],
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a valid ForEachEntry', () => {
+    const result = StepFlowEntrySchema.safeParse({
+      type: 'foreach',
+      id: 'f1',
+      items: (input: unknown) => (input as { docs: unknown[] }).docs,
+      body: [{ type: 'step', id: 'inner', prompt: () => 'process' }],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('validates WorkflowConfig.steps as StepFlowEntry[]', () => {
+    const result = WorkflowConfigSchema.safeParse({
+      id: 'wf1',
+      name: 'Test',
+      steps: [{ type: 'step', id: 's1', prompt: () => 'hello' }],
+    });
+    expect(result.success).toBe(true);
   });
 });

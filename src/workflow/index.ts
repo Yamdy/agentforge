@@ -39,6 +39,8 @@ export {
   WorkflowConfigSchema,
   WorkflowExecutionStateSchema,
   PipelineModeSchema,
+  // Declarative flow schemas
+  StepFlowEntrySchema,
   // Types
   type WorkflowStep,
   type WorkflowStepWithAgent,
@@ -52,6 +54,13 @@ export {
   // Workflow Event Types
   type WorkflowEvent,
   type WorkflowOrAgentEvent,
+  // Declarative flow types
+  type StepEntry,
+  type BranchEntry,
+  type ParallelEntry,
+  type ForEachEntry,
+  type StepFlowEntry,
+  type PathSegment,
   // Helpers
   isWorkflowEvent,
   getWorkflowIdFromEvent,
@@ -62,7 +71,12 @@ export {
 // Workflow Class
 // ============================================================
 
-export { Workflow, createWorkflow } from './workflow.js';
+export {
+  Workflow,
+  createWorkflow,
+  type WorkflowCheckpointStorage,
+  type WorkflowOptions,
+} from './workflow.js';
 
 // ============================================================
 // Executor

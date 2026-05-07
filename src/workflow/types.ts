@@ -12,6 +12,84 @@ import type { AgentEvent, SerializedError } from '../core/events.js';
 import type { AgentContext } from '../core/context.js';
 
 // ============================================================
+// Declarative Flow Types
+// ============================================================
+
+/** Checkpoint path segment: number = index, string = branch direction */
+export type PathSegment = number | 'then' | 'else';
+
+export interface StepEntry {
+  type: 'step';
+  id: string;
+  name?: string | undefined;
+  prompt: (input: unknown) => string;
+  timeout?: number | undefined;
+  skip?: ((input: unknown) => boolean) | undefined;
+  retryCount?: number | undefined;
+}
+
+export interface BranchEntry {
+  type: 'branch';
+  id: string;
+  condition: (input: unknown) => boolean;
+  then: StepFlowEntry[];
+  else?: StepFlowEntry[] | undefined;
+}
+
+export interface ParallelEntry {
+  type: 'parallel';
+  id: string;
+  branches: StepFlowEntry[][];
+  maxConcurrency?: number | undefined;
+}
+
+export interface ForEachEntry {
+  type: 'foreach';
+  id: string;
+  items: (input: unknown) => unknown[];
+  body: StepFlowEntry[];
+  maxConcurrency?: number | undefined;
+}
+
+export type StepFlowEntry = StepEntry | BranchEntry | ParallelEntry | ForEachEntry;
+
+const StepEntrySchema = z.object({
+  type: z.literal('step'),
+  id: z.string(),
+  name: z.string().optional(),
+  prompt: z.function().args(z.unknown()).returns(z.string()),
+  timeout: z.number().positive().optional(),
+  skip: z.function().args(z.unknown()).returns(z.boolean()).optional(),
+  retryCount: z.number().int().nonnegative().optional(),
+});
+
+export const StepFlowEntrySchema: z.ZodType<StepFlowEntry> = z.lazy(() =>
+  z.discriminatedUnion('type', [
+    StepEntrySchema,
+    z.object({
+      type: z.literal('branch'),
+      id: z.string(),
+      condition: z.function().args(z.unknown()).returns(z.boolean()),
+      then: z.array(StepFlowEntrySchema),
+      else: z.array(StepFlowEntrySchema).optional(),
+    }),
+    z.object({
+      type: z.literal('parallel'),
+      id: z.string(),
+      branches: z.array(z.array(StepFlowEntrySchema)),
+      maxConcurrency: z.number().int().positive().optional(),
+    }),
+    z.object({
+      type: z.literal('foreach'),
+      id: z.string(),
+      items: z.function().args(z.unknown()).returns(z.array(z.unknown())),
+      body: z.array(StepFlowEntrySchema),
+      maxConcurrency: z.number().int().positive().optional(),
+    }),
+  ])
+);
+
+// ============================================================
 // Workflow Event Types (separate from AgentEvent)
 // ============================================================
 
@@ -85,30 +163,16 @@ export function getWorkflowIdFromEvent(event: WorkflowOrAgentEvent): string | un
 // Workflow Step Schema
 // ============================================================
 
-/**
- * Workflow step configuration schema
- */
-export const WorkflowStepSchema = z.object({
-  /** Unique step identifier */
-  id: z.string(),
-  /** Human-readable step name */
-  name: z.string().optional(),
-  /** Prompt generator function - transforms input to agent prompt */
-  prompt: z.function().args(z.unknown()).returns(z.string()),
-  /** Step timeout in milliseconds */
-  timeout: z.number().positive().optional(),
-  /** Skip condition - if true, step is skipped */
-  skip: z.function().args(z.unknown()).returns(z.boolean()).optional(),
-  /** Retry count on failure */
-  retryCount: z.number().int().nonnegative().optional(),
-});
+/** @deprecated Use StepEntrySchema */
+export const WorkflowStepSchema = StepEntrySchema;
 
-export type WorkflowStep = z.infer<typeof WorkflowStepSchema>;
+/** @deprecated Use StepEntry */
+export type WorkflowStep = StepEntry;
 
 /**
  * Workflow step with resolved agent reference
  */
-export interface WorkflowStepWithAgent extends WorkflowStep {
+export interface WorkflowStepWithAgent extends StepEntry {
   /** Optional agent context for this step (inherits from workflow if not specified) */
   agentContext?: AgentContext;
 }
@@ -126,7 +190,7 @@ export const WorkflowConfigSchema = z.object({
   /** Human-readable workflow name */
   name: z.string(),
   /** Workflow steps to execute */
-  steps: z.array(WorkflowStepSchema).min(1),
+  steps: z.array(StepFlowEntrySchema).min(1),
   /** Default timeout for all steps (can be overridden per step) */
   defaultTimeout: z.number().positive().optional(),
   /** Continue on step failure */
