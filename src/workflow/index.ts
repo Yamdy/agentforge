@@ -113,3 +113,15 @@ export {
   type AgentStepOptions,
   type AgentLike,
 } from './agent-step.js';
+
+// ============================================================
+// Builder
+// ============================================================
+
+export {
+  workflow,
+  subflow,
+  type WorkflowBuilder,
+  type SubflowBuilder,
+  type WorkflowBuilderOptions,
+} from './builder.js';
