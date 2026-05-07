@@ -53,7 +53,7 @@ export interface ForEachEntry {
 
 export type StepFlowEntry = StepEntry | BranchEntry | ParallelEntry | ForEachEntry;
 
-const StepEntrySchema = z.object({
+export const StepEntrySchema = z.object({
   type: z.literal('step'),
   id: z.string(),
   name: z.string().optional(),

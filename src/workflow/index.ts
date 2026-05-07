@@ -41,6 +41,7 @@ export {
   PipelineModeSchema,
   // Declarative flow schemas
   StepFlowEntrySchema,
+  StepEntrySchema,
   // Types
   type WorkflowStep,
   type WorkflowStepWithAgent,
