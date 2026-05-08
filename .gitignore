@@ -19,3 +19,7 @@ docs/.vitepress
 .env
 tests/e2e/.env
 *.local
+
+# Analysis artifacts
+.tmp/
+skills/
