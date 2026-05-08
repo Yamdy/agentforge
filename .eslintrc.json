@@ -34,6 +34,12 @@
   "ignorePatterns": ["dist", "node_modules", "tests", "examples", "*.js"],
   "overrides": [
     {
+      "files": ["packages/core/src/**/*.ts"],
+      "parserOptions": {
+        "project": "./packages/core/tsconfig.json"
+      }
+    },
+    {
       "files": ["src/plugins/pipeline.ts", "src/plugins/plugin.ts", "src/plugins/manager.ts"],
       "rules": {
         "@typescript-eslint/no-explicit-any": "off",
@@ -59,7 +65,13 @@
       }
     },
     {
-      "files": ["src/adapters/*.ts", "src/api/agent-loop.ts", "src/loop/tool-partition.ts", "src/skill/watcher.ts", "src/workflow/pipeline.ts"],
+      "files": [
+        "src/adapters/*.ts",
+        "src/api/agent-loop.ts",
+        "src/loop/tool-partition.ts",
+        "src/skill/watcher.ts",
+        "src/workflow/pipeline.ts"
+      ],
       "rules": {
         "@typescript-eslint/explicit-function-return-type": "off"
       }
