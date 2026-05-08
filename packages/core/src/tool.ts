@@ -50,7 +50,12 @@ export function tool<TSchema extends z.ZodTypeAny>(config: {
 /**
  * Create a tool registry backed by a Map.
  */
-export function createToolRegistry() {
+export function createToolRegistry(): {
+  register(toolDef: ToolDef): void;
+  get(name: string): ToolDef | undefined;
+  list(): ToolDef[];
+  has(name: string): boolean;
+} {
   const tools = new Map<string, ToolDef>();
 
   return {

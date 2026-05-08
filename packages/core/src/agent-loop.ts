@@ -54,7 +54,7 @@ export function createAgentLoop(
     const completedCalls: RunResult['toolCalls'] = [];
     const messages: Message[] = [{ role: 'user', content: input }];
 
-    const emit = (event: Parameters<NonNullable<RunHandlers['onEvent']>>[0]) => {
+    const emit = (event: Parameters<NonNullable<RunHandlers['onEvent']>>[0]): void => {
       try {
         handlers?.onEvent?.(event);
       } catch {
