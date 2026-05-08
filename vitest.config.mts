@@ -5,12 +5,12 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    include: ['tests/**/*.spec.ts', 'tests/**/*.test.ts'],
+    include: ['tests/**/*.spec.ts', 'tests/**/*.test.ts', 'packages/*/tests/**/*.spec.ts', 'packages/*/tests/**/*.test.ts'],
     exclude: ['node_modules', 'dist'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
-      include: ['src/**/*.ts'],
+      include: ['src/**/*.ts', 'packages/*/src/**/*.ts'],
       exclude: ['src/**/*.d.ts'],
       thresholds: {
         statements: 60,
