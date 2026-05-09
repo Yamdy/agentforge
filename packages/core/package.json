@@ -12,7 +12,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "test": "vitest run --passWithNoTests",
+    "test": "tsc --noEmit && vitest run",
     "check-types": "tsc --noEmit"
   },
   "devDependencies": {
