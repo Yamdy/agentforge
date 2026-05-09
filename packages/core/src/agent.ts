@@ -83,6 +83,13 @@ export class Agent {
             prompt: ctx.request.input,
           };
 
+          this.registry.setToolExecutionContext({
+            span: {
+              spanId: `tool-${ctx.request.sessionId}-${ctx.iteration.step}`,
+              traceId: ctx.request.sessionId,
+            },
+          });
+
           const sdkTools = this.registry.toAiSdkTools();
           if (Object.keys(sdkTools).length > 0) {
             streamOpts.tools = sdkTools;
