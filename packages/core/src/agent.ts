@@ -4,6 +4,7 @@ import { PipelineRunner } from './pipeline.js';
 import { ToolRegistry } from './tool-registry.js';
 import { resolveModel } from './model-resolver.js';
 import { streamWithRetry } from './retry.js';
+import { echoTool } from '@agentforge/tools';
 
 export class Agent {
   private config: AgentConfig;
@@ -55,6 +56,10 @@ export class Agent {
   }
 
   private registerTools(): void {
+    const userToolNames = new Set((this.config.tools ?? []).map(t => t.name));
+    if (!userToolNames.has(echoTool.name)) {
+      this.registry.register(echoTool as Tool);
+    }
     for (const tool of this.config.tools ?? []) {
       this.registry.register(tool as Tool);
     }

@@ -108,6 +108,22 @@ describe('Agent multi-step tool execution', () => {
     expect(result).toContain('All done');
   });
 
+  it('echo tool is available as a built-in without explicit registration', async () => {
+    const model = createMockModelWithToolCalls(
+      [{ toolName: 'echo', args: { message: 'built-in test' } }],
+      'Got: built-in test',
+    );
+    registerProvider('builtin-echo-test', () => model);
+
+    const agent = new Agent({
+      model: 'builtin-echo-test/mock',
+      // No tools explicitly provided — echo should be built-in
+    });
+
+    const result = await agent.run('test built-in echo');
+    expect(result).toContain('Got:');
+  });
+
   it('handles tool execution errors gracefully and continues', async () => {
     let callCount = 0;
 

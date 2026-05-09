@@ -23,6 +23,9 @@ importers:
       '@agentforge/observability':
         specifier: workspace:*
         version: link:../observability
+      '@agentforge/tools':
+        specifier: workspace:*
+        version: link:../tools
       '@ai-sdk/anthropic':
         specifier: ^3.0.76
         version: 3.0.76(zod@4.4.3)
