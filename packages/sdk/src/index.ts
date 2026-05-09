@@ -138,7 +138,7 @@ export interface AgentConfig {
   model: string;
   systemPrompt?: string;
   maxIterations?: number;
-  tools?: string[];
+  tools?: Tool<any, any>[];
 }
 
 // ---------------------------------------------------------------------------

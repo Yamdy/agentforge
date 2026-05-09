@@ -1,16 +1,20 @@
-import { streamText } from 'ai';
-import type { AgentConfig, PipelineContext, Processor } from '@agentforge/sdk';
+import { streamText, stepCountIs } from 'ai';
+import type { AgentConfig, PipelineContext, Processor, Tool } from '@agentforge/sdk';
 import { PipelineRunner } from './pipeline.js';
+import { ToolRegistry } from './tool-registry.js';
 import { resolveModel } from './model-resolver.js';
 import { streamWithRetry } from './retry.js';
 
 export class Agent {
   private config: AgentConfig;
   private runner: PipelineRunner;
+  private registry: ToolRegistry;
 
   constructor(config: AgentConfig) {
     this.config = config;
     this.runner = new PipelineRunner();
+    this.registry = new ToolRegistry();
+    this.registerTools();
     this.registerBuiltinProcessors();
   }
 
@@ -50,6 +54,12 @@ export class Agent {
     };
   }
 
+  private registerTools(): void {
+    for (const tool of this.config.tools ?? []) {
+      this.registry.register(tool as Tool);
+    }
+  }
+
   private registerBuiltinProcessors(): void {
     const processInput: Processor = {
       stage: 'processInput',
@@ -62,11 +72,19 @@ export class Agent {
         const model = await resolveModel(this.config.model);
 
         return streamWithRetry(async () => {
-          const result = streamText({
+          const streamOpts: Record<string, unknown> = {
             model,
             system: this.config.systemPrompt,
             prompt: ctx.request.input,
-          });
+          };
+
+          const sdkTools = this.registry.toAiSdkTools();
+          if (Object.keys(sdkTools).length > 0) {
+            streamOpts.tools = sdkTools;
+            streamOpts.stopWhen = stepCountIs(this.config.maxIterations ?? 5);
+          }
+
+          const result = streamText(streamOpts as any);
 
           const chunks: string[] = [];
           for await (const chunk of result.textStream) {
