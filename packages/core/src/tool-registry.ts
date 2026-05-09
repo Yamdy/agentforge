@@ -10,6 +10,20 @@ export interface ToolRegistryOptions {
   maxOutputLength?: number;
 }
 
+interface SafeParseResult {
+  success: boolean;
+  error?: { issues?: Array<{ path: (string | number)[]; message: string }>; message?: string };
+}
+
+function isZodSchema(value: unknown): value is { safeParse: (args: unknown) => SafeParseResult } {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    'safeParse' in value &&
+    typeof (value as Record<string, unknown>).safeParse === 'function'
+  );
+}
+
 export class ToolRegistry {
   private tools = new Map<string, Tool>();
   private maxOutputLength: number;
@@ -58,12 +72,8 @@ export class ToolRegistry {
           const hookCtx: ToolHookContext = { toolName: tool.name, args };
 
           // Validate input against Zod schema
-          if (
-            tool.inputSchema &&
-            typeof tool.inputSchema === 'object' &&
-            'safeParse' in tool.inputSchema
-          ) {
-            const parsed = (tool.inputSchema as { safeParse: (args: unknown) => { success: boolean; error?: { issues?: Array<{ path: (string | number)[]; message: string }>; message?: string } } }).safeParse(args);
+          if (isZodSchema(tool.inputSchema)) {
+            const parsed = tool.inputSchema.safeParse(args);
             if (!parsed.success) {
               const issues =
                 parsed.error?.issues
@@ -87,14 +97,13 @@ export class ToolRegistry {
             toolResult = await tool.execute(args, this.executionContext);
           } catch (err) {
             hookCtx.error = err instanceof Error ? err : new Error(String(err));
+            await this.runAfterHooks(hookCtx);
             throw err;
           }
 
-          // After hooks
+          // After hooks (success path)
           hookCtx.result = toolResult;
-          for (const hook of this.afterHooks) {
-            await hook(hookCtx);
-          }
+          await this.runAfterHooks(hookCtx);
 
           // Truncation
           return this.truncateOutput(toolResult);
@@ -102,6 +111,12 @@ export class ToolRegistry {
       };
     }
     return result;
+  }
+
+  private async runAfterHooks(hookCtx: ToolHookContext): Promise<void> {
+    for (const hook of this.afterHooks) {
+      await hook(hookCtx);
+    }
   }
 
   private truncateOutput(output: unknown): unknown {
@@ -113,11 +128,13 @@ export class ToolRegistry {
       output !== null &&
       output !== undefined
     ) {
-      const serialized = JSON.stringify(output);
-      if (serialized.length > this.maxOutputLength) {
-        return (
-          serialized.slice(0, this.maxOutputLength) + '... [truncated]'
-        );
+      try {
+        const serialized = JSON.stringify(output);
+        if (serialized.length > this.maxOutputLength) {
+          return { truncated: true, preview: serialized.slice(0, this.maxOutputLength) };
+        }
+      } catch {
+        return { truncated: true, preview: String(output).slice(0, this.maxOutputLength) };
       }
     }
     return output;

@@ -165,7 +165,7 @@ describe('ToolRegistry', () => {
       );
     });
 
-    it('truncates large JSON-serializable outputs', async () => {
+    it('truncates large JSON-serializable outputs to structured marker', async () => {
       const registry = new ToolRegistry({ maxOutputLength: 20 });
       registry.register({
         name: 'big_obj',
@@ -174,10 +174,9 @@ describe('ToolRegistry', () => {
         execute: async () => ({ items: Array.from({ length: 100 }, (_, i) => i) }),
       });
 
-      const result = await registry.toAiSdkTools().big_obj.execute({});
-      expect(typeof result === 'string').toBe(true);
-      expect((result as string).length).toBeLessThanOrEqual(40); // truncated string + suffix
-      expect(result).toContain('[truncated]');
+      const result = await registry.toAiSdkTools().big_obj.execute({}) as { truncated: boolean; preview: string };
+      expect(result.truncated).toBe(true);
+      expect(result.preview.length).toBeLessThanOrEqual(20);
     });
 
     it('passes ToolExecutionContext to tool execute with span info', async () => {
@@ -198,6 +197,25 @@ describe('ToolRegistry', () => {
 
       await registry.toAiSdkTools().ctx_tool.execute({});
       expect(receivedContext?.span).toEqual(mockSpan);
+    });
+
+    it('calls afterHook even when tool execution throws', async () => {
+      const hookCalls: string[] = [];
+      const registry = new ToolRegistry();
+      registry.register({
+        name: 'failing_tool',
+        description: 'Always fails',
+        inputSchema: z.object({}),
+        execute: async () => { throw new Error('Tool crashed!'); },
+      });
+
+      registry.addAfterHook(async (ctx) => {
+        hookCalls.push(`after:${ctx.toolName}:error=${ctx.error?.message}`);
+      });
+
+      const sdkTools = registry.toAiSdkTools();
+      await expect(sdkTools.failing_tool.execute({})).rejects.toThrow('Tool crashed!');
+      expect(hookCalls).toEqual(['after:failing_tool:error=Tool crashed!']);
     });
   });
 });
