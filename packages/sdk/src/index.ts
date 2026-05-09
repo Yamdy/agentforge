@@ -19,13 +19,25 @@ export type PipelineStage =
   | 'afterTool';
 
 // ---------------------------------------------------------------------------
+// Pipeline State
+// ---------------------------------------------------------------------------
+
+export interface PipelineState {
+  response?: string;
+  tokenUsage?: TokenUsage;
+  textStream?: AsyncIterable<string>;
+  usagePromise?: Promise<TokenUsage>;
+  [key: string]: unknown;
+}
+
+// ---------------------------------------------------------------------------
 // Pipeline Context (skeleton)
 // ---------------------------------------------------------------------------
 
 export interface PipelineContext {
   request: { input: string; sessionId: string };
   iteration: { step: number };
-  pipeline: Record<string, unknown>;
+  pipeline: PipelineState;
   session: Record<string, unknown>;
   config: Record<string, unknown>;
 }
@@ -107,6 +119,15 @@ export interface Metrics {
 }
 
 // ---------------------------------------------------------------------------
+// Token Usage
+// ---------------------------------------------------------------------------
+
+export interface TokenUsage {
+  input: number;
+  output: number;
+}
+
+// ---------------------------------------------------------------------------
 // Span Types
 // ---------------------------------------------------------------------------
 
@@ -118,6 +139,19 @@ export const SpanType = {
 } as const;
 
 export type SpanType = (typeof SpanType)[keyof typeof SpanType];
+
+// ---------------------------------------------------------------------------
+// Stream Events
+// ---------------------------------------------------------------------------
+
+export type StreamEvent =
+  | { type: 'text_delta'; text: string }
+  | { type: 'stage_start'; stage: PipelineStage }
+  | { type: 'stage_complete'; stage: PipelineStage }
+  | { type: 'tool_call'; name: string; args: unknown }
+  | { type: 'tool_result'; name: string; result: unknown }
+  | { type: 'complete'; context: PipelineContext }
+  | { type: 'abort'; reason: string };
 
 // ---------------------------------------------------------------------------
 // Plugin System

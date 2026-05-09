@@ -15,6 +15,9 @@ import type {
   PluginRegistration,
   AgentConfig,
   SuspendResult,
+  TokenUsage,
+  StreamEvent,
+  PipelineState,
 } from '../src/index.js';
 import { SpanType } from '../src/index.js';
 
@@ -253,5 +256,55 @@ describe('SuspendResult', () => {
     };
     expect(result.type).toBe('suspended');
     expect(result.resumeToken).toBe('tok-123');
+  });
+});
+
+describe('TokenUsage', () => {
+  it('carries input and output token counts', () => {
+    const usage: TokenUsage = { input: 100, output: 50 };
+    expect(usage.input).toBe(100);
+    expect(usage.output).toBe(50);
+  });
+});
+
+describe('StreamEvent', () => {
+  it('represents text delta events', () => {
+    const event: StreamEvent = { type: 'text_delta', text: 'hello' };
+    expect(event.type).toBe('text_delta');
+    expect((event as { type: 'text_delta'; text: string }).text).toBe('hello');
+  });
+
+  it('represents all event types', () => {
+    const events: StreamEvent[] = [
+      { type: 'stage_start', stage: 'invokeLLM' },
+      { type: 'stage_complete', stage: 'invokeLLM' },
+      { type: 'text_delta', text: 'hi' },
+      { type: 'tool_call', name: 'echo', args: {} },
+      { type: 'tool_result', name: 'echo', result: 'ok' },
+      { type: 'complete', context: {} as PipelineContext },
+      { type: 'abort', reason: 'policy' },
+    ];
+    expect(events).toHaveLength(7);
+  });
+});
+
+describe('PipelineState', () => {
+  it('carries named fields and allows arbitrary keys', () => {
+    const state: PipelineState = {
+      response: 'hello',
+      tokenUsage: { input: 10, output: 5 },
+      custom: 'data',
+    };
+    expect(state.response).toBe('hello');
+    expect(state.custom).toBe('data');
+  });
+
+  it('has optional streaming fields', () => {
+    const state: PipelineState = {
+      textStream: (async function* () { yield 'x'; })(),
+      usagePromise: Promise.resolve({ input: 1, output: 1 }),
+    };
+    expect(state.textStream).toBeDefined();
+    expect(state.usagePromise).toBeDefined();
   });
 });
