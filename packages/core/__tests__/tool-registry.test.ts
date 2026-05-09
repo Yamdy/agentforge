@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
-import type { Tool } from '@agentforge/sdk';
+import type { Tool, ToolExecutionContext, ToolHookContext } from '@agentforge/sdk';
 import { ToolRegistry } from '../src/tool-registry.js';
 
 describe('ToolRegistry', () => {
@@ -110,6 +110,94 @@ describe('ToolRegistry', () => {
 
       const result = await registry.toAiSdkTools().short.execute({});
       expect(result).toBe('hello');
+    });
+
+    it('calls beforeHook before tool execution', async () => {
+      const calls: string[] = [];
+      const registry = new ToolRegistry();
+      registry.register({
+        name: 'test_tool',
+        description: 'Test',
+        inputSchema: z.object({ x: z.string() }),
+        execute: async ({ x }) => `result:${x}`,
+      });
+
+      registry.addBeforeHook(async (ctx: ToolHookContext) => {
+        calls.push(`before:${ctx.toolName}`);
+      });
+
+      const sdkTools = registry.toAiSdkTools();
+      await sdkTools.test_tool.execute({ x: 'hello' });
+      expect(calls).toEqual(['before:test_tool']);
+    });
+
+    it('calls afterHook after tool execution with result', async () => {
+      const calls: string[] = [];
+      const registry = new ToolRegistry();
+      registry.register({
+        name: 'test_tool',
+        description: 'Test',
+        inputSchema: z.object({ x: z.string() }),
+        execute: async ({ x }) => `result:${x}`,
+      });
+
+      registry.addAfterHook(async (ctx: ToolHookContext) => {
+        calls.push(`after:${ctx.toolName}:${ctx.result}`);
+      });
+
+      const sdkTools = registry.toAiSdkTools();
+      await sdkTools.test_tool.execute({ x: 'hello' });
+      expect(calls).toEqual(['after:test_tool:result:hello']);
+    });
+
+    it('validates input against Zod schema and throws clear error on invalid input', async () => {
+      const registry = new ToolRegistry();
+      registry.register({
+        name: 'strict',
+        description: 'Needs a number',
+        inputSchema: z.object({ count: z.number() }),
+        execute: async ({ count }) => `count:${count}`,
+      });
+
+      const sdkTools = registry.toAiSdkTools();
+      await expect(sdkTools.strict.execute({ count: 'not-a-number' })).rejects.toThrow(
+        /Tool "strict" input validation failed/,
+      );
+    });
+
+    it('truncates large JSON-serializable outputs', async () => {
+      const registry = new ToolRegistry({ maxOutputLength: 20 });
+      registry.register({
+        name: 'big_obj',
+        description: 'Returns big object',
+        inputSchema: z.object({}),
+        execute: async () => ({ items: Array.from({ length: 100 }, (_, i) => i) }),
+      });
+
+      const result = await registry.toAiSdkTools().big_obj.execute({});
+      expect(typeof result === 'string').toBe(true);
+      expect((result as string).length).toBeLessThanOrEqual(40); // truncated string + suffix
+      expect(result).toContain('[truncated]');
+    });
+
+    it('passes ToolExecutionContext to tool execute with span info', async () => {
+      let receivedContext: ToolExecutionContext | undefined;
+      const registry = new ToolRegistry();
+      registry.register({
+        name: 'ctx_tool',
+        description: 'Captures context',
+        inputSchema: z.object({}),
+        execute: async (_input, ctx) => {
+          receivedContext = ctx;
+          return 'ok';
+        },
+      });
+
+      const mockSpan = { spanId: 'span-123', traceId: 'trace-456' };
+      registry.setToolExecutionContext({ span: mockSpan });
+
+      await registry.toAiSdkTools().ctx_tool.execute({});
+      expect(receivedContext?.span).toEqual(mockSpan);
     });
   });
 });
