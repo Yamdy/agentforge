@@ -1,4 +1,4 @@
-Status: in-progress
+Status: done
 
 ## Parent
 
@@ -22,13 +22,13 @@ Implement the ToolRegistry and integrate AI SDK's built-in multi-step tool execu
 
 ## Acceptance criteria
 
-- [ ] ToolRegistry registers tools and generates AI SDK-compatible tool definitions from Zod
-- [ ] Agent passes tools to streamText and AI SDK handles multi-step tool execution loop
-- [ ] Multiple tool calls execute in parallel (AI SDK handles this, we verify end-to-end)
-- [ ] Tool input is validated against Zod schema; invalid inputs produce clear errors
-- [ ] `echo` built-in tool works end-to-end in the Agent Loop
-- [ ] Large tool outputs are truncated with a configurable threshold
-- [ ] Test: agent receives tool call from LLM, executes echo tool, returns result in next iteration
+- [x] ToolRegistry registers tools and generates AI SDK-compatible tool definitions from Zod
+- [x] Agent passes tools to streamText and AI SDK handles multi-step tool execution loop
+- [x] Multiple tool calls execute in parallel (AI SDK handles this, we verify end-to-end)
+- [x] Tool input is validated against Zod schema; invalid inputs produce clear errors
+- [x] `echo` built-in tool works end-to-end in the Agent Loop
+- [x] Large tool outputs are truncated with a configurable threshold
+- [x] Test: agent receives tool call from LLM, executes echo tool, returns result in next iteration
 
 ## Blocked by
 

@@ -237,7 +237,7 @@ describe('AgentConfig', () => {
       model: 'openai/gpt-5',
       systemPrompt: 'You are helpful.',
       maxIterations: 10,
-      tools: ['search'],
+      tools: [{ name: 'search', description: 'Search', inputSchema: {}, execute: async () => '' }],
     };
     expect(config.model).toBe('openai/gpt-5');
     expect(config.maxIterations).toBe(10);
