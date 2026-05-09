@@ -142,4 +142,29 @@ describe('PipelineRunner', () => {
       (frozenContext as PipelineContext).pipeline = { hacked: true };
     }).toThrow();
   });
+
+  it('consumes textStream from processor into response', async () => {
+    const runner = new PipelineRunner();
+    runner.register({
+      stage: 'invokeLLM',
+      execute: async (ctx) => ({
+        ...ctx,
+        pipeline: {
+          ...ctx.pipeline,
+          textStream: (async function* () {
+            yield 'hello ';
+            yield 'world';
+          })(),
+          usagePromise: Promise.resolve({ input: 10, output: 2 }),
+        },
+      }),
+    });
+
+    const result = await runner.run(makeContext(), ['invokeLLM']);
+    const ctx = result as PipelineContext;
+    expect(ctx.pipeline.response).toBe('hello world');
+    expect(ctx.pipeline.tokenUsage).toEqual({ input: 10, output: 2 });
+    expect(ctx.pipeline.textStream).toBeUndefined();
+    expect(ctx.pipeline.usagePromise).toBeUndefined();
+  });
 });
