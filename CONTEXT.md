@@ -56,7 +56,7 @@ Compression, tool output truncation, progressive disclosure — preventing model
 - **Plugin system**: Code factory function — `(harness: HarnessAPI) => PluginHooks`
 - **Observability backend**: Self-built lightweight abstraction (Span/Tracer/Metrics) + OTel Bridge
 - **Sub-agents**: Dual-mode — sync (tool-like, blocking) + async (background task, event notification)
-- **Tool interface**: Rich — name, description, inputSchema (Zod), outputSchema, requireApproval, renderCall, renderResult, execute context with harness ref + observability context
+- **Tool execution**: Leverage AI SDK built-in multi-step loop — ToolRegistry generates AI SDK-compatible tools via `toAiSdkTools()` adapter, `streamText` + `maxSteps` handles detection/execution/looping; before/after hooks as execute wrapper callbacks, not separate sub-pipeline
 - **Package structure**: 5-package monorepo — core, observability, plugins, tools, sdk
 - **LLM Provider**: Bundled SDK Map — built-in dynamic import for OpenAI/Anthropic/Google via `@ai-sdk/*` packages (zero config), `registerProvider()` for custom/test providers (priority override), async `resolveModel()` with SDK instance caching
 - **Memory**: Processor plugin (not core) — official MemoryProcessor in plugins package, storage backends injectable

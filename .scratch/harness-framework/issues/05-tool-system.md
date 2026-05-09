@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: in-progress
 
 ## Parent
 
@@ -6,38 +6,44 @@ Status: ready-for-agent
 
 ## What to build
 
-Implement the rich Tool interface, ToolRegistry, and the `executeTools` pipeline stage with its per-tool sub-pipeline.
+Implement the ToolRegistry and integrate AI SDK's built-in multi-step tool execution loop into the Agent.
 
-**Tool interface implementation:** Validate that registered tools have valid Zod inputSchema and outputSchema. Execute method receives validated input and a ToolExecutionContext (containing harness reference, observability context, request context).
+**Design decision (red-team review):** Do NOT build a custom executeTools loop. AI SDK v6's `streamText` with tools that have `execute` functions automatically handles tool call detection, parallel execution, result feedback to LLM, and multi-step looping (via `maxSteps`). The framework wraps this capability, not replaces it.
 
-**ToolRegistry:** Register tools by name. Lookup by name. Generate tool definitions in the format LLM providers expect (JSON Schema from Zod). Support dynamic registration (tools can be added at runtime by plugins).
+**ToolRegistry:** Register tools by name. Generate AI SDK-compatible tool definitions from Zod schemas via `toAiSdkTools()`. The adapter wraps the framework's `Tool.execute(input, context)` (2-arg) into AI SDK's single-arg `execute` signature, injecting `ToolExecutionContext`.
 
-**executeTools pipeline stage:** When the LLM response contains tool calls:
-1. For each tool call, run the sub-pipeline: `beforeTool → execute → afterTool`
-2. Each sub-pipeline step is a Processor extension point AND a span
-3. Execute multiple tool calls in parallel by default
-4. Support per-tool sequential execution override
+**Agent integration:** `invokeLLM` processor passes `registry.toAiSdkTools()` to `streamText` with `maxSteps` config. AI SDK handles the entire tool execution loop internally.
 
-**First built-in tool — `echo`:** A trivial tool that returns its input. Used for testing and as a reference implementation.
+**before/after hooks:** Implemented as wrappers inside the `toAiSdkTools()` execute adapter, NOT as a separate sub-pipeline. Each tool's `execute` is wrapped to call registered before/after callbacks.
 
-**Tool output management:** Truncate large tool outputs to prevent context overflow. Configurable max length.
+**echo built-in tool:** Trivial tool that returns its input. Reference implementation in `@agentforge/tools`.
+
+**Tool output management:** Truncation applied inside the execute adapter wrapper. Configurable max length.
 
 ## Acceptance criteria
 
-- [ ] ToolRegistry registers tools and generates LLM-compatible schema definitions from Zod
-- [ ] Agent Loop detects tool calls in LLM response, executes tools via executeTools stage, and appends results to messages
-- [ ] Multiple tool calls execute in parallel by default
-- [ ] Per-tool sub-pipeline (beforeTool → execute → afterTool) runs with spans
+- [ ] ToolRegistry registers tools and generates AI SDK-compatible tool definitions from Zod
+- [ ] Agent passes tools to streamText and AI SDK handles multi-step tool execution loop
+- [ ] Multiple tool calls execute in parallel (AI SDK handles this, we verify end-to-end)
 - [ ] Tool input is validated against Zod schema; invalid inputs produce clear errors
 - [ ] `echo` built-in tool works end-to-end in the Agent Loop
 - [ ] Large tool outputs are truncated with a configurable threshold
-- [ ] Test: agent receives tool call from LLM, executes echo tool, returns result to LLM for next iteration
+- [ ] Test: agent receives tool call from LLM, executes echo tool, returns result in next iteration
 
 ## Blocked by
 
 - Issue 02 (Minimal Pipeline + Agent Loop)
+- Issue 03 (Vercel AI SDK Integration)
 - Issue 04 (Observability Core)
 
 ## User stories covered
 
 12, 14, 15, 16
+
+## Red-team review notes
+
+- Leverage AI SDK's built-in tool loop, don't rebuild it
+- `toAiSdkTools()` adapter is the hardest part — signature mismatch (2-arg vs 1-arg)
+- `requireApproval` deferred — no AI SDK equivalent, needs separate mechanism
+- before/after hooks are execute wrapper callbacks, not a separate pipeline stage
+- Per-tool error handling: catch errors inside execute adapter, return error as tool result
