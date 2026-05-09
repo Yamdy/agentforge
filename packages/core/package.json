@@ -15,6 +15,14 @@
     "test": "tsc --noEmit && vitest run",
     "check-types": "tsc --noEmit"
   },
+  "dependencies": {
+    "@agentforge/observability": "workspace:*",
+    "@ai-sdk/anthropic": "^3.0.76",
+    "@ai-sdk/google": "^3.0.71",
+    "@ai-sdk/openai": "^3.0.63",
+    "ai": "^6.0.177",
+    "zod": "^4.4.3"
+  },
   "devDependencies": {
     "@agentforge/sdk": "workspace:*",
     "typescript": "^5.7.3",

@@ -58,7 +58,7 @@ Compression, tool output truncation, progressive disclosure — preventing model
 - **Sub-agents**: Dual-mode — sync (tool-like, blocking) + async (background task, event notification)
 - **Tool interface**: Rich — name, description, inputSchema (Zod), outputSchema, requireApproval, renderCall, renderResult, execute context with harness ref + observability context
 - **Package structure**: 5-package monorepo — core, observability, plugins, tools, sdk
-- **LLM Provider**: Based on Vercel AI SDK (40+ providers, streamText, generateText, tool calling)
+- **LLM Provider**: Bundled SDK Map — built-in dynamic import for OpenAI/Anthropic/Google via `@ai-sdk/*` packages (zero config), `registerProvider()` for custom/test providers (priority override), async `resolveModel()` with SDK instance caching
 - **Memory**: Processor plugin (not core) — official MemoryProcessor in plugins package, storage backends injectable
 - **Compression**: Hybrid two-phase — micro-compression (truncate tool output) first, then LLM summarization if needed
 - **Streaming**: AsyncGenerator — pipeline stages pass streaming data via AsyncGenerator, natural backpressure

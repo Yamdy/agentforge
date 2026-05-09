@@ -35,7 +35,7 @@
 
 ### LLM Provider
 
-9. As a framework user, I want to specify models via string identifiers (e.g., 'openai/gpt-5', 'anthropic/claude-sonnet-4-6') powered by Vercel AI SDK, so that I can use any provider without writing adapter code.
+9. As a framework user, I want to specify models via string identifiers (e.g., 'openai/gpt-5', 'anthropic/claude-sonnet-4-6') powered by Vercel AI SDK with zero-config built-in providers (OpenAI/Anthropic/Google auto-resolved via `@ai-sdk/*` dynamic imports), so that I can use any supported provider without writing adapter code or manual setup.
 10. As a framework user, I want token usage and cost tracking to be automatic, so that I can monitor spending without manual accounting.
 11. As a framework user, I want automatic retry with exponential backoff for transient LLM API errors, so that my agents are resilient to temporary provider issues.
 
@@ -262,13 +262,14 @@ Skill sources merged in order: global → project → plugin, later overrides ea
 
 ### LLM Integration
 
-Based on Vercel AI SDK. The `invokeLLM` stage:
-1. Construct AI SDK `streamText` call from Context (model, messages, tools)
-2. Process stream chunks through registered Processors
-3. Parse tool call requests from stream
-4. Return AsyncGenerator of chunks + final response metadata
+Based on Vercel AI SDK with a Bundled SDK Map provider resolver. The `invokeLLM` stage:
+1. Resolve model string to `LanguageModel` via async `resolveModel()` (checks `registerProvider` overrides first, then built-in `PROVIDER_MAP` with dynamic `@ai-sdk/*` imports)
+2. Construct AI SDK `streamText` call from Context (model, messages, tools)
+3. Process stream chunks through registered Processors
+4. Parse tool call requests from stream
+5. Return AsyncGenerator of chunks + final response metadata
 
-Model string parsing: `'provider/model-name'` format (e.g., `'openai/gpt-5'`, `'anthropic/claude-sonnet-4-6'`).
+Model string parsing: `'provider/model-name'` format via `parseModel()` utility (e.g., `'openai/gpt-5'`, `'anthropic/claude-sonnet-4-6'`, `'openrouter/anthropic/claude-sonnet-4'`). Top 3 providers (OpenAI, Anthropic, Google) bundled as optional dependencies — zero config required. Custom providers supported via `registerProvider()`.
 
 ### Session Persistence
 
