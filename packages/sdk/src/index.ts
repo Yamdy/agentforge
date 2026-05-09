@@ -55,6 +55,15 @@ export interface ToolExecutionContext {
   span?: unknown;
 }
 
+export interface ToolHookContext {
+  toolName: string;
+  args: unknown;
+  result?: unknown;
+  error?: Error;
+}
+
+export type ToolHook = (context: ToolHookContext) => void | Promise<void>;
+
 export interface Tool<TInput = unknown, TOutput = unknown> {
   name: string;
   description: string;
