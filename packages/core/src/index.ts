@@ -2,5 +2,6 @@
 
 export { PipelineRunner, type PipelineRunnerOptions } from './pipeline.js';
 export { Agent } from './agent.js';
+export { LLMInvoker, type LLMInvokerOptions, type LLMInvokeInput, type LLMInvokeResult, type LLMStreamHandle } from './llm-invoker.js';
 export { resolveModel, registerProvider, parseModel, type ParsedModel } from './model-resolver.js';
 export { streamWithRetry, type RetryOptions } from './retry.js';

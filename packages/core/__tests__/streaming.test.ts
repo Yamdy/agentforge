@@ -3,19 +3,8 @@ import { Agent } from '../src/agent.js';
 import { createMockLanguageModel, registerMockProvider } from './helpers.js';
 import type { AgentConfig } from '@agentforge/sdk';
 
-describe('Agent with Vercel AI SDK', () => {
-  it('calls LLM via streamText and returns the full response', async () => {
-    registerMockProvider('mock', (modelId) =>
-      createMockLanguageModel({ text: `Hello from ${modelId}!` }),
-    );
-    const config: AgentConfig = { model: 'mock/test-model' };
-    const agent = new Agent(config);
-
-    const response = await agent.run('Hi');
-    expect(response).toBe('Hello from test-model!');
-  });
-
-  it('yields streaming chunks via AsyncGenerator', async () => {
+describe('Agent streaming through pipeline', () => {
+  it('yields streaming chunks via AsyncGenerator through the pipeline', async () => {
     registerMockProvider('stream-test', () =>
       createMockLanguageModel({ text: 'Hello world' }),
     );
@@ -28,5 +17,23 @@ describe('Agent with Vercel AI SDK', () => {
     }
 
     expect(chunks).toContain('Hello world');
+  });
+
+  it('stream and run produce the same final text', async () => {
+    registerMockProvider('consistency', () =>
+      createMockLanguageModel({ text: 'Same response' }),
+    );
+    const config: AgentConfig = { model: 'consistency/model' };
+    const agent = new Agent(config);
+
+    const runResult = await agent.run('test');
+
+    const streamChunks: string[] = [];
+    for await (const chunk of agent.stream('test')) {
+      streamChunks.push(chunk);
+    }
+    const streamResult = streamChunks.join('');
+
+    expect(runResult).toBe(streamResult);
   });
 });

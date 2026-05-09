@@ -1,15 +1,15 @@
-import { streamText, stepCountIs } from 'ai';
 import type { AgentConfig, PipelineContext, Processor, Tool } from '@agentforge/sdk';
 import { PipelineRunner } from './pipeline.js';
 import { ToolRegistry } from './tool-registry.js';
+import { LLMInvoker } from './llm-invoker.js';
 import { resolveModel } from './model-resolver.js';
-import { streamWithRetry } from './retry.js';
 import { echoTool } from '@agentforge/tools';
 
 export class Agent {
   private config: AgentConfig;
   private runner: PipelineRunner;
   private registry: ToolRegistry;
+  private _llm: LLMInvoker | null = null;
 
   constructor(config: AgentConfig) {
     this.config = config;
@@ -32,17 +32,26 @@ export class Agent {
   }
 
   async *stream(input: string): AsyncGenerator<string> {
-    const model = await resolveModel(this.config.model);
+    const context = this.createContext(input);
+    const stages = ['processInput', 'invokeLLM', 'processOutput'] as const;
 
-    const result = streamText({
-      model,
-      system: this.config.systemPrompt,
-      prompt: input,
-    });
-
-    for await (const chunk of result.textStream) {
-      yield chunk;
+    for await (const event of this.runner.stream(context, [...stages])) {
+      if (event.type === 'text_delta') {
+        yield event.text;
+      }
     }
+  }
+
+  private async getLLM(): Promise<LLMInvoker> {
+    if (!this._llm) {
+      const model = await resolveModel(this.config.model);
+      this._llm = new LLMInvoker({
+        model,
+        system: this.config.systemPrompt,
+        retryOptions: { maxRetries: 3, baseDelay: 1000 },
+      });
+    }
+    return this._llm;
   }
 
   private createContext(input: string): PipelineContext {
@@ -74,54 +83,30 @@ export class Agent {
     const invokeLLM: Processor = {
       stage: 'invokeLLM',
       execute: async (ctx) => {
-        const model = await resolveModel(this.config.model);
+        const llm = await this.getLLM();
+        const sdkTools = this.registry.toAiSdkTools();
 
-        return streamWithRetry(async () => {
-          const streamOpts: Record<string, unknown> = {
-            model,
-            system: this.config.systemPrompt,
-            prompt: ctx.request.input,
-          };
+        this.registry.setToolExecutionContext({
+          span: {
+            spanId: `tool-${ctx.request.sessionId}-${ctx.iteration.step}`,
+            traceId: ctx.request.sessionId,
+          },
+        });
 
-          this.registry.setToolExecutionContext({
-            span: {
-              spanId: `tool-${ctx.request.sessionId}-${ctx.iteration.step}`,
-              traceId: ctx.request.sessionId,
-            },
-          });
+        const handle = llm.stream({
+          prompt: ctx.request.input,
+          tools: Object.keys(sdkTools).length > 0 ? sdkTools : undefined,
+          maxSteps: this.config.maxIterations,
+        });
 
-          const sdkTools = this.registry.toAiSdkTools();
-          if (Object.keys(sdkTools).length > 0) {
-            streamOpts.tools = sdkTools;
-            streamOpts.stopWhen = stepCountIs(this.config.maxIterations ?? 5);
-          }
-
-          const result = streamText(streamOpts as any);
-
-          const chunks: string[] = [];
-          for await (const chunk of result.textStream) {
-            chunks.push(chunk);
-          }
-
-          const response = chunks.join('');
-          const usage = await result.usage;
-
-          return {
-            ...ctx,
-            pipeline: {
-              ...ctx.pipeline,
-              response,
-              tokenUsage: {
-                input: typeof usage?.inputTokens === 'number'
-                  ? usage.inputTokens
-                  : (usage?.inputTokens as any)?.total ?? 0,
-                output: typeof usage?.outputTokens === 'number'
-                  ? usage.outputTokens
-                  : (usage?.outputTokens as any)?.total ?? 0,
-              },
-            },
-          };
-        }, { maxRetries: 3, baseDelay: 1000 });
+        return {
+          ...ctx,
+          pipeline: {
+            ...ctx.pipeline,
+            textStream: handle.textStream,
+            usagePromise: handle.usage,
+          },
+        };
       },
     };
 
