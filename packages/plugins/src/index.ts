@@ -26,3 +26,13 @@ export {
   InMemoryEvictionStorage,
   type EvictionPluginOptions,
 } from './eviction/index.js';
+
+export {
+  createPermissionProcessor,
+  permissionPlugin,
+  type PermissionRule,
+  type PermissionMode,
+  type PermissionConfig,
+  type PermissionDecisionEvent,
+  type PermissionPluginOptions,
+} from './permission/index.js';
