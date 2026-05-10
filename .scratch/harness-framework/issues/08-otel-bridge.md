@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: done
 
 ## Parent
 
@@ -6,44 +6,46 @@ Status: ready-for-agent
 
 ## What to build
 
-Implement the OpenTelemetry Bridge that connects the framework's internal observability abstraction to the OTel ecosystem, enabling production-grade distributed tracing.
+Implement the OpenTelemetry Bridge that connects the framework's internal Span/Tracer abstraction to the OTel ecosystem.
 
-**OTelBridge class:** Implements the Tracer interface from `@harness/observability`. Delegates to `@opentelemetry/api`:
+**OTelBridge class:** Implements the Tracer interface from `@agentforge/observability`. Delegates to `@opentelemetry/api`:
 - `startSpan()` → creates a real OTel Span
-- Span attributes are set via OTel's `setAttribute()`
-- Span events are recorded via OTel's `addEvent()`
-- Parent-child relationships are maintained via OTel context propagation
+- Span attributes set via OTel's `setAttribute()`
+- Span events recorded via OTel's `addEvent()`
+- Parent-child relationships via OTel context propagation
 
 **Span hierarchy mapping:**
 ```
 agent_run (OTel INTERNAL span)
+  ├── process_input (OTel INTERNAL span)
   ├── build_context (OTel INTERNAL span)
-  ├── model_step (OTel INTERNAL span)
-  │   └── model_generation (OTel CLIENT span)
-  ├── process_step_output (OTel INTERNAL span)
-  └── tool_execution (OTel CLIENT span)
-      ├── before_tool (OTel INTERNAL span)
-      ├── execute_tool (OTel INTERNAL span)
-      └── after_tool (OTel INTERNAL span)
+  ├── model_step (OTel INTERNAL span, per iteration)
+  │   ├── prepare_step
+  │   ├── invoke_llm
+  │   ├── process_step_output
+  │   ├── execute_tools
+  │   │   └── tool_call (per tool)
+  │   └── evaluate_iteration
+  └── process_output (OTel INTERNAL span)
 ```
 
-**Configuration:** Bridge accepts OTel TracerProvider and optional exporter (OTLP HTTP, Console, etc.). When no exporter is configured, falls back to No-Op.
+**EventBus integration:** Hook `stage.after` emits EventBus events with span context (traceId, spanId) for correlation between observability and event-driven subsystems.
 
-**Context propagation:** Support injecting/extracting trace context for distributed tracing across agent boundaries.
+**Configuration:** Bridge accepts OTel TracerProvider and optional exporter (OTLP HTTP, Console). Falls back to No-Op when unconfigured.
 
 ## Acceptance criteria
 
 - [ ] OTelBridge creates real OTel spans for every pipeline stage
-- [ ] Span hierarchy correctly nests child spans under parents
-- [ ] Span attributes (model, tokens, tool name, duration) are visible in OTel backend
-- [ ] Context propagation works: traceId propagates from parent to sub-agents
-- [ ] Falls back to No-Op when no OTel provider is configured
-- [ ] Test: run full pipeline with TestExporter, verify complete span tree matches expected hierarchy
+- [ ] Span hierarchy correctly nests under the four-region context model
+- [ ] Span attributes (model, tokens, tool name, duration) visible in OTel backend
+- [ ] Context propagation: traceId propagates from parent to sub-agents
+- [ ] Falls back to No-Op when no OTel provider configured
+- [ ] Test: full pipeline with TestExporter, verify span tree matches hierarchy
 
 ## Blocked by
 
 - Issue 04 (Observability Core)
-- Issue 06 (Full Pipeline Stages)
+- Plan A (Foundation — PipelineContext refactor)
 
 ## User stories covered
 

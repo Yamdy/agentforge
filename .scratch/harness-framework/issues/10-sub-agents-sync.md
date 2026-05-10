@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: done
 
 ## Parent
 
@@ -6,31 +6,55 @@ Status: ready-for-agent
 
 ## What to build
 
-Implement synchronous sub-agents that execute as tools within the main agent's pipeline, with full context isolation and summary-only return.
+Implement synchronous sub-agents as tools with isolated context and summary-only return.
 
-**Sub-agent as Tool:** A `task` tool that the main agent can call to delegate work to a sub-agent. The sub-agent is configured with its own AgentConfig (model, tools, system prompt, max iterations).
+**Sub-agent config:**
+```typescript
+interface SubAgentConfig {
+  name: string;
+  model?: string;                    // inherits parent if omitted
+  systemPrompt?: string;
+  tools?: ToolDefinition[];          // inherits parent if omitted
+  maxIterations?: number;
+  contextPolicy: 'isolated' | 'inherit' | 'summary-only';
+}
+```
 
-**Context isolation:** The sub-agent runs its own independent Pipeline with a fresh PipelineContext. The sub-agent's messages, tool calls, and internal reasoning are NOT visible to the parent agent.
+**Sub-agent result:**
+```typescript
+interface SubAgentResult {
+  response: string;
+  tokenUsage: TokenUsage;
+  sessionId: string;
+}
+```
 
-**Summary-only return:** When the sub-agent completes, only a summary string is returned to the parent agent (as the tool result). The sub-agent's full execution trace is recorded as nested spans under the parent's `tool_execution` span.
+**Factory function:** `createSubAgentTool(config: SubAgentConfig): ToolDefinition` — creates a tool that spawns a child Agent, runs it, and returns the result.
 
-**Sub-agent definition:** Users define sub-agents in AgentConfig as named configurations. The `task` tool accepts a sub-agent name and a prompt string.
+**Context policies:**
+- `isolated`: Fresh PipelineContext, no parent state
+- `inherit`: Receives parent session.messageHistory
+- `summary-only`: Receives a summary of parent context
 
-**Nested observability:** The sub-agent's pipeline run creates spans nested under the parent's `execute_tool` span, so the full execution tree is observable.
+**EventBus integration:** Sub-agents emit `task:start` / `task:end` events. Parent session records associations via session persistence.
+
+**Observability:** Sub-agent execution creates nested spans under the parent's tool_execution span.
 
 ## Acceptance criteria
 
-- [ ] Main agent can delegate to a sub-agent via the `task` tool
-- [ ] Sub-agent runs with isolated PipelineContext (no state leakage to parent)
-- [ ] Only the summary result is returned to the parent agent
-- [ ] Sub-agent execution creates nested spans under the parent's tool_execution span
-- [ ] Sub-agent errors are caught and returned as error summaries (not thrown)
-- [ ] Test: main agent delegates a task, sub-agent processes it, parent receives summary
+- [ ] Main agent delegates to sub-agent via tool call
+- [ ] `isolated` policy: sub-agent runs with fresh context, no state leakage
+- [ ] `inherit` policy: sub-agent receives parent message history
+- [ ] `summary-only` policy: sub-agent receives compressed parent context
+- [ ] Only summary string is returned to parent agent
+- [ ] `task:start` / `task:end` events emitted via EventBus
+- [ ] Sub-agent errors caught and returned as error summaries
+- [ ] Test: main agent delegates task, sub-agent processes, parent receives summary
 
 ## Blocked by
 
-- Issue 05 (Tool System)
-- Issue 09 (Session + Suspend/Resume)
+- Plan A (Foundation)
+- Issue 07 (Plugin System — enhanced HarnessAPI)
 
 ## User stories covered
 
