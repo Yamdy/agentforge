@@ -6,38 +6,42 @@ Status: ready-for-agent
 
 ## What to build
 
-Implement the PermissionProcessor plugin that enforces safety boundaries at the tool execution level via the beforeTool sub-pipeline stage.
+Implement the PermissionProcessor as a `tool.before` Hook with glob-based rules and three permission modes.
 
-**PermissionProcessor at beforeTool:** Intercepts every tool call before execution:
-1. Evaluate tool call against the configured ruleset
-2. Ruleset is a list of rules: `{ pattern: glob, effect: 'allow' | 'deny', reason?: string }`
-3. Rules are evaluated in order, first match wins
-4. If no rule matches, apply the default policy based on permission mode
+**Permission rules:**
+```typescript
+interface PermissionRule {
+  tool: string;           // tool name or glob pattern
+  action: 'allow' | 'deny' | 'ask';
+  pattern?: string;       // argument path glob
+}
 
-**Three permission modes:**
-- `interactive` — ask the user for approval via suspend/resume. The pipeline suspends, presents the tool call details, and waits for user response.
-- `plan-only` — deny all tools that modify state (write, execute, delete). Allow read-only tools (read, glob, grep).
-- `full-auto` — allow everything. No checks.
+type PermissionMode = 'interactive' | 'plan-only' | 'full-auto';
+```
 
-**Glob pattern matching:** Patterns match against `<toolName>:<argPath>` format. Examples: `shell:*` (all shell commands), `write:*.secret` (writes to .secret files), `read:*` (all reads).
+**PermissionProcessor as Hook `tool.before`:** Intercepts every tool call before execution:
+1. Evaluate tool call against rules (first-match-wins)
+2. `ask` action in `interactive` mode: triggers HITL suspend via session
+3. `deny` action: returns error to agent
+4. `allow` action: pass through
 
-**Audit trail:** Every permission decision (allow/deny) is recorded in the beforeTool span attributes: `permission.decision`, `permission.reason`, `permission.matched_rule`.
+**Audit trail:** Every decision recorded as EventBus event with `permission.decision`, `permission.rule`, `permission.toolName`.
 
 ## Acceptance criteria
 
-- [ ] PermissionProcessor intercepts tool calls at beforeTool stage
-- [ ] Glob pattern rules match correctly against toolName:argPath
-- [ ] First-match-wins ruleset evaluation works
-- [ ] `interactive` mode suspends pipeline for user approval and resumes correctly
-- [ ] `plan-only` mode denies write/execute tools and allows read tools
-- [ ] `full-auto` mode allows all tools without checking
-- [ ] All decisions are recorded in span attributes for audit
-- [ ] Test: tool call denied in plan-only mode produces denial with correct reason
+- [ ] PermissionProcessor registered as Hook `tool.before`
+- [ ] Glob pattern rules match tool names and argument paths
+- [ ] First-match-wins ruleset evaluation
+- [ ] `interactive` mode suspends for user approval and resumes correctly
+- [ ] `plan-only` mode denies write/execute tools, allows read tools
+- [ ] `full-auto` mode allows all tools
+- [ ] Audit events emitted via EventBus
+- [ ] Test: tool call denied in plan-only mode with correct reason
 
 ## Blocked by
 
 - Issue 07 (Plugin System)
-- Issue 09 (Session + Suspend/Resume)
+- Plan A (Foundation — HookRunner)
 
 ## User stories covered
 
