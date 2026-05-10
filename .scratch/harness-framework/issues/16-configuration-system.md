@@ -6,44 +6,54 @@ Status: ready-for-agent
 
 ## What to build
 
-Implement the configuration system with JSONC multi-level merging and HarnessProfile per provider/model runtime behavior.
+Implement JSONC configuration with multi-level merging, ModelProfile per-model behavior, and Dynamic config resolution.
 
-**JSONC parser:** Parse JSON with comments (strip comments before JSON.parse). Used for all config files.
+**Config interface:**
+```typescript
+interface HarnessConfig {
+  agents?: Record<string, Partial<AgentConfig>>;
+  tools?: { enabled?: string[]; disabled?: string[] };
+  plugins?: string[];
+  session?: { storage?: 'file' | 'memory'; path?: string };
+  modelProfiles?: ModelProfile[];
+  modelGateways?: ModelGateway[];
+}
+```
 
-**Multi-level merging (priority: highest to lowest):**
-1. **Session-level** — runtime parameters passed to agent.run()
-2. **Project-level** — `.harness/config.jsonc` in the project root
-3. **Global-level** — `~/.harness/config.jsonc` in user home
+**Multi-level merge (highest priority first):**
+1. Session-level — runtime parameters passed to agent.run()
+2. Project-level — `.agentforge/config.jsonc` in project root
+3. Global-level — `~/.agentforge/config.jsonc` in user home
+4. Environment — `AGENTFORGE_CONFIG` env var (inline JSON)
 
-**Merge rules:**
-- Scalars: higher priority overrides lower
-- Arrays: higher priority replaces lower (not concatenated)
-- Objects: deep merge, higher priority keys override
+**ModelProfile (from DeepAgents insight):**
+```typescript
+interface ModelProfile {
+  modelPattern: string | RegExp;
+  systemPromptSuffix?: string;
+  toolOverrides?: { [toolName: string]: { description?: string; exclude?: boolean } };
+  extraPromptFragments?: PromptFragment[];
+}
+```
 
-**Zod validation:** All config is validated against a Zod schema at load time. Invalid config produces clear error messages with the file path and field name.
+Applied at `buildContext` when current model matches profile pattern. Supports `anthropic/*`, `openai/gpt-*`, exact model IDs, etc.
 
-**HarnessProfile:** A config section keyed by `'provider'` or `'provider:model'` that overrides runtime behavior:
-- `systemPromptSuffix` — appended to system prompt
-- `toolExclusions` — list of tool names to disable
-- `processorOverrides` — add or remove Processors
-- `modelParameters` — temperature, topP, maxTokens overrides
-
-When an agent is created with model `'openai/gpt-5'`, the framework looks up profiles in order: `'openai/gpt-5'` → `'openai'` → default.
+**Dynamic config resolution (from Mastra insight):** `Dynamic<T> = T | ((ctx) => T)` — fields in AgentConfig accept functions resolved per-request at `processInput` stage.
 
 ## Acceptance criteria
 
-- [ ] JSONC files are parsed correctly (comments stripped, valid JSON produced)
-- [ ] Multi-level merge produces correct result (session > project > global)
+- [ ] JSONC files parsed correctly (comments stripped)
+- [ ] Multi-level merge: session > project > global > env
 - [ ] Invalid config produces clear Zod validation errors with file path
-- [ ] HarnessProfile lookup resolves by provider:model → provider → default
-- [ ] Profile systemPromptSuffix is correctly appended to agent's system prompt
-- [ ] Profile toolExclusions correctly remove tools from the agent's tool list
-- [ ] Test: project config overrides global config, HarnessProfile adapts agent behavior per model
+- [ ] ModelProfile lookup resolves by pattern match
+- [ ] Profile systemPromptSuffix appended to agent system prompt
+- [ ] Profile toolOverrides correctly exclude/modify tools
+- [ ] Dynamic config fields resolved at processInput stage
+- [ ] Test: project config overrides global, ModelProfile adapts behavior per model
 
 ## Blocked by
 
-- Issue 01 (Monorepo Scaffolding + Core Types)
-- Issue 07 (Plugin System)
+- Plan A (Foundation — Dynamic type, ModelProfile type)
 
 ## User stories covered
 

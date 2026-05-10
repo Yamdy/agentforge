@@ -6,39 +6,59 @@ Status: ready-for-agent
 
 ## What to build
 
-Implement async sub-agents that run in the background and notify the main agent (or coordinator) upon completion, enabling parallel long-running work.
+Implement async sub-agents with concurrency control, model fallback chains, and EventBus-driven lifecycle.
 
-**Async sub-agent lifecycle:**
-1. Main agent submits work via an `async_task` tool
-2. The sub-agent starts in an independent execution context (separate Pipeline run)
-3. Main agent receives a task ID immediately and continues operating
-4. When the sub-agent completes, an event is emitted: `async_task_completed { taskId, summary, status }`
-5. Main agent (or coordinator) can consume the event and incorporate the result
+**Async task config:**
+```typescript
+interface AsyncTaskConfig extends SubAgentConfig {
+  concurrencySlot?: ConcurrencySlot;  // { key: string, maxConcurrent: number }
+  fallbackModels?: FallbackEntry[];   // ordered model fallback chain
+}
+```
 
-**Task management tools:**
-- `async_task` — submit a new async task (name, prompt, config)
-- `check_task` — check status of a running task (pending, running, completed, failed)
-- `cancel_task` — cancel a running task
-- `list_tasks` — list all tasks and their statuses
+**Async task handle:**
+```typescript
+interface AsyncTaskHandle {
+  taskId: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  result?: SubAgentResult;
+  error?: Error;
+  cancel(): void;
+  on_complete(handler: (result: SubAgentResult) => void): void;
+}
+```
 
-**Isolation:** Async sub-agents run in their own Pipeline with fully isolated PipelineContext. They do NOT share memory, session, or context with the parent.
+**TaskManager:**
+```typescript
+interface TaskManager {
+  launch(config: AsyncTaskConfig, prompt: string): Promise<AsyncTaskHandle>;
+  get(taskId: string): AsyncTaskHandle | undefined;
+  cancel(taskId: string): void;
+  list(filter?: { parentSessionId?: string }): AsyncTaskHandle[];
+}
+```
 
-**Event integration:** Task completion events flow through the same observability pipeline — the sub-agent's execution creates a separate trace tree linked to the parent via the taskId.
+**Key behaviors:**
+- `ConcurrencyController` enforces per-slot limits (e.g., max 3 tasks per model)
+- Model fallback chain tries next model on failure
+- EventBus `task:start` / `task:end` / `task:error` events for lifecycle tracking
+- Parent agent notified on completion via `on_complete` callback or EventBus subscription
 
 ## Acceptance criteria
 
-- [ ] Main agent can submit an async task and receive a task ID immediately
+- [ ] Main agent submits async task and receives task ID immediately
 - [ ] Async sub-agent runs independently with isolated context
-- [ ] Task completion emits an event with summary and status
-- [ ] `check_task` returns current status of a running task
-- [ ] `cancel_task` stops a running sub-agent
-- [ ] Async sub-agent execution creates separate trace tree linked by taskId
-- [ ] Test: submit async task, main agent continues, receives completion event
+- [ ] ConcurrencyController limits parallel tasks per slot
+- [ ] Model fallback chain tries next model on failure
+- [ ] `task:end` event emitted with result on completion
+- [ ] `cancel()` stops a running sub-agent
+- [ ] `list()` returns tasks filtered by parent session
+- [ ] Test: submit async task, parent continues, receives completion event
 
 ## Blocked by
 
 - Issue 10 (Sub-agents Sync)
-- Issue 09 (Session + Suspend/Resume)
+- Plan A (Foundation — EventBus, ConcurrencyController)
 
 ## User stories covered
 
