@@ -263,6 +263,8 @@ export interface SessionManager {
 
 export interface SubAgentConfig {
   name: string;
+  description?: string;
+  inputSchema?: unknown;
   model?: string;
   systemPrompt?: string;
   tools?: ToolDefinition[];
