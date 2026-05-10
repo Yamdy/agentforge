@@ -160,12 +160,42 @@ export type StreamEvent =
 
 export type EventType = 'agent:start' | 'agent:end' | 'tool:before' | 'tool:after' | string;
 
+export type HookPoint =
+  | 'agent.start'
+  | 'agent.end'
+  | 'stage.before'
+  | 'stage.after'
+  | 'llm.before'
+  | 'llm.after'
+  | 'llm.wrap'
+  | 'tool.before'
+  | 'tool.after'
+  | 'tool.wrap'
+  | 'iteration.end'
+  | 'error';
+
+export interface Hook {
+  point: HookPoint;
+  handler: (context: unknown) => unknown | Promise<unknown>;
+  priority?: number;
+}
+
+export interface ResourceDeclaration {
+  id: string;
+  type: string;
+  config: Record<string, unknown>;
+  start: () => Promise<unknown>;
+  stop: (instance: unknown) => Promise<void>;
+}
+
 export interface HarnessAPI {
   registerProcessor(stage: PipelineStage, processor: Processor): void;
   registerTool(tool: ToolDefinition): void;
   registerCommand(name: string, handler: (args: string) => Promise<void>): void;
-  registerProvider(config: unknown): void;
-  onEvent(eventType: EventType, handler: (...args: unknown[]) => void): void;
+  registerHook(hook: Hook): void;
+  subscribe(eventType: string, handler: (data?: unknown) => void): () => void;
+  registerResource(declaration: ResourceDeclaration): void;
+  registerProvider(name: string, factory: unknown): void;
 }
 
 export interface PluginRegistration {
@@ -183,6 +213,67 @@ export interface AgentConfig {
   systemPrompt?: string;
   maxIterations?: number;
   tools?: Tool<any, any>[];
+}
+
+// ---------------------------------------------------------------------------
+// Session Persistence
+// ---------------------------------------------------------------------------
+
+export type SessionStatus = 'active' | 'completed' | 'suspended' | 'error';
+
+export interface SessionRecord {
+  sessionId: string;
+  parentSessionId?: string;
+  createdAt: string;
+  updatedAt: string;
+  status: SessionStatus;
+  model?: string;
+  tokenUsage?: TokenUsage;
+}
+
+export interface SessionEvent {
+  seq: number;
+  timestamp: string;
+  type: string;
+  payload: unknown;
+}
+
+export interface SessionStorage {
+  append(sessionId: string, event: SessionEvent): Promise<void>;
+  read(sessionId: string): AsyncIterable<SessionEvent>;
+  list(filter?: { parentSessionId?: string; status?: SessionStatus }): Promise<SessionRecord[]>;
+  updateMeta(sessionId: string, meta: Partial<SessionRecord>): Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
+// Session Manager
+// ---------------------------------------------------------------------------
+
+export interface SessionManager {
+  start(input: string, options?: { parentSessionId?: string }): Promise<SessionRecord>;
+  restore(sessionId: string): Promise<PipelineContext>;
+  suspend(sessionId: string, reason: string): Promise<void>;
+  resume(sessionId: string, input?: string): Promise<string>;
+  list(filter?: { parentSessionId?: string }): Promise<SessionRecord[]>;
+}
+
+// ---------------------------------------------------------------------------
+// Sub-Agent
+// ---------------------------------------------------------------------------
+
+export interface SubAgentConfig {
+  name: string;
+  model?: string;
+  systemPrompt?: string;
+  tools?: ToolDefinition[];
+  maxIterations?: number;
+  contextPolicy: 'isolated' | 'inherit' | 'summary-only';
+}
+
+export interface SubAgentResult {
+  response: string;
+  tokenUsage: TokenUsage;
+  sessionId: string;
 }
 
 // ---------------------------------------------------------------------------
