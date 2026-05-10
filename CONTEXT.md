@@ -58,10 +58,10 @@ Compression, tool output truncation, progressive disclosure — preventing model
 - **Sub-agents**: Dual-mode — sync (tool-like, blocking) + async (background task, event notification)
 - **Tool execution**: Leverage AI SDK built-in multi-step loop — ToolRegistry generates AI SDK-compatible tools via `toAiSdkTools()` adapter, `streamText` + `maxSteps` handles detection/execution/looping; before/after hooks as execute wrapper callbacks, not separate sub-pipeline
 - **Package structure**: 5-package monorepo — core, observability, plugins, tools, sdk
-- **LLM Provider**: Bundled SDK Map — built-in dynamic import for OpenAI/Anthropic/Google via `@ai-sdk/*` packages (zero config), `registerProvider()` for custom/test providers (priority override), async `resolveModel()` with SDK instance caching
+- **LLM Provider**: Bundled SDK Map + LLMInvoker — `resolveModel()` resolves model strings to `LanguageModel` instances (zero config, SDK instance caching); `LLMInvoker` wraps the AI SDK call owning retry + token extraction; created once per Agent (lazy init), receives pre-resolved `LanguageModel`
 - **Memory**: Processor plugin (not core) — official MemoryProcessor in plugins package, storage backends injectable
 - **Compression**: Hybrid two-phase — micro-compression (truncate tool output) first, then LLM summarization if needed
-- **Streaming**: AsyncGenerator — pipeline stages pass streaming data via AsyncGenerator, natural backpressure
+- **Streaming**: Unified single path — `run()` and `stream()` share the same pipeline; `PipelineRunner.run()` collects textStream into response, `PipelineRunner.stream()` yields `StreamEvent` chunks; LLMInvoker always produces streaming output, consumption mode differs at PipelineRunner level
 - **Permission**: Processor implementation — beforeTool Processor in executeTools sub-pipeline, three modes (interactive/plan-only/full-auto)
 - **HITL**: Suspend/resume — Processor calls context.suspend(reason), state persisted, harness.resume(sessionId, input) to continue
 - **Config**: JSONC + multi-level merging (global ~/.harness/ > project .harness/ > session-level), validated via Zod
