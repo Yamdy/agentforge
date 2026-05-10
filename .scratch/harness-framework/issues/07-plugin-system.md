@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: done
 
 ## Parent
 
@@ -6,41 +6,60 @@ Status: ready-for-agent
 
 ## What to build
 
-Implement the plugin system that allows extensions to register Processors, Tools, Commands, and Providers through a type-safe factory function.
+Implement the plugin system with full lifecycle management, resource declarations, Hook registration, and EventBus subscription.
 
-**HarnessAPI implementation:** The object passed to plugin factory functions. Methods:
-- `registerProcessor(stage, processor)` — adds a Processor to a pipeline stage
-- `registerTool(tool)` — adds a Tool to the ToolRegistry
+**HarnessAPI (enhanced):**
+- `registerProcessor(processor)` — registers a Processor at its declared stage
+- `registerTool(tool)` — registers a Tool into the ToolRegistry
 - `registerCommand(name, handler)` — registers a slash command
-- `registerProvider(providerConfig)` — registers a custom LLM provider
-- `onEvent(eventType, handler)` — subscribes to lifecycle events (agent_start, agent_end, turn_start, turn_end, tool_execution_start, tool_execution_end, error)
+- `registerHook(hook: Hook)` — registers a Hook at a HookPoint with priority
+- `subscribe(type, handler)` — subscribes to EventBus events, returns unsubscribe function
+- `registerResource(declaration: ResourceDeclaration)` — declares an external resource (MCP server, database, etc.) with start/stop lifecycle
+- `registerProvider(name, factory)` — registers a custom model provider into the Gateway chain
 
-**Plugin loader:** Load plugins from:
-1. Explicit file paths (relative or absolute to .ts/.js files)
-2. npm packages (import and call default export)
-3. Project directories (`.harness/plugins/*/index.ts`)
-4. Global directories (`~/.harness/plugins/*/index.ts`)
+**Resource declaration:**
+```typescript
+interface ResourceDeclaration {
+  id: string;
+  type: string;  // 'mcp-server', 'database', 'http-client', etc.
+  config: Record<string, unknown>;
+  start: () => Promise<unknown>;
+  stop: (instance: unknown) => Promise<void>;
+}
+```
 
 **Plugin lifecycle:**
-1. **resolve** — Find the plugin module, check compatibility
-2. **load** — Dynamic import the module
-3. **initialize** — Call the factory function with HarnessAPI
-4. **activate** — Registered Processors/Tools become active in the pipeline
+1. **resolve** — Find the plugin module (file path, npm package, directory)
+2. **load** — Dynamic import the module, extract factory function
+3. **initialize** — Call `initializeAll()` which runs all registered resource `start()` functions
+4. **activate** — Registered Processors/Hooks/Tools become active in the pipeline
+5. **shutdown** — Call `shutdown()` which runs all resource `stop()` functions and cleans up subscriptions
 
-**Test plugin:** A fixture plugin that registers a Processor (logs each stage) and a Tool (returns a fixed value). Used for integration testing.
+**PluginManager interface:**
+```typescript
+interface PluginManager {
+  loadPlugin(spec: string | PluginFactory): Promise<void>;
+  initializeAll(): Promise<void>;
+  shutdown(): Promise<void>;
+  getErrors(): PluginError[];
+}
+```
 
 ## Acceptance criteria
 
-- [ ] Plugin factory function `(harness: HarnessAPI) => PluginRegistration` is correctly typed
+- [ ] Plugin factory function receives enhanced HarnessAPI with registerHook, subscribe, registerResource, registerProvider
 - [ ] Plugins can register Processors at any pipeline stage
-- [ ] Plugins can register Tools into the ToolRegistry
-- [ ] Plugin loader discovers plugins from file paths, npm packages, and directories
+- [ ] Plugins can register Hooks at any HookPoint
+- [ ] Plugins can subscribe to EventBus events and receive them
+- [ ] Plugins can declare resources with start/stop lifecycle
+- [ ] `initializeAll()` starts all declared resources
+- [ ] `shutdown()` stops all resources and cleans up subscriptions
 - [ ] Plugin initialization errors are caught and reported without crashing the framework
-- [ ] Test plugin loads successfully and its registered Processor/Tool work in a full pipeline run
+- [ ] Test plugin loads, registers Processor + Hook + Tool + Resource, all work in pipeline
 
 ## Blocked by
 
-- Issue 06 (Full Pipeline Stages)
+- Plan A (Foundation — SDK types, EventBus, HookRunner)
 
 ## User stories covered
 
