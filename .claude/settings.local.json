@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(pnpm install *)",
+      "Bash(pnpm build *)",
+      "Bash(pnpm test *)",
+      "Bash(pnpm --filter @agentforge/core add @agentforge/observability)",
+      "Bash(npx turbo *)",
+      "Bash(pnpm --filter @agentforge/core add ai)",
+      "Bash(node -e \"const m = require\\('ai/test'\\); console.log\\(Object.keys\\(m\\)\\)\")",
+      "Bash(node -e \"import\\('ai/test'\\).then\\(m => console.log\\(Object.keys\\(m\\)\\)\\)\")",
+      "Bash(node --input-type=module -e \"import * as m from 'ai/test'; console.log\\(Object.keys\\(m\\)\\)\")",
+      "Bash(node *)",
+      "Bash(pnpm --filter @agentforge/core add zod)",
+      "Bash(pnpm --filter @agentforge/core add @ai-sdk/openai@latest @ai-sdk/anthropic@latest @ai-sdk/google@latest)",
+      "Bash(pnpm --filter @agentforge/core exec vitest run __tests__/tool-registry.test.ts)",
+      "Bash(pnpm --filter @agentforge/tools exec vitest run)",
+      "Bash(pnpm --filter @agentforge/core exec vitest run __tests__/agent-tool-loop.test.ts)",
+      "Bash(pnpm --filter @agentforge/core exec vitest run)",
+      "Bash(pnpm --filter @agentforge/core exec vitest run __tests__/tool-execution-debug.test.ts)",
+      "Bash(pnpm *)",
+      "Bash(npm run *)",
+      "Bash(npx tsx *)",
+      "Bash(npx tsup *)",
+      "Bash(npm ls *)",
+      "WebFetch(domain:arxiv.org)",
+      "WebSearch"
+    ]
+  }
+}

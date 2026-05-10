@@ -52,8 +52,8 @@ Compression, tool output truncation, progressive disclosure — preventing model
 - **Language**: TypeScript
 - **Execution model**: Processor Pipeline
 - **Extension + Observability**: Unified model — each pipeline stage is both extension point and span
-- **State model**: Single Context object passed through pipeline
-- **Plugin system**: Code factory function — `(harness: HarnessAPI) => PluginHooks`
+- **State model**: Four-region PipelineContext — `request` (immutable), `agent` (config + prompt), `iteration` (step state), `session` (cross-iteration) — replacing the former untyped `pipeline: Record<string, unknown>`
+- **Plugin system**: Code factory function — `(harness: HarnessAPI) => PluginRegistration`
 - **Observability backend**: Self-built lightweight abstraction (Span/Tracer/Metrics) + OTel Bridge
 - **Sub-agents**: Dual-mode — sync (tool-like, blocking) + async (background task, event notification)
 - **Tool execution**: Leverage AI SDK built-in multi-step loop — ToolRegistry generates AI SDK-compatible tools via `toAiSdkTools()` adapter, `streamText` + `maxSteps` handles detection/execution/looping; before/after hooks as execute wrapper callbacks, not separate sub-pipeline
@@ -64,15 +64,32 @@ Compression, tool output truncation, progressive disclosure — preventing model
 - **Streaming**: Unified single path — `run()` and `stream()` share the same pipeline; `PipelineRunner.run()` collects textStream into response, `PipelineRunner.stream()` yields `StreamEvent` chunks; LLMInvoker always produces streaming output, consumption mode differs at PipelineRunner level
 - **Permission**: Processor implementation — beforeTool Processor in executeTools sub-pipeline, three modes (interactive/plan-only/full-auto)
 - **HITL**: Suspend/resume — Processor calls context.suspend(reason), state persisted, harness.resume(sessionId, input) to continue
-- **Config**: JSONC + multi-level merging (global ~/.harness/ > project .harness/ > session-level), validated via Zod
+- **Config**: JSONC + multi-level merging (global ~/.agentforge/ > project .agentforge/ > session-level), validated via Zod
 - **Session**: JSONL file storage with tree branching (parentId), human-readable, no database dependency
 - **MCP**: Plugin implementation — MCP client as a Plugin providing tool registration and lifecycle management
 - **Skill**: agentskills.io standard — SKILL.md files, progressive disclosure via SkillProcessor in buildContext stage
+- **Hook system**: Lightweight interception alongside Processors — Hooks observe/modify context without control flow; Processors handle business logic with abort capability; Hooks have explicit priority ordering
+- **EventBus**: Decoupled broadcast system — lifecycle events emitted at each pipeline point; plugins and subsystems subscribe to relevant events; backbone for session persistence, background tasks, and monitoring
+- **Dynamic config**: `Dynamic<T> = T | ((ctx) => T)` — AgentConfig fields accept functions resolved per-request at `processInput` stage
+- **Model routing**: Gateway chain — pluggable `ModelGateway` implementations replace hardcoded provider map; first-match-wins resolution
+- **Model profile**: Per-model behavior customization — `ModelProfile` with systemPromptSuffix, toolOverrides, extraPromptFragments; registered per model pattern
+- **Runtime safety**: Built-in circuit breaker (consecutive tool call limit, total tool call limit, stagnation detection), model fallback chains (ordered retry across providers), concurrency controller (per-key slot management)
+- **Tool management**: Dynamic tool group activation/deactivation; tool result eviction for large outputs
 
 ## Pipeline Architecture
 
 ### Pipeline Stage
-Each stage is simultaneously an **extension point** (Processor interface) and an **observability span** (auto-traced). One registration solves both extensibility and observability.
+Each stage is simultaneously an **extension point** (Processor interface), an **observability span** (auto-traced), and a **Hook point** (cross-cutting interception). One registration solves extensibility, observability, and cross-cutting concerns.
+
+### Pipeline Context — Four Regions
+
+```
+PipelineContext
+├── request       — immutable input data (user message, session ID, metadata)
+├── agent         — agent configuration (config, systemPrompt, toolDeclarations, promptFragments)
+├── iteration     — current step state (step number, textStream, response, toolCalls, stopLoop, retryFrom)
+└── session       — cross-iteration state (messageHistory, totalTokenUsage, custom plugin data)
+```
 
 ### Agent Lifecycle Pipeline
 ```
@@ -81,11 +98,32 @@ processInput → buildContext → [Agentic Loop:
 ] → processOutput
 ```
 
-- `processInput`: Initial input validation/transformation/enrichment
-- `buildContext`: System prompt construction, AGENTS.md injection, memory loading, tool declaration, progressive skill disclosure
-- `prepareStep`: Message history preparation/compression, tool availability filtering
+- `processInput`: Input validation/transformation, Dynamic config resolution
+- `buildContext`: System prompt construction from PromptFragments, tool declarations, memory loading, ModelProfile application
+- `prepareStep`: Message history preparation/compression, tool availability filtering (tool groups)
 - `invokeLLM`: LLM streaming call + output stream interception/transformation
 - `processStepOutput`: Output validation (guardrail) + fact injection point
 - `executeTools`: Tool dispatch (parallel/sequential) + per-tool sub-pipeline (beforeTool → execute → afterTool)
-- `evaluateIteration`: Iteration decision (continue/stop/redirect), context overflow detection, compression trigger
-- `processOutput`: Final output post-processing, result recording, fact verification trigger
+- `evaluateIteration`: Iteration decision (continue/stop/redirect), context overflow detection, compression trigger, circuit breaker
+- `processOutput`: Final output post-processing, result recording, session persistence
+
+### Hook Points
+
+| HookPoint | When | Use for |
+|-----------|------|---------|
+| `agent.start` | Before pipeline begins | Initialization, telemetry |
+| `agent.end` | After pipeline completes | Cleanup, metrics |
+| `stage.before` | Before any stage executes | Context injection |
+| `stage.after` | After any stage completes | Post-processing |
+| `llm.before` | Before LLM call | Prompt modification |
+| `llm.after` | After LLM response | Response transformation |
+| `llm.wrap` | Wraps entire LLM call | Error recovery, caching |
+| `tool.before` | Before tool execution | Permission checks |
+| `tool.after` | After tool execution | Logging, eviction |
+| `tool.wrap` | Wraps entire tool execution | Result eviction, timing |
+| `iteration.end` | After each agentic loop iteration | Progress tracking |
+| `error` | On any error | Error reporting |
+
+### Event Bus Events
+
+Lifecycle events emitted at each pipeline point, consumed by session persistence, background tasks, stagnation detection, and monitoring subsystems.
