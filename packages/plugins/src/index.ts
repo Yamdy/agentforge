@@ -36,3 +36,15 @@ export {
   type PermissionDecisionEvent,
   type PermissionPluginOptions,
 } from './permission/index.js';
+
+export {
+  skillPlugin,
+  createSkillProcessor,
+  createReadSkillTool,
+  discoverSkills,
+  parseFrontmatter,
+  type SkillDefinition,
+  type SkillPluginOptions,
+  type SkillFileSystem,
+  type ParsedFrontmatter,
+} from './skill/index.js';
