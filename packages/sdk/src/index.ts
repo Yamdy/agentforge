@@ -93,8 +93,8 @@ export interface Tool<TInput = unknown, TOutput = unknown> {
   outputSchema?: unknown;
   execute(input: TInput, context: ToolExecutionContext): Promise<TOutput>;
   requireApproval?: boolean;
-  renderCall?: (input: TInput) => string;
-  renderResult?: (output: TOutput) => string;
+  renderCall?: (input: any) => string;
+  renderResult?: (output: any) => string;
 }
 
 export type ToolDefinition = Tool;

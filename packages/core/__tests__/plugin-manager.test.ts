@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { PluginManager } from '../src/plugin-manager.js';
 import { PipelineRunner } from '../src/pipeline.js';
 import { ToolRegistry } from '../src/tool-registry.js';
-import type { PipelineStage, Processor, Tool, PluginRegistration, HarnessAPI, Hook, ResourceDeclaration } from '@agentforge/sdk';
+import type { PipelineStage, PipelineContext, Processor, Tool, PluginRegistration, HarnessAPI, Hook, ResourceDeclaration } from '@agentforge/sdk';
 import { z } from 'zod';
 import path from 'node:path';
 
@@ -414,7 +414,7 @@ describe('PluginManager', () => {
         session: {},
         config: {},
       };
-      const result = await runner.run(ctx, ['processInput']);
+      const result = (await runner.run(ctx, ['processInput'])) as PipelineContext;
       expect(result.pipeline.annotated).toBe(true);
       expect(events).toContain('processor:processInput');
 

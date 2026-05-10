@@ -1,9 +1,10 @@
-import type { HarnessAPI, PluginRegistration, Tool } from '@agentforge/sdk';
+import type { HarnessAPI, PluginRegistration, Tool, ToolDefinition } from '@agentforge/sdk';
 import { z } from 'zod';
 import type { MemoryBackend } from './backend.js';
 import { createMemoryProcessor, createMemoryOutputProcessor, type MemoryConfig, type MemoryTriggerMode } from './memory-processor.js';
 
 export { InMemoryBackend } from './in-memory-backend.js';
+export { SQLiteBackend } from './sqlite-backend.js';
 export type { MemoryBackend, MemoryEntry } from './backend.js';
 export type { MemoryConfig, MemoryTriggerMode } from './memory-processor.js';
 
@@ -63,8 +64,8 @@ export function memoryPlugin(options: MemoryPluginOptions): (api: HarnessAPI) =>
           return { stored: true };
         },
       };
-      api.registerTool(retrieveTool);
-      api.registerTool(recordTool);
+      api.registerTool(retrieveTool as ToolDefinition);
+      api.registerTool(recordTool as ToolDefinition);
     }
 
     return { processors };

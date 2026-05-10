@@ -9,6 +9,7 @@
     "check-types": "turbo check-types"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^3.2.4",
     "turbo": "^2.4.4",
     "typescript": "^5.7.3",
     "vitest": "^3.0.5"
