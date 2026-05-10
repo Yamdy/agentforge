@@ -6,37 +6,43 @@ Status: ready-for-agent
 
 ## What to build
 
-Implement the MCP (Model Context Protocol) plugin that connects to MCP servers and dynamically discovers and registers their tools into the framework's ToolRegistry.
+Implement the MCP plugin using ResourceDeclaration for server lifecycle and ToolRegistry for tool registration.
 
-**MCP Plugin implementation:**
-- Plugin that accepts MCP server configurations (transport type, connection params)
-- Connects to MCP servers at plugin initialization
-- Discovers available tools via MCP protocol
-- Converts MCP tool definitions to the framework's Tool interface (Zod schema mapping)
-- Registers converted tools into the ToolRegistry via HarnessAPI
+**MCP server config:**
+```typescript
+interface McpServerConfig {
+  name: string;
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+}
+```
 
-**Transport support:**
-- `stdio` — spawn a child process, communicate via stdin/stdout
-- `sse` — connect via Server-Sent Events (HTTP GET for events, POST for requests)
-- `http` — connect via HTTP (Streamable HTTP transport)
+**Implementation approach:**
+- MCP servers declared as `ResourceDeclaration` — `start()` spawns the process, `stop()` kills it
+- Plugin manages lifecycle via `HarnessAPI.registerResource()`
+- On resource start, discover tools via MCP protocol
+- Convert MCP tool definitions to framework Tool interface
+- Register via `HarnessAPI.registerTool()`
+- Listen for MCP tool list change notifications for dynamic discovery
 
-**Dynamic tool discovery:** Listen for MCP tool list change notifications. When new tools are added to an MCP server at runtime, automatically register them in the ToolRegistry. When tools are removed, unregister them.
+**Skill coordination:** Skill Plugin can reference MCP servers by name. MCP Plugin checks if a skill-requested server is already running, shares the connection if so, starts new one if not.
 
-**Error handling:** MCP server disconnections are logged but don't crash the agent. Reconnection with exponential backoff.
+**Transport support:** `stdio` (child process), `sse` (Server-Sent Events), `http` (Streamable HTTP).
 
 ## Acceptance criteria
 
-- [ ] MCP plugin connects to MCP servers via stdio transport
-- [ ] MCP plugin connects to MCP servers via SSE transport
-- [ ] MCP tool definitions are converted to framework Tool interface with Zod schemas
-- [ ] Discovered tools are registered in ToolRegistry and callable by the agent
-- [ ] Tool list changes are detected dynamically (new tools appear without restart)
-- [ ] MCP server disconnections are handled gracefully with reconnection
-- [ ] Test: connect to a test MCP server, discover tools, agent uses them
+- [ ] MCP plugin starts servers via registerResource lifecycle
+- [ ] MCP tool definitions converted to framework Tool interface
+- [ ] Discovered tools registered and callable by agent
+- [ ] MCP server stops cleanly on plugin shutdown
+- [ ] Dynamic tool discovery detects server-side changes
+- [ ] Graceful handling of server disconnections
+- [ ] Test: connect to test MCP server, discover tools, agent uses them
 
 ## Blocked by
 
-- Issue 07 (Plugin System)
+- Issue 07 (Plugin System — registerResource)
 - Issue 05 (Tool System)
 
 ## User stories covered
