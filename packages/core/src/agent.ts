@@ -8,6 +8,7 @@ import type {
 } from '@agentforge/sdk';
 import { PipelineRunner } from './pipeline.js';
 import { ToolRegistry } from './tool-registry.js';
+import { PluginManager, type PluginFactory } from './plugin-manager.js';
 import { LLMInvoker } from './llm-invoker.js';
 import { resolveModel } from './model-resolver.js';
 import { echoTool } from '@agentforge/tools';
@@ -22,18 +23,36 @@ export class Agent {
   private config: AgentConfig;
   private runner: PipelineRunner;
   private registry: ToolRegistry;
+  private _pluginManager: PluginManager;
   private _llm: LLMInvoker | null = null;
 
-  constructor(config: AgentConfig) {
+  constructor(config: AgentConfig, options?: { tracer?: import('@agentforge/sdk').Tracer }) {
     this.config = config;
-    this.runner = new PipelineRunner();
+    this.runner = new PipelineRunner({ tracer: options?.tracer });
     this.registry = new ToolRegistry();
+    this._pluginManager = new PluginManager(this.runner, this.registry);
     this.registerTools();
     this.registerBuiltinProcessors();
   }
 
-  use(processor: Processor): void {
-    this.runner.register(processor);
+  use(factory: Processor | PluginFactory): void {
+    if (typeof factory === 'function') {
+      this._pluginManager.initializePlugin(factory as PluginFactory);
+    } else {
+      this.runner.register(factory as Processor);
+    }
+  }
+
+  get pipelineRunner(): PipelineRunner {
+    return this.runner;
+  }
+
+  get toolRegistry(): ToolRegistry {
+    return this.registry;
+  }
+
+  get pluginManager(): PluginManager {
+    return this._pluginManager;
   }
 
   async run(input: string): Promise<string> {
@@ -167,6 +186,8 @@ export class Agent {
             spanId: `tool-${ctx.request.sessionId}-${ctx.iteration.step}`,
             traceId: ctx.request.sessionId,
           },
+          sessionId: ctx.request.sessionId,
+          pluginManager: this._pluginManager,
         });
 
         const handle = llm.stream({

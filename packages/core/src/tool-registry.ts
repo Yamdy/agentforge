@@ -105,6 +105,28 @@ export class ToolRegistry {
           hookCtx.result = toolResult;
           await this.runAfterHooks(hookCtx);
 
+          // Wrap hook (if PluginManager is wired in)
+          const wrapCtx = this.executionContext;
+          if (wrapCtx?.pluginManager) {
+            try {
+              const pm = wrapCtx.pluginManager as {
+                invokeWrapHook: (point: string, data: unknown) => Promise<unknown>;
+              };
+              const wrapped = await pm.invokeWrapHook('tool.wrap', {
+                toolName: tool.name,
+                args,
+                result: toolResult,
+                sessionId: wrapCtx.sessionId ?? '',
+              });
+              if (wrapped && typeof wrapped === 'object' && 'result' in wrapped) {
+                toolResult = (wrapped as Record<string, unknown>).result;
+              }
+            } catch {
+              // Wrap hook failure must not break tool execution.
+              // Fall through with original toolResult.
+            }
+          }
+
           // Truncation
           return this.truncateOutput(toolResult);
         },
@@ -120,6 +142,10 @@ export class ToolRegistry {
   }
 
   private truncateOutput(output: unknown): unknown {
+    // Skip truncation if already evicted (preview + reference metadata)
+    if (output && typeof output === 'object' && 'evicted' in output) {
+      return output;
+    }
     if (typeof output === 'string' && output.length > this.maxOutputLength) {
       return output.slice(0, this.maxOutputLength) + '... [truncated]';
     }

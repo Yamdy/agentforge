@@ -10,3 +10,19 @@ export {
   type MemoryConfig,
   type MemoryTriggerMode,
 } from './memory/index.js';
+
+export {
+  compressionPlugin,
+  createCompressionProcessor,
+  type CompressionPluginOptions,
+  type CompressionConfig,
+  type CompressionPhase,
+  type SummarizeFn,
+  type Message as CompressionMessage,
+} from './compression/index.js';
+
+export {
+  evictionPlugin,
+  InMemoryEvictionStorage,
+  type EvictionPluginOptions,
+} from './eviction/index.js';

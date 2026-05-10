@@ -66,6 +66,8 @@ export interface Processor {
 export interface ToolExecutionContext {
   harness?: unknown;
   span?: unknown;
+  sessionId?: string;
+  pluginManager?: unknown;
 }
 
 export interface ToolHookContext {
@@ -73,6 +75,13 @@ export interface ToolHookContext {
   args: unknown;
   result?: unknown;
   error?: Error;
+}
+
+export interface ToolWrapContext {
+  toolName: string;
+  args: unknown;
+  result: unknown;
+  sessionId: string;
 }
 
 export type ToolHook = (context: ToolHookContext) => void | Promise<void>;
@@ -286,4 +295,19 @@ export interface SuspendResult {
   type: 'suspended';
   resumeToken: string;
   reason: string;
+}
+
+// ---------------------------------------------------------------------------
+// Eviction
+// ---------------------------------------------------------------------------
+
+export interface EvictionStorage {
+  store(sessionId: string, key: string, content: unknown): Promise<string>;
+  retrieve(sessionId: string, reference: string): Promise<unknown>;
+}
+
+export interface EvictedResult {
+  preview: string;
+  reference: string;
+  evicted: true;
 }

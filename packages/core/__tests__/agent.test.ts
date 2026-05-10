@@ -42,4 +42,26 @@ describe('Agent', () => {
     await agent.run('test');
     expect(callCount).toBeLessThanOrEqual(3);
   });
+
+  it('exposes pluginManager and delegates use() to PluginManager', async () => {
+    const agent = new Agent({ model: 'mock/test' });
+
+    // PluginManager is accessible and created
+    expect(agent.pluginManager).toBeDefined();
+    expect(typeof agent.pluginManager.invokeWrapHook).toBe('function');
+
+    // use() delegates to PluginManager.initializePlugin
+    const hooked: unknown[] = [];
+    agent.use((api) => {
+      api.registerHook({
+        point: 'tool.wrap',
+        handler: (data) => { hooked.push(data); },
+      });
+      return {};
+    });
+
+    // Verify hook was registered by invoking it
+    await agent.pluginManager.invokeWrapHook('tool.wrap', { toolName: 'echo', result: 'test' });
+    expect(hooked.length).toBe(1);
+  });
 });

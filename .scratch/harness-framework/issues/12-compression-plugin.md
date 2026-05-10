@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: done
 
 ## Parent
 
@@ -6,41 +6,45 @@ Status: ready-for-agent
 
 ## What to build
 
-Implement the CompressionProcessor plugin that prevents context rot via two-phase compression: micro-compression first, then LLM summarization as fallback.
+Implement the CompressionProcessor plugin with multi-phase compression and token-aware triggering.
 
-**CompressionProcessor at evaluateIteration:** Runs when context approaches the token limit:
-1. **Estimate tokens** — count approximate tokens in current message history
-2. **Phase 1: Micro-compression** (cheap, no LLM call)
-   - Truncate long tool outputs to configurable max length
-   - Remove duplicate/consecutive system reminders
-   - Remove old tool results that have been summarized already
-3. **Phase 2: LLM summarization** (expensive, requires LLM call)
-   - If micro-compression didn't free enough tokens
-   - Send old messages to LLM with a summarization prompt
-   - Replace old messages with a single summary message
-   - Keep the most recent N messages intact
+**Compression phases:**
+```typescript
+type CompressionPhase =
+  | { type: 'truncate'; maxLength: number }
+  | { type: 'summarize'; model: string; maxTokens: number }
+  | { type: 'prune'; keepRecent: number };
 
-**Compression events:** Record compression metrics in the evaluateIteration span attributes:
-- `tokens_before`, `tokens_after`
-- `strategy_used` (micro, summarization, both)
-- `messages_removed`, `messages_kept`
+interface CompressionConfig {
+  maxContextTokens: number;
+  phases: CompressionPhase[];
+}
+```
 
-**Configuration:** Token threshold (when to trigger), max tool output length, summarization model (can differ from agent model), messages to keep intact.
+**CompressionProcessor at prepareStep:**
+1. Estimate tokens in `session.messageHistory`
+2. If over threshold, apply phases in order
+3. `truncate`: Truncate long tool outputs to maxLength
+4. `summarize`: Send old messages to LLM, replace with summary, keep recent N
+5. `prune`: Remove oldest messages, keep recent N
+
+**Tool result eviction (from DeepAgents insight):** [DONE] Built-in `tool.wrap` Hook that checks output size. When over threshold, offloads to storage and replaces with preview + reference. Separate from CompressionProcessor but complementary.
 
 ## Acceptance criteria
 
-- [ ] Micro-compression truncates tool outputs longer than configured threshold
-- [ ] Micro-compression removes duplicate system reminders
-- [ ] LLM summarization is triggered only when micro-compression is insufficient
-- [ ] Summarization replaces old messages with a single summary, keeping recent messages intact
-- [ ] Compression metrics are recorded in span attributes
-- [ ] Test: long conversation triggers micro-compression, verify token count drops
-- [ ] Test: very long conversation triggers LLM summarization, verify old messages are summarized
+- [ ] Truncate phase truncates tool outputs longer than threshold
+- [ ] Prune phase removes oldest messages, keeping recent N
+- [ ] Summarize phase triggers only when truncate/prune insufficient
+- [ ] Summarize replaces old messages with single summary
+- [ ] CompressionProcessor registered at prepareStep stage
+- [ ] Compression metrics recorded in span attributes
+- [ ] Test: long conversation triggers compression, token count drops
 
 ## Blocked by
 
 - Issue 07 (Plugin System)
 - Issue 11 (Memory Plugin)
+- Plan A (Foundation — IterationState, HookRunner)
 
 ## User stories covered
 
