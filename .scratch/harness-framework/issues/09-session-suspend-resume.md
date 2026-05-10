@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: done
 
 ## Parent
 
@@ -6,38 +6,71 @@ Status: ready-for-agent
 
 ## What to build
 
-Implement JSONL session persistence with tree branching and the Pipeline's suspend/resume mechanism for human-in-the-loop workflows.
+Implement session persistence via EventBus-sourced JSONL storage with tree branching and suspend/resume.
 
-**JSONL Session Store:**
-- Each session is a `.jsonl` file, one entry per line
-- Entry shape: `{ id, parentId, role, content, metadata, timestamp }`
-- `parentId` enables tree branching — multiple children can share the same parent
-- Operations: `create()`, `append(entry)`, `getHistory(sessionId)`, `getBranch(sessionId, entryId)`, `listBranches(sessionId)`
-- Entries are human-readable JSON
+**Session types:**
+```typescript
+interface SessionRecord {
+  sessionId: string;
+  parentSessionId?: string;  // for sub-agent tree
+  createdAt: string;
+  updatedAt: string;
+  status: 'active' | 'completed' | 'suspended' | 'error';
+  model?: string;
+  tokenUsage: TokenUsage;
+}
 
-**Pipeline suspend/resume:**
-- A Processor calls `context.suspend(reason)` to pause execution
-- Pipeline serializes the current PipelineContext to the session store
-- Pipeline returns a `SuspendedResult` containing: sessionId, suspendedStage, reason, resumeToken
-- External caller invokes `harness.resume(sessionId, input)` to continue
-- Pipeline deserializes Context, injects the new input, resumes from the suspended stage
-- The resume creates a new entry in the session with the user's input
+interface SessionEvent {
+  seq: number;
+  timestamp: string;
+  type: AgentEvent['type'];
+  payload: AgentEvent;
+}
+```
 
-**Session restore:** Load a session from JSONL, replay history to reconstruct PipelineContext, continue from where it left off.
+**SessionStorage interface:**
+```typescript
+interface SessionStorage {
+  append(sessionId: string, event: SessionEvent): Promise<void>;
+  read(sessionId: string): AsyncIterable<SessionEvent>;
+  list(filter?: { parentSessionId?: string; status?: string }): Promise<SessionRecord[]>;
+  updateMeta(sessionId: string, meta: Partial<SessionRecord>): Promise<void>;
+}
+```
+
+Default: filesystem JSONL. Interface allows swapping to database or remote storage.
+
+**SessionManager:**
+```typescript
+interface SessionManager {
+  start(input: string): Promise<SessionRecord>;
+  restore(sessionId: string): Promise<PipelineContext>;
+  suspend(sessionId: string, reason: string): Promise<void>;
+  resume(sessionId: string, input?: string): Promise<string>;
+  list(filter?: { parentSessionId?: string }): Promise<SessionRecord[]>;
+}
+```
+
+**EventBus integration:** Session persistence subscribes to all AgentEvents and appends to JSONL. Decoupled from agent execution — persistence failure does not affect agent runs.
+
+**Restore flow:** Stream events from JSONL → replay to reconstruct SessionState → caller passes to Agent.run().
+
+**Suspend/resume:** Processor calls `context.suspend(reason)`, state serialized to session store. External caller invokes `sessionManager.resume(sessionId, input)`.
 
 ## Acceptance criteria
 
-- [ ] Session entries are written as valid JSONL (one JSON object per line)
-- [ ] Tree branching works: multiple entries can share the same parentId
-- [ ] History can be reconstructed from JSONL entries by following parentId chain
-- [ ] Pipeline suspend works: Processor calls context.suspend(), pipeline returns SuspendedResult
-- [ ] Pipeline resume works: harness.resume() continues from suspended stage with new input
-- [ ] Session restore works: load session, replay history, continue execution
-- [ ] Test: suspend pipeline for human input, resume with input, verify execution continues correctly
+- [x] Session events written as valid JSONL (one JSON object per line)
+- [x] EventBus subscription captures all lifecycle events
+- [x] Tree branching works: sub-agents linked via parentSessionId
+- [x] Restore reconstructs SessionState from event replay
+- [x] Suspend persists state, resume continues from suspended stage
+- [x] Persistence failure does not crash agent execution
+- [x] Default filesystem storage works
+- [x] Test: full agent run, verify JSONL contains all events, restore works
 
 ## Blocked by
 
-- Issue 06 (Full Pipeline Stages)
+- Plan A (Foundation — EventBus, SessionState type)
 
 ## User stories covered
 
