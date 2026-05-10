@@ -49,6 +49,7 @@ export interface PipelineContext {
 export interface AbortSignal {
   type: 'abort';
   reason: string;
+  retryFrom?: PipelineStage;
 }
 
 export type ProcessorResult = PipelineContext | AbortSignal;

@@ -1,9 +1,22 @@
-import type { AgentConfig, PipelineContext, Processor, Tool } from '@agentforge/sdk';
+import type {
+  AbortSignal,
+  AgentConfig,
+  PipelineContext,
+  PipelineStage,
+  Processor,
+  Tool,
+} from '@agentforge/sdk';
 import { PipelineRunner } from './pipeline.js';
 import { ToolRegistry } from './tool-registry.js';
 import { LLMInvoker } from './llm-invoker.js';
 import { resolveModel } from './model-resolver.js';
 import { echoTool } from '@agentforge/tools';
+
+const PRE_LOOP_STAGES: PipelineStage[] = ['processInput', 'buildContext'];
+const LOOP_STAGES: PipelineStage[] = [
+  'prepareStep', 'invokeLLM', 'processStepOutput', 'executeTools', 'evaluateIteration',
+];
+const POST_LOOP_STAGES: PipelineStage[] = ['processOutput'];
 
 export class Agent {
   private config: AgentConfig;
@@ -19,26 +32,69 @@ export class Agent {
     this.registerBuiltinProcessors();
   }
 
+  use(processor: Processor): void {
+    this.runner.register(processor);
+  }
+
   async run(input: string): Promise<string> {
     const context = this.createContext(input);
-    const stages = ['processInput', 'invokeLLM', 'processOutput'] as const;
-    const result = await this.runner.run(context, [...stages]);
+    const maxIter = this.config.maxIterations ?? 10;
 
-    if ('type' in result && result.type === 'abort') {
-      throw new Error(`Agent aborted: ${result.reason}`);
+    // Pre-loop stages
+    let result = await this.runner.run(context, PRE_LOOP_STAGES);
+    if (this.isAbort(result)) throw new Error(`Agent aborted: ${(result as AbortSignal).reason}`);
+
+    // Agentic loop
+    let ctx = result as PipelineContext;
+    for (let i = 0; i < maxIter; i++) {
+      ctx = { ...ctx, iteration: { ...ctx.iteration, step: i } };
+
+      // Determine start stage (support retry from a specific stage)
+      const retryFrom = ctx.pipeline._retryFrom as PipelineStage | undefined;
+      const stages = retryFrom ? LOOP_STAGES.slice(LOOP_STAGES.indexOf(retryFrom)) : LOOP_STAGES;
+      ctx = { ...ctx, pipeline: { ...ctx.pipeline, _retryFrom: undefined } };
+
+      result = await this.runner.run(ctx, stages);
+      if (this.isAbort(result)) {
+        const abort = result as AbortSignal;
+        if (abort.retryFrom) {
+          ctx = { ...ctx, pipeline: { ...ctx.pipeline, _retryFrom: abort.retryFrom } };
+          continue;
+        }
+        throw new Error(`Agent aborted: ${abort.reason}`);
+      }
+      ctx = result as PipelineContext;
+      if (ctx.pipeline._stopLoop) break;
     }
+
+    // Post-loop stage
+    result = await this.runner.run(ctx, POST_LOOP_STAGES);
+    if (this.isAbort(result)) throw new Error(`Agent aborted: ${(result as AbortSignal).reason}`);
 
     return (result as PipelineContext).pipeline.response as string ?? '';
   }
 
   async *stream(input: string): AsyncGenerator<string> {
     const context = this.createContext(input);
-    const stages = ['processInput', 'invokeLLM', 'processOutput'] as const;
+    const maxIter = this.config.maxIterations ?? 10;
 
-    for await (const event of this.runner.stream(context, [...stages])) {
-      if (event.type === 'text_delta') {
-        yield event.text;
+    let ctx = context;
+    for await (const event of this.runner.stream(ctx, PRE_LOOP_STAGES)) {
+      if (event.type === 'text_delta') yield event.text;
+      if (event.type === 'complete') ctx = (event as { context: PipelineContext }).context;
+    }
+
+    for (let i = 0; i < maxIter; i++) {
+      ctx = { ...ctx, iteration: { ...ctx.iteration, step: i } };
+      for await (const event of this.runner.stream(ctx, LOOP_STAGES)) {
+        if (event.type === 'text_delta') yield event.text;
+        if (event.type === 'complete') ctx = (event as { context: PipelineContext }).context;
       }
+      if (ctx.pipeline._stopLoop) break;
+    }
+
+    for await (const event of this.runner.stream(ctx, POST_LOOP_STAGES)) {
+      if (event.type === 'text_delta') yield event.text;
     }
   }
 
@@ -80,6 +136,26 @@ export class Agent {
       execute: async (ctx) => ctx,
     };
 
+    const buildContext: Processor = {
+      stage: 'buildContext',
+      execute: async (ctx) => ({
+        ...ctx,
+        pipeline: {
+          ...ctx.pipeline,
+          systemPrompt: this.config.systemPrompt,
+          toolDeclarations: this.registry.getAll().map(t => ({
+            name: t.name,
+            description: t.description,
+          })),
+        },
+      }),
+    };
+
+    const prepareStep: Processor = {
+      stage: 'prepareStep',
+      execute: async (ctx) => ctx,
+    };
+
     const invokeLLM: Processor = {
       stage: 'invokeLLM',
       execute: async (ctx) => {
@@ -110,13 +186,40 @@ export class Agent {
       },
     };
 
+    const processStepOutput: Processor = {
+      stage: 'processStepOutput',
+      execute: async (ctx) => ctx,
+    };
+
+    const executeTools: Processor = {
+      stage: 'executeTools',
+      execute: async (ctx) => ctx,
+    };
+
+    const evaluateIteration: Processor = {
+      stage: 'evaluateIteration',
+      execute: async (ctx) => ({
+        ...ctx,
+        pipeline: { ...ctx.pipeline, _stopLoop: true },
+      }),
+    };
+
     const processOutput: Processor = {
       stage: 'processOutput',
       execute: async (ctx) => ctx,
     };
 
     this.runner.register(processInput);
+    this.runner.register(buildContext);
+    this.runner.register(prepareStep);
     this.runner.register(invokeLLM);
+    this.runner.register(processStepOutput);
+    this.runner.register(executeTools);
+    this.runner.register(evaluateIteration);
     this.runner.register(processOutput);
+  }
+
+  private isAbort(result: PipelineContext | AbortSignal): result is AbortSignal {
+    return 'type' in result && result.type === 'abort';
   }
 }
