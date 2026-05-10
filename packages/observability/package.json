@@ -17,7 +17,12 @@
   },
   "devDependencies": {
     "@agentforge/sdk": "workspace:*",
+    "@opentelemetry/resources": "^2.7.1",
+    "@opentelemetry/sdk-trace-base": "^2.7.1",
     "typescript": "^5.7.3",
     "vitest": "^3.0.5"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.1"
   }
 }
