@@ -105,12 +105,28 @@ export class Agent {
     }
 
     for (let i = 0; i < maxIter; i++) {
+      const prevDirective = ctx.iteration.loopDirective;
       ctx = { ...ctx, iteration: { ...ctx.iteration, step: i, loopDirective: undefined } };
-      for await (const event of this.runner.stream(ctx, LOOP_STAGES)) {
-        if (event.type === 'abort') throw new Error(`Agent aborted: ${(event as AbortSignal).reason}`);
+
+      // Determine start stage (support retry from a specific stage)
+      const retryFrom = prevDirective?.action === 'retry' ? prevDirective.retryFrom : undefined;
+      const stages = retryFrom ? LOOP_STAGES.slice(LOOP_STAGES.indexOf(retryFrom)) : LOOP_STAGES;
+
+      let loopBreak = false;
+      for await (const event of this.runner.stream(ctx, stages)) {
+        if (event.type === 'abort') {
+          const abortEvent = event as { type: 'abort'; reason: string; retryFrom?: PipelineStage };
+          if (abortEvent.retryFrom) {
+            ctx = { ...ctx, iteration: { ...ctx.iteration, loopDirective: { action: 'retry', retryFrom: abortEvent.retryFrom } } };
+            loopBreak = true;
+            break;
+          }
+          throw new Error(`Agent aborted: ${abortEvent.reason}`);
+        }
         if (event.type === 'text_delta') yield event.text;
         if (event.type === 'complete') ctx = (event as { context: PipelineContext }).context;
       }
+      if (loopBreak) continue;
       if (ctx.iteration.loopDirective?.action === 'stop') break;
     }
 
