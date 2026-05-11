@@ -162,6 +162,52 @@ describe('Full Pipeline Stages', () => {
     expect(prepareCount).toBeGreaterThanOrEqual(2);
   });
 
+  it('retryFrom invokeLLM skips prepareStep on retry', async () => {
+    let prepareCount = 0;
+    let invokeCount = 0;
+    let retryCount = 0;
+
+    const agent = new Agent({ model: 'mock/test', maxIterations: 5 });
+
+    agent.use({
+      stage: 'processStepOutput',
+      execute: async (ctx) => {
+        retryCount++;
+        if (retryCount === 1) {
+          return {
+            type: 'abort' as const,
+            reason: 'Output rejected, retry from invokeLLM',
+            retryFrom: 'invokeLLM' as PipelineStage,
+          };
+        }
+        return ctx;
+      },
+    });
+
+    agent.use({
+      stage: 'prepareStep',
+      execute: async (ctx) => {
+        prepareCount++;
+        return ctx;
+      },
+    });
+
+    agent.use({
+      stage: 'invokeLLM',
+      execute: async (ctx) => {
+        invokeCount++;
+        return ctx;
+      },
+    });
+
+    await agent.run('Hello');
+
+    // prepareStep should run exactly once (first iteration only; retry skips it)
+    expect(prepareCount).toBe(1);
+    // invokeLLM should run twice (first iteration + retry iteration)
+    expect(invokeCount).toBe(2);
+  });
+
   it('end-to-end: agent calls tool, loops, and produces final output', async () => {
     const calcTool: Tool<{ a: number; b: number }, number> = {
       name: 'add',

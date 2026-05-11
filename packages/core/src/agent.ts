@@ -66,11 +66,11 @@ export class Agent {
     // Agentic loop
     let ctx = result as PipelineContext;
     for (let i = 0; i < maxIter; i++) {
+      const prevDirective = ctx.iteration.loopDirective;
       ctx = { ...ctx, iteration: { ...ctx.iteration, step: i, loopDirective: undefined } };
 
       // Determine start stage (support retry from a specific stage)
-      const loopDirective = ctx.iteration.loopDirective;
-      const retryFrom = loopDirective?.action === 'retry' ? loopDirective.retryFrom : undefined;
+      const retryFrom = prevDirective?.action === 'retry' ? prevDirective.retryFrom : undefined;
       const stages = retryFrom ? LOOP_STAGES.slice(LOOP_STAGES.indexOf(retryFrom)) : LOOP_STAGES;
 
       result = await this.runner.run(ctx, stages);
