@@ -82,6 +82,17 @@ export interface PipelineContext {
 }
 
 // ---------------------------------------------------------------------------
+// Prompt Fragment
+// ---------------------------------------------------------------------------
+
+export interface PromptFragment {
+  role: 'system' | 'context' | 'instruction';
+  content: string;
+  priority: number;
+  source: string;
+}
+
+// ---------------------------------------------------------------------------
 // Processor
 // ---------------------------------------------------------------------------
 
@@ -257,6 +268,26 @@ export interface PluginRegistration {
 }
 
 // ---------------------------------------------------------------------------
+// MCP Server Configuration (Issue 15)
+// ---------------------------------------------------------------------------
+
+/** Transport protocol for MCP server connections. */
+export type McpTransport = 'stdio' | 'sse' | 'http';
+
+/**
+ * Configuration for an MCP (Model Context Protocol) server connection.
+ * For stdio transport, provide `command`. For sse/http transport, provide `url`.
+ */
+export interface McpServerConfig {
+  name: string;
+  transport?: McpTransport;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string;
+}
+
+// ---------------------------------------------------------------------------
 // Agent Config (skeleton)
 // ---------------------------------------------------------------------------
 
@@ -265,6 +296,64 @@ export interface AgentConfig {
   systemPrompt?: string;
   maxIterations?: number;
   tools?: Tool<any, any>[];
+}
+
+// ---------------------------------------------------------------------------
+// Dynamic Config Resolution (ADR-0008)
+// ---------------------------------------------------------------------------
+
+/** Context passed to Dynamic<T> resolver functions at processInput stage. */
+export interface ResolveContext {
+  input: string;
+  sessionId: string;
+  metadata: Record<string, unknown>;
+}
+
+/** A value that is either static T or resolved per-request via a function. */
+export type Dynamic<T> = T | ((ctx: ResolveContext) => T | Promise<T>);
+
+// ---------------------------------------------------------------------------
+// Model Profile (ADR-0008)
+// ---------------------------------------------------------------------------
+
+/** Per-model behavior customization, applied at buildContext stage. */
+export interface ModelProfile {
+  modelPattern: string | RegExp;
+  systemPromptSuffix?: string;
+  toolOverrides?: { [toolName: string]: { description?: string; exclude?: boolean } };
+  extraPromptFragments?: PromptFragment[];
+}
+
+// ---------------------------------------------------------------------------
+// Model Gateway (ADR-0008)
+// ---------------------------------------------------------------------------
+
+/** Pluggable model resolver. Tried in registration order; first match wins. */
+export interface ModelGateway {
+  name: string;
+  canResolve(modelString: string): boolean;
+  resolve(modelString: string): Promise<unknown>;
+}
+
+// ---------------------------------------------------------------------------
+// Harness Configuration (Issue 16)
+// ---------------------------------------------------------------------------
+
+/**
+ * Top-level framework configuration.
+ * Merged from multiple layers (highest priority first):
+ *   1. Session-level — runtime parameters passed to agent.run()
+ *   2. Project-level — .agentforge/config.jsonc in project root
+ *   3. Global-level  — ~/.agentforge/config.jsonc in user home
+ *   4. Environment   — AGENTFORGE_CONFIG env var (inline JSON)
+ */
+export interface HarnessConfig {
+  agents?: Record<string, Partial<AgentConfig>>;
+  tools?: { enabled?: string[]; disabled?: string[] };
+  plugins?: string[];
+  session?: { storage?: 'file' | 'memory'; path?: string };
+  modelProfiles?: ModelProfile[];
+  modelGateways?: ModelGateway[];
 }
 
 // ---------------------------------------------------------------------------
@@ -328,6 +417,53 @@ export interface SubAgentResult {
   response: string;
   tokenUsage: TokenUsage;
   sessionId: string;
+}
+
+// ---------------------------------------------------------------------------
+// Runtime Safety — Concurrency & Fallback (Issue 17)
+// ---------------------------------------------------------------------------
+
+/** Named concurrency slot with a maximum parallelism limit. */
+export interface ConcurrencySlot {
+  key: string;
+  maxConcurrent: number;
+}
+
+/** An entry in an ordered model fallback chain. 0 = highest priority. */
+export interface FallbackEntry {
+  model: string;
+  priority: number;
+}
+
+// ---------------------------------------------------------------------------
+// Async Sub-Agents (Issue 17)
+// ---------------------------------------------------------------------------
+
+/** Status of an async task through its lifecycle. */
+export type AsyncTaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+
+/** Configuration for an async (background) sub-agent. */
+export interface AsyncTaskConfig extends SubAgentConfig {
+  concurrencySlot?: ConcurrencySlot;
+  fallbackModels?: FallbackEntry[];
+}
+
+/** Handle to a running or completed async sub-agent task. */
+export interface AsyncTaskHandle {
+  taskId: string;
+  status: AsyncTaskStatus;
+  result?: SubAgentResult;
+  error?: Error;
+  cancel(): void;
+  on_complete(handler: (result: SubAgentResult) => void): void;
+}
+
+/** Manager for async sub-agent tasks. */
+export interface TaskManager {
+  launch(config: AsyncTaskConfig, prompt: string): Promise<AsyncTaskHandle>;
+  get(taskId: string): AsyncTaskHandle | undefined;
+  cancel(taskId: string): void;
+  list(filter?: { parentSessionId?: string }): AsyncTaskHandle[];
 }
 
 // ---------------------------------------------------------------------------

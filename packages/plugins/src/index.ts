@@ -48,3 +48,19 @@ export {
   type SkillFileSystem,
   type ParsedFrontmatter,
 } from './skill/index.js';
+
+export {
+  mcpPlugin,
+  type McpPluginOptions,
+} from './mcp/index.js';
+
+export {
+  convertMcpTool,
+  type McpToolDefinition,
+} from './mcp/tool-converter.js';
+
+export {
+  createMcpClient,
+  createMockMcpClient,
+  type McpClient,
+} from './mcp/mcp-client.js';
