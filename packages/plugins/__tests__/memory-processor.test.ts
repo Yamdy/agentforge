@@ -6,10 +6,9 @@ import type { PipelineContext } from '@agentforge/sdk';
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
     request: { input: 'test', sessionId: 'session-1' },
+    agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
     iteration: { step: 0 },
-    pipeline: {},
-    session: {},
-    config: {},
+    session: { custom: {} },
     ...overrides,
   };
 }
@@ -56,7 +55,7 @@ describe('MemoryProcessor', () => {
       const ctx = makeContext();
       const result = await processor.execute(ctx);
 
-      const fragments = (result as PipelineContext).pipeline.promptFragments as string[];
+      const fragments = (result as PipelineContext).agent.promptFragments as string[];
       expect(fragments).toBeDefined();
       expect(fragments.length).toBeGreaterThan(0);
       expect(fragments[0]).toContain('remember this');
@@ -70,7 +69,7 @@ describe('MemoryProcessor', () => {
 
       const ctx = makeContext({
         request: { input: 'What is 2+2?', sessionId: 'session-2' },
-        pipeline: { response: '4' },
+        iteration: { step: 0, response: '4' },
       });
 
       await processor.execute(ctx);
@@ -89,7 +88,7 @@ describe('MemoryProcessor', () => {
 
       const ctx = makeContext({
         request: { input: 'hello', sessionId: 'session-3' },
-        pipeline: { response: undefined },
+        iteration: { step: 0, response: undefined },
       });
 
       await processor.execute(ctx);

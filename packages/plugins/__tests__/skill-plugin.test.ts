@@ -56,10 +56,9 @@ function createHarnessAPI(): { api: HarnessAPI; processors: Map<string, unknown>
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
     request: { input: 'test', sessionId: 'session-1' },
+    agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
     iteration: { step: 0 },
-    pipeline: {},
-    session: {},
-    config: {},
+    session: { custom: {} },
     ...overrides,
   };
 }
@@ -200,7 +199,7 @@ describe('SkillProcessor — buildContext', () => {
     const ctx = makeContext();
     const result = await processor.execute(ctx);
 
-    const fragments = result.pipeline.promptFragments as string[];
+    const fragments = result.agent.promptFragments as string[];
     expect(fragments).toBeDefined();
     expect(fragments.length).toBeGreaterThan(0);
     const combinedFragment = fragments.join('\n');
@@ -222,7 +221,7 @@ describe('SkillProcessor — buildContext', () => {
     const ctx = makeContext();
     const result = await processor.execute(ctx);
 
-    const combinedFragments = (result.pipeline.promptFragments as string[]).join('\n');
+    const combinedFragments = (result.agent.promptFragments as string[]).join('\n');
     expect(combinedFragments).toContain('verbose-skill');
     expect(combinedFragments).toContain('Short desc');
     expect(combinedFragments).not.toContain('A'.repeat(100));
@@ -236,7 +235,8 @@ describe('SkillProcessor — buildContext', () => {
     const ctx = makeContext();
     const result = await processor.execute(ctx);
 
-    expect(result.pipeline.promptFragments).toBeUndefined();
+    // With no skills, promptFragments should remain as the original empty array
+    expect(result.agent.promptFragments).toEqual([]);
   });
 });
 

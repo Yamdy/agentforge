@@ -68,8 +68,8 @@ describe('Full Pipeline Stages', () => {
     await agent.run('What is 2+2?');
 
     expect(capturedCtx).toBeDefined();
-    expect(capturedCtx!.pipeline.systemPrompt).toBe('You are a math assistant.');
-    const tools = capturedCtx!.pipeline.toolDeclarations as { name: string; description: string }[];
+    expect(capturedCtx!.agent.systemPrompt).toBe('You are a math assistant.');
+    const tools = capturedCtx!.agent.toolDeclarations as { name: string; description: string }[];
     expect(tools).toEqual(
       expect.arrayContaining([
         { name: 'calc', description: 'Calculate numbers' },
@@ -87,8 +87,8 @@ describe('Full Pipeline Stages', () => {
     agent.use({
       stage: 'evaluateIteration',
       execute: async (ctx) => {
-        const { _stopLoop, ...rest } = ctx.pipeline as Record<string, unknown>;
-        return { ...ctx, pipeline: rest };
+        // Return context without setting loopDirective to stop, so loop continues
+        return { ...ctx, iteration: { ...ctx.iteration, loopDirective: undefined } };
       },
     });
 
@@ -153,8 +153,8 @@ describe('Full Pipeline Stages', () => {
     });
 
     await agent.run('Hello');
-    // First iteration: prepareStep → invokeLLM → processStepOutput(retry)
-    // Retry: prepareStep → invokeLLM → processStepOutput(accept) → ... → evaluateIteration(stop)
+    // First iteration: prepareStep -> invokeLLM -> processStepOutput(retry)
+    // Retry: prepareStep -> invokeLLM -> processStepOutput(accept) -> ... -> evaluateIteration(stop)
     expect(order).toContain('retry');
     expect(order).toContain('accepted');
     // prepareStep should be called at least twice (initial + retry)

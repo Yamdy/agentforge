@@ -5,10 +5,9 @@ import type { PipelineContext, Processor } from '@agentforge/sdk';
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
     request: { input: 'test', sessionId: 's1' },
+    agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
     iteration: { step: 0 },
-    pipeline: {},
-    session: {},
-    config: {},
+    session: { custom: {} },
     ...overrides,
   };
 }
@@ -20,14 +19,14 @@ describe('PipelineRunner', () => {
       stage: 'processInput',
       execute: async (ctx) => ({
         ...ctx,
-        pipeline: { transformed: true },
+        session: { ...ctx.session, custom: { ...ctx.session.custom, transformed: true } },
       }),
     };
     runner.register(processor);
 
     const result = await runner.run(makeContext(), ['processInput']);
 
-    expect('type' in result ? null : result.pipeline.transformed).toBe(true);
+    expect('type' in result ? null : result.session.custom.transformed).toBe(true);
   });
 
   it('executes processors in registration order within the same stage', async () => {
@@ -38,20 +37,20 @@ describe('PipelineRunner', () => {
       stage: 'processInput',
       execute: async (ctx) => {
         order.push('first');
-        return { ...ctx, pipeline: { step: 'first' } };
+        return { ...ctx, session: { ...ctx.session, custom: { ...ctx.session.custom, step: 'first' } } };
       },
     });
     runner.register({
       stage: 'processInput',
       execute: async (ctx) => {
         order.push('second');
-        return { ...ctx, pipeline: { step: 'second' } };
+        return { ...ctx, session: { ...ctx.session, custom: { ...ctx.session.custom, step: 'second' } } };
       },
     });
 
     const result = await runner.run(makeContext(), ['processInput']);
     expect(order).toEqual(['first', 'second']);
-    expect('type' in result ? null : result.pipeline.step).toBe('second');
+    expect('type' in result ? null : result.session.custom.step).toBe('second');
   });
 
   it('runs stages in the specified order', async () => {
@@ -125,7 +124,7 @@ describe('PipelineRunner', () => {
 
     runner.register({
       stage: 'processInput',
-      execute: async (ctx) => ({ ...ctx, pipeline: { stage: 'input' } }),
+      execute: async (ctx) => ({ ...ctx, session: { ...ctx.session, custom: { ...ctx.session.custom, stage: 'input' } } }),
     });
     runner.register({
       stage: 'invokeLLM',
@@ -139,7 +138,7 @@ describe('PipelineRunner', () => {
 
     expect(frozenContext).not.toBeNull();
     expect(() => {
-      (frozenContext as PipelineContext).pipeline = { hacked: true };
+      (frozenContext as PipelineContext).iteration = { step: 999 };
     }).toThrow();
   });
 
@@ -149,8 +148,8 @@ describe('PipelineRunner', () => {
       stage: 'invokeLLM',
       execute: async (ctx) => ({
         ...ctx,
-        pipeline: {
-          ...ctx.pipeline,
+        iteration: {
+          ...ctx.iteration,
           textStream: (async function* () {
             yield 'hello ';
             yield 'world';
@@ -162,9 +161,9 @@ describe('PipelineRunner', () => {
 
     const result = await runner.run(makeContext(), ['invokeLLM']);
     const ctx = result as PipelineContext;
-    expect(ctx.pipeline.response).toBe('hello world');
-    expect(ctx.pipeline.tokenUsage).toEqual({ input: 10, output: 2 });
-    expect(ctx.pipeline.textStream).toBeUndefined();
-    expect(ctx.pipeline.usagePromise).toBeUndefined();
+    expect(ctx.iteration.response).toBe('hello world');
+    expect(ctx.iteration.tokenUsage).toEqual({ input: 10, output: 2 });
+    expect(ctx.iteration.textStream).toBeUndefined();
+    expect(ctx.iteration.usagePromise).toBeUndefined();
   });
 });

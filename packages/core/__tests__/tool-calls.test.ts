@@ -69,11 +69,17 @@ describe('Tool call parsing', () => {
 
         return {
           ...ctx,
-          pipeline: {
-            ...ctx.pipeline,
+          iteration: {
+            ...ctx.iteration,
             response: chunks.join(''),
             tokenUsage: { input: usage?.inputTokens ?? 0, output: usage?.outputTokens ?? 0 },
-            toolCalls: toolCalls ?? [],
+          },
+          session: {
+            ...ctx.session,
+            custom: {
+              ...ctx.session.custom,
+              toolCalls: toolCalls ?? [],
+            },
           },
         };
       },
@@ -84,11 +90,16 @@ describe('Tool call parsing', () => {
     });
 
     await runner.run(
-      { request: { input: 'read the hosts file', sessionId: 's1' }, iteration: { step: 0 }, pipeline: {}, session: {}, config: {} },
+      {
+        request: { input: 'read the hosts file', sessionId: 's1' },
+        agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
+        iteration: { step: 0 },
+        session: { custom: {} },
+      },
       ['invokeLLM', 'processOutput'],
     );
 
-    const tc = resultContext!.pipeline.toolCalls as Array<Record<string, unknown>>;
+    const tc = resultContext!.session.custom.toolCalls as Array<Record<string, unknown>>;
     expect(tc).toHaveLength(1);
     expect(tc[0].toolName).toBe('read_file');
     expect(tc[0].toolCallId).toBe('call_1');

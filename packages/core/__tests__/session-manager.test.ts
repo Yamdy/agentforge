@@ -97,8 +97,8 @@ describe('SessionManager', () => {
 
       // Should restore to last iteration + 1, ready to continue loop
       expect(ctx.iteration.step).toBe(2);
-      expect((ctx.session as Record<string, unknown>).messageHistory).toBeDefined();
-      const history = (ctx.session as Record<string, unknown>).messageHistory as Array<Record<string, unknown>>;
+      expect(ctx.session.messageHistory).toBeDefined();
+      const history = ctx.session.messageHistory as unknown as Array<Record<string, unknown>>;
       expect(history).toHaveLength(2);
     });
 

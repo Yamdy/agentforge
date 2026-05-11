@@ -1,5 +1,7 @@
 import type { Processor, PipelineContext, ProcessorResult, Span, Message } from '@agentforge/sdk';
 
+export type { Message };
+
 export type SummarizeFn = (messages: Message[]) => Promise<string>;
 
 export type CompressionPhase =

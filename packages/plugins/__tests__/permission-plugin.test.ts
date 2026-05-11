@@ -12,7 +12,6 @@ function createHarnessAPI(): { api: HarnessAPI; processors: Map<string, unknown>
     registerHook: () => {},
     subscribe: () => () => {},
     registerResource: () => {},
-    registerProvider: () => {},
   };
 
   return { api, processors };
@@ -21,10 +20,9 @@ function createHarnessAPI(): { api: HarnessAPI; processors: Map<string, unknown>
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
     request: { input: 'test', sessionId: 'session-1' },
+    agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
     iteration: { step: 0 },
-    pipeline: {},
-    session: {},
-    config: {},
+    session: { custom: {} },
     ...overrides,
   };
 }
@@ -70,7 +68,7 @@ describe('permissionPlugin', () => {
     expect(processor).toBeDefined();
 
     const ctx = makeContext({
-      pipeline: { currentToolCall: { name: 'shell_exec', args: { command: 'ls' } } },
+      iteration: { step: 0, currentToolCall: { name: 'shell_exec', args: { command: 'ls' } } },
     });
 
     const result = await processor.execute(ctx);
@@ -89,7 +87,7 @@ describe('permissionPlugin', () => {
     expect(processor).toBeDefined();
 
     const ctx = makeContext({
-      pipeline: { currentToolCall: { name: 'shell_exec', args: { command: 'rm -rf /' } } },
+      iteration: { step: 0, currentToolCall: { name: 'shell_exec', args: { command: 'rm -rf /' } } },
     });
 
     const result = await processor.execute(ctx);
@@ -105,7 +103,7 @@ describe('permissionPlugin', () => {
     });
 
     const ctx = makeContext({
-      pipeline: { currentToolCall: { name: 'shell_exec', args: { command: 'ls' } } },
+      iteration: { step: 0, currentToolCall: { name: 'shell_exec', args: { command: 'ls' } } },
     });
 
     await processor.execute(ctx);

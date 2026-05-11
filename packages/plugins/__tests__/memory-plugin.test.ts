@@ -25,10 +25,9 @@ function createHarnessAPI(): { api: HarnessAPI; processors: Map<string, unknown>
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
     request: { input: 'test', sessionId: 'session-1' },
+    agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
     iteration: { step: 0 },
-    pipeline: {},
-    session: {},
-    config: {},
+    session: { custom: {} },
     ...overrides,
   };
 }
@@ -57,7 +56,7 @@ describe('memoryPlugin — automatic mode', () => {
     // First turn: processOutput saves the conversation
     const ctx1 = makeContext({
       request: { input: 'What is TypeScript?', sessionId: 's-e2e' },
-      pipeline: { response: 'A typed superset of JavaScript' },
+      iteration: { step: 0, response: 'A typed superset of JavaScript' },
     });
     await outputProcessor.execute(ctx1);
 
@@ -74,7 +73,7 @@ describe('memoryPlugin — automatic mode', () => {
     expect(history[0].content).toBe('What is TypeScript?');
     expect(history[1].content).toBe('A typed superset of JavaScript');
 
-    const fragments = result.pipeline.promptFragments as string[];
+    const fragments = result.agent.promptFragments as string[];
     expect(fragments[0]).toContain('What is TypeScript?');
   });
 });

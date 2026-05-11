@@ -6,10 +6,9 @@ import { TestExporter } from '@agentforge/observability';
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
     request: { input: 'test', sessionId: 's1' },
+    agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
     iteration: { step: 0 },
-    pipeline: {},
-    session: {},
-    config: {},
+    session: { custom: {} },
     ...overrides,
   };
 }
@@ -52,7 +51,7 @@ describe('PipelineRunner with Tracer', () => {
     runner.register({
       stage: 'processInput',
       execute: async (ctx) => {
-        const span = ctx.pipeline._span as Span;
+        const span = ctx.iteration.span as Span;
         span.setAttribute('input.length', ctx.request.input.length);
         return ctx;
       },
@@ -70,11 +69,11 @@ describe('PipelineRunner with Tracer', () => {
 
     runner.register({
       stage: 'processInput',
-      execute: async (ctx) => ({ ...ctx, pipeline: { result: 'ok' } }),
+      execute: async (ctx) => ({ ...ctx, session: { ...ctx.session, custom: { ...ctx.session.custom, result: 'ok' } } }),
     });
 
     const result = await runner.run(makeContext(), ['processInput']);
-    expect('type' in result ? null : result.pipeline.result).toBe('ok');
+    expect('type' in result ? null : result.session.custom.result).toBe('ok');
   });
 
   it('ends spans even when a processor throws', async () => {
