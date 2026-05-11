@@ -66,12 +66,8 @@ export class Agent {
     // Agentic loop
     let ctx = result as PipelineContext;
     for (let i = 0; i < maxIter; i++) {
-      const prevDirective = ctx.iteration.loopDirective;
-      ctx = { ...ctx, iteration: { ...ctx.iteration, step: i, loopDirective: undefined } };
-
-      // Determine start stage (support retry from a specific stage)
-      const retryFrom = prevDirective?.action === 'retry' ? prevDirective.retryFrom : undefined;
-      const stages = retryFrom ? LOOP_STAGES.slice(LOOP_STAGES.indexOf(retryFrom)) : LOOP_STAGES;
+      const { ctx: loopCtx, stages } = this.computeLoopStages(ctx, i);
+      ctx = loopCtx;
 
       result = await this.runner.run(ctx, stages);
       if (this.isAbort(result)) {
@@ -105,12 +101,8 @@ export class Agent {
     }
 
     for (let i = 0; i < maxIter; i++) {
-      const prevDirective = ctx.iteration.loopDirective;
-      ctx = { ...ctx, iteration: { ...ctx.iteration, step: i, loopDirective: undefined } };
-
-      // Determine start stage (support retry from a specific stage)
-      const retryFrom = prevDirective?.action === 'retry' ? prevDirective.retryFrom : undefined;
-      const stages = retryFrom ? LOOP_STAGES.slice(LOOP_STAGES.indexOf(retryFrom)) : LOOP_STAGES;
+      const { ctx: loopCtx, stages } = this.computeLoopStages(ctx, i);
+      ctx = loopCtx;
 
       let loopBreak = false;
       for await (const event of this.runner.stream(ctx, stages)) {
@@ -256,6 +248,17 @@ export class Agent {
     this.runner.register(executeTools);
     this.runner.register(evaluateIteration);
     this.runner.register(processOutput);
+  }
+
+  private computeLoopStages(
+    ctx: PipelineContext,
+    step: number,
+  ): { ctx: PipelineContext; stages: PipelineStage[] } {
+    const prevDirective = ctx.iteration.loopDirective;
+    const newCtx = { ...ctx, iteration: { ...ctx.iteration, step, loopDirective: undefined } };
+    const retryFrom = prevDirective?.action === 'retry' ? prevDirective.retryFrom : undefined;
+    const stages = retryFrom ? LOOP_STAGES.slice(LOOP_STAGES.indexOf(retryFrom)) : LOOP_STAGES;
+    return { ctx: newCtx, stages };
   }
 
   private isAbort(result: PipelineContext | AbortSignal): result is AbortSignal {
