@@ -17,7 +17,12 @@ import type {
   SuspendResult,
   TokenUsage,
   StreamEvent,
-  PipelineState,
+  LoopDirective,
+  Message,
+  RequestRegion,
+  AgentRegion,
+  IterationRegion,
+  SessionRegion,
 } from '../src/index.js';
 import { SpanType } from '../src/index.js';
 
@@ -63,16 +68,20 @@ describe('Processor', () => {
 });
 
 describe('PipelineContext', () => {
-  it('carries request, iteration, pipeline, session, config layers', () => {
+  it('carries request, agent, iteration, and session regions', () => {
     const ctx: PipelineContext = {
       request: { input: 'hello', sessionId: 's1' },
+      agent: {
+        config: { model: 'test' } as AgentConfig,
+        promptFragments: [],
+        toolDeclarations: [],
+      },
       iteration: { step: 0 },
-      pipeline: {},
-      session: {},
-      config: {},
+      session: { custom: {} },
     };
     expect(ctx.request.input).toBe('hello');
     expect(ctx.iteration.step).toBe(0);
+    expect(ctx.agent.promptFragments).toEqual([]);
   });
 });
 
@@ -291,23 +300,45 @@ describe('StreamEvent', () => {
   });
 });
 
-describe('PipelineState', () => {
-  it('carries named fields and allows arbitrary keys', () => {
-    const state: PipelineState = {
-      response: 'hello',
-      tokenUsage: { input: 10, output: 5 },
-      custom: 'data',
-    };
-    expect(state.response).toBe('hello');
-    expect(state.custom).toBe('data');
+describe('LoopDirective and Regions', () => {
+  it('LoopDirective supports stop, continue, and retry actions', () => {
+    const stop: LoopDirective = { action: 'stop' };
+    const cont: LoopDirective = { action: 'continue' };
+    const retry: LoopDirective = { action: 'retry', retryFrom: 'invokeLLM' };
+
+    expect(stop.action).toBe('stop');
+    expect(cont.action).toBe('continue');
+    expect(retry.action).toBe('retry');
+    if (retry.action === 'retry') {
+      expect(retry.retryFrom).toBe('invokeLLM');
+    }
   });
 
-  it('has optional streaming fields', () => {
-    const state: PipelineState = {
-      textStream: (async function* () { yield 'x'; })(),
-      usagePromise: Promise.resolve({ input: 1, output: 1 }),
+  it('Message carries role and content', () => {
+    const msg: Message = { role: 'user', content: 'hello' };
+    expect(msg.role).toBe('user');
+    expect(msg.content).toBe('hello');
+  });
+
+  it('SessionRegion carries messageHistory and custom', () => {
+    const session: SessionRegion = {
+      messageHistory: [{ role: 'user', content: 'hi' }],
+      totalTokenUsage: { input: 5, output: 2 },
+      custom: { myPlugin: { flag: true } },
     };
-    expect(state.textStream).toBeDefined();
-    expect(state.usagePromise).toBeDefined();
+    expect(session.messageHistory?.length).toBe(1);
+    expect(session.custom.myPlugin).toEqual({ flag: true });
+  });
+
+  it('IterationRegion carries loopDirective and span', () => {
+    const iter: IterationRegion = {
+      step: 3,
+      loopDirective: { action: 'stop' },
+      response: 'done',
+      tokenUsage: { input: 10, output: 5 },
+    };
+    expect(iter.step).toBe(3);
+    expect(iter.loopDirective?.action).toBe('stop');
+    expect(iter.response).toBe('done');
   });
 });

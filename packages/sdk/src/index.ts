@@ -19,27 +19,66 @@ export type PipelineStage =
   | 'afterTool';
 
 // ---------------------------------------------------------------------------
-// Pipeline State
+// Message (shared by memory, compression, session)
 // ---------------------------------------------------------------------------
 
-export interface PipelineState {
-  response?: string;
-  tokenUsage?: TokenUsage;
-  textStream?: AsyncIterable<string>;
-  usagePromise?: Promise<TokenUsage>;
-  [key: string]: unknown;
+export interface Message {
+  role: string;
+  content: string;
 }
 
 // ---------------------------------------------------------------------------
-// Pipeline Context (skeleton)
+// Loop Directive (replaces _stopLoop + _retryFrom)
 // ---------------------------------------------------------------------------
 
+export type LoopDirective =
+  | { action: 'continue' }
+  | { action: 'stop' }
+  | { action: 'retry'; retryFrom: PipelineStage };
+
+// ---------------------------------------------------------------------------
+// Pipeline Context — Four Regions (ADR-0007)
+// ---------------------------------------------------------------------------
+
+export interface RequestRegion {
+  input: string;
+  sessionId: string;
+}
+
+export interface AgentRegion {
+  config: AgentConfig;
+  systemPrompt?: string;
+  toolDeclarations: Array<{ name: string; description: string }>;
+  /** Append-only. Always spread existing: `[...ctx.agent.promptFragments, newFragment]` */
+  promptFragments: string[];
+}
+
+export interface IterationRegion {
+  step: number;
+  /** undefined defaults to 'continue'. Default evaluateIteration sets 'stop'. */
+  loopDirective?: LoopDirective;
+  textStream?: AsyncIterable<string>;
+  usagePromise?: Promise<TokenUsage>;
+  response?: string;
+  tokenUsage?: TokenUsage;
+  /** Per-stage observability span. Created by PipelineRunner.executeStage(),
+   *  lives for one stage invocation (not one full iteration). */
+  span?: Span;
+  currentToolCall?: { name: string; args: Record<string, unknown> };
+}
+
+export interface SessionRegion {
+  messageHistory?: Message[];
+  totalTokenUsage?: TokenUsage;
+  /** Plugin extension point. Namespaced by plugin ID. */
+  custom: Record<string, unknown>;
+}
+
 export interface PipelineContext {
-  request: { input: string; sessionId: string };
-  iteration: { step: number };
-  pipeline: PipelineState;
-  session: Record<string, unknown>;
-  config: Record<string, unknown>;
+  request: RequestRegion;
+  agent: AgentRegion;
+  iteration: IterationRegion;
+  session: SessionRegion;
 }
 
 // ---------------------------------------------------------------------------
