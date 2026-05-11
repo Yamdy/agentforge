@@ -102,11 +102,15 @@ export interface Processor {
 // Tool System
 // ---------------------------------------------------------------------------
 
+export interface WrapHookInvoker {
+  invokeWrapHook(point: HookPoint, data: unknown): Promise<unknown>;
+}
+
 export interface ToolExecutionContext {
   harness?: unknown;
   span?: unknown;
   sessionId?: string;
-  pluginManager?: unknown;
+  pluginManager?: WrapHookInvoker;
 }
 
 export interface ToolHookContext {

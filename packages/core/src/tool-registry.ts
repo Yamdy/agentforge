@@ -105,18 +105,14 @@ export class ToolRegistry {
           hookCtx.result = toolResult;
           await this.runAfterHooks(hookCtx);
 
-          // Wrap hook (if PluginManager is wired in)
-          const wrapCtx = this.executionContext;
-          if (wrapCtx?.pluginManager) {
+          // Wrap hook (if invoker is wired in)
+          if (this.executionContext.pluginManager) {
             try {
-              const pm = wrapCtx.pluginManager as {
-                invokeWrapHook: (point: string, data: unknown) => Promise<unknown>;
-              };
-              const wrapped = await pm.invokeWrapHook('tool.wrap', {
+              const wrapped = await this.executionContext.pluginManager.invokeWrapHook('tool.wrap', {
                 toolName: tool.name,
                 args,
                 result: toolResult,
-                sessionId: wrapCtx.sessionId ?? '',
+                sessionId: this.executionContext.sessionId ?? '',
               });
               if (wrapped && typeof wrapped === 'object' && 'result' in wrapped) {
                 toolResult = (wrapped as Record<string, unknown>).result;

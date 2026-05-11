@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
-import type { Tool, ToolExecutionContext, ToolHookContext } from '@agentforge/sdk';
+import type { Tool, ToolExecutionContext, ToolHookContext, WrapHookInvoker } from '@agentforge/sdk';
 import { ToolRegistry } from '../src/tool-registry.js';
 
 describe('ToolRegistry', () => {
@@ -216,6 +216,34 @@ describe('ToolRegistry', () => {
       const sdkTools = registry.toAiSdkTools();
       await expect(sdkTools.failing_tool.execute({})).rejects.toThrow('Tool crashed!');
       expect(hookCalls).toEqual(['after:failing_tool:error=Tool crashed!']);
+    });
+
+    it('invokes wrap hook via WrapHookInvoker interface', async () => {
+      const registry = new ToolRegistry();
+      registry.register({
+        name: 'double',
+        description: 'Double a number',
+        inputSchema: z.object({ x: z.number() }),
+        execute: async ({ x }) => x * 2,
+      });
+
+      let hookCalled = false;
+      const invoker: WrapHookInvoker = {
+        invokeWrapHook: async (_point, data) => {
+          hookCalled = true;
+          const ctx = data as Record<string, unknown>;
+          return { ...ctx, result: (ctx.result as number) + 100 };
+        },
+      };
+
+      registry.setToolExecutionContext({
+        pluginManager: invoker,
+        sessionId: 'test-session',
+      });
+
+      const result = await registry.toAiSdkTools().double.execute({ x: 5 });
+      expect(hookCalled).toBe(true);
+      expect(result).toBe(110);
     });
   });
 });

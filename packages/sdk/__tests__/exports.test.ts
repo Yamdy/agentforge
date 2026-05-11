@@ -23,6 +23,7 @@ import type {
   AgentRegion,
   IterationRegion,
   SessionRegion,
+  WrapHookInvoker,
 } from '../src/index.js';
 import { SpanType } from '../src/index.js';
 
@@ -349,5 +350,15 @@ describe('LoopDirective and Regions', () => {
     expect(iter.step).toBe(3);
     expect(iter.loopDirective?.action).toBe('stop');
     expect(iter.response).toBe('done');
+  });
+});
+
+describe('WrapHookInvoker', () => {
+  it('can be assigned to ToolExecutionContext.pluginManager', () => {
+    const invoker: WrapHookInvoker = {
+      invokeWrapHook: async (_point, data) => data,
+    };
+    const ctx: ToolExecutionContext = { pluginManager: invoker };
+    expect(ctx.pluginManager).toBeDefined();
   });
 });
