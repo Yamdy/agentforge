@@ -30,7 +30,9 @@
       "Bash(git checkout *)",
       "Bash(git merge refactor/four-region-pipeline-context --no-ff -m ' *)",
       "Bash(git branch *)",
-      "Bash(git merge *)"
+      "Bash(git merge *)",
+      "Bash(git status *)",
+      "Bash(git *)"
     ]
   }
 }
