@@ -12,6 +12,7 @@
   "dependencies": {
     "@agentforge/core": "workspace:*",
     "@agentforge/observability": "workspace:^",
+    "@agentforge/plugins": "workspace:*",
     "@agentforge/sdk": "workspace:*",
     "@ai-sdk/openai-compatible": "^2.0.47",
     "@opentelemetry/api": "^1.9.1",

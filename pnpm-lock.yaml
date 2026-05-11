@@ -33,6 +33,9 @@ importers:
       '@agentforge/observability':
         specifier: workspace:^
         version: link:../packages/observability
+      '@agentforge/plugins':
+        specifier: workspace:*
+        version: link:../packages/plugins
       '@agentforge/sdk':
         specifier: workspace:*
         version: link:../packages/sdk
