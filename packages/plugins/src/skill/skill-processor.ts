@@ -141,11 +141,11 @@ export function createSkillProcessor(skills: SkillDefinition[]): Processor {
       );
       const fragment = `<skills>\nAvailable skills (use read_skill tool to load full instructions):\n${lines.join('\n')}\n</skills>`;
 
-      const existingFragments = (ctx.pipeline.promptFragments as string[]) ?? [];
+      const existingFragments = ctx.agent.promptFragments;
       return {
         ...ctx,
-        pipeline: {
-          ...ctx.pipeline,
+        agent: {
+          ...ctx.agent,
           promptFragments: [...existingFragments, fragment],
         },
       };

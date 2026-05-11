@@ -5,10 +5,9 @@ import { createPermissionProcessor, type PermissionRule } from '../src/permissio
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
     request: { input: 'test', sessionId: 'session-1' },
+    agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
     iteration: { step: 0 },
-    pipeline: {},
-    session: {},
-    config: {},
+    session: { custom: {} },
     ...overrides,
   };
 }
@@ -24,7 +23,7 @@ describe('PermissionProcessor', () => {
       const processor = createPermissionProcessor({ mode: 'full-auto', rules });
 
       const ctx = makeContext({
-        pipeline: { currentToolCall: { name: 'shell_exec', args: { command: 'rm -rf /' } } },
+        iteration: { step: 0, currentToolCall: { name: 'shell_exec', args: { command: 'rm -rf /' } } },
       });
 
       const result = await processor.execute(ctx);
@@ -42,7 +41,7 @@ describe('PermissionProcessor', () => {
       const processor = createPermissionProcessor({ mode: 'plan-only', rules });
 
       const ctx = makeContext({
-        pipeline: { currentToolCall: { name: 'file_write', args: { path: '/etc/hosts', content: 'malicious' } } },
+        iteration: { step: 0, currentToolCall: { name: 'file_write', args: { path: '/etc/hosts', content: 'malicious' } } },
       });
 
       const result = await processor.execute(ctx);
@@ -61,7 +60,7 @@ describe('PermissionProcessor', () => {
       const processor = createPermissionProcessor({ mode: 'plan-only', rules });
 
       const ctx = makeContext({
-        pipeline: { currentToolCall: { name: 'file_read', args: { path: '/etc/hosts' } } },
+        iteration: { step: 0, currentToolCall: { name: 'file_read', args: { path: '/etc/hosts' } } },
       });
 
       const result = await processor.execute(ctx);
@@ -74,7 +73,7 @@ describe('PermissionProcessor', () => {
       const processor = createPermissionProcessor({ mode: 'plan-only', rules });
 
       const ctx = makeContext({
-        pipeline: { currentToolCall: { name: 'shell_exec', args: { command: 'ls' } } },
+        iteration: { step: 0, currentToolCall: { name: 'shell_exec', args: { command: 'ls' } } },
       });
 
       const result = await processor.execute(ctx);
@@ -96,7 +95,7 @@ describe('PermissionProcessor', () => {
 
       // "file_read" matches "file_*" first (first-match-wins), so it's denied
       const ctx = makeContext({
-        pipeline: { currentToolCall: { name: 'file_read', args: { path: '/etc/hosts' } } },
+        iteration: { step: 0, currentToolCall: { name: 'file_read', args: { path: '/etc/hosts' } } },
       });
 
       const result = await processor.execute(ctx);
@@ -116,7 +115,7 @@ describe('PermissionProcessor', () => {
 
       // Reading /etc/passwd should hit the deny rule first (pattern matches)
       const ctx = makeContext({
-        pipeline: { currentToolCall: { name: 'file_read', args: { path: '/etc/passwd' } } },
+        iteration: { step: 0, currentToolCall: { name: 'file_read', args: { path: '/etc/passwd' } } },
       });
 
       const result = await processor.execute(ctx);
@@ -133,7 +132,7 @@ describe('PermissionProcessor', () => {
 
       // Reading /home/user/doc.txt — pattern doesn't match, skip to allow rule
       const ctx = makeContext({
-        pipeline: { currentToolCall: { name: 'file_read', args: { path: '/home/user/doc.txt' } } },
+        iteration: { step: 0, currentToolCall: { name: 'file_read', args: { path: '/home/user/doc.txt' } } },
       });
 
       const result = await processor.execute(ctx);
@@ -150,7 +149,7 @@ describe('PermissionProcessor', () => {
 
       // First rule says allow — should pass even though second rule says deny
       const ctx = makeContext({
-        pipeline: { currentToolCall: { name: 'file_write', args: { path: '/tmp/test' } } },
+        iteration: { step: 0, currentToolCall: { name: 'file_write', args: { path: '/tmp/test' } } },
       });
 
       const result = await processor.execute(ctx);
@@ -167,7 +166,7 @@ describe('PermissionProcessor', () => {
       const processor = createPermissionProcessor({ mode: 'interactive', rules });
 
       const ctx = makeContext({
-        pipeline: { currentToolCall: { name: 'file_read', args: { path: '/tmp/data.txt' } } },
+        iteration: { step: 0, currentToolCall: { name: 'file_read', args: { path: '/tmp/data.txt' } } },
       });
 
       const result = await processor.execute(ctx);
@@ -182,7 +181,7 @@ describe('PermissionProcessor', () => {
       const processor = createPermissionProcessor({ mode: 'interactive', rules });
 
       const ctx = makeContext({
-        pipeline: { currentToolCall: { name: 'shell_exec', args: { command: 'rm -rf /' } } },
+        iteration: { step: 0, currentToolCall: { name: 'shell_exec', args: { command: 'rm -rf /' } } },
       });
 
       const result = await processor.execute(ctx);
@@ -200,7 +199,7 @@ describe('PermissionProcessor', () => {
       const processor = createPermissionProcessor({ mode: 'interactive', rules });
 
       const ctx = makeContext({
-        pipeline: { currentToolCall: { name: 'file_write', args: { path: '/tmp/test' } } },
+        iteration: { step: 0, currentToolCall: { name: 'file_write', args: { path: '/tmp/test' } } },
       });
 
       const result = await processor.execute(ctx);
@@ -218,7 +217,7 @@ describe('PermissionProcessor', () => {
       const processor = createPermissionProcessor({ mode: 'interactive', rules });
 
       const ctx = makeContext({
-        pipeline: { currentToolCall: { name: 'any_tool', args: {} } },
+        iteration: { step: 0, currentToolCall: { name: 'any_tool', args: {} } },
       });
 
       const result = await processor.execute(ctx);
@@ -240,7 +239,7 @@ describe('PermissionProcessor', () => {
       });
 
       const ctx = makeContext({
-        pipeline: { currentToolCall: { name: 'file_read', args: { path: '/tmp/data' } } },
+        iteration: { step: 0, currentToolCall: { name: 'file_read', args: { path: '/tmp/data' } } },
       });
 
       await processor.execute(ctx);
@@ -264,7 +263,7 @@ describe('PermissionProcessor', () => {
       });
 
       const ctx = makeContext({
-        pipeline: { currentToolCall: { name: 'shell_exec', args: { command: 'ls' } } },
+        iteration: { step: 0, currentToolCall: { name: 'shell_exec', args: { command: 'ls' } } },
       });
 
       await processor.execute(ctx);
@@ -286,7 +285,7 @@ describe('PermissionProcessor', () => {
       });
 
       const ctx = makeContext({
-        pipeline: { currentToolCall: { name: 'file_write', args: { path: '/tmp/test' } } },
+        iteration: { step: 0, currentToolCall: { name: 'file_write', args: { path: '/tmp/test' } } },
       });
 
       await processor.execute(ctx);
@@ -305,7 +304,7 @@ describe('PermissionProcessor', () => {
       });
 
       const ctx = makeContext({
-        pipeline: { currentToolCall: { name: 'shell_exec', args: { command: 'ls' } } },
+        iteration: { step: 0, currentToolCall: { name: 'shell_exec', args: { command: 'ls' } } },
       });
 
       await processor.execute(ctx);

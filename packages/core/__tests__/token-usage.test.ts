@@ -21,8 +21,8 @@ describe('Token usage extraction', () => {
         const usage = await result.usage;
         return {
           ...ctx,
-          pipeline: {
-            ...ctx.pipeline,
+          iteration: {
+            ...ctx.iteration,
             response: chunks.join(''),
             tokenUsage: {
               input: typeof usage?.inputTokens === 'number' ? usage.inputTokens : (usage?.inputTokens as any)?.total ?? 0,
@@ -38,10 +38,15 @@ describe('Token usage extraction', () => {
     });
 
     await runner.run(
-      { request: { input: 'test', sessionId: 's1' }, iteration: { step: 0 }, pipeline: {}, session: {}, config: {} },
+      {
+        request: { input: 'test', sessionId: 's1' },
+        agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
+        iteration: { step: 0 },
+        session: { custom: {} },
+      },
       ['invokeLLM', 'processOutput'],
     );
 
-    expect(resultContext!.pipeline.tokenUsage).toEqual({ input: 42, output: 15 });
+    expect(resultContext!.iteration.tokenUsage).toEqual({ input: 42, output: 15 });
   });
 });

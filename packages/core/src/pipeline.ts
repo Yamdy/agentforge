@@ -73,18 +73,18 @@ export class PipelineRunner {
           }
           ctx = stageResult;
 
-          const textStream = ctx.pipeline.textStream;
+          const textStream = ctx.iteration.textStream;
           if (textStream) {
             for await (const chunk of textStream) {
               yield { type: 'text_delta', text: chunk };
             }
-            const usage = ctx.pipeline.usagePromise
-              ? await ctx.pipeline.usagePromise
+            const usage = ctx.iteration.usagePromise
+              ? await ctx.iteration.usagePromise
               : undefined;
             ctx = Object.freeze({
               ...ctx,
-              pipeline: {
-                ...ctx.pipeline,
+              iteration: {
+                ...ctx.iteration,
                 ...(usage ? { tokenUsage: usage } : {}),
                 textStream: undefined,
                 usagePromise: undefined,
@@ -113,7 +113,7 @@ export class PipelineRunner {
     for (const processor of stageProcessors) {
       const ctxWithSpan = Object.freeze({
         ...currentCtx,
-        pipeline: { ...currentCtx.pipeline, _span: stageSpan },
+        iteration: { ...currentCtx.iteration, span: stageSpan },
       });
       const result: ProcessorResult = await processor.execute(ctxWithSpan);
       if ('type' in result && result.type === 'abort') {
@@ -129,20 +129,20 @@ export class PipelineRunner {
   }
 
   private async consumeTextStream(ctx: PipelineContext): Promise<PipelineContext> {
-    const textStream = ctx.pipeline.textStream;
+    const textStream = ctx.iteration.textStream;
     if (!textStream) return ctx;
 
     const chunks: string[] = [];
     for await (const chunk of textStream) chunks.push(chunk);
 
-    const usage = ctx.pipeline.usagePromise
-      ? await ctx.pipeline.usagePromise
+    const usage = ctx.iteration.usagePromise
+      ? await ctx.iteration.usagePromise
       : undefined;
 
     return Object.freeze({
       ...ctx,
-      pipeline: {
-        ...ctx.pipeline,
+      iteration: {
+        ...ctx.iteration,
         response: chunks.join(''),
         ...(usage ? { tokenUsage: usage } : {}),
         textStream: undefined,

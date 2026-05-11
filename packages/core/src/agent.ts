@@ -66,31 +66,31 @@ export class Agent {
     // Agentic loop
     let ctx = result as PipelineContext;
     for (let i = 0; i < maxIter; i++) {
-      ctx = { ...ctx, iteration: { ...ctx.iteration, step: i } };
+      ctx = { ...ctx, iteration: { ...ctx.iteration, step: i, loopDirective: undefined } };
 
       // Determine start stage (support retry from a specific stage)
-      const retryFrom = ctx.pipeline._retryFrom as PipelineStage | undefined;
+      const loopDirective = ctx.iteration.loopDirective;
+      const retryFrom = loopDirective?.action === 'retry' ? loopDirective.retryFrom : undefined;
       const stages = retryFrom ? LOOP_STAGES.slice(LOOP_STAGES.indexOf(retryFrom)) : LOOP_STAGES;
-      ctx = { ...ctx, pipeline: { ...ctx.pipeline, _retryFrom: undefined } };
 
       result = await this.runner.run(ctx, stages);
       if (this.isAbort(result)) {
         const abort = result as AbortSignal;
         if (abort.retryFrom) {
-          ctx = { ...ctx, pipeline: { ...ctx.pipeline, _retryFrom: abort.retryFrom } };
+          ctx = { ...ctx, iteration: { ...ctx.iteration, loopDirective: { action: 'retry', retryFrom: abort.retryFrom } } };
           continue;
         }
         throw new Error(`Agent aborted: ${abort.reason}`);
       }
       ctx = result as PipelineContext;
-      if (ctx.pipeline._stopLoop) break;
+      if (ctx.iteration.loopDirective?.action === 'stop') break;
     }
 
     // Post-loop stage
     result = await this.runner.run(ctx, POST_LOOP_STAGES);
     if (this.isAbort(result)) throw new Error(`Agent aborted: ${(result as AbortSignal).reason}`);
 
-    return (result as PipelineContext).pipeline.response as string ?? '';
+    return (result as PipelineContext).iteration.response as string ?? '';
   }
 
   async *stream(input: string): AsyncGenerator<string> {
@@ -104,12 +104,12 @@ export class Agent {
     }
 
     for (let i = 0; i < maxIter; i++) {
-      ctx = { ...ctx, iteration: { ...ctx.iteration, step: i } };
+      ctx = { ...ctx, iteration: { ...ctx.iteration, step: i, loopDirective: undefined } };
       for await (const event of this.runner.stream(ctx, LOOP_STAGES)) {
         if (event.type === 'text_delta') yield event.text;
         if (event.type === 'complete') ctx = (event as { context: PipelineContext }).context;
       }
-      if (ctx.pipeline._stopLoop) break;
+      if (ctx.iteration.loopDirective?.action === 'stop') break;
     }
 
     for await (const event of this.runner.stream(ctx, POST_LOOP_STAGES)) {
@@ -132,10 +132,9 @@ export class Agent {
   private createContext(input: string): PipelineContext {
     return {
       request: { input, sessionId: crypto.randomUUID() },
+      agent: { config: { ...this.config }, promptFragments: [], toolDeclarations: [] },
       iteration: { step: 0 },
-      pipeline: {},
-      session: {},
-      config: { ...this.config },
+      session: { custom: {} },
     };
   }
 
@@ -159,8 +158,8 @@ export class Agent {
       stage: 'buildContext',
       execute: async (ctx) => ({
         ...ctx,
-        pipeline: {
-          ...ctx.pipeline,
+        agent: {
+          ...ctx.agent,
           systemPrompt: this.config.systemPrompt,
           toolDeclarations: this.registry.getAll().map(t => ({
             name: t.name,
@@ -198,8 +197,8 @@ export class Agent {
 
         return {
           ...ctx,
-          pipeline: {
-            ...ctx.pipeline,
+          iteration: {
+            ...ctx.iteration,
             textStream: handle.textStream,
             usagePromise: handle.usage,
           },
@@ -221,7 +220,7 @@ export class Agent {
       stage: 'evaluateIteration',
       execute: async (ctx) => ({
         ...ctx,
-        pipeline: { ...ctx.pipeline, _stopLoop: true },
+        iteration: { ...ctx.iteration, loopDirective: { action: 'stop' } },
       }),
     };
 

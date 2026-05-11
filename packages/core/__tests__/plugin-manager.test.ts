@@ -35,12 +35,11 @@ describe('PluginManager', () => {
     manager.initializePlugin(plugin);
 
     // Run pipeline through processInput stage
-    const ctx = {
+    const ctx: PipelineContext = {
       request: { input: 'test', sessionId: 's1' },
+      agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
       iteration: { step: 0 },
-      pipeline: {},
-      session: {},
-      config: {},
+      session: { custom: {} },
     };
     await runner.run(ctx, ['processInput']);
 
@@ -101,12 +100,11 @@ describe('PluginManager', () => {
     await manager.loadPlugin(fixturePath);
 
     // The test plugin registers a processor at processInput — run pipeline to verify
-    const ctx = {
+    const ctx: PipelineContext = {
       request: { input: 'test', sessionId: 's1' },
+      agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
       iteration: { step: 0 },
-      pipeline: {},
-      session: {},
-      config: {},
+      session: { custom: {} },
     };
     // Should not throw — the plugin's processor is active
     const result = await runner.run(ctx, ['processInput']);
@@ -331,12 +329,11 @@ describe('PluginManager', () => {
       expect(result).toBe('pong: hello');
 
       // Verify processor runs in pipeline
-      const ctx = {
+      const ctx: PipelineContext = {
         request: { input: 'test', sessionId: 's1' },
+        agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
         iteration: { step: 0 },
-        pipeline: {},
-        session: {},
-        config: {},
+        session: { custom: {} },
       };
       const pipelineResult = await runner.run(ctx, ['processInput']);
       expect(pipelineResult).toBeDefined();
@@ -352,7 +349,7 @@ describe('PluginManager', () => {
           stage: 'processInput',
           execute: async (ctx) => {
             events.push('processor:processInput');
-            return { ...ctx, pipeline: { ...ctx.pipeline, annotated: true } };
+            return { ...ctx, session: { ...ctx.session, custom: { ...ctx.session.custom, annotated: true } } };
           },
         });
 
@@ -407,15 +404,14 @@ describe('PluginManager', () => {
       expect(await tool.execute({ a: 2, b: 3 }, {})).toBe(5);
 
       // Processor works in pipeline
-      const ctx = {
+      const ctx: PipelineContext = {
         request: { input: 'test', sessionId: 's1' },
+        agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
         iteration: { step: 0 },
-        pipeline: {},
-        session: {},
-        config: {},
+        session: { custom: {} },
       };
       const result = (await runner.run(ctx, ['processInput'])) as PipelineContext;
-      expect(result.pipeline.annotated).toBe(true);
+      expect(result.session.custom.annotated).toBe(true);
       expect(events).toContain('processor:processInput');
 
       // Shutdown cleans up

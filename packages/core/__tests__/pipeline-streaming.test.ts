@@ -1,14 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { PipelineRunner } from '../src/pipeline.js';
-import type { PipelineContext, Processor, StreamEvent } from '@agentforge/sdk';
+import type { PipelineContext, StreamEvent } from '@agentforge/sdk';
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
     request: { input: 'test', sessionId: 's1' },
+    agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
     iteration: { step: 0 },
-    pipeline: {},
-    session: {},
-    config: {},
+    session: { custom: {} },
     ...overrides,
   };
 }
@@ -38,8 +37,8 @@ describe('PipelineRunner.stream()', () => {
       stage: 'invokeLLM',
       execute: async (ctx) => ({
         ...ctx,
-        pipeline: {
-          ...ctx.pipeline,
+        iteration: {
+          ...ctx.iteration,
           textStream: (async function* () {
             yield 'hello ';
             yield 'world';

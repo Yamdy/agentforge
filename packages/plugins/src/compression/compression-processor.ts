@@ -1,4 +1,6 @@
-import type { Processor, PipelineContext, ProcessorResult, Span } from '@agentforge/sdk';
+import type { Processor, PipelineContext, ProcessorResult, Span, Message } from '@agentforge/sdk';
+
+export type { Message };
 
 export type SummarizeFn = (messages: Message[]) => Promise<string>;
 
@@ -11,8 +13,6 @@ export interface CompressionConfig {
   maxContextTokens: number;
   phases: CompressionPhase[];
 }
-
-export type Message = { role: string; content: string };
 
 function estimateTokens(messages: Message[]): number {
   return messages.reduce((sum, m) => sum + Math.ceil(m.content.length / 4), 0);
@@ -43,7 +43,7 @@ export function createCompressionProcessor(config: CompressionConfig): Processor
   return {
     stage: 'prepareStep',
     execute: async (ctx: PipelineContext): Promise<ProcessorResult> => {
-      const history = ctx.session.messageHistory as Message[] | undefined;
+      const history = ctx.session.messageHistory;
       if (!history || history.length === 0) return ctx;
 
       const tokensBefore = estimateTokens(history);
@@ -66,7 +66,7 @@ export function createCompressionProcessor(config: CompressionConfig): Processor
       }
 
       const tokensAfter = estimateTokens(compressed);
-      const span = ctx.pipeline._span as Span | undefined;
+      const span = ctx.iteration.span;
       if (span) {
         span
           .setAttribute('compression.triggered', true)

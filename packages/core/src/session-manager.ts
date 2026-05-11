@@ -59,10 +59,9 @@ export class SessionManagerImpl implements SessionManager {
 
     return {
       request: { input, sessionId },
+      agent: { config: {} as any, promptFragments: [], toolDeclarations: [] },
       iteration: { step: lastStep },
-      pipeline: {},
-      session: { messageHistory },
-      config: {},
+      session: { messageHistory: messageHistory as any, custom: {} },
     };
   }
 

@@ -6,10 +6,9 @@ import type { PipelineContext, HarnessAPI, PluginRegistration } from '@agentforg
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
     request: { input: 'test', sessionId: 'session-1' },
+    agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
     iteration: { step: 0 },
-    pipeline: {},
-    session: {},
-    config: {},
+    session: { custom: {} },
     ...overrides,
   };
 }
@@ -32,6 +31,7 @@ describe('CompressionProcessor', () => {
             { role: 'tool', content: longContent },
             { role: 'assistant', content: 'ok' },
           ],
+          custom: {},
         },
       });
 
@@ -57,6 +57,7 @@ describe('CompressionProcessor', () => {
           messageHistory: [
             { role: 'user', content: 'short message' },
           ],
+          custom: {},
         },
       });
 
@@ -80,7 +81,7 @@ describe('CompressionProcessor', () => {
       }
 
       const ctx = makeContext({
-        session: { messageHistory: messages },
+        session: { messageHistory: messages, custom: {} },
       });
 
       const result = await processor.execute(ctx);
@@ -108,7 +109,7 @@ describe('CompressionProcessor', () => {
       ];
 
       const ctx = makeContext({
-        session: { messageHistory: messages },
+        session: { messageHistory: messages, custom: {} },
       });
 
       const result = await processor.execute(ctx);
@@ -154,7 +155,7 @@ describe('CompressionProcessor', () => {
       ];
 
       const ctx = makeContext({
-        session: { messageHistory: messages },
+        session: { messageHistory: messages, custom: {} },
       });
 
       const result = await processor.execute(ctx);
@@ -184,6 +185,7 @@ describe('CompressionProcessor', () => {
       const ctx = makeContext({
         session: {
           messageHistory: [{ role: 'user', content: 'hello' }],
+          custom: {},
         },
       });
 
@@ -215,8 +217,8 @@ describe('CompressionProcessor', () => {
       ];
 
       const ctx = makeContext({
-        session: { messageHistory: messages },
-        pipeline: { _span: mockSpan },
+        session: { messageHistory: messages, custom: {} },
+        iteration: { step: 0, span: mockSpan as any },
       });
 
       await processor.execute(ctx);
@@ -271,7 +273,7 @@ describe('compressionPlugin', () => {
       messages.push({ role: 'user', content: `message ${i}` });
     }
 
-    const ctx = makeContext({ session: { messageHistory: messages } });
+    const ctx = makeContext({ session: { messageHistory: messages, custom: {} } });
     const result = await processor.execute(ctx);
     const history = result.session.messageHistory as Message[];
 
