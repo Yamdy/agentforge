@@ -76,6 +76,22 @@ describe('PipelineRunner.stream()', () => {
     expect(events.find((e) => e.type === 'complete')).toBeUndefined();
   });
 
+  it('yields abort event with retryFrom when processor aborts with retryFrom', async () => {
+    const runner = new PipelineRunner();
+    runner.register({
+      stage: 'invokeLLM',
+      execute: async () => ({ type: 'abort' as const, reason: 'retry', retryFrom: 'invokeLLM' as const }),
+    });
+
+    const events: StreamEvent[] = [];
+    for await (const event of runner.stream(makeContext(), ['invokeLLM'])) {
+      events.push(event);
+    }
+
+    expect(events).toContainEqual({ type: 'abort', reason: 'retry', retryFrom: 'invokeLLM' });
+    expect(events.find((e) => e.type === 'complete')).toBeUndefined();
+  });
+
   it('works without a tracer (no-op fallback)', async () => {
     const runner = new PipelineRunner();
     runner.register({ stage: 'processInput', execute: async (ctx) => ctx });

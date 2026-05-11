@@ -200,7 +200,7 @@ export type StreamEvent =
   | { type: 'tool_call'; name: string; args: unknown }
   | { type: 'tool_result'; name: string; result: unknown }
   | { type: 'complete'; context: PipelineContext }
-  | { type: 'abort'; reason: string };
+  | { type: 'abort'; reason: string; retryFrom?: PipelineStage };
 
 // ---------------------------------------------------------------------------
 // Plugin System

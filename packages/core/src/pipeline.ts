@@ -68,7 +68,7 @@ export class PipelineRunner {
           if (this.isAbort(stageResult)) {
             stageSpan.end();
             rootSpan.end();
-            yield { type: 'abort', reason: stageResult.reason };
+            yield { type: 'abort', reason: stageResult.reason, ...(stageResult.retryFrom ? { retryFrom: stageResult.retryFrom } : {}) };
             return;
           }
           ctx = stageResult;

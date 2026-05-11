@@ -295,8 +295,17 @@ describe('StreamEvent', () => {
       { type: 'tool_result', name: 'echo', result: 'ok' },
       { type: 'complete', context: {} as PipelineContext },
       { type: 'abort', reason: 'policy' },
+      { type: 'abort', reason: 'retry', retryFrom: 'invokeLLM' },
     ];
-    expect(events).toHaveLength(7);
+    expect(events).toHaveLength(8);
+  });
+
+  it('abort event can carry retryFrom', () => {
+    const event: StreamEvent = { type: 'abort', reason: 'policy', retryFrom: 'invokeLLM' };
+    expect(event.type).toBe('abort');
+    if (event.type === 'abort' && event.retryFrom) {
+      expect(event.retryFrom).toBe('invokeLLM');
+    }
   });
 });
 
