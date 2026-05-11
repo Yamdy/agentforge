@@ -34,12 +34,12 @@ export function createMemoryProcessor(config: MemoryConfig): Processor {
       const memoryBlock = entries
         .map((e) => `[${e.role}] ${e.content}`)
         .join('\n');
-      const promptFragments = [`<memory>\n${memoryBlock}\n</memory>`];
+      const promptFragments = [...ctx.agent.promptFragments, `<memory>\n${memoryBlock}\n</memory>`];
 
       return {
         ...ctx,
         session: { ...ctx.session, messageHistory },
-        pipeline: { ...ctx.pipeline, promptFragments },
+        agent: { ...ctx.agent, promptFragments },
       };
     },
   };
@@ -53,7 +53,7 @@ export function createMemoryOutputProcessor(config: MemoryConfig): Processor {
     execute: async (ctx: PipelineContext): Promise<ProcessorResult> => {
       if (triggerMode.type === 'agent-controlled') return ctx;
 
-      const response = ctx.pipeline.response as string | undefined;
+      const response = ctx.iteration.response;
       if (!response) return ctx;
 
       const now = new Date().toISOString();
