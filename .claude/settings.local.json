@@ -26,7 +26,11 @@
       "Bash(npx tsup *)",
       "Bash(npm ls *)",
       "WebFetch(domain:arxiv.org)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(git checkout *)",
+      "Bash(git merge refactor/four-region-pipeline-context --no-ff -m ' *)",
+      "Bash(git branch *)",
+      "Bash(git merge *)"
     ]
   }
 }
