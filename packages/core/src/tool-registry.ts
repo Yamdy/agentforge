@@ -1,3 +1,4 @@
+import { jsonSchema } from 'ai';
 import type { Tool, ToolHook, ToolHookContext, ToolExecutionContext } from '@agentforge/sdk';
 
 export interface AiSdkToolDef {
@@ -65,9 +66,15 @@ export class ToolRegistry {
   toAiSdkTools(): Record<string, AiSdkToolDef> {
     const result: Record<string, AiSdkToolDef> = {};
     for (const tool of this.tools.values()) {
+      // MCP tools provide raw JSON Schema objects; Zod-based tools provide Zod schemas.
+      // AI SDK requires either a Zod schema or a jsonSchema()-wrapped object.
+      const schema = isZodSchema(tool.inputSchema)
+        ? tool.inputSchema
+        : jsonSchema(tool.inputSchema as Record<string, unknown>);
+
       result[tool.name] = {
         description: tool.description,
-        inputSchema: tool.inputSchema,
+        inputSchema: schema,
         execute: async (args) => {
           const hookCtx: ToolHookContext = { toolName: tool.name, args };
 

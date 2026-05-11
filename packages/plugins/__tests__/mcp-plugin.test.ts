@@ -157,9 +157,7 @@ describe('createMcpClient', () => {
     expect(() => createMcpClient(config)).toThrow('not implemented');
   });
 
-  it('stdio client connects, discovers tools, and calls tools', async () => {
-    // This tests the stdio client using a mock child process.
-    // We verify the JSON-RPC protocol is followed.
+  it('stdio client has correct interface', () => {
     const config: McpServerConfig = {
       name: 'test-server',
       transport: 'stdio',
@@ -168,13 +166,70 @@ describe('createMcpClient', () => {
     };
 
     const client = createMcpClient(config);
-    expect(client).toBeDefined();
-    // The connect() will try to spawn a process, which will fail in test.
-    // We verify the client was created and has the right interface.
     expect(typeof client.connect).toBe('function');
     expect(typeof client.discoverTools).toBe('function');
     expect(typeof client.callTool).toBe('function');
     expect(typeof client.close).toBe('function');
+  });
+
+  it('stdio client rejects on spawn failure', async () => {
+    const config: McpServerConfig = {
+      name: 'test-server',
+      transport: 'stdio',
+      command: 'nonexistent-binary-that-does-not-exist-12345',
+    };
+
+    const client = createMcpClient(config);
+    await expect(client.connect()).rejects.toThrow(/process error|exited unexpectedly/);
+  });
+
+  it('stdio client sends initialized notification after handshake', async () => {
+    const os = await import('os');
+    const path = await import('path');
+    const fs = await import('fs');
+
+    const serverScript = `
+import { createInterface } from 'readline';
+const rl = createInterface({ input: process.stdin });
+rl.on('line', (line) => {
+  let msg;
+  try { msg = JSON.parse(line); } catch { return; }
+  if (msg.method === 'initialize') {
+    process.stdout.write(JSON.stringify({
+      jsonrpc: '2.0', id: msg.id,
+      result: { protocolVersion: '2024-11-05', capabilities: {}, serverInfo: { name: 'test', version: '0.0.1' } }
+    }) + '\\n');
+  } else if (msg.method === 'notifications/initialized') {
+    // Client correctly sent initialized notification — do nothing
+  } else if (msg.method === 'tools/list') {
+    process.stdout.write(JSON.stringify({
+      jsonrpc: '2.0', id: msg.id,
+      result: { tools: [{ name: 'ping', description: 'ping', inputSchema: { type: 'object' } }] }
+    }) + '\\n');
+  }
+});
+`;
+
+    const tmpFile = path.join(os.tmpdir(), `mcp-test-server-${Date.now()}.mjs`);
+    fs.writeFileSync(tmpFile, serverScript);
+
+    try {
+      const config: McpServerConfig = {
+        name: 'test-server',
+        transport: 'stdio',
+        command: 'node',
+        args: [tmpFile],
+      };
+
+      const client = createMcpClient(config);
+      await client.connect();
+      const tools = await client.discoverTools();
+      expect(tools).toHaveLength(1);
+      expect(tools[0].name).toBe('ping');
+      await client.close();
+    } finally {
+      fs.unlinkSync(tmpFile);
+    }
   });
 });
 
