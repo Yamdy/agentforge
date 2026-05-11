@@ -99,6 +99,7 @@ export class Agent {
 
     let ctx = context;
     for await (const event of this.runner.stream(ctx, PRE_LOOP_STAGES)) {
+      if (event.type === 'abort') throw new Error(`Agent aborted: ${(event as AbortSignal).reason}`);
       if (event.type === 'text_delta') yield event.text;
       if (event.type === 'complete') ctx = (event as { context: PipelineContext }).context;
     }
@@ -106,6 +107,7 @@ export class Agent {
     for (let i = 0; i < maxIter; i++) {
       ctx = { ...ctx, iteration: { ...ctx.iteration, step: i, loopDirective: undefined } };
       for await (const event of this.runner.stream(ctx, LOOP_STAGES)) {
+        if (event.type === 'abort') throw new Error(`Agent aborted: ${(event as AbortSignal).reason}`);
         if (event.type === 'text_delta') yield event.text;
         if (event.type === 'complete') ctx = (event as { context: PipelineContext }).context;
       }
@@ -113,6 +115,7 @@ export class Agent {
     }
 
     for await (const event of this.runner.stream(ctx, POST_LOOP_STAGES)) {
+      if (event.type === 'abort') throw new Error(`Agent aborted: ${(event as AbortSignal).reason}`);
       if (event.type === 'text_delta') yield event.text;
     }
   }
