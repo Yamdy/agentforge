@@ -11,6 +11,7 @@ import { ToolRegistry } from './tool-registry.js';
 import { PluginManager, type PluginFactory } from './plugin-manager.js';
 import { LLMInvoker } from './llm-invoker.js';
 import { resolveModel } from './model-resolver.js';
+import { applyReactiveRules } from './processors/provider-history-compat.js';
 import { echoTool } from '@agentforge/tools';
 import {
   processInputProcessor,
@@ -83,7 +84,20 @@ export class Agent {
       const { ctx: loopCtx, stages } = this.computeLoopStages(ctx, i);
       ctx = loopCtx;
 
-      result = await this.runner.run(ctx, stages);
+      try {
+        result = await this.runner.run(ctx, stages);
+      } catch (error) {
+        const fixed = applyReactiveRules(
+          ctx.session.messageHistory ?? [],
+          ctx.agent.config.model,
+          error,
+        );
+        if (fixed) {
+          ctx = { ...ctx, session: { ...ctx.session, messageHistory: fixed } };
+          continue;
+        }
+        throw error;
+      }
       if (this.isAbort(result)) {
         const abort = result as AbortSignal;
         if (abort.retryFrom) {
@@ -126,20 +140,36 @@ export class Agent {
       ctx = loopCtx;
 
       let loopBreak = false;
-      for await (const event of this.runner.stream(ctx, stages)) {
-        if (signal?.aborted) throw new DOMException('Agent stream aborted', 'AbortError');
-        if (event.type === 'abort') {
-          const abortEvent = event as { type: 'abort'; reason: string; retryFrom?: PipelineStage };
-          if (abortEvent.retryFrom) {
-            ctx = { ...ctx, iteration: { ...ctx.iteration, loopDirective: { action: 'retry', retryFrom: abortEvent.retryFrom } } };
-            loopBreak = true;
-            break;
+      let compatRetry = false;
+      try {
+        for await (const event of this.runner.stream(ctx, stages)) {
+          if (signal?.aborted) throw new DOMException('Agent stream aborted', 'AbortError');
+          if (event.type === 'abort') {
+            const abortEvent = event as { type: 'abort'; reason: string; retryFrom?: PipelineStage };
+            if (abortEvent.retryFrom) {
+              ctx = { ...ctx, iteration: { ...ctx.iteration, loopDirective: { action: 'retry', retryFrom: abortEvent.retryFrom } } };
+              loopBreak = true;
+              break;
+            }
+            throw new Error(`Agent aborted: ${abortEvent.reason}`);
           }
-          throw new Error(`Agent aborted: ${abortEvent.reason}`);
+          if (event.type === 'text_delta') yield event.text;
+          if (event.type === 'complete') ctx = (event as { context: PipelineContext }).context;
         }
-        if (event.type === 'text_delta') yield event.text;
-        if (event.type === 'complete') ctx = (event as { context: PipelineContext }).context;
+      } catch (error) {
+        const fixed = applyReactiveRules(
+          ctx.session.messageHistory ?? [],
+          ctx.agent.config.model,
+          error,
+        );
+        if (fixed) {
+          ctx = { ...ctx, session: { ...ctx.session, messageHistory: fixed } };
+          compatRetry = true;
+        } else {
+          throw error;
+        }
       }
+      if (compatRetry) continue;
       if (loopBreak) continue;
       if (ctx.iteration.loopDirective?.action === 'stop') break;
     }
