@@ -3,15 +3,14 @@ import type { EventBus } from './event-bus.js';
 
 const SUBSCRIBED_EVENTS = [
   'agent:start',
-  'stage.complete',
-  'stage.before',
-  'stage.after',
+  'stage:before',
+  'stage:after',
   'agent:end',
   'tool:before',
   'tool:after',
-  'llm.before',
-  'llm.after',
-  'iteration.end',
+  'llm:before',
+  'llm:after',
+  'iteration:end',
   'error',
   'session:suspended',
 ];

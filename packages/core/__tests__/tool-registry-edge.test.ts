@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
 import type { Tool } from '@agentforge/sdk';
 import { ToolRegistry } from '../src/tool-registry.js';
+import { HookManager } from '../src/hook-manager.js';
+import { EventBus } from '../src/event-bus.js';
 
 describe('ToolRegistry edge cases', () => {
   // ---------------------------------------------------------------------------
@@ -141,51 +143,57 @@ describe('ToolRegistry edge cases', () => {
       expect(result.toolCallId).toBe('call-123');
     });
 
-    it('calls before hooks', async () => {
+    it('calls tool.before hook via HookManager', async () => {
       const calls: string[] = [];
+      const eventBus = new EventBus();
+      const hookManager = new HookManager(eventBus);
+      hookManager.register({ point: 'tool.before', handler: (input) => { calls.push(`before:${(input as Record<string, unknown>).toolName}`); } });
+
       const registry = new ToolRegistry();
+      registry.setHookManager(hookManager);
       registry.register({
         name: 'hooked',
         description: 'Test',
         inputSchema: z.object({}),
         execute: async () => 'result',
-      });
-      registry.addBeforeHook(async (ctx) => {
-        calls.push(`before:${ctx.toolName}`);
       });
 
       await registry.executeTool('hooked', {});
       expect(calls).toEqual(['before:hooked']);
     });
 
-    it('calls after hooks on success', async () => {
+    it('calls tool.after hook on success via HookManager', async () => {
       const calls: string[] = [];
+      const eventBus = new EventBus();
+      const hookManager = new HookManager(eventBus);
+      hookManager.register({ point: 'tool.after', handler: (input, output) => { calls.push(`after:${(input as Record<string, unknown>).toolName}:${(output as Record<string, unknown>).result}`); } });
+
       const registry = new ToolRegistry();
+      registry.setHookManager(hookManager);
       registry.register({
         name: 'hooked',
         description: 'Test',
         inputSchema: z.object({}),
         execute: async () => 'result',
       });
-      registry.addAfterHook(async (ctx) => {
-        calls.push(`after:${ctx.toolName}:${ctx.result}`);
-      });
 
       await registry.executeTool('hooked', {});
       expect(calls).toEqual(['after:hooked:result']);
     });
 
-    it('calls after hooks on failure with error', async () => {
+    it('calls tool.after hook on failure with error via HookManager', async () => {
       const calls: string[] = [];
+      const eventBus = new EventBus();
+      const hookManager = new HookManager(eventBus);
+      hookManager.register({ point: 'tool.after', handler: (input, output) => { calls.push(`after:${(input as Record<string, unknown>).toolName}:error=${(output as Record<string, unknown>).error}`); } });
+
       const registry = new ToolRegistry();
+      registry.setHookManager(hookManager);
       registry.register({
         name: 'fail',
         description: 'Fails',
         inputSchema: z.object({}),
         execute: async () => { throw new Error('boom'); },
-      });
-      registry.addAfterHook(async (ctx) => {
-        calls.push(`after:${ctx.toolName}:error=${ctx.error?.message}`);
       });
 
       const result = await registry.executeTool('fail', {});
@@ -275,33 +283,41 @@ describe('ToolRegistry edge cases', () => {
   // ---------------------------------------------------------------------------
 
   describe('hook chaining', () => {
-    it('runs multiple before hooks in order', async () => {
+    it('runs multiple tool.before hooks in order via HookManager', async () => {
       const order: number[] = [];
+      const eventBus = new EventBus();
+      const hookManager = new HookManager(eventBus);
+      hookManager.register({ point: 'tool.before', handler: () => { order.push(1); }, priority: 1 });
+      hookManager.register({ point: 'tool.before', handler: () => { order.push(2); }, priority: 2 });
+
       const registry = new ToolRegistry();
+      registry.setHookManager(hookManager);
       registry.register({
         name: 'chain',
         description: 'Test',
         inputSchema: z.object({}),
         execute: async () => 'ok',
       });
-      registry.addBeforeHook(async () => { order.push(1); });
-      registry.addBeforeHook(async () => { order.push(2); });
 
       await registry.executeTool('chain', {});
       expect(order).toEqual([1, 2]);
     });
 
-    it('runs multiple after hooks in order', async () => {
+    it('runs multiple tool.after hooks in order via HookManager', async () => {
       const order: number[] = [];
+      const eventBus = new EventBus();
+      const hookManager = new HookManager(eventBus);
+      hookManager.register({ point: 'tool.after', handler: () => { order.push(1); }, priority: 1 });
+      hookManager.register({ point: 'tool.after', handler: () => { order.push(2); }, priority: 2 });
+
       const registry = new ToolRegistry();
+      registry.setHookManager(hookManager);
       registry.register({
         name: 'chain',
         description: 'Test',
         inputSchema: z.object({}),
         execute: async () => 'ok',
       });
-      registry.addAfterHook(async () => { order.push(1); });
-      registry.addAfterHook(async () => { order.push(2); });
 
       await registry.executeTool('chain', {});
       expect(order).toEqual([1, 2]);

@@ -1,5 +1,6 @@
 import { jsonSchema } from 'ai';
-import type { Tool, ToolHook, ToolHookContext, ToolExecutionContext, ToolResult } from '@agentforge/sdk';
+import type { Tool, ToolExecutionContext, ToolResult } from '@agentforge/sdk';
+import type { HookManager } from './hook-manager.js';
 
 export interface AiSdkToolDef {
   description: string;
@@ -33,9 +34,8 @@ function isZodSchema(value: unknown): value is { safeParse: (args: unknown) => S
 export class ToolRegistry {
   private tools = new Map<string, Tool>();
   private maxOutputLength: number;
-  private beforeHooks: ToolHook[] = [];
-  private afterHooks: ToolHook[] = [];
   private executionContext: ToolExecutionContext = {};
+  private hookManager?: HookManager;
 
   constructor(options: ToolRegistryOptions = {}) {
     this.maxOutputLength = options.maxOutputLength ?? Infinity;
@@ -60,19 +60,14 @@ export class ToolRegistry {
     return [...this.tools.values()];
   }
 
-  addBeforeHook(hook: ToolHook): void {
-    this.beforeHooks.push(hook);
-  }
-
-  addAfterHook(hook: ToolHook): void {
-    this.afterHooks.push(hook);
+  setHookManager(hookManager: HookManager): void {
+    this.hookManager = hookManager;
   }
 
   setToolExecutionContext(context: ToolExecutionContext): void {
     this.executionContext = context;
   }
 
-  /** Tool schemas for AI SDK without execute — model can request tools but SDK won't auto-execute. */
   toAiSdkToolSchemas(): Record<string, AiSdkToolSchema> {
     const result: Record<string, AiSdkToolSchema> = {};
     for (const tool of this.tools.values()) {
@@ -87,7 +82,6 @@ export class ToolRegistry {
     return result;
   }
 
-  /** Execute a single tool by name with full hook chain + validation. */
   async executeTool(name: string, args: Record<string, unknown>, context?: ToolExecutionContext & { toolCallId?: string }): Promise<ToolResult> {
     const tool = this.tools.get(name);
     const toolCallId = context?.toolCallId ?? '';
@@ -96,9 +90,7 @@ export class ToolRegistry {
     }
 
     const execCtx = context ?? this.executionContext;
-    const hookCtx: ToolHookContext = { toolName: tool.name, args };
 
-    // Validate input against Zod schema
     if (isZodSchema(tool.inputSchema)) {
       const parsed = tool.inputSchema.safeParse(args);
       if (!parsed.success) {
@@ -107,9 +99,10 @@ export class ToolRegistry {
       }
     }
 
-    // Before hooks
-    for (const hook of this.beforeHooks) {
-      await hook(hookCtx);
+    const hookInput = { toolName: tool.name, args, sessionId: execCtx.sessionId ?? '' };
+
+    if (this.hookManager) {
+      await this.hookManager.invoke('tool.before', hookInput, {});
     }
 
     let toolOutput: unknown;
@@ -118,33 +111,20 @@ export class ToolRegistry {
       toolOutput = await tool.execute(args, execCtx);
     } catch (err) {
       toolError = err instanceof Error ? err.message : String(err);
-      hookCtx.error = err instanceof Error ? err : new Error(toolError);
-      await this.runAfterHooks(hookCtx);
+      if (this.hookManager) {
+        await this.hookManager.invoke('tool.after', hookInput, { error: toolError });
+      }
       return { toolCallId, name: tool.name, output: undefined, error: toolError };
     }
 
-    // After hooks (success path)
-    hookCtx.result = toolOutput;
-    await this.runAfterHooks(hookCtx);
-
-    // Wrap hook
-    if (execCtx.pluginManager) {
-      try {
-        const wrapped = await execCtx.pluginManager.invokeWrapHook('tool.wrap', {
-          toolName: tool.name,
-          args,
-          result: toolOutput,
-          sessionId: execCtx.sessionId ?? '',
-        });
-        if (wrapped && typeof wrapped === 'object' && 'result' in wrapped) {
-          toolOutput = (wrapped as Record<string, unknown>).result;
-        }
-      } catch {
-        // Wrap hook failure must not break tool execution.
+    if (this.hookManager) {
+      const hookOutput: Record<string, unknown> = { result: toolOutput };
+      await this.hookManager.invoke('tool.after', hookInput, hookOutput);
+      if (hookOutput.result !== undefined) {
+        toolOutput = hookOutput.result;
       }
     }
 
-    // Truncation
     const output = this.truncateOutput(toolOutput);
     return { toolCallId, name: tool.name, output };
   }
@@ -152,8 +132,6 @@ export class ToolRegistry {
   toAiSdkTools(): Record<string, AiSdkToolDef> {
     const result: Record<string, AiSdkToolDef> = {};
     for (const tool of this.tools.values()) {
-      // MCP tools provide raw JSON Schema objects; Zod-based tools provide Zod schemas.
-      // AI SDK requires either a Zod schema or a jsonSchema()-wrapped object.
       const schema = isZodSchema(tool.inputSchema)
         ? tool.inputSchema
         : jsonSchema(tool.inputSchema as Record<string, unknown>);
@@ -162,9 +140,6 @@ export class ToolRegistry {
         description: tool.description,
         inputSchema: schema,
         execute: async (args) => {
-          const hookCtx: ToolHookContext = { toolName: tool.name, args };
-
-          // Validate input against Zod schema
           if (isZodSchema(tool.inputSchema)) {
             const parsed = tool.inputSchema.safeParse(args);
             if (!parsed.success) {
@@ -180,43 +155,30 @@ export class ToolRegistry {
             }
           }
 
-          // Before hooks
-          for (const hook of this.beforeHooks) {
-            await hook(hookCtx);
+          const hookInput = { toolName: tool.name, args, sessionId: this.executionContext.sessionId ?? '' };
+
+          if (this.hookManager) {
+            await this.hookManager.invoke('tool.before', hookInput, {});
           }
 
           let toolResult: unknown;
           try {
             toolResult = await tool.execute(args, this.executionContext);
           } catch (err) {
-            hookCtx.error = err instanceof Error ? err : new Error(String(err));
-            await this.runAfterHooks(hookCtx);
+            if (this.hookManager) {
+              await this.hookManager.invoke('tool.after', hookInput, { error: err instanceof Error ? err.message : String(err) });
+            }
             throw err;
           }
 
-          // After hooks (success path)
-          hookCtx.result = toolResult;
-          await this.runAfterHooks(hookCtx);
-
-          // Wrap hook (if invoker is wired in)
-          if (this.executionContext.pluginManager) {
-            try {
-              const wrapped = await this.executionContext.pluginManager.invokeWrapHook('tool.wrap', {
-                toolName: tool.name,
-                args,
-                result: toolResult,
-                sessionId: this.executionContext.sessionId ?? '',
-              });
-              if (wrapped && typeof wrapped === 'object' && 'result' in wrapped) {
-                toolResult = (wrapped as Record<string, unknown>).result;
-              }
-            } catch {
-              // Wrap hook failure must not break tool execution.
-              // Fall through with original toolResult.
+          if (this.hookManager) {
+            const hookOutput: Record<string, unknown> = { result: toolResult };
+            await this.hookManager.invoke('tool.after', hookInput, hookOutput);
+            if (hookOutput.result !== undefined) {
+              toolResult = hookOutput.result;
             }
           }
 
-          // Truncation
           return this.truncateOutput(toolResult);
         },
       };
@@ -224,14 +186,7 @@ export class ToolRegistry {
     return result;
   }
 
-  private async runAfterHooks(hookCtx: ToolHookContext): Promise<void> {
-    for (const hook of this.afterHooks) {
-      await hook(hookCtx);
-    }
-  }
-
   private truncateOutput(output: unknown): unknown {
-    // Skip truncation if already evicted (preview + reference metadata)
     if (output && typeof output === 'object' && 'evicted' in output) {
       return output;
     }

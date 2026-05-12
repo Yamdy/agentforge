@@ -70,6 +70,10 @@ export class Agent {
     if (signal?.aborted) throw new DOMException('Agent run aborted', 'AbortError');
 
     const context = this.createContext(input);
+    const hm = this._pluginManager.hookManager;
+
+    // agent.start hook
+    await hm.invoke('agent.start', { sessionId: context.request.sessionId, request: context.request, agentConfig: this.config }, {});
 
     // Pre-loop stages
     let result = await this.runner.run(context, PRE_LOOP_STAGES);
@@ -87,6 +91,7 @@ export class Agent {
       try {
         result = await this.runner.run(ctx, stages);
       } catch (error) {
+        await hm.invoke('error', { error, stage: 'invokeLLM' as PipelineStage, sessionId: ctx.request.sessionId }, {});
         const fixed = applyReactiveRules(
           ctx.session.messageHistory ?? [],
           ctx.agent.config.model,
@@ -107,6 +112,10 @@ export class Agent {
         throw new Error(`Agent aborted: ${abort.reason}`);
       }
       ctx = result as PipelineContext;
+
+      // iteration.end hook
+      await hm.invoke('iteration.end', { step: ctx.iteration.step, sessionId: ctx.request.sessionId }, {});
+
       if (ctx.iteration.loopDirective?.action === 'stop') break;
     }
 
@@ -115,6 +124,9 @@ export class Agent {
     // Post-loop stage
     result = await this.runner.run(ctx, POST_LOOP_STAGES);
     if (this.isAbort(result)) throw new Error(`Agent aborted: ${(result as AbortSignal).reason}`);
+
+    // agent.end hook
+    await hm.invoke('agent.end', { sessionId: context.request.sessionId }, {});
 
     return (result as PipelineContext).iteration.response as string ?? '';
   }
@@ -219,7 +231,7 @@ export class Agent {
     this.runner.register(createInvokeLLMProcessor({
       getLLM: (systemPrompt) => this.getLLM(systemPrompt),
       registry: this.registry,
-      pluginManager: this._pluginManager,
+      hookManager: this._pluginManager.hookManager,
       modelString: this.config.model,
     }));
     this.runner.register(processStepOutputProcessor);

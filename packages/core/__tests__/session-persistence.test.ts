@@ -30,7 +30,7 @@ describe('SessionPersistence', () => {
     const sessionId = 'sess-1';
 
     bus.emit('agent:start', { sessionId, input: 'hello' });
-    bus.emit('stage.complete', { sessionId, stage: 'processInput' });
+    bus.emit('stage:after', { sessionId, stage: 'processInput' });
     bus.emit('agent:end', { sessionId, status: 'completed' });
 
     // Wait for write queue to drain
@@ -43,7 +43,7 @@ describe('SessionPersistence', () => {
 
     expect(events).toHaveLength(3);
     expect(events[0].type).toBe('agent:start');
-    expect(events[1].type).toBe('stage.complete');
+    expect(events[1].type).toBe('stage:after');
     expect(events[2].type).toBe('agent:end');
   });
 

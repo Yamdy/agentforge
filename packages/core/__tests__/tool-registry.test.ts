@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
-import type { Tool, ToolExecutionContext, ToolHookContext, WrapHookInvoker } from '@agentforge/sdk';
+import type { Tool, ToolExecutionContext } from '@agentforge/sdk';
 import { ToolRegistry } from '../src/tool-registry.js';
+import { HookManager } from '../src/hook-manager.js';
+import { EventBus } from '../src/event-bus.js';
 
 describe('ToolRegistry', () => {
   it('registers a tool and retrieves it by name', () => {
@@ -112,44 +114,6 @@ describe('ToolRegistry', () => {
       expect(result).toBe('hello');
     });
 
-    it('calls beforeHook before tool execution', async () => {
-      const calls: string[] = [];
-      const registry = new ToolRegistry();
-      registry.register({
-        name: 'test_tool',
-        description: 'Test',
-        inputSchema: z.object({ x: z.string() }),
-        execute: async ({ x }) => `result:${x}`,
-      });
-
-      registry.addBeforeHook(async (ctx: ToolHookContext) => {
-        calls.push(`before:${ctx.toolName}`);
-      });
-
-      const sdkTools = registry.toAiSdkTools();
-      await sdkTools.test_tool.execute!({ x: 'hello' });
-      expect(calls).toEqual(['before:test_tool']);
-    });
-
-    it('calls afterHook after tool execution with result', async () => {
-      const calls: string[] = [];
-      const registry = new ToolRegistry();
-      registry.register({
-        name: 'test_tool',
-        description: 'Test',
-        inputSchema: z.object({ x: z.string() }),
-        execute: async ({ x }) => `result:${x}`,
-      });
-
-      registry.addAfterHook(async (ctx: ToolHookContext) => {
-        calls.push(`after:${ctx.toolName}:${ctx.result}`);
-      });
-
-      const sdkTools = registry.toAiSdkTools();
-      await sdkTools.test_tool.execute!({ x: 'hello' });
-      expect(calls).toEqual(['after:test_tool:result:hello']);
-    });
-
     it('validates input against Zod schema and throws clear error on invalid input', async () => {
       const registry = new ToolRegistry();
       registry.register({
@@ -199,27 +163,16 @@ describe('ToolRegistry', () => {
       expect(receivedContext?.span).toEqual(mockSpan);
     });
 
-    it('calls afterHook even when tool execution throws', async () => {
+    it('invokes tool.before and tool.after hooks via HookManager', async () => {
       const hookCalls: string[] = [];
+      const eventBus = new EventBus();
+      const hookManager = new HookManager(eventBus);
+
+      hookManager.register({ point: 'tool.before', handler: (input) => { hookCalls.push(`before:${(input as Record<string, unknown>).toolName}`); } });
+      hookManager.register({ point: 'tool.after', handler: (input, output) => { hookCalls.push(`after:${(input as Record<string, unknown>).toolName}:${(output as Record<string, unknown>).result}`); } });
+
       const registry = new ToolRegistry();
-      registry.register({
-        name: 'failing_tool',
-        description: 'Always fails',
-        inputSchema: z.object({}),
-        execute: async () => { throw new Error('Tool crashed!'); },
-      });
-
-      registry.addAfterHook(async (ctx) => {
-        hookCalls.push(`after:${ctx.toolName}:error=${ctx.error?.message}`);
-      });
-
-      const sdkTools = registry.toAiSdkTools();
-      await expect(sdkTools.failing_tool.execute!({})).rejects.toThrow('Tool crashed!');
-      expect(hookCalls).toEqual(['after:failing_tool:error=Tool crashed!']);
-    });
-
-    it('invokes wrap hook via WrapHookInvoker interface', async () => {
-      const registry = new ToolRegistry();
+      registry.setHookManager(hookManager);
       registry.register({
         name: 'double',
         description: 'Double a number',
@@ -227,23 +180,61 @@ describe('ToolRegistry', () => {
         execute: async ({ x }) => x * 2,
       });
 
-      let hookCalled = false;
-      const invoker: WrapHookInvoker = {
-        invokeWrapHook: async (_point, data) => {
-          hookCalled = true;
-          const ctx = data as Record<string, unknown>;
-          return { ...ctx, result: (ctx.result as number) + 100 };
-        },
-      };
-
-      registry.setToolExecutionContext({
-        pluginManager: invoker,
-        sessionId: 'test-session',
-      });
+      registry.setToolExecutionContext({ sessionId: 'test-session' });
 
       const result = await registry.toAiSdkTools().double.execute!({ x: 5 });
-      expect(hookCalled).toBe(true);
-      expect(result).toBe(110);
+      expect(result).toBe(10);
+      expect(hookCalls).toEqual(['before:double', 'after:double:10']);
+    });
+
+    it('tool.after hook can modify result', async () => {
+      const eventBus = new EventBus();
+      const hookManager = new HookManager(eventBus);
+
+      hookManager.register({
+        point: 'tool.after',
+        handler: (_input, output) => { (output as Record<string, unknown>).result = 'evicted'; },
+      });
+
+      const registry = new ToolRegistry();
+      registry.setHookManager(hookManager);
+      registry.register({
+        name: 'test',
+        description: 'Test',
+        inputSchema: z.object({}),
+        execute: async () => 'original',
+      });
+
+      registry.setToolExecutionContext({ sessionId: 's1' });
+
+      const result = await registry.toAiSdkTools().test.execute!({});
+      expect(result).toBe('evicted');
+    });
+
+    it('tool.after hook fires on error with error info', async () => {
+      const hookCalls: string[] = [];
+      const eventBus = new EventBus();
+      const hookManager = new HookManager(eventBus);
+
+      hookManager.register({
+        point: 'tool.after',
+        handler: (_input, output) => { hookCalls.push(`error:${(output as Record<string, unknown>).error}`); },
+      });
+
+      const registry = new ToolRegistry();
+      registry.setHookManager(hookManager);
+      registry.register({
+        name: 'failing_tool',
+        description: 'Always fails',
+        inputSchema: z.object({}),
+        execute: async () => { throw new Error('Tool crashed!'); },
+      });
+
+      registry.setToolExecutionContext({ sessionId: 's1' });
+
+      const sdkTools = registry.toAiSdkTools();
+      await expect(sdkTools.failing_tool.execute!({})).rejects.toThrow('Tool crashed!');
+      expect(hookCalls).toEqual(['error:Tool crashed!']);
     });
   });
 });

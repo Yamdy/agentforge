@@ -139,32 +139,11 @@ export interface Processor {
 // Tool System
 // ---------------------------------------------------------------------------
 
-export interface WrapHookInvoker {
-  invokeWrapHook(point: HookPoint, data: unknown): Promise<unknown>;
-}
-
 export interface ToolExecutionContext {
   harness?: unknown;
   span?: unknown;
   sessionId?: string;
-  pluginManager?: WrapHookInvoker;
 }
-
-export interface ToolHookContext {
-  toolName: string;
-  args: unknown;
-  result?: unknown;
-  error?: Error;
-}
-
-export interface ToolWrapContext {
-  toolName: string;
-  args: unknown;
-  result: unknown;
-  sessionId: string;
-}
-
-export type ToolHook = (context: ToolHookContext) => void | Promise<void>;
 
 export interface Tool<TInput = unknown, TOutput = unknown> {
   name: string;
@@ -256,17 +235,48 @@ export type HookPoint =
   | 'stage.after'
   | 'llm.before'
   | 'llm.after'
-  | 'llm.wrap'
   | 'tool.before'
   | 'tool.after'
-  | 'tool.wrap'
   | 'iteration.end'
   | 'error';
 
-export interface Hook {
+export type HookProfile = 'minimal' | 'standard' | 'strict';
+
+export interface Hook<TInput = unknown, TOutput = unknown> {
   point: HookPoint;
-  handler: (context: unknown) => unknown | Promise<unknown>;
+  name?: string;
+  handler: (input: TInput, output: TOutput) => void | Promise<void>;
   priority?: number;
+}
+
+export interface AgentHookInput {
+  sessionId: string;
+  request: RequestRegion;
+  agentConfig: AgentConfig;
+}
+
+export interface StageHookInput {
+  stage: PipelineStage;
+  context: PipelineContext;
+}
+
+export interface LLMHookInput {
+  model: string;
+  messages: Message[];
+  tools?: unknown[];
+  options?: Record<string, unknown>;
+}
+
+export interface ToolHookInput {
+  toolName: string;
+  args: unknown;
+  sessionId: string;
+}
+
+export interface ErrorHookInput {
+  error: unknown;
+  stage: PipelineStage;
+  sessionId: string;
 }
 
 export interface ResourceDeclaration {
@@ -415,6 +425,7 @@ export interface HarnessConfig {
   session?: { storage?: 'file' | 'memory'; path?: string };
   modelProfiles?: ModelProfile[];
   modelGateways?: GatewayConfig[];
+  hooks?: { profile?: HookProfile; disabledHooks?: string[] };
 }
 
 // ---------------------------------------------------------------------------

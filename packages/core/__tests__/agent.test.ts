@@ -78,20 +78,20 @@ describe('Agent', () => {
 
     // PluginManager is accessible and created
     expect(agent.pluginManager).toBeDefined();
-    expect(typeof agent.pluginManager.invokeWrapHook).toBe('function');
+    expect(agent.pluginManager.hookManager).toBeDefined();
 
     // use() delegates to PluginManager.initializePlugin
     const hooked: unknown[] = [];
     agent.use((api) => {
       api.registerHook({
-        point: 'tool.wrap',
+        point: 'tool.before',
         handler: (data) => { hooked.push(data); },
       });
       return {};
     });
 
-    // Verify hook was registered by invoking it
-    await agent.pluginManager.invokeWrapHook('tool.wrap', { toolName: 'echo', result: 'test' });
+    // Verify hook was registered by invoking it through HookManager
+    await agent.pluginManager.hookManager.invoke('tool.before', { toolName: 'echo' }, {});
     expect(hooked.length).toBe(1);
   });
 

@@ -42,7 +42,7 @@ describe('FilesystemSessionStorage', () => {
 
     it('writes multiple events and reads them in order', async () => {
       const e1 = makeEvent(1, 'agent:start', { sessionId: 's1' });
-      const e2 = makeEvent(2, 'stage.complete', { stage: 'processInput' });
+      const e2 = makeEvent(2, 'stage:after', { stage: 'processInput' });
       const e3 = makeEvent(3, 'agent:end', { status: 'ok' });
 
       await storage.append('s1', e1);

@@ -1,20 +1,20 @@
-import type { Message, Processor, WrapHookInvoker } from '@agentforge/sdk';
+import type { Message, Processor } from '@agentforge/sdk';
 import type { LLMInvoker } from '../llm-invoker.js';
 import type { ToolRegistry } from '../tool-registry.js';
+import type { HookManager } from '../hook-manager.js';
 import { detectCapabilities } from '../provider-capabilities.js';
 import { applyPreemptiveRules } from './provider-history-compat.js';
 
 export interface InvokeLLMDeps {
   getLLM: (systemPrompt?: string) => Promise<LLMInvoker>;
   registry: ToolRegistry;
-  pluginManager: WrapHookInvoker;
+  hookManager: HookManager;
   modelString: string;
 }
 
 function toAiSdkMessages(history: Message[], input: string, step: number): unknown[] {
   const messages: unknown[] = [];
 
-  // Include user input if not already present in history
   const hasUserMessage = history.some(m => m.role === 'user');
   if (!hasUserMessage) {
     messages.push({ role: 'user', content: [{ type: 'text', text: input }] });
@@ -65,7 +65,6 @@ export function createInvokeLLMProcessor(deps: InvokeLLMDeps): Processor {
           traceId: ctx.request.sessionId,
         },
         sessionId: ctx.request.sessionId,
-        pluginManager: deps.pluginManager,
       });
 
       const messages = toAiSdkMessages(
@@ -77,13 +76,23 @@ export function createInvokeLLMProcessor(deps: InvokeLLMDeps): Processor {
       const capabilities = detectCapabilities(deps.modelString);
       const compatMessages = applyPreemptiveRules(messages, deps.modelString, capabilities);
 
-      const handle = llm.stream({
+      const llmInput = {
+        model: deps.modelString,
         messages: compatMessages,
         tools: Object.keys(sdkToolSchemas).length > 0 ? sdkToolSchemas : undefined,
+        options: ctx.agent.providerOptions,
+      };
+      const llmOutput: Record<string, unknown> = {};
+
+      await deps.hookManager.invoke('llm.before', llmInput, llmOutput);
+
+      const handle = llm.stream({
+        messages: llmOutput.messages as unknown[] ?? llmInput.messages,
+        tools: (llmOutput.tools ?? llmInput.tools) as Record<string, unknown> | undefined,
         providerOptions: ctx.agent.providerOptions,
       });
 
-      return {
+      const result = {
         ...ctx,
         iteration: {
           ...ctx.iteration,
@@ -92,6 +101,10 @@ export function createInvokeLLMProcessor(deps: InvokeLLMDeps): Processor {
           reasoningPromise: handle.reasoning,
         },
       };
+
+      await deps.hookManager.invoke('llm.after', { model: deps.modelString }, { response: result.iteration.response });
+
+      return result;
     },
   };
 }

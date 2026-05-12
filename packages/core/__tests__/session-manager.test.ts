@@ -65,8 +65,8 @@ describe('SessionManager', () => {
       // Seed events simulating a partial agent run
       const events: SessionEvent[] = [
         { seq: 1, timestamp: now, type: 'agent:start', payload: { sessionId, input: 'What is 2+2?' } },
-        { seq: 2, timestamp: now, type: 'stage.complete', payload: { sessionId, stage: 'processInput' } },
-        { seq: 3, timestamp: now, type: 'stage.complete', payload: { sessionId, stage: 'buildContext' } },
+        { seq: 2, timestamp: now, type: 'stage:after', payload: { sessionId, stage: 'processInput' } },
+        { seq: 3, timestamp: now, type: 'stage:after', payload: { sessionId, stage: 'buildContext' } },
         { seq: 4, timestamp: now, type: 'iteration.end', payload: { sessionId, step: 0, response: '4' } },
       ];
       for (const event of events) {
@@ -134,8 +134,8 @@ describe('SessionManager', () => {
       const sessionId = record.sessionId;
 
       // Emit events through EventBus while persistence is active
-      bus.emit('iteration.end', { sessionId, step: 0, response: 'partial' });
-      bus.emit('iteration.end', { sessionId, step: 1, response: 'more' });
+      bus.emit('iteration:end', { sessionId, step: 0, response: 'partial' });
+      bus.emit('iteration:end', { sessionId, step: 1, response: 'more' });
 
       // Suspend also emits through EventBus — all go through same seq counter
       await manager.suspend(sessionId, 'need input');

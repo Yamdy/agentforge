@@ -1,4 +1,4 @@
-import type { HarnessAPI, PluginRegistration, EvictionStorage, ToolWrapContext } from '@agentforge/sdk';
+import type { HarnessAPI, PluginRegistration, EvictionStorage, Processor, PipelineContext, ProcessorResult } from '@agentforge/sdk';
 
 export interface EvictionPluginOptions {
   maxSize: number;
@@ -9,30 +9,39 @@ export interface EvictionPluginOptions {
 export function evictionPlugin(options: EvictionPluginOptions): (api: HarnessAPI) => PluginRegistration {
   const { maxSize, storage, previewLength = 500 } = options;
 
-  return (api: HarnessAPI): PluginRegistration => {
-    api.registerHook({
-      point: 'tool.wrap',
-      handler: async (data: unknown) => {
-        const ctx = data as ToolWrapContext;
-        if (ctx.result === null || ctx.result === undefined) return undefined;
+  const processor: Processor = {
+    stage: 'executeTools',
+    execute: async (ctx: PipelineContext): Promise<ProcessorResult> => {
+      const results = ctx.iteration.toolResults;
+      if (!results || results.length === 0) return ctx;
 
-        const serialized = typeof ctx.result === 'string'
-          ? ctx.result
-          : safeStringify(ctx.result);
+      for (let i = 0; i < results.length; i++) {
+        const result = results[i]!;
+        if (result.output === null || result.output === undefined) continue;
+        if (result.output && typeof result.output === 'object' && 'evicted' in result.output) continue;
 
-        if (!serialized || serialized.length <= maxSize) return undefined;
+        const serialized = typeof result.output === 'string'
+          ? result.output
+          : safeStringify(result.output);
+
+        if (!serialized || serialized.length <= maxSize) continue;
 
         const preview = serialized.slice(0, previewLength);
-        const ref = await storage.store(ctx.sessionId, ctx.toolName, ctx.result);
+        const ref = await storage.store(ctx.request.sessionId, result.name, result.output);
 
-        return {
-          ...ctx,
-          result: { preview, reference: ref, evicted: true as const },
+        results[i] = {
+          ...result,
+          output: { preview, reference: ref, evicted: true as const },
         };
-      },
-    });
+      }
 
-    return {};
+      return ctx;
+    },
+  };
+
+  return (api: HarnessAPI): PluginRegistration => {
+    api.registerProcessor('executeTools', processor);
+    return { processors: [processor] };
   };
 }
 

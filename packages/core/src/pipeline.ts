@@ -11,11 +11,13 @@ import type {
   TokenUsage,
 } from '@agentforge/sdk';
 import { NoOpTracer } from '@agentforge/observability';
+import type { HookManager } from './hook-manager.js';
 
 export type RunResult = PipelineContext | AbortSignal;
 
 export interface PipelineRunnerOptions {
   tracer?: Tracer;
+  hookManager?: HookManager;
 }
 
 function extractTokenUsage(usage: any): TokenUsage {
@@ -32,9 +34,11 @@ function extractTokenUsage(usage: any): TokenUsage {
 export class PipelineRunner {
   private processors: Processor[] = [];
   private tracer: Tracer;
+  private hookManager?: HookManager;
 
   constructor(options?: PipelineRunnerOptions) {
     this.tracer = options?.tracer ?? new NoOpTracer();
+    this.hookManager = options?.hookManager;
   }
 
   register(processor: Processor): void {
@@ -153,6 +157,12 @@ export class PipelineRunner {
     stageSpan: Span,
   ): Promise<PipelineContext | AbortSignal> {
     const stageProcessors = this.processors.filter((p) => p.stage === stage);
+
+    // stage.before hook
+    if (this.hookManager) {
+      await this.hookManager.invoke('stage.before', { stage, context: ctx }, {});
+    }
+
     let currentCtx = ctx;
     for (const processor of stageProcessors) {
       const ctxWithSpan = Object.freeze({
@@ -165,6 +175,12 @@ export class PipelineRunner {
       }
       currentCtx = Object.freeze({ ...(result as PipelineContext) });
     }
+
+    // stage.after hook
+    if (this.hookManager) {
+      await this.hookManager.invoke('stage.after', { stage, context: currentCtx }, {});
+    }
+
     return currentCtx;
   }
 

@@ -2,7 +2,6 @@ import type {
   EventType,
   HarnessAPI,
   Hook,
-  HookPoint,
   PluginRegistration,
   PipelineStage,
   Processor,
@@ -12,6 +11,7 @@ import type {
 import type { PipelineRunner } from './pipeline.js';
 import type { ToolRegistry } from './tool-registry.js';
 import { EventBus } from './event-bus.js';
+import { HookManager } from './hook-manager.js';
 
 export type PluginFactory = (api: HarnessAPI) => PluginRegistration | void;
 
@@ -20,8 +20,7 @@ export class PluginManager {
   private registry: ToolRegistry;
   private commands = new Map<string, (args: string) => Promise<void>>();
   private eventBus = new EventBus();
-  private hooks = new Map<HookPoint, Hook[]>();
-  private sortedHooks = new Map<HookPoint, Hook[]>();
+  readonly hookManager: HookManager;
   private resources: ResourceDeclaration[] = [];
   private unsubFns: Array<() => void> = [];
   private resourceInstances = new Map<string, unknown>();
@@ -30,6 +29,8 @@ export class PluginManager {
   constructor(runner: PipelineRunner, registry: ToolRegistry) {
     this.runner = runner;
     this.registry = registry;
+    this.hookManager = new HookManager(this.eventBus);
+    registry.setHookManager(this.hookManager);
   }
 
   async loadPlugin(filePath: string): Promise<void> {
@@ -65,38 +66,6 @@ export class PluginManager {
     this.eventBus.emit(eventType, args[0]);
   }
 
-  invokeHook(point: HookPoint, data?: unknown): void {
-    const hooks = this.getSortedHooks(point);
-    for (const hook of hooks) hook.handler(data);
-  }
-
-  async invokeWrapHook(point: HookPoint, data: unknown): Promise<unknown> {
-    const hooks = this.getSortedHooks(point);
-    if (hooks.length === 0) return data;
-
-    let current = data;
-    for (const hook of hooks) {
-      const result = await hook.handler(current);
-      if (result !== undefined) current = result;
-    }
-    return current;
-  }
-
-  private getSortedHooks(point: HookPoint): Hook[] {
-    const cached = this.sortedHooks.get(point);
-    if (cached) return cached;
-
-    const hooks = this.hooks.get(point) ?? [];
-    if (hooks.length <= 1) {
-      this.sortedHooks.set(point, hooks);
-      return hooks;
-    }
-
-    const sorted = [...hooks].sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
-    this.sortedHooks.set(point, sorted);
-    return sorted;
-  }
-
   async initializeAll(): Promise<void> {
     for (const resource of this.resources) {
       try {
@@ -112,7 +81,6 @@ export class PluginManager {
   }
 
   async shutdown(): Promise<void> {
-    // Stop resources in reverse order
     for (const resource of [...this.resources].reverse()) {
       const instance = this.resourceInstances.get(resource.id);
       try {
@@ -123,7 +91,6 @@ export class PluginManager {
     }
     this.resourceInstances.clear();
 
-    // Clean up all subscriptions
     for (const unsub of this.unsubFns) unsub();
     this.unsubFns.length = 0;
   }
@@ -143,13 +110,7 @@ export class PluginManager {
         this.commands.set(name, handler);
       },
       registerHook: (hook: Hook) => {
-        let list = this.hooks.get(hook.point);
-        if (!list) {
-          list = [];
-          this.hooks.set(hook.point, list);
-        }
-        list.push(hook);
-        this.sortedHooks.delete(hook.point);
+        this.hookManager.register(hook);
       },
       subscribe: (eventType: string, handler: (data?: unknown) => void): (() => void) => {
         const unsub = this.eventBus.subscribe(eventType, handler);

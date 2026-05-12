@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { InMemoryEvictionStorage } from '../src/eviction/eviction-storage.js';
 import { evictionPlugin } from '../src/eviction/eviction-plugin.js';
-import type { HarnessAPI, PluginRegistration, EvictionStorage, ToolWrapContext } from '@agentforge/sdk';
+import type { HarnessAPI, PluginRegistration, Processor, PipelineContext } from '@agentforge/sdk';
 
 describe('InMemoryEvictionStorage', () => {
   let storage: InMemoryEvictionStorage;
@@ -35,121 +35,115 @@ describe('InMemoryEvictionStorage', () => {
 describe('evictionPlugin', () => {
   function createHarnessAPI(): {
     api: HarnessAPI;
-    hooks: Map<string, unknown[]>;
+    processors: Processor[];
   } {
-    const hooks = new Map<string, unknown[]>();
+    const processors: Processor[] = [];
     const api: HarnessAPI = {
-      registerProcessor: () => {},
-      registerTool: () => {},
-      registerCommand: () => {},
-      registerHook: (hook) => {
-        let list = hooks.get(hook.point);
-        if (!list) { list = []; hooks.set(hook.point, list); }
-        list.push(hook.handler);
+      registerProcessor: (_stage, processor) => {
+        processors.push(processor);
       },
+      registerTool: () => {},
+      unregisterTool: () => false,
+      registerCommand: () => {},
+      registerHook: () => {},
       subscribe: () => () => {},
       registerResource: () => {},
       registerProvider: () => {},
     };
-    return { api, hooks };
+    return { api, processors };
   }
 
-  it('registers a tool.wrap hook', () => {
+  function makeCtx(toolResults: Array<{ toolCallId: string; name: string; output: unknown }>): PipelineContext {
+    return {
+      request: { input: 'test', sessionId: 'session-1' },
+      agent: { config: { model: 'test' }, promptFragments: [], toolDeclarations: [] },
+      iteration: { step: 0, toolResults },
+      session: { custom: {} },
+    };
+  }
+
+  it('registers an executeTools processor', () => {
     const storage = new InMemoryEvictionStorage();
-    const { api, hooks } = createHarnessAPI();
+    const { api, processors } = createHarnessAPI();
 
     evictionPlugin({ maxSize: 10, storage })(api);
-    expect(hooks.has('tool.wrap')).toBe(true);
-    expect(hooks.get('tool.wrap')!.length).toBe(1);
+    expect(processors.length).toBe(1);
+    expect(processors[0]!.stage).toBe('executeTools');
   });
 
   it('evicts large tool output and replaces with preview + reference', async () => {
     const storage = new InMemoryEvictionStorage();
-    const { api, hooks } = createHarnessAPI();
+    const { api, processors } = createHarnessAPI();
 
     evictionPlugin({ maxSize: 100, storage, previewLength: 100 })(api);
 
-    const handler = hooks.get('tool.wrap')![0] as (ctx: ToolWrapContext) => Promise<unknown>;
     const largeContent = 'x'.repeat(500);
-    const ctx: ToolWrapContext = {
-      toolName: 'read_file',
-      args: { path: '/tmp/log.txt' },
-      result: largeContent,
-      sessionId: 'session-1',
-    };
+    const ctx = makeCtx([
+      { toolCallId: 'tc1', name: 'read_file', output: largeContent },
+    ]);
 
-    const result = await handler(ctx) as ToolWrapContext;
-    expect(result).not.toBeUndefined();
-    expect(result.result).toMatchObject({
-      preview: expect.any(String),
-      reference: expect.any(String),
-      evicted: true,
-    });
-    const evicted = result.result as { preview: string; reference: string; evicted: true };
+    const processor = processors[0]!;
+    const result = await processor.execute(ctx) as PipelineContext;
+
+    const evicted = result.iteration.toolResults![0]!.output as { preview: string; reference: string; evicted: true };
+    expect(evicted.evicted).toBe(true);
     expect(evicted.preview.length).toBeLessThan(largeContent.length);
 
-    // Verify content is retrievable
     const retrieved = await storage.retrieve('session-1', evicted.reference);
     expect(retrieved).toBe(largeContent);
   });
 
   it('passes through small tool output unchanged', async () => {
     const storage = new InMemoryEvictionStorage();
-    const { api, hooks } = createHarnessAPI();
+    const { api, processors } = createHarnessAPI();
 
     evictionPlugin({ maxSize: 1000, storage })(api);
 
-    const handler = hooks.get('tool.wrap')![0] as (ctx: ToolWrapContext) => Promise<unknown>;
-    const ctx: ToolWrapContext = {
-      toolName: 'echo',
-      args: { message: 'hello' },
-      result: 'short result',
-      sessionId: 'session-2',
-    };
+    const ctx = makeCtx([
+      { toolCallId: 'tc1', name: 'echo', output: 'short result' },
+    ]);
 
-    const result = await handler(ctx);
-    expect(result).toBeUndefined();
+    const processor = processors[0]!;
+    const result = await processor.execute(ctx) as PipelineContext;
+
+    expect(result.iteration.toolResults![0]!.output).toBe('short result');
   });
 
-  it('handles null and undefined results without crashing', async () => {
+  it('handles null and undefined outputs without crashing', async () => {
     const storage = new InMemoryEvictionStorage();
-    const { api, hooks } = createHarnessAPI();
+    const { api, processors } = createHarnessAPI();
     evictionPlugin({ maxSize: 10, storage })(api);
-    const handler = hooks.get('tool.wrap')![0] as (ctx: ToolWrapContext) => Promise<unknown>;
 
-    const nullCtx: ToolWrapContext = {
-      toolName: 'test', args: {}, result: null, sessionId: 's1',
-    };
-    expect(await handler(nullCtx)).toBeUndefined();
+    const ctx = makeCtx([
+      { toolCallId: 'tc1', name: 'test', output: null },
+      { toolCallId: 'tc2', name: 'test', output: undefined },
+    ]);
 
-    const undefCtx: ToolWrapContext = {
-      toolName: 'test', args: {}, result: undefined, sessionId: 's1',
-    };
-    expect(await handler(undefCtx)).toBeUndefined();
+    const processor = processors[0]!;
+    const result = await processor.execute(ctx) as PipelineContext;
+
+    expect(result.iteration.toolResults![0]!.output).toBeNull();
+    expect(result.iteration.toolResults![1]!.output).toBeUndefined();
   });
 
   it('evicts large non-string (object) results', async () => {
     const storage = new InMemoryEvictionStorage();
-    const { api, hooks } = createHarnessAPI();
+    const { api, processors } = createHarnessAPI();
     evictionPlugin({ maxSize: 50, storage, previewLength: 50 })(api);
-    const handler = hooks.get('tool.wrap')![0] as (ctx: ToolWrapContext) => Promise<unknown>;
 
     const largeObj = { users: Array.from({ length: 100 }, (_, i) => ({ id: i, name: `user-${i}` })) };
-    const ctx: ToolWrapContext = {
-      toolName: 'list_users',
-      args: {},
-      result: largeObj,
-      sessionId: 'session-3',
-    };
+    const ctx = makeCtx([
+      { toolCallId: 'tc1', name: 'list_users', output: largeObj },
+    ]);
 
-    const result = await handler(ctx) as ToolWrapContext;
-    expect(result).not.toBeUndefined();
-    const evicted = result.result as { preview: string; reference: string; evicted: true };
+    const processor = processors[0]!;
+    const result = await processor.execute(ctx) as PipelineContext;
+
+    const evicted = result.iteration.toolResults![0]!.output as { preview: string; reference: string; evicted: true };
     expect(evicted.evicted).toBe(true);
-    expect(evicted.preview.length).toBeLessThanOrEqual(60); // previewLength + brackets
+    expect(evicted.preview.length).toBeLessThanOrEqual(60);
 
-    // Verify the original object is retrievable
-    const retrieved = await storage.retrieve('session-3', evicted.reference);
+    const retrieved = await storage.retrieve('session-1', evicted.reference);
     expect(retrieved).toEqual(largeObj);
   });
 });
