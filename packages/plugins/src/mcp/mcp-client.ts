@@ -10,6 +10,8 @@ export interface McpClient {
   discoverTools(): Promise<McpToolDefinition[]>;
   callTool(name: string, args: unknown): Promise<unknown>;
   close(): Promise<void>;
+  connected: boolean;
+  onToolsChanged?: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -25,17 +27,20 @@ export function createMockMcpClient(
   callToolFn?: (name: string, args: unknown) => Promise<unknown>,
 ): McpClient {
   return {
-    async connect() {},
+    connected: false,
+    async connect() { this.connected = true; },
     async discoverTools() {
       return tools;
     },
     async callTool(name: string, args: unknown) {
+      if (!this.connected) throw new Error('MCP server disconnected');
       if (callToolFn) {
         return callToolFn(name, args);
       }
       return {};
     },
-    async close() {},
+    async close() { this.connected = false; },
+    onToolsChanged: undefined,
   };
 }
 
@@ -55,6 +60,63 @@ function createStdioClient(config: McpServerConfig): McpClient {
   let childProcess: import('child_process').ChildProcess | null = null;
   let pendingRequests = new Map<number, { resolve: (value: unknown) => void; reject: (err: Error) => void }>();
   let buffer = '';
+  let isConnected = false;
+
+  const client: McpClient = {
+    connected: false,
+    onToolsChanged: undefined,
+
+    async connect(): Promise<void> {
+      const { spawn } = await import('child_process');
+      childProcess = spawn(config.command!, config.args ?? [], {
+        env: { ...process.env, ...config.env },
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+
+      childProcess.on('error', (err) => {
+        disconnect(`MCP server process error: ${err.message}`);
+      });
+
+      childProcess.on('exit', (code, signal) => {
+        disconnect(`MCP server exited unexpectedly (code=${code}, signal=${signal})`);
+      });
+
+      childProcess.stdout!.on('data', (data: Buffer) => {
+        handleMessage(data.toString());
+      });
+
+      await sendRequest('initialize', {
+        protocolVersion: '2024-11-05',
+        capabilities: {},
+        clientInfo: { name: 'agentforge', version: '0.0.1' },
+      }, DEFAULT_CONNECT_TIMEOUT_MS);
+
+      sendNotification('notifications/initialized');
+      isConnected = true;
+      this.connected = true;
+    },
+
+    async discoverTools(): Promise<McpToolDefinition[]> {
+      const result = await sendRequest('tools/list') as { tools: McpToolDefinition[] };
+      return result.tools ?? [];
+    },
+
+    async callTool(name: string, args: unknown): Promise<unknown> {
+      if (!isConnected) {
+        throw new Error(`MCP server "${config.name}" is disconnected`);
+      }
+      return sendRequest('tools/call', { name, arguments: args });
+    },
+
+    async close(): Promise<void> {
+      isConnected = false;
+      this.connected = false;
+      if (childProcess) {
+        childProcess.kill();
+        childProcess = null;
+      }
+    },
+  };
 
   function sendNotification(method: string, params?: unknown): void {
     const message = JSON.stringify({ jsonrpc: '2.0', method, ...(params !== undefined ? { params } : {}) });
@@ -87,7 +149,6 @@ function createStdioClient(config: McpServerConfig): McpClient {
       if (!trimmed) continue;
       try {
         const msg = JSON.parse(trimmed);
-        // Response to a request
         if (msg.id !== undefined && pendingRequests.has(msg.id)) {
           const { resolve, reject } = pendingRequests.get(msg.id)!;
           pendingRequests.delete(msg.id);
@@ -97,64 +158,24 @@ function createStdioClient(config: McpServerConfig): McpClient {
             resolve(msg.result);
           }
         }
-        // Server-initiated notifications are silently consumed
+        if (msg.method === 'notifications/tools/list_changed') {
+          client.onToolsChanged?.();
+        }
       } catch {
         // Ignore non-JSON lines
       }
     }
   }
 
-  return {
-    async connect(): Promise<void> {
-      const { spawn } = await import('child_process');
-      childProcess = spawn(config.command!, config.args ?? [], {
-        env: { ...process.env, ...config.env },
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
+  function disconnect(reason: string): void {
+    isConnected = false;
+    client.connected = false;
+    const error = new Error(reason);
+    for (const { reject } of pendingRequests.values()) reject(error);
+    pendingRequests.clear();
+  }
 
-      // Reject all pending requests if the process dies
-      childProcess.on('error', (err) => {
-        const error = new Error(`MCP server process error: ${err.message}`);
-        for (const { reject } of pendingRequests.values()) reject(error);
-        pendingRequests.clear();
-      });
-
-      childProcess.on('exit', (code, signal) => {
-        const error = new Error(`MCP server exited unexpectedly (code=${code}, signal=${signal})`);
-        for (const { reject } of pendingRequests.values()) reject(error);
-        pendingRequests.clear();
-      });
-
-      childProcess.stdout!.on('data', (data: Buffer) => {
-        handleMessage(data.toString());
-      });
-
-      // MCP handshake: initialize → initialized notification
-      await sendRequest('initialize', {
-        protocolVersion: '2024-11-05',
-        capabilities: {},
-        clientInfo: { name: 'agentforge', version: '0.0.1' },
-      }, DEFAULT_CONNECT_TIMEOUT_MS);
-
-      sendNotification('notifications/initialized');
-    },
-
-    async discoverTools(): Promise<McpToolDefinition[]> {
-      const result = await sendRequest('tools/list') as { tools: McpToolDefinition[] };
-      return result.tools ?? [];
-    },
-
-    async callTool(name: string, args: unknown): Promise<unknown> {
-      return sendRequest('tools/call', { name, arguments: args });
-    },
-
-    async close(): Promise<void> {
-      if (childProcess) {
-        childProcess.kill();
-        childProcess = null;
-      }
-    },
-  };
+  return client;
 }
 
 // ---------------------------------------------------------------------------

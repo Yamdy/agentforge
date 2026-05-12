@@ -30,24 +30,41 @@ export function mcpPlugin(options: McpPluginOptions): (api: HarnessAPI) => Plugi
     const clientFactory = options.clientFactory ?? createMcpClient;
 
     for (const serverConfig of options.servers) {
+      const registeredToolNames: string[] = [];
+
+      const refreshTools = async (client: McpClient) => {
+        // Unregister old tools from this server
+        for (const name of registeredToolNames.splice(0)) {
+          api.unregisterTool(name);
+        }
+        // Discover and register current tools
+        const mcpTools = await client.discoverTools();
+        for (const mcpTool of mcpTools) {
+          const tool = convertMcpTool(mcpTool, serverConfig.name, (name, args) =>
+            client.callTool(name, args),
+          );
+          api.registerTool(tool);
+          registeredToolNames.push(tool.name);
+        }
+      };
+
       api.registerResource({
         id: `mcp:${serverConfig.name}`,
         type: 'mcp-server',
         config: serverConfig as unknown as Record<string, unknown>,
         start: async () => {
           const client = clientFactory(serverConfig);
+          client.onToolsChanged = () => { refreshTools(client); };
           await client.connect();
-          const mcpTools = await client.discoverTools();
-          for (const mcpTool of mcpTools) {
-            const tool = convertMcpTool(mcpTool, serverConfig.name, (name, args) =>
-              client.callTool(name, args),
-            );
-            api.registerTool(tool);
-          }
+          await refreshTools(client);
           return client;
         },
         stop: async (client) => {
           await (client as McpClient).close();
+          // Clean up registered tools
+          for (const name of registeredToolNames.splice(0)) {
+            api.unregisterTool(name);
+          }
         },
       });
     }
