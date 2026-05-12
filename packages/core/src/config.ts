@@ -170,5 +170,9 @@ const HarnessConfigSchema = z.object({
   plugins: z.array(z.string()).optional(),
   session: z.object({ storage: z.enum(['file', 'memory']).optional(), path: z.string().optional() }).optional(),
   modelProfiles: z.array(z.unknown()).optional(),
-  modelGateways: z.array(z.unknown()).optional(),
+  modelGateways: z.array(z.object({
+    name: z.string(),
+    url: z.string(),
+    apiKey: z.string().optional(),
+  })).optional(),
 }).passthrough();

@@ -389,6 +389,13 @@ export interface ModelGateway {
   resolve(modelString: string): Promise<unknown>;
 }
 
+/** Serializable config for an OpenAI-compatible custom gateway. */
+export interface GatewayConfig {
+  name: string;
+  url: string;
+  apiKey?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Harness Configuration (Issue 16)
 // ---------------------------------------------------------------------------
@@ -407,7 +414,7 @@ export interface HarnessConfig {
   plugins?: string[];
   session?: { storage?: 'file' | 'memory'; path?: string };
   modelProfiles?: ModelProfile[];
-  modelGateways?: ModelGateway[];
+  modelGateways?: GatewayConfig[];
 }
 
 // ---------------------------------------------------------------------------
