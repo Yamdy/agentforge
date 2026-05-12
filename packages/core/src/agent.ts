@@ -190,6 +190,7 @@ export class Agent {
       getLLM: (systemPrompt) => this.getLLM(systemPrompt),
       registry: this.registry,
       pluginManager: this._pluginManager,
+      modelString: this.config.model,
     }));
     this.runner.register(processStepOutputProcessor);
     this.runner.register(createExecuteToolsProcessor(this.registry));

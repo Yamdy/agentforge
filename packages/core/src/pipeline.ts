@@ -89,6 +89,7 @@ export class PipelineRunner {
           const fullStream = ctx.iteration.fullStream;
           if (fullStream) {
             const toolCalls: ToolCall[] = [];
+            const reasoningParts: string[] = [];
             let usage: TokenUsage | undefined;
 
             for await (const event of fullStream as AsyncIterable<any>) {
@@ -102,6 +103,8 @@ export class PipelineRunner {
                 };
                 toolCalls.push(tc);
                 yield { type: 'tool_call', name: tc.name, args: tc.args };
+              } else if (event.type === 'reasoning') {
+                reasoningParts.push(event.textDelta ?? event.text ?? '');
               } else if (event.type === 'finish-step') {
                 usage = extractTokenUsage(event.usage);
               } else if (event.type === 'error') {
@@ -113,15 +116,22 @@ export class PipelineRunner {
               ? await ctx.iteration.usagePromise
               : undefined;
 
+            let reasoningContent = reasoningParts.length > 0 ? reasoningParts.join('') : undefined;
+            if (!reasoningContent && ctx.iteration.reasoningPromise) {
+              try { reasoningContent = await ctx.iteration.reasoningPromise ?? undefined; } catch { /* ignore */ }
+            }
+
             ctx = Object.freeze({
               ...ctx,
               iteration: {
                 ...ctx.iteration,
                 response: ctx.iteration.response ?? '',
                 pendingToolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+                reasoningContent,
                 tokenUsage: usage ?? pendingUsage,
                 fullStream: undefined,
                 usagePromise: undefined,
+                reasoningPromise: undefined,
               },
             });
           }
@@ -168,6 +178,7 @@ export class PipelineRunner {
 
     const chunks: string[] = [];
     const toolCalls: ToolCall[] = [];
+    const reasoningParts: string[] = [];
     let usage: TokenUsage | undefined;
 
     for await (const event of fullStream as AsyncIterable<any>) {
@@ -179,6 +190,8 @@ export class PipelineRunner {
           name: event.toolName ?? event.name ?? '',
           args: event.args ?? event.input ?? {},
         });
+      } else if (event.type === 'reasoning') {
+        reasoningParts.push(event.textDelta ?? event.text ?? '');
       } else if (event.type === 'finish-step') {
         usage = extractTokenUsage(event.usage);
       } else if (event.type === 'error') {
@@ -190,15 +203,22 @@ export class PipelineRunner {
       ? await ctx.iteration.usagePromise
       : undefined;
 
+    let reasoningContent = reasoningParts.length > 0 ? reasoningParts.join('') : undefined;
+    if (!reasoningContent && ctx.iteration.reasoningPromise) {
+      try { reasoningContent = await ctx.iteration.reasoningPromise ?? undefined; } catch { /* ignore */ }
+    }
+
     return Object.freeze({
       ...ctx,
       iteration: {
         ...ctx.iteration,
         response: chunks.join('') || ctx.iteration.response,
         pendingToolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+        reasoningContent,
         tokenUsage: usage ?? pendingUsage,
         fullStream: undefined,
         usagePromise: undefined,
+        reasoningPromise: undefined,
       },
     });
   }

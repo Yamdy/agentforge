@@ -41,6 +41,10 @@ const PROVIDER_MAP: Record<string, () => Promise<SdkInstance>> = {
     const sdk = m.createGoogleGenerativeAI();
     return { languageModel: (id: string) => sdk(id) };
   }),
+  deepseek: () => import('@ai-sdk/deepseek').then((m) => {
+    const sdk = m.createDeepSeek();
+    return { languageModel: (id: string) => sdk(id) };
+  }),
 };
 
 const sdkCache = new Map<string, SdkInstance>();

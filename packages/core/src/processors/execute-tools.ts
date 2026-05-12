@@ -1,4 +1,4 @@
-import type { Processor, Message, ToolCall, ToolResult } from '@agentforge/sdk';
+import type { Processor, Message, ToolResult } from '@agentforge/sdk';
 import type { ToolRegistry } from '../tool-registry.js';
 
 export function createExecuteToolsProcessor(registry: ToolRegistry): Processor {
@@ -20,12 +20,6 @@ export function createExecuteToolsProcessor(registry: ToolRegistry): Processor {
         toolResults.push({ ...result, toolCallId: tc.id });
       }
 
-      const assistantMsg: Message = {
-        role: 'assistant',
-        content: ctx.iteration.response ?? '',
-        toolCalls,
-      };
-
       const toolMessages: Message[] = toolResults.map((tr) => ({
         role: 'tool' as const,
         content: tr.error ?? (typeof tr.output === 'string' ? tr.output : JSON.stringify(tr.output)),
@@ -36,12 +30,7 @@ export function createExecuteToolsProcessor(registry: ToolRegistry): Processor {
       }));
 
       const history: Message[] = [...(ctx.session.messageHistory ?? [])];
-
-      if (ctx.iteration.step === 0 && history.length === 0) {
-        history.push({ role: 'user', content: ctx.request.input });
-      }
-
-      history.push(assistantMsg, ...toolMessages);
+      history.push(...toolMessages);
 
       return {
         ...ctx,

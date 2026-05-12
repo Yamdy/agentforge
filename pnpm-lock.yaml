@@ -76,6 +76,9 @@ importers:
       '@ai-sdk/anthropic':
         specifier: ^3.0.76
         version: 3.0.76(zod@4.4.3)
+      '@ai-sdk/deepseek':
+        specifier: 2.0.34
+        version: 2.0.34(zod@4.4.3)
       '@ai-sdk/google':
         specifier: ^3.0.71
         version: 3.0.71(zod@4.4.3)
@@ -178,6 +181,12 @@ packages:
 
   '@ai-sdk/anthropic@3.0.76':
     resolution: {integrity: sha512-kOuvT9e6PygFvgYpkr4v9gjvmcMPfJp79jaXjeRl9Gpoj2OXdtc3ero7o1ic+tiSBw5IMubxXFO68BCA/axGJA==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+
+  '@ai-sdk/deepseek@2.0.34':
+    resolution: {integrity: sha512-XBIgcs+bhDD9SxeAbMXpmFiy2ECwUAnGPbibWK8UTepWteFV3Amr6bwN63E6vTwZGKw0NcZaDp7EwaGKQNfuGw==}
     engines: {node: '>=18'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
@@ -1575,6 +1584,12 @@ packages:
 snapshots:
 
   '@ai-sdk/anthropic@3.0.76(zod@4.4.3)':
+    dependencies:
+      '@ai-sdk/provider': 3.0.10
+      '@ai-sdk/provider-utils': 4.0.27(zod@4.4.3)
+      zod: 4.4.3
+
+  '@ai-sdk/deepseek@2.0.34(zod@4.4.3)':
     dependencies:
       '@ai-sdk/provider': 3.0.10
       '@ai-sdk/provider-utils': 4.0.27(zod@4.4.3)

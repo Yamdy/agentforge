@@ -1,25 +1,35 @@
-import type { Processor, LoopDirective } from '@agentforge/sdk';
+import type { Processor, LoopDirective, TokenUsage } from '@agentforge/sdk';
 
 export const evaluateIterationProcessor: Processor = {
   stage: 'evaluateIteration',
   execute: async (ctx) => {
-    const totalTokens = (ctx.session.totalTokenUsage?.input ?? 0) + (ctx.session.totalTokenUsage?.output ?? 0)
-      + (ctx.iteration.tokenUsage?.input ?? 0) + (ctx.iteration.tokenUsage?.output ?? 0);
+    const prevTotal = ctx.session.totalTokenUsage ?? { input: 0, output: 0 };
+    const iterUsage = ctx.iteration.tokenUsage ?? { input: 0, output: 0 };
+    const totalTokenUsage: TokenUsage = {
+      input: prevTotal.input + iterUsage.input,
+      output: prevTotal.output + iterUsage.output,
+    };
+
+    const totalTokens = totalTokenUsage.input + totalTokenUsage.output;
 
     if (totalTokens > 100_000) {
       ctx.iteration.span?.setAttribute('token.overflow', true);
+      ctx.iteration.span?.setAttribute('token.total', totalTokens);
       return {
         ...ctx,
         iteration: {
           ...ctx.iteration,
           loopDirective: { action: 'stop' } as LoopDirective,
         },
+        session: {
+          ...ctx.session,
+          totalTokenUsage,
+        },
       };
     }
 
-    const hasToolCalls = (ctx.iteration.toolResults?.length ?? 0) > 0;
-
-    const directive: LoopDirective = hasToolCalls
+    const hasToolResults = (ctx.iteration.toolResults?.length ?? 0) > 0;
+    const directive: LoopDirective = hasToolResults
       ? { action: 'continue' }
       : { action: 'stop' };
 
@@ -28,6 +38,10 @@ export const evaluateIterationProcessor: Processor = {
       iteration: {
         ...ctx.iteration,
         loopDirective: directive,
+      },
+      session: {
+        ...ctx.session,
+        totalTokenUsage,
       },
     };
   },

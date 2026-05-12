@@ -13,6 +13,7 @@ export function createBuildContextProcessor(registry: ToolRegistry): Processor {
           name: t.name,
           description: t.description,
         })),
+        providerOptions: ctx.agent.config.providerOptions,
       },
     }),
   };

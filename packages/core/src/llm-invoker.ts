@@ -13,6 +13,7 @@ export interface LLMInvokerOptions {
 export interface LLMInvokeInput {
   messages: unknown[];
   tools?: Record<string, unknown>;
+  providerOptions?: Record<string, Record<string, unknown>>;
 }
 
 export interface LLMInvokeResult {
@@ -23,6 +24,7 @@ export interface LLMInvokeResult {
 export interface LLMStreamHandle {
   fullStream: AsyncIterable<unknown>;
   usage: Promise<TokenUsage>;
+  reasoning: Promise<string | undefined>;
 }
 
 function extractTokenUsage(usage: any): TokenUsage {
@@ -54,6 +56,9 @@ export class LLMInvoker {
 
       if (input.tools && Object.keys(input.tools).length > 0) {
         streamOpts.tools = input.tools;
+      }
+      if (input.providerOptions) {
+        streamOpts.providerOptions = input.providerOptions;
       }
 
       const result = streamText(streamOpts as any);
@@ -96,6 +101,9 @@ export class LLMInvoker {
     if (input.tools && Object.keys(input.tools).length > 0) {
       streamOpts.tools = input.tools;
     }
+    if (input.providerOptions) {
+      streamOpts.providerOptions = input.providerOptions;
+    }
 
     const result = streamText(streamOpts as any);
 
@@ -109,6 +117,7 @@ export class LLMInvoker {
       usage: Promise.resolve(result.usage)
         .then(extractTokenUsage)
         .catch(() => ({ input: 0, output: 0 })),
+      reasoning: Promise.resolve(result.reasoningText).catch(() => undefined),
     };
   }
 }

@@ -1,11 +1,14 @@
 import type { Message, Processor, WrapHookInvoker } from '@agentforge/sdk';
 import type { LLMInvoker } from '../llm-invoker.js';
 import type { ToolRegistry } from '../tool-registry.js';
+import { detectCapabilities } from '../provider-capabilities.js';
+import { applyPreemptiveRules } from './provider-history-compat.js';
 
 export interface InvokeLLMDeps {
   getLLM: (systemPrompt?: string) => Promise<LLMInvoker>;
   registry: ToolRegistry;
   pluginManager: WrapHookInvoker;
+  modelString: string;
 }
 
 function toAiSdkMessages(history: Message[], input: string, step: number): unknown[] {
@@ -21,7 +24,11 @@ function toAiSdkMessages(history: Message[], input: string, step: number): unkno
     if (msg.role === 'user') {
       messages.push({ role: 'user', content: [{ type: 'text', text: msg.content }] });
     } else if (msg.role === 'assistant') {
-      const content: unknown[] = [{ type: 'text', text: msg.content }];
+      const content: unknown[] = [];
+      if (msg.reasoningContent) {
+        content.push({ type: 'reasoning', text: msg.reasoningContent });
+      }
+      content.push({ type: 'text', text: msg.content });
       if (msg.toolCalls && msg.toolCalls.length > 0) {
         for (const tc of msg.toolCalls) {
           content.push({ type: 'tool-call', toolCallId: tc.id, toolName: tc.name, input: tc.args });
@@ -67,9 +74,13 @@ export function createInvokeLLMProcessor(deps: InvokeLLMDeps): Processor {
         ctx.iteration.step,
       );
 
+      const capabilities = detectCapabilities(deps.modelString);
+      const compatMessages = applyPreemptiveRules(messages, deps.modelString, capabilities);
+
       const handle = llm.stream({
-        messages,
+        messages: compatMessages,
         tools: Object.keys(sdkToolSchemas).length > 0 ? sdkToolSchemas : undefined,
+        providerOptions: ctx.agent.providerOptions,
       });
 
       return {
@@ -78,6 +89,7 @@ export function createInvokeLLMProcessor(deps: InvokeLLMDeps): Processor {
           ...ctx.iteration,
           fullStream: handle.fullStream,
           usagePromise: handle.usage,
+          reasoningPromise: handle.reasoning,
         },
       };
     },

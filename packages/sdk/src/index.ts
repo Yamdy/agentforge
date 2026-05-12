@@ -40,7 +40,7 @@ export interface ToolResult {
 /** Structured conversation message supporting tool-call round-trips. */
 export type Message =
   | { role: 'user'; content: string }
-  | { role: 'assistant'; content: string; toolCalls?: ToolCall[] }
+  | { role: 'assistant'; content: string; toolCalls?: ToolCall[]; reasoningContent?: string }
   | { role: 'tool'; content: string; toolCallId: string; toolName: string; result?: unknown; error?: string };
 
 // ---------------------------------------------------------------------------
@@ -67,6 +67,8 @@ export interface AgentRegion {
   toolDeclarations: Array<{ name: string; description: string }>;
   /** Append-only. Always spread existing: `[...ctx.agent.promptFragments, newFragment]` */
   promptFragments: string[];
+  /** Per-provider options passed through to streamText(). Keyed by provider name. */
+  providerOptions?: Record<string, Record<string, unknown>>;
 }
 
 export interface IterationRegion {
@@ -76,10 +78,14 @@ export interface IterationRegion {
   /** AI SDK fullStream yielding text-delta, tool-call, finish-step, error events. */
   fullStream?: AsyncIterable<unknown>;
   usagePromise?: Promise<TokenUsage>;
+  /** Promise resolving to reasoning text from the model (e.g. DeepSeek reasoning_content). */
+  reasoningPromise?: Promise<string | undefined>;
   response?: string;
   tokenUsage?: TokenUsage;
   /** Tool calls extracted from the LLM response by PipelineRunner stream consumption. */
   pendingToolCalls?: ToolCall[];
+  /** Reasoning content from thinking-mode models (e.g. DeepSeek). Must be passed back on subsequent turns. */
+  reasoningContent?: string;
   /** Results from executing pending tool calls (set by executeTools processor). */
   toolResults?: ToolResult[];
   /** Per-stage observability span. Created by PipelineRunner.executeStage(),
@@ -317,6 +323,7 @@ export interface AgentConfig {
   systemPrompt?: Dynamic<string>;
   maxIterations?: Dynamic<number>;
   tools?: Tool[];
+  providerOptions?: Record<string, Record<string, unknown>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -332,6 +339,32 @@ export interface ResolveContext {
 
 /** A value that is either static T or resolved per-request via a function. */
 export type Dynamic<T> = T | ((ctx: ResolveContext) => T | Promise<T>);
+
+// ---------------------------------------------------------------------------
+// Provider Capabilities & Compat Rules (P3)
+// ---------------------------------------------------------------------------
+
+/** Declares what a specific provider supports in message format. */
+export interface ProviderCapabilities {
+  supportsReasoning: boolean;
+  supportsToolCalling: boolean;
+  supportsParallelToolCalls: boolean;
+  requiresAlternatingRoles: boolean;
+  rejectsEmptyAssistantContent: boolean;
+  toolCallIdPattern?: RegExp;
+}
+
+/** A compatibility rule that normalizes messages for a specific provider. */
+export interface CompatRule {
+  name: string;
+  providers: string[] | '*';
+  /** Preemptive: rewrite AI SDK messages before sending. Does NOT mutate persisted history. */
+  applyToPrompt?(messages: unknown[], capabilities: ProviderCapabilities): unknown[];
+  /** Reactive: fix persisted history after an API error. Return null if unfixable. */
+  fixHistory?(history: Message[], error: unknown): Message[] | null;
+  /** Patterns matched against API error messages for reactive rules. */
+  errorPatterns?: RegExp[];
+}
 
 // ---------------------------------------------------------------------------
 // Model Profile (ADR-0008)
