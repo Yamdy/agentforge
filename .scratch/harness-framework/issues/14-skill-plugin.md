@@ -31,14 +31,14 @@ interface SkillDefinition {
 
 ## Acceptance criteria
 
-- [ ] SkillProcessor discovers SKILL.md files from configured directories
-- [ ] YAML frontmatter parsed correctly (name, description)
-- [ ] Skill summaries injected as PromptFragment at buildContext
-- [ ] `read_skill` tool loads full content on demand
-- [ ] Skill resources are registered and started with plugin
-- [ ] Skill tools are registered and callable by agent
-- [ ] Later skill sources override earlier ones with same name
-- [ ] Test: agent discovers skill, reads on demand, uses instructions
+- [x] SkillProcessor discovers SKILL.md files from configured directories
+- [x] YAML frontmatter parsed correctly (name, description)
+- [x] Skill summaries injected as PromptFragment at buildContext
+- [x] `read_skill` tool loads full content on demand
+- [x] Skill resources are registered and started with plugin
+- [x] Skill tools are registered and callable by agent
+- [x] Later skill sources override earlier ones with same name
+- [x] Test: agent discovers skill, reads on demand, uses instructions
 
 ## Blocked by
 

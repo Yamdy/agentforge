@@ -75,6 +75,7 @@ Compression, tool output truncation, progressive disclosure — preventing model
 - **Model profile**: Per-model behavior customization — `ModelProfile` with systemPromptSuffix, toolOverrides, extraPromptFragments; registered per model pattern
 - **Runtime safety**: Built-in circuit breaker (consecutive tool call limit, total tool call limit, stagnation detection), model fallback chains (ordered retry across providers), concurrency controller (per-key slot management)
 - **Tool management**: Dynamic tool group activation/deactivation; tool result eviction for large outputs
+- **Processor modularity**: 8 built-in processors extracted from Agent into `core/processors/` — each stage is a standalone module; factory functions for dependency-injected processors (`invokeLLM`, `buildContext`, `prepareStep`), const exports for pure/no-op processors; Agent is pure orchestration
 
 ## Pipeline Architecture
 

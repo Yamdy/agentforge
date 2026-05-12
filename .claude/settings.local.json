@@ -32,7 +32,20 @@
       "Bash(git branch *)",
       "Bash(git merge *)",
       "Bash(git status *)",
-      "Bash(git *)"
+      "Bash(git *)",
+      "Bash(find packages/plugins/src/mcp -type f)",
+      "Bash(find packages/plugins/__tests__ -name \"mcp*\" -type f)",
+      "Bash(npx jest *)",
+      "Bash(npm view *)",
+      "Bash(npx --yes tsx --version)",
+      "Bash(npx --yes tsx C:/Users/90514/code/new/examples/mcp-demo.ts)",
+      "Bash(npx *)",
+      "mcp__plugin_ecc_context7__resolve-library-id",
+      "mcp__plugin_ecc_context7__query-docs",
+      "mcp__plugin_ecc_sequential-thinking__sequentialthinking",
+      "Bash(sed -i \"s/toolName: 'tool_a', args: '{}' }/toolName: 'tool_a', input: '{}' }/g\" packages/core/__tests__/agent-tool-loop.test.ts)",
+      "Bash(sed -i \"s/toolName: 'tool_b', args: '{}' }/toolName: 'tool_b', input: '{}' }/g\" packages/core/__tests__/agent-tool-loop.test.ts)",
+      "Bash(sed -i \"s/toolName: 'fail_tool', args: '{\\\\\"x\\\\\":\\\\\"bad\\\\\"}' }/toolName: 'fail_tool', input: '{\\\\\"x\\\\\":\\\\\"bad\\\\\"}' }/g\" packages/core/__tests__/agent-tool-loop.test.ts)"
     ]
   }
 }

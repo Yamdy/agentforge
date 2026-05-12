@@ -21,11 +21,11 @@ Implement the minimal Pipeline Runner and Agent Loop that can process a user inp
 
 ## Acceptance criteria
 
-- [ ] Pipeline Runner executes Processors in registration order within each stage
-- [ ] Agent Loop processes a user input through 3 minimal stages and returns a response
-- [ ] A Processor can abort the pipeline by returning an AbortSignal
-- [ ] PipelineContext is frozen between stages (mutations throw)
-- [ ] Tests pass: minimal agent processes input, gets mock LLM response, returns output
+- [x] Pipeline Runner executes Processors in registration order within each stage
+- [x] Agent Loop processes a user input through 3 minimal stages and returns a response
+- [x] A Processor can abort the pipeline by returning an AbortSignal
+- [x] PipelineContext is frozen between stages (mutations throw)
+- [x] Tests pass: minimal agent processes input, gets mock LLM response, returns output
 
 ## Blocked by
 

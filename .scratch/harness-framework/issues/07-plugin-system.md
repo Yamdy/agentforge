@@ -47,15 +47,15 @@ interface PluginManager {
 
 ## Acceptance criteria
 
-- [ ] Plugin factory function receives enhanced HarnessAPI with registerHook, subscribe, registerResource, registerProvider
-- [ ] Plugins can register Processors at any pipeline stage
-- [ ] Plugins can register Hooks at any HookPoint
-- [ ] Plugins can subscribe to EventBus events and receive them
-- [ ] Plugins can declare resources with start/stop lifecycle
-- [ ] `initializeAll()` starts all declared resources
-- [ ] `shutdown()` stops all resources and cleans up subscriptions
-- [ ] Plugin initialization errors are caught and reported without crashing the framework
-- [ ] Test plugin loads, registers Processor + Hook + Tool + Resource, all work in pipeline
+- [x] Plugin factory function receives enhanced HarnessAPI with registerHook, subscribe, registerResource, registerProvider
+- [x] Plugins can register Processors at any pipeline stage
+- [x] Plugins can register Hooks at any HookPoint
+- [x] Plugins can subscribe to EventBus events and receive them
+- [x] Plugins can declare resources with start/stop lifecycle
+- [x] `initializeAll()` starts all declared resources
+- [x] `shutdown()` stops all resources and cleans up subscriptions
+- [x] Plugin initialization errors are caught and reported without crashing the framework
+- [x] Test plugin loads, registers Processor + Hook + Tool + Resource, all work in pipeline
 
 ## Blocked by
 

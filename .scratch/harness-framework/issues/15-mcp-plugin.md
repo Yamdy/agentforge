@@ -32,13 +32,13 @@ interface McpServerConfig {
 
 ## Acceptance criteria
 
-- [ ] MCP plugin starts servers via registerResource lifecycle
-- [ ] MCP tool definitions converted to framework Tool interface
-- [ ] Discovered tools registered and callable by agent
-- [ ] MCP server stops cleanly on plugin shutdown
-- [ ] Dynamic tool discovery detects server-side changes
-- [ ] Graceful handling of server disconnections
-- [ ] Test: connect to test MCP server, discover tools, agent uses them
+- [x] MCP plugin starts servers via registerResource lifecycle
+- [x] MCP tool definitions converted to framework Tool interface
+- [x] Discovered tools registered and callable by agent
+- [x] MCP server stops cleanly on plugin shutdown
+- [x] Dynamic tool discovery detects server-side changes
+- [x] Graceful handling of server disconnections
+- [x] Test: connect to test MCP server, discover tools, agent uses them
 
 ## Blocked by
 

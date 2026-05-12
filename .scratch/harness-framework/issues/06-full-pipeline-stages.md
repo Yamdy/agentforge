@@ -22,16 +22,16 @@ Implement all 8 pipeline stages of the Agent Lifecycle Pipeline, filling in the 
 
 ## Acceptance criteria
 
-- [ ] All 8 pipeline stages execute in the correct order
-- [ ] buildContext assembles system prompt + tool declarations into a valid LLM request
-- [ ] prepareStep filters message history and tool availability
-- [ ] processStepOutput runs guardrail Processors and supports rejection with retry
-- [ ] evaluateIteration stops the loop when max iterations reached
-- [ ] evaluateIteration detects context overflow and triggers compression (delegates to CompressionProcessor if registered)
-- [ ] TripWire abort works: a Processor can stop the pipeline with a reason
-- [ ] TripWire retry works: a Processor can request retry from prepareStep
-- [ ] PipelineContext has all state layers and is frozen between stages
-- [ ] Full end-to-end test: agent processes input, calls LLM, uses tool, loops, and produces final output
+- [x] All 8 pipeline stages execute in the correct order
+- [x] buildContext assembles system prompt + tool declarations into a valid LLM request
+- [x] prepareStep filters message history and tool availability
+- [x] processStepOutput runs guardrail Processors and supports rejection with retry
+- [x] evaluateIteration stops the loop when max iterations reached
+- [x] evaluateIteration detects context overflow and triggers compression (delegates to CompressionProcessor if registered)
+- [x] TripWire abort works: a Processor can stop the pipeline with a reason
+- [x] TripWire retry works: a Processor can request retry from prepareStep
+- [x] PipelineContext has all state layers and is frozen between stages
+- [x] Full end-to-end test: agent processes input, calls LLM, uses tool, loops, and produces final output
 
 ## Blocked by
 

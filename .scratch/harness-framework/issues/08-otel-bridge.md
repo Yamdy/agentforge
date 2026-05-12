@@ -35,12 +35,12 @@ agent_run (OTel INTERNAL span)
 
 ## Acceptance criteria
 
-- [ ] OTelBridge creates real OTel spans for every pipeline stage
-- [ ] Span hierarchy correctly nests under the four-region context model
-- [ ] Span attributes (model, tokens, tool name, duration) visible in OTel backend
-- [ ] Context propagation: traceId propagates from parent to sub-agents
-- [ ] Falls back to No-Op when no OTel provider configured
-- [ ] Test: full pipeline with TestExporter, verify span tree matches hierarchy
+- [x] OTelBridge creates real OTel spans for every pipeline stage
+- [x] Span hierarchy correctly nests under the four-region context model
+- [x] Span attributes (model, tokens, tool name, duration) visible in OTel backend
+- [x] Context propagation: traceId propagates from parent to sub-agents
+- [x] Falls back to No-Op when no OTel provider configured
+- [x] Test: full pipeline with TestExporter, verify span tree matches hierarchy
 
 ## Blocked by
 

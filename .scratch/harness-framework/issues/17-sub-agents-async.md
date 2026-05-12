@@ -46,14 +46,14 @@ interface TaskManager {
 
 ## Acceptance criteria
 
-- [ ] Main agent submits async task and receives task ID immediately
-- [ ] Async sub-agent runs independently with isolated context
-- [ ] ConcurrencyController limits parallel tasks per slot
-- [ ] Model fallback chain tries next model on failure
-- [ ] `task:end` event emitted with result on completion
-- [ ] `cancel()` stops a running sub-agent
-- [ ] `list()` returns tasks filtered by parent session
-- [ ] Test: submit async task, parent continues, receives completion event
+- [x] Main agent submits async task and receives task ID immediately
+- [x] Async sub-agent runs independently with isolated context
+- [x] ConcurrencyController limits parallel tasks per slot
+- [x] Model fallback chain tries next model on failure
+- [x] `task:end` event emitted with result on completion
+- [x] `cancel()` stops a running sub-agent
+- [x] `list()` returns tasks filtered by parent session
+- [x] Test: submit async task, parent continues, receives completion event
 
 ## Blocked by
 

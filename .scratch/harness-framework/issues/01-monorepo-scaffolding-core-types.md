@@ -39,11 +39,11 @@ Set up the 5-package TypeScript monorepo and define all core type interfaces tha
 
 ## Acceptance criteria
 
-- [ ] All 5 packages exist with valid package.json and tsconfig.json
-- [ ] `pnpm install` and `pnpm build` succeed across the monorepo
-- [ ] All core types are exported from `@harness/sdk`
-- [ ] Types compile with strict TypeScript (no `any`)
-- [ ] Empty test suite runs successfully (`pnpm test`)
+- [x] All 5 packages exist with valid package.json and tsconfig.json
+- [x] `pnpm install` and `pnpm build` succeed across the monorepo
+- [x] All core types are exported from `@harness/sdk`
+- [x] Types compile with strict TypeScript (no `any`)
+- [x] Empty test suite runs successfully (`pnpm test`)
 
 ## Blocked by
 

@@ -32,13 +32,13 @@ interface CompressionConfig {
 
 ## Acceptance criteria
 
-- [ ] Truncate phase truncates tool outputs longer than threshold
-- [ ] Prune phase removes oldest messages, keeping recent N
-- [ ] Summarize phase triggers only when truncate/prune insufficient
-- [ ] Summarize replaces old messages with single summary
-- [ ] CompressionProcessor registered at prepareStep stage
-- [ ] Compression metrics recorded in span attributes
-- [ ] Test: long conversation triggers compression, token count drops
+- [x] Truncate phase truncates tool outputs longer than threshold
+- [x] Prune phase removes oldest messages, keeping recent N
+- [x] Summarize phase triggers only when truncate/prune insufficient
+- [x] Summarize replaces old messages with single summary
+- [x] CompressionProcessor registered at prepareStep stage
+- [x] Compression metrics recorded in span attributes
+- [x] Test: long conversation triggers compression, token count drops
 
 ## Blocked by
 

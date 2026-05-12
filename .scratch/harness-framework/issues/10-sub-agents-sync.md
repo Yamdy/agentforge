@@ -42,14 +42,14 @@ interface SubAgentResult {
 
 ## Acceptance criteria
 
-- [ ] Main agent delegates to sub-agent via tool call
-- [ ] `isolated` policy: sub-agent runs with fresh context, no state leakage
-- [ ] `inherit` policy: sub-agent receives parent message history
-- [ ] `summary-only` policy: sub-agent receives compressed parent context
-- [ ] Only summary string is returned to parent agent
-- [ ] `task:start` / `task:end` events emitted via EventBus
-- [ ] Sub-agent errors caught and returned as error summaries
-- [ ] Test: main agent delegates task, sub-agent processes, parent receives summary
+- [x] Main agent delegates to sub-agent via tool call
+- [x] `isolated` policy: sub-agent runs with fresh context, no state leakage
+- [x] `inherit` policy: sub-agent receives parent message history
+- [x] `summary-only` policy: sub-agent receives compressed parent context
+- [x] Only summary string is returned to parent agent
+- [x] `task:start` / `task:end` events emitted via EventBus
+- [x] Sub-agent errors caught and returned as error summaries
+- [x] Test: main agent delegates task, sub-agent processes, parent receives summary
 
 ## Blocked by
 

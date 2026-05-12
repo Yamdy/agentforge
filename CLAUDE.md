@@ -35,7 +35,10 @@ packages/
   sdk/         — Pure type definitions (PipelineContext, Processor, Tool, Span, etc.)
   tools/       — Tool implementations (echo tool, etc.)
   observability/ — Span/Tracer/Metrics abstractions + OTel bridge
-  core/        — PipelineRunner, Agent, LLMInvoker, ToolRegistry, SessionManager, etc.
+  core/        — PipelineRunner, Agent (orchestration), LLMInvoker, ToolRegistry, SessionManager, etc.
+    core/processors/ — 8 built-in pipeline stage processors (extracted from Agent)
+    process-input, build-context, prepare-step, invoke-llm, evaluate-iteration (substantive)
+    process-step-output, execute-tools, process-output (no-op extension points)
   plugins/     — Processor plugins: memory, compression, permission, skill, MCP, eviction
 ```
 
@@ -61,7 +64,7 @@ The agentic loop repeats until `iteration.loopDirective` is `stop`. Processors c
 
 ### Key Patterns
 
-- **Processor**: `(context) => Promise<ProcessorResult>` — registered per stage, executes business logic
+- **Processor**: `(context) => Promise<ProcessorResult>` — registered per stage, executes business logic. Substantive processors (`invokeLLM`, `buildContext`, etc.) live in `core/processors/` as factory functions; no-op extension points are const exports.
 - **Plugin**: factory function `(harness: HarnessAPI) => PluginRegistration` — registers processors, tools, hooks, resources
 - **Dynamic\<T\>**: `T | ((ctx) => T)` — AgentConfig fields resolved per-request at `processInput` stage
 - **ToolRegistry**: adapts Tool definitions to AI SDK format via `toAiSdkTools()`, the AI SDK handles tool-call detection and multi-step looping

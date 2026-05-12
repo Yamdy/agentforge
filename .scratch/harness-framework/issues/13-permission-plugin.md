@@ -29,14 +29,14 @@ type PermissionMode = 'interactive' | 'plan-only' | 'full-auto';
 
 ## Acceptance criteria
 
-- [ ] PermissionProcessor registered as Hook `tool.before`
-- [ ] Glob pattern rules match tool names and argument paths
-- [ ] First-match-wins ruleset evaluation
-- [ ] `interactive` mode suspends for user approval and resumes correctly
-- [ ] `plan-only` mode denies write/execute tools, allows read tools
-- [ ] `full-auto` mode allows all tools
-- [ ] Audit events emitted via EventBus
-- [ ] Test: tool call denied in plan-only mode with correct reason
+- [x] PermissionProcessor registered as Hook `tool.before`
+- [x] Glob pattern rules match tool names and argument paths
+- [x] First-match-wins ruleset evaluation
+- [x] `interactive` mode suspends for user approval and resumes correctly
+- [x] `plan-only` mode denies write/execute tools, allows read tools
+- [x] `full-auto` mode allows all tools
+- [x] Audit events emitted via EventBus
+- [x] Test: tool call denied in plan-only mode with correct reason
 
 ## Blocked by
 

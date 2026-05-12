@@ -20,12 +20,12 @@ Implement the observability abstraction layer and integrate it into the Pipeline
 
 ## Acceptance criteria
 
-- [ ] Span interface supports parent-child nesting (child spans reference parent)
-- [ ] No-Op implementation has zero measurable overhead (all methods return immediately)
-- [ ] TestExporter collects spans in memory with full hierarchy
-- [ ] Pipeline Runner creates a span for each stage automatically
-- [ ] Processors can access the current span from PipelineContext and add attributes/events
-- [ ] Test: run a 3-stage pipeline, verify TestExporter captured 3 child spans under 1 root span
+- [x] Span interface supports parent-child nesting (child spans reference parent)
+- [x] No-Op implementation has zero measurable overhead (all methods return immediately)
+- [x] TestExporter collects spans in memory with full hierarchy
+- [x] Pipeline Runner creates a span for each stage automatically
+- [x] Processors can access the current span from PipelineContext and add attributes/events
+- [x] Test: run a 3-stage pipeline, verify TestExporter captured 3 child spans under 1 root span
 
 ## Blocked by
 

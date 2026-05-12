@@ -20,13 +20,13 @@ Replace the mock LLM provider with real Vercel AI SDK integration. Implement the
 
 ## Acceptance criteria
 
-- [ ] Agent can call a real LLM via Vercel AI SDK using model string notation
-- [ ] Streaming output is delivered via AsyncGenerator
-- [ ] Token usage (input/output) is recorded in PipelineContext after each LLM call
-- [ ] Transient errors retry with exponential backoff (max 3 retries)
-- [ ] Auth errors and invalid requests do NOT retry
-- [ ] Tool call requests are parsed from LLM response
-- [ ] Tests use AI SDK mock provider (no real API calls needed)
+- [x] Agent can call a real LLM via Vercel AI SDK using model string notation
+- [x] Streaming output is delivered via AsyncGenerator
+- [x] Token usage (input/output) is recorded in PipelineContext after each LLM call
+- [x] Transient errors retry with exponential backoff (max 3 retries)
+- [x] Auth errors and invalid requests do NOT retry
+- [x] Tool call requests are parsed from LLM response
+- [x] Tests use AI SDK mock provider (no real API calls needed)
 
 ## Blocked by
 

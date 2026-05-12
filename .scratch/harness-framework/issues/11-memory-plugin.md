@@ -44,14 +44,14 @@ type MemoryTriggerMode =
 
 ## Acceptance criteria
 
-- [ ] MemoryProcessor loads history at buildContext stage
-- [ ] MemoryProcessor saves conversation turn at processOutput stage
-- [ ] InMemoryBackend works for testing
-- [ ] SQLiteBackend persists across sessions
-- [ ] Memory window limits loaded messages to configured count
-- [ ] `automatic` mode loads/stores transparently
-- [ ] `agent-controlled` mode exposes memory tools
-- [ ] Test: multi-turn conversation, memory loaded correctly in subsequent turns
+- [x] MemoryProcessor loads history at buildContext stage
+- [x] MemoryProcessor saves conversation turn at processOutput stage
+- [x] InMemoryBackend works for testing
+- [x] SQLiteBackend persists across sessions
+- [x] Memory window limits loaded messages to configured count
+- [x] `automatic` mode loads/stores transparently
+- [x] `agent-controlled` mode exposes memory tools
+- [x] Test: multi-turn conversation, memory loaded correctly in subsequent turns
 
 ## Blocked by
 

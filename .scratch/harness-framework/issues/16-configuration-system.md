@@ -42,14 +42,14 @@ Applied at `buildContext` when current model matches profile pattern. Supports `
 
 ## Acceptance criteria
 
-- [ ] JSONC files parsed correctly (comments stripped)
-- [ ] Multi-level merge: session > project > global > env
-- [ ] Invalid config produces clear Zod validation errors with file path
-- [ ] ModelProfile lookup resolves by pattern match
-- [ ] Profile systemPromptSuffix appended to agent system prompt
-- [ ] Profile toolOverrides correctly exclude/modify tools
-- [ ] Dynamic config fields resolved at processInput stage
-- [ ] Test: project config overrides global, ModelProfile adapts behavior per model
+- [x] JSONC files parsed correctly (comments stripped)
+- [x] Multi-level merge: session > project > global > env
+- [x] Invalid config produces clear Zod validation errors with file path
+- [x] ModelProfile lookup resolves by pattern match
+- [x] Profile systemPromptSuffix appended to agent system prompt
+- [x] Profile toolOverrides correctly exclude/modify tools
+- [x] Dynamic config fields resolved at processInput stage
+- [x] Test: project config overrides global, ModelProfile adapts behavior per model
 
 ## Blocked by
 
