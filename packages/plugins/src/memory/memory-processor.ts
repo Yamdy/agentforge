@@ -27,7 +27,7 @@ export function createMemoryProcessor(config: MemoryConfig): Processor {
       if (entries.length === 0) return ctx;
 
       const messageHistory = entries.map((e) => ({
-        role: e.role,
+        role: e.role as 'user' | 'assistant',
         content: e.content,
       }));
 

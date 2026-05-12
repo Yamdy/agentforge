@@ -1,4 +1,4 @@
-import { streamText, stepCountIs } from 'ai';
+import { streamText } from 'ai';
 import type { LanguageModel } from 'ai';
 import type { TokenUsage, Tracer } from '@agentforge/sdk';
 import { streamWithRetry, type RetryOptions } from './retry.js';
@@ -11,9 +11,8 @@ export interface LLMInvokerOptions {
 }
 
 export interface LLMInvokeInput {
-  prompt: string;
+  messages: unknown[];
   tools?: Record<string, unknown>;
-  maxSteps?: number;
 }
 
 export interface LLMInvokeResult {
@@ -22,7 +21,7 @@ export interface LLMInvokeResult {
 }
 
 export interface LLMStreamHandle {
-  textStream: AsyncIterable<string>;
+  fullStream: AsyncIterable<unknown>;
   usage: Promise<TokenUsage>;
 }
 
@@ -49,19 +48,16 @@ export class LLMInvoker {
       const streamOpts: Record<string, unknown> = {
         model: this.options.model,
         system: this.options.system,
-        prompt: input.prompt,
+        messages: input.messages,
         maxRetries: 0,
       };
 
       if (input.tools && Object.keys(input.tools).length > 0) {
         streamOpts.tools = input.tools;
-        streamOpts.stopWhen = stepCountIs(input.maxSteps ?? 5);
       }
 
       const result = streamText(streamOpts as any);
 
-      // Use fullStream to detect error events carrying the original error
-      // (with statusCode). The textStream silently swallows doStream errors.
       const chunks: string[] = [];
       let usage: any = null;
 
@@ -78,7 +74,6 @@ export class LLMInvoker {
         }
       }
 
-      // Fallback: if no usage from finish event, try result.usage
       if (!usage) {
         try { usage = await result.usage; } catch { /* usage unavailable */ }
       }
@@ -94,20 +89,26 @@ export class LLMInvoker {
     const streamOpts: Record<string, unknown> = {
       model: this.options.model,
       system: this.options.system,
-      prompt: input.prompt,
+      messages: input.messages,
       maxRetries: 0,
     };
 
     if (input.tools && Object.keys(input.tools).length > 0) {
       streamOpts.tools = input.tools;
-      streamOpts.stopWhen = stepCountIs(input.maxSteps ?? 5);
     }
 
     const result = streamText(streamOpts as any);
 
+    // Suppress AI_NoOutputGeneratedError: when the model returns only tool-calls
+    // (no text), the AI SDK's internal flush rejects. Since we consume fullStream
+    // directly to extract tool-call events, this error is expected and harmless.
+    Promise.resolve(result.text).catch(() => {});
+
     return {
-      textStream: result.textStream,
-      usage: Promise.resolve(result.usage).then(extractTokenUsage),
+      fullStream: result.fullStream,
+      usage: Promise.resolve(result.usage)
+        .then(extractTokenUsage)
+        .catch(() => ({ input: 0, output: 0 })),
     };
   }
 }

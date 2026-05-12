@@ -162,7 +162,7 @@ describe('CompressionProcessor', () => {
       const history = (result as PipelineContext).session.messageHistory as Message[];
 
       // First message should be the summary
-      expect(history[0].role).toBe('system');
+      expect(history[0].role).toBe('assistant');
       expect(history[0].content).toBe(summaryText);
       // Summary replaces all original messages
       expect(history.length).toBeLessThan(messages.length);

@@ -1,10 +1,15 @@
 import { jsonSchema } from 'ai';
-import type { Tool, ToolHook, ToolHookContext, ToolExecutionContext } from '@agentforge/sdk';
+import type { Tool, ToolHook, ToolHookContext, ToolExecutionContext, ToolResult } from '@agentforge/sdk';
 
 export interface AiSdkToolDef {
   description: string;
   inputSchema: unknown;
-  execute: (args: Record<string, unknown>) => Promise<unknown>;
+  execute?: (args: Record<string, unknown>) => Promise<unknown>;
+}
+
+export interface AiSdkToolSchema {
+  description: string;
+  inputSchema: unknown;
 }
 
 export interface ToolRegistryOptions {
@@ -43,6 +48,10 @@ export class ToolRegistry {
     this.tools.set(tool.name, tool);
   }
 
+  unregister(name: string): boolean {
+    return this.tools.delete(name);
+  }
+
   get(name: string): Tool | undefined {
     return this.tools.get(name);
   }
@@ -61,6 +70,83 @@ export class ToolRegistry {
 
   setToolExecutionContext(context: ToolExecutionContext): void {
     this.executionContext = context;
+  }
+
+  /** Tool schemas for AI SDK without execute — model can request tools but SDK won't auto-execute. */
+  toAiSdkToolSchemas(): Record<string, AiSdkToolSchema> {
+    const result: Record<string, AiSdkToolSchema> = {};
+    for (const tool of this.tools.values()) {
+      const schema = isZodSchema(tool.inputSchema)
+        ? tool.inputSchema
+        : jsonSchema(tool.inputSchema as Record<string, unknown>);
+      result[tool.name] = {
+        description: tool.description,
+        inputSchema: schema,
+      };
+    }
+    return result;
+  }
+
+  /** Execute a single tool by name with full hook chain + validation. */
+  async executeTool(name: string, args: Record<string, unknown>, context?: ToolExecutionContext & { toolCallId?: string }): Promise<ToolResult> {
+    const tool = this.tools.get(name);
+    const toolCallId = context?.toolCallId ?? '';
+    if (!tool) {
+      return { toolCallId, name, output: undefined, error: `Tool "${name}" not found` };
+    }
+
+    const execCtx = context ?? this.executionContext;
+    const hookCtx: ToolHookContext = { toolName: tool.name, args };
+
+    // Validate input against Zod schema
+    if (isZodSchema(tool.inputSchema)) {
+      const parsed = tool.inputSchema.safeParse(args);
+      if (!parsed.success) {
+        const issues = parsed.error?.issues?.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') ?? parsed.error?.message ?? 'Unknown validation error';
+        return { toolCallId, name: tool.name, output: undefined, error: `Input validation failed: ${issues}` };
+      }
+    }
+
+    // Before hooks
+    for (const hook of this.beforeHooks) {
+      await hook(hookCtx);
+    }
+
+    let toolOutput: unknown;
+    let toolError: string | undefined;
+    try {
+      toolOutput = await tool.execute(args, execCtx);
+    } catch (err) {
+      toolError = err instanceof Error ? err.message : String(err);
+      hookCtx.error = err instanceof Error ? err : new Error(toolError);
+      await this.runAfterHooks(hookCtx);
+      return { toolCallId, name: tool.name, output: undefined, error: toolError };
+    }
+
+    // After hooks (success path)
+    hookCtx.result = toolOutput;
+    await this.runAfterHooks(hookCtx);
+
+    // Wrap hook
+    if (execCtx.pluginManager) {
+      try {
+        const wrapped = await execCtx.pluginManager.invokeWrapHook('tool.wrap', {
+          toolName: tool.name,
+          args,
+          result: toolOutput,
+          sessionId: execCtx.sessionId ?? '',
+        });
+        if (wrapped && typeof wrapped === 'object' && 'result' in wrapped) {
+          toolOutput = (wrapped as Record<string, unknown>).result;
+        }
+      } catch {
+        // Wrap hook failure must not break tool execution.
+      }
+    }
+
+    // Truncation
+    const output = this.truncateOutput(toolOutput);
+    return { toolCallId, name: tool.name, output };
   }
 
   toAiSdkTools(): Record<string, AiSdkToolDef> {

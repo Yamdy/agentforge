@@ -68,7 +68,7 @@ describe('permissionPlugin', () => {
     expect(processor).toBeDefined();
 
     const ctx = makeContext({
-      iteration: { step: 0, currentToolCall: { name: 'shell_exec', args: { command: 'ls' } } },
+      iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'shell_exec', args: { command: 'ls' } }] },
     });
 
     const result = await processor.execute(ctx);
@@ -87,7 +87,7 @@ describe('permissionPlugin', () => {
     expect(processor).toBeDefined();
 
     const ctx = makeContext({
-      iteration: { step: 0, currentToolCall: { name: 'shell_exec', args: { command: 'rm -rf /' } } },
+      iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'shell_exec', args: { command: 'rm -rf /' } }] },
     });
 
     const result = await processor.execute(ctx);
@@ -103,7 +103,7 @@ describe('permissionPlugin', () => {
     });
 
     const ctx = makeContext({
-      iteration: { step: 0, currentToolCall: { name: 'shell_exec', args: { command: 'ls' } } },
+      iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'shell_exec', args: { command: 'ls' } }] },
     });
 
     await processor.execute(ctx);

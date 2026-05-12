@@ -31,7 +31,7 @@ describe('PipelineRunner.stream()', () => {
     expect(stageStarts[0]).toEqual({ type: 'stage_start', stage: 'processInput' });
   });
 
-  it('yields text_delta events when processor sets textStream', async () => {
+  it('yields text_delta events when processor sets fullStream', async () => {
     const runner = new PipelineRunner();
     runner.register({
       stage: 'invokeLLM',
@@ -39,11 +39,11 @@ describe('PipelineRunner.stream()', () => {
         ...ctx,
         iteration: {
           ...ctx.iteration,
-          textStream: (async function* () {
-            yield 'hello ';
-            yield 'world';
+          fullStream: (async function* () {
+            yield { type: 'text-delta', text: 'hello ' };
+            yield { type: 'text-delta', text: 'world' };
+            yield { type: 'finish-step', usage: { inputTokens: { total: 10, noCache: 10 }, outputTokens: { total: 2, text: 2 } } };
           })(),
-          usagePromise: Promise.resolve({ input: 10, output: 2 }),
         },
       }),
     });

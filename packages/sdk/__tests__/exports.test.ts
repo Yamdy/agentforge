@@ -213,6 +213,9 @@ describe('HarnessAPI', () => {
       registerTool(_tool) {
         registered.push('tool');
       },
+      unregisterTool(_name: string) {
+        return false;
+      },
       registerCommand(_name, _handler) {
         registered.push('cmd');
       },

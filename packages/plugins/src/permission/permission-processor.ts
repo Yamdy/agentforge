@@ -92,7 +92,8 @@ function toolNameMatch(pattern: string, toolName: string): boolean {
 // ---------------------------------------------------------------------------
 
 function getCurrentToolCall(ctx: PipelineContext): { name: string; args: Record<string, unknown> } | undefined {
-  return ctx.iteration.currentToolCall;
+  const calls = ctx.iteration.pendingToolCalls;
+  return calls && calls.length > 0 ? { name: calls[0].name, args: calls[0].args } : undefined;
 }
 
 function isDangerousTool(toolName: string): boolean {

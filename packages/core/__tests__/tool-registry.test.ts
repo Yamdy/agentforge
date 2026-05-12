@@ -77,7 +77,7 @@ describe('ToolRegistry', () => {
       expect(sdkTools.get_weather.description).toBe('Get weather for a city');
       expect(sdkTools.get_weather.inputSchema).toBeDefined();
 
-      const result = await sdkTools.get_weather.execute({ city: 'Tokyo' });
+      const result = await sdkTools.get_weather.execute!({ city: 'Tokyo' });
       expect(result).toBe('Tokyo: sunny');
     });
 
@@ -95,7 +95,7 @@ describe('ToolRegistry', () => {
         execute: async () => 'A'.repeat(100),
       });
 
-      const result = await registry.toAiSdkTools().verbose.execute({});
+      const result = await registry.toAiSdkTools().verbose.execute!({});
       expect(result).toBe('AAAAAAAAAA... [truncated]');
     });
 
@@ -108,7 +108,7 @@ describe('ToolRegistry', () => {
         execute: async () => 'hello',
       });
 
-      const result = await registry.toAiSdkTools().short.execute({});
+      const result = await registry.toAiSdkTools().short.execute!({});
       expect(result).toBe('hello');
     });
 
@@ -127,7 +127,7 @@ describe('ToolRegistry', () => {
       });
 
       const sdkTools = registry.toAiSdkTools();
-      await sdkTools.test_tool.execute({ x: 'hello' });
+      await sdkTools.test_tool.execute!({ x: 'hello' });
       expect(calls).toEqual(['before:test_tool']);
     });
 
@@ -146,7 +146,7 @@ describe('ToolRegistry', () => {
       });
 
       const sdkTools = registry.toAiSdkTools();
-      await sdkTools.test_tool.execute({ x: 'hello' });
+      await sdkTools.test_tool.execute!({ x: 'hello' });
       expect(calls).toEqual(['after:test_tool:result:hello']);
     });
 
@@ -160,7 +160,7 @@ describe('ToolRegistry', () => {
       });
 
       const sdkTools = registry.toAiSdkTools();
-      await expect(sdkTools.strict.execute({ count: 'not-a-number' })).rejects.toThrow(
+      await expect(sdkTools.strict.execute!({ count: 'not-a-number' })).rejects.toThrow(
         /Tool "strict" input validation failed/,
       );
     });
@@ -174,7 +174,7 @@ describe('ToolRegistry', () => {
         execute: async () => ({ items: Array.from({ length: 100 }, (_, i) => i) }),
       });
 
-      const result = await registry.toAiSdkTools().big_obj.execute({}) as { truncated: boolean; preview: string };
+      const result = await registry.toAiSdkTools().big_obj.execute!({}) as { truncated: boolean; preview: string };
       expect(result.truncated).toBe(true);
       expect(result.preview.length).toBeLessThanOrEqual(20);
     });
@@ -195,7 +195,7 @@ describe('ToolRegistry', () => {
       const mockSpan = { spanId: 'span-123', traceId: 'trace-456' };
       registry.setToolExecutionContext({ span: mockSpan });
 
-      await registry.toAiSdkTools().ctx_tool.execute({});
+      await registry.toAiSdkTools().ctx_tool.execute!({});
       expect(receivedContext?.span).toEqual(mockSpan);
     });
 
@@ -214,7 +214,7 @@ describe('ToolRegistry', () => {
       });
 
       const sdkTools = registry.toAiSdkTools();
-      await expect(sdkTools.failing_tool.execute({})).rejects.toThrow('Tool crashed!');
+      await expect(sdkTools.failing_tool.execute!({})).rejects.toThrow('Tool crashed!');
       expect(hookCalls).toEqual(['after:failing_tool:error=Tool crashed!']);
     });
 
@@ -241,7 +241,7 @@ describe('ToolRegistry', () => {
         sessionId: 'test-session',
       });
 
-      const result = await registry.toAiSdkTools().double.execute({ x: 5 });
+      const result = await registry.toAiSdkTools().double.execute!({ x: 5 });
       expect(hookCalled).toBe(true);
       expect(result).toBe(110);
     });

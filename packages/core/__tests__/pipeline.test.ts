@@ -142,7 +142,7 @@ describe('PipelineRunner', () => {
     }).toThrow();
   });
 
-  it('consumes textStream from processor into response', async () => {
+  it('consumes fullStream from processor into response', async () => {
     const runner = new PipelineRunner();
     runner.register({
       stage: 'invokeLLM',
@@ -150,9 +150,10 @@ describe('PipelineRunner', () => {
         ...ctx,
         iteration: {
           ...ctx.iteration,
-          textStream: (async function* () {
-            yield 'hello ';
-            yield 'world';
+          fullStream: (async function* () {
+            yield { type: 'text-delta', text: 'hello ' };
+            yield { type: 'text-delta', text: 'world' };
+            yield { type: 'finish-step', usage: { inputTokens: { total: 10, noCache: 10 }, outputTokens: { total: 2, text: 2 } } };
           })(),
           usagePromise: Promise.resolve({ input: 10, output: 2 }),
         },
@@ -163,7 +164,7 @@ describe('PipelineRunner', () => {
     const ctx = result as PipelineContext;
     expect(ctx.iteration.response).toBe('hello world');
     expect(ctx.iteration.tokenUsage).toEqual({ input: 10, output: 2 });
-    expect(ctx.iteration.textStream).toBeUndefined();
+    expect(ctx.iteration.fullStream).toBeUndefined();
     expect(ctx.iteration.usagePromise).toBeUndefined();
   });
 });

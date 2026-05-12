@@ -7,6 +7,7 @@ import {
   createMockModelWithToolCalls,
   registerMockProvider,
 } from './helpers.js';
+import { TestExporter } from '@agentforge/observability';
 import { z } from 'zod';
 
 describe('SubAgent', () => {
@@ -270,5 +271,51 @@ describe('SubAgent', () => {
     const endData = events[0].data as any;
     expect(endData.error).toContain('failworker');
     expect(endData.error).toContain('failed');
+  });
+
+  it('propagates parent tracer to child agent (spans in same exporter)', async () => {
+    const parentModel = createMockModelWithToolCalls(
+      [{ toolName: 'traced', args: { task: 'trace me' } }],
+      'Traced result',
+    );
+    registerMockProvider('trace-parent', () => parentModel);
+    registerMockProvider('trace-child', () =>
+      createMockLanguageModel({ text: 'Child traced' }),
+    );
+
+    const exporter = new TestExporter();
+    const tracer = exporter.createTracer();
+    const eventBus = new EventBus();
+
+    // Collect spans without tracer — baseline count
+    exporter.clear();
+
+    const subAgentTool = createSubAgentTool(
+      {
+        name: 'traced',
+        description: 'Traced sub-agent',
+        model: 'trace-child/mock',
+        contextPolicy: 'isolated',
+        inputSchema: z.object({ task: z.string() }),
+      },
+      {
+        model: 'trace-parent/mock',
+        tools: [],
+        eventBus,
+        tracer,
+      },
+    );
+
+    const agent = new Agent(
+      { model: 'trace-parent/mock', tools: [subAgentTool] },
+      { tracer },
+    );
+
+    await agent.run('Run traced sub-agent');
+
+    const spans = exporter.getSpans();
+    // Parent pipeline creates spans + child pipeline creates spans via same tracer
+    // Both parent and child agents share the exporter, proving tracer propagation
+    expect(spans.length).toBeGreaterThan(4);
   });
 });

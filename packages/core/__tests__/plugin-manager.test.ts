@@ -456,7 +456,7 @@ describe('PluginManager', () => {
       });
 
       const sdkTools = registry.toAiSdkTools();
-      const result = await sdkTools['add'].execute({ a: 1, b: 2 });
+      const result = await sdkTools['add'].execute!({ a: 1, b: 2 });
       expect(result).toBe('evicted: 3');
     });
   });

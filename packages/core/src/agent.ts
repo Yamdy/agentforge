@@ -1,11 +1,9 @@
 import type {
   AbortSignal,
   AgentConfig,
-  Dynamic,
   PipelineContext,
   PipelineStage,
   Processor,
-  ResolveContext,
   Tool,
 } from '@agentforge/sdk';
 import { PipelineRunner } from './pipeline.js';
@@ -14,7 +12,16 @@ import { PluginManager, type PluginFactory } from './plugin-manager.js';
 import { LLMInvoker } from './llm-invoker.js';
 import { resolveModel } from './model-resolver.js';
 import { echoTool } from '@agentforge/tools';
-import { resolveDynamic } from './dynamic-resolver.js';
+import {
+  processInputProcessor,
+  createBuildContextProcessor,
+  createPrepareStepProcessor,
+  createInvokeLLMProcessor,
+  processStepOutputProcessor,
+  createExecuteToolsProcessor,
+  evaluateIterationProcessor,
+  processOutputProcessor,
+} from './processors/index.js';
 
 const PRE_LOOP_STAGES: PipelineStage[] = ['processInput', 'buildContext'];
 const LOOP_STAGES: PipelineStage[] = [
@@ -27,7 +34,7 @@ export class Agent {
   private runner: PipelineRunner;
   private registry: ToolRegistry;
   private _pluginManager: PluginManager;
-  private _llm: LLMInvoker | null = null;
+  private _model: import('ai').LanguageModel | null = null;
 
   constructor(config: AgentConfig, options?: { tracer?: import('@agentforge/sdk').Tracer }) {
     this.config = config;
@@ -146,15 +153,14 @@ export class Agent {
   }
 
   private async getLLM(systemPrompt?: string): Promise<LLMInvoker> {
-    if (!this._llm) {
-      const model = await resolveModel(this.config.model);
-      this._llm = new LLMInvoker({
-        model,
-        system: systemPrompt,
-        retryOptions: { maxRetries: 3, baseDelay: 1000 },
-      });
+    if (!this._model) {
+      this._model = await resolveModel(this.config.model);
     }
-    return this._llm;
+    return new LLMInvoker({
+      model: this._model,
+      system: systemPrompt,
+      retryOptions: { maxRetries: 3, baseDelay: 1000 },
+    });
   }
 
   private createContext(input: string): PipelineContext {
@@ -177,148 +183,18 @@ export class Agent {
   }
 
   private registerBuiltinProcessors(): void {
-    const processInput: Processor = {
-      stage: 'processInput',
-      execute: async (ctx) => {
-        const resolveCtx: ResolveContext = {
-          input: ctx.request.input,
-          sessionId: ctx.request.sessionId,
-          metadata: {},
-        };
-        const config = { ...ctx.agent.config };
-        if (config.systemPrompt != null) {
-          config.systemPrompt = await resolveDynamic<string>(config.systemPrompt as Dynamic<string>, resolveCtx);
-        }
-        if (config.maxIterations != null) {
-          config.maxIterations = await resolveDynamic<number>(config.maxIterations as Dynamic<number>, resolveCtx);
-        }
-        return { ...ctx, agent: { ...ctx.agent, config } };
-      },
-    };
-
-    const buildContext: Processor = {
-      stage: 'buildContext',
-      execute: async (ctx) => ({
-        ...ctx,
-        agent: {
-          ...ctx.agent,
-          systemPrompt: ctx.agent.config.systemPrompt as string | undefined,
-          toolDeclarations: this.registry.getAll().map(t => ({
-            name: t.name,
-            description: t.description,
-          })),
-        },
-      }),
-    };
-
-    const prepareStep: Processor = {
-      stage: 'prepareStep',
-      execute: async (ctx) => {
-        // Filter message history: keep only recent messages to bound context size
-        const maxHistory = 50;
-        const history = ctx.session.messageHistory;
-        const messageHistory = history && history.length > maxHistory
-          ? history.slice(-maxHistory)
-          : history;
-
-        // Refresh tool declarations (plugins may have registered/removed tools)
-        const toolDeclarations = this.registry.getAll().map(t => ({
-          name: t.name,
-          description: t.description,
-        }));
-
-        return {
-          ...ctx,
-          session: { ...ctx.session, messageHistory },
-          agent: { ...ctx.agent, toolDeclarations },
-        };
-      },
-    };
-
-    const invokeLLM: Processor = {
-      stage: 'invokeLLM',
-      execute: async (ctx) => {
-        const systemPrompt = typeof ctx.agent.config.systemPrompt === 'string'
-          ? ctx.agent.config.systemPrompt : undefined;
-        const llm = await this.getLLM(systemPrompt);
-        const sdkTools = this.registry.toAiSdkTools();
-
-        this.registry.setToolExecutionContext({
-          span: {
-            spanId: `tool-${ctx.request.sessionId}-${ctx.iteration.step}`,
-            traceId: ctx.request.sessionId,
-          },
-          sessionId: ctx.request.sessionId,
-          pluginManager: this._pluginManager,
-        });
-
-        const handle = llm.stream({
-          prompt: ctx.request.input,
-          tools: Object.keys(sdkTools).length > 0 ? sdkTools : undefined,
-          maxSteps: typeof ctx.agent.config.maxIterations === 'number' ? ctx.agent.config.maxIterations : undefined,
-        });
-
-        return {
-          ...ctx,
-          iteration: {
-            ...ctx.iteration,
-            textStream: handle.textStream,
-            usagePromise: handle.usage,
-          },
-        };
-      },
-    };
-
-    const processStepOutput: Processor = {
-      stage: 'processStepOutput',
-      execute: async (ctx) => ctx,
-    };
-
-    const executeTools: Processor = {
-      stage: 'executeTools',
-      execute: async (ctx) => ctx,
-    };
-
-    const evaluateIteration: Processor = {
-      stage: 'evaluateIteration',
-      execute: async (ctx) => {
-        // Detect token overflow: if usage exceeds threshold, signal compression
-        const tokenUsage = ctx.iteration.tokenUsage;
-        if (tokenUsage) {
-          const totalTokens = (tokenUsage.input ?? 0) + (tokenUsage.output ?? 0);
-          const overflowThreshold = 100_000;
-          if (totalTokens > overflowThreshold) {
-            ctx.iteration.span?.setAttribute('context.overflow', true);
-            ctx.iteration.span?.setAttribute('context.tokens', totalTokens);
-            return {
-              ...ctx,
-              iteration: {
-                ...ctx.iteration,
-                loopDirective: { action: 'stop' },
-              },
-            };
-          }
-        }
-        return {
-          ...ctx,
-          iteration: { ...ctx.iteration, loopDirective: { action: 'stop' } },
-        };
-      },
-    };
-
-    const processOutput: Processor = {
-      stage: 'processOutput',
-      execute: async (ctx) => ctx,
-    };
-
-    this.runner.register(processInput);
-    this.runner.register(buildContext);
-    this.runner.register(prepareStep);
-    this.runner.register(invokeLLM);
-    this.runner.register(processStepOutput);
-    this.runner.register(executeTools);
-    this.runner.register(evaluateIteration);
-    this.runner.register(processOutput);
+    this.runner.register(processInputProcessor);
+    this.runner.register(createBuildContextProcessor(this.registry));
+    this.runner.register(createPrepareStepProcessor(this.registry));
+    this.runner.register(createInvokeLLMProcessor({
+      getLLM: (systemPrompt) => this.getLLM(systemPrompt),
+      registry: this.registry,
+      pluginManager: this._pluginManager,
+    }));
+    this.runner.register(processStepOutputProcessor);
+    this.runner.register(createExecuteToolsProcessor(this.registry));
+    this.runner.register(evaluateIterationProcessor);
+    this.runner.register(processOutputProcessor);
   }
 
   private computeLoopStages(

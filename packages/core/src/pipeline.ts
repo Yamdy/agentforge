@@ -6,7 +6,9 @@ import type {
   ProcessorResult,
   Span,
   StreamEvent,
+  ToolCall,
   Tracer,
+  TokenUsage,
 } from '@agentforge/sdk';
 import { NoOpTracer } from '@agentforge/observability';
 
@@ -14,6 +16,17 @@ export type RunResult = PipelineContext | AbortSignal;
 
 export interface PipelineRunnerOptions {
   tracer?: Tracer;
+}
+
+function extractTokenUsage(usage: any): TokenUsage {
+  return {
+    input: typeof usage?.inputTokens === 'number'
+      ? usage.inputTokens
+      : (usage?.inputTokens as any)?.total ?? 0,
+    output: typeof usage?.outputTokens === 'number'
+      ? usage.outputTokens
+      : (usage?.outputTokens as any)?.total ?? 0,
+  };
 }
 
 export class PipelineRunner {
@@ -43,7 +56,7 @@ export class PipelineRunner {
             return stageResult;
           }
           ctx = stageResult;
-          ctx = await this.consumeTextStream(ctx);
+          ctx = await this.consumeStream(ctx);
         } finally {
           stageSpan.end();
         }
@@ -73,20 +86,41 @@ export class PipelineRunner {
           }
           ctx = stageResult;
 
-          const textStream = ctx.iteration.textStream;
-          if (textStream) {
-            for await (const chunk of textStream) {
-              yield { type: 'text_delta', text: chunk };
+          const fullStream = ctx.iteration.fullStream;
+          if (fullStream) {
+            const toolCalls: ToolCall[] = [];
+            let usage: TokenUsage | undefined;
+
+            for await (const event of fullStream as AsyncIterable<any>) {
+              if (event.type === 'text-delta') {
+                yield { type: 'text_delta', text: event.text };
+              } else if (event.type === 'tool-call') {
+                const tc: ToolCall = {
+                  id: event.toolCallId ?? event.id ?? '',
+                  name: event.toolName ?? event.name ?? '',
+                  args: event.args ?? event.input ?? {},
+                };
+                toolCalls.push(tc);
+                yield { type: 'tool_call', name: tc.name, args: tc.args };
+              } else if (event.type === 'finish-step') {
+                usage = extractTokenUsage(event.usage);
+              } else if (event.type === 'error') {
+                throw event.error;
+              }
             }
-            const usage = ctx.iteration.usagePromise
+
+            const pendingUsage = ctx.iteration.usagePromise
               ? await ctx.iteration.usagePromise
               : undefined;
+
             ctx = Object.freeze({
               ...ctx,
               iteration: {
                 ...ctx.iteration,
-                ...(usage ? { tokenUsage: usage } : {}),
-                textStream: undefined,
+                response: ctx.iteration.response ?? '',
+                pendingToolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+                tokenUsage: usage ?? pendingUsage,
+                fullStream: undefined,
                 usagePromise: undefined,
               },
             });
@@ -128,14 +162,31 @@ export class PipelineRunner {
     return 'type' in result && result.type === 'abort';
   }
 
-  private async consumeTextStream(ctx: PipelineContext): Promise<PipelineContext> {
-    const textStream = ctx.iteration.textStream;
-    if (!textStream) return ctx;
+  private async consumeStream(ctx: PipelineContext): Promise<PipelineContext> {
+    const fullStream = ctx.iteration.fullStream;
+    if (!fullStream) return ctx;
 
     const chunks: string[] = [];
-    for await (const chunk of textStream) chunks.push(chunk);
+    const toolCalls: ToolCall[] = [];
+    let usage: TokenUsage | undefined;
 
-    const usage = ctx.iteration.usagePromise
+    for await (const event of fullStream as AsyncIterable<any>) {
+      if (event.type === 'text-delta') {
+        chunks.push(event.text);
+      } else if (event.type === 'tool-call') {
+        toolCalls.push({
+          id: event.toolCallId ?? event.id ?? '',
+          name: event.toolName ?? event.name ?? '',
+          args: event.args ?? event.input ?? {},
+        });
+      } else if (event.type === 'finish-step') {
+        usage = extractTokenUsage(event.usage);
+      } else if (event.type === 'error') {
+        throw event.error;
+      }
+    }
+
+    const pendingUsage = ctx.iteration.usagePromise
       ? await ctx.iteration.usagePromise
       : undefined;
 
@@ -143,9 +194,10 @@ export class PipelineRunner {
       ...ctx,
       iteration: {
         ...ctx.iteration,
-        response: chunks.join(''),
-        ...(usage ? { tokenUsage: usage } : {}),
-        textStream: undefined,
+        response: chunks.join('') || ctx.iteration.response,
+        pendingToolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+        tokenUsage: usage ?? pendingUsage,
+        fullStream: undefined,
         usagePromise: undefined,
       },
     });

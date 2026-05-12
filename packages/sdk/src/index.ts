@@ -22,10 +22,26 @@ export type PipelineStage =
 // Message (shared by memory, compression, session)
 // ---------------------------------------------------------------------------
 
-export interface Message {
-  role: string;
-  content: string;
+/** A tool call requested by the LLM. */
+export interface ToolCall {
+  id: string;
+  name: string;
+  args: Record<string, unknown>;
 }
+
+/** The result of executing a tool call. */
+export interface ToolResult {
+  toolCallId: string;
+  name: string;
+  output: unknown;
+  error?: string;
+}
+
+/** Structured conversation message supporting tool-call round-trips. */
+export type Message =
+  | { role: 'user'; content: string }
+  | { role: 'assistant'; content: string; toolCalls?: ToolCall[] }
+  | { role: 'tool'; content: string; toolCallId: string; toolName: string; result?: unknown; error?: string };
 
 // ---------------------------------------------------------------------------
 // Loop Directive (replaces _stopLoop + _retryFrom)
@@ -57,14 +73,18 @@ export interface IterationRegion {
   step: number;
   /** undefined defaults to 'continue'. Default evaluateIteration sets 'stop'. */
   loopDirective?: LoopDirective;
-  textStream?: AsyncIterable<string>;
+  /** AI SDK fullStream yielding text-delta, tool-call, finish-step, error events. */
+  fullStream?: AsyncIterable<unknown>;
   usagePromise?: Promise<TokenUsage>;
   response?: string;
   tokenUsage?: TokenUsage;
+  /** Tool calls extracted from the LLM response by PipelineRunner stream consumption. */
+  pendingToolCalls?: ToolCall[];
+  /** Results from executing pending tool calls (set by executeTools processor). */
+  toolResults?: ToolResult[];
   /** Per-stage observability span. Created by PipelineRunner.executeStage(),
    *  lives for one stage invocation (not one full iteration). */
   span?: Span;
-  currentToolCall?: { name: string; args: Record<string, unknown> };
 }
 
 export interface SessionRegion {
@@ -147,8 +167,8 @@ export interface Tool<TInput = unknown, TOutput = unknown> {
   outputSchema?: unknown;
   execute(input: TInput, context: ToolExecutionContext): Promise<TOutput>;
   requireApproval?: boolean;
-  renderCall?: (input: any) => string;
-  renderResult?: (output: any) => string;
+  renderCall?(input: TInput): string;
+  renderResult?(output: TOutput): string;
 }
 
 export type ToolDefinition = Tool;
@@ -254,6 +274,7 @@ export interface ResourceDeclaration {
 export interface HarnessAPI {
   registerProcessor(stage: PipelineStage, processor: Processor): void;
   registerTool(tool: ToolDefinition): void;
+  unregisterTool(name: string): boolean;
   registerCommand(name: string, handler: (args: string) => Promise<void>): void;
   registerHook(hook: Hook): void;
   subscribe(eventType: string, handler: (data?: unknown) => void): () => void;
@@ -293,9 +314,9 @@ export interface McpServerConfig {
 
 export interface AgentConfig {
   model: string;
-  systemPrompt?: string;
-  maxIterations?: number;
-  tools?: Tool<any, any>[];
+  systemPrompt?: Dynamic<string>;
+  maxIterations?: Dynamic<number>;
+  tools?: Tool[];
 }
 
 // ---------------------------------------------------------------------------

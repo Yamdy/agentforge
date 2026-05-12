@@ -36,7 +36,7 @@ async function applySummarize(
   if (!summarizeFn) return messages;
 
   const summary = await summarizeFn(messages);
-  return [{ role: 'system', content: summary }];
+  return [{ role: 'assistant', content: summary }];
 }
 
 export function createCompressionProcessor(config: CompressionConfig): Processor {
