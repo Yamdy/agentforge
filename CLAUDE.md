@@ -39,6 +39,9 @@ packages/
     core/processors/ — 8 built-in pipeline stage processors (extracted from Agent)
     process-input, build-context, prepare-step, invoke-llm, evaluate-iteration (substantive)
     process-step-output, execute-tools, process-output (no-op extension points)
+    provider-history-compat (compat rules engine)
+    core/gateways/ — GatewayChain, BuiltInGateway, OpenAICompatibleGateway
+    provider-capabilities.ts — Provider capability detection
   plugins/     — Processor plugins: memory, compression, permission, skill, MCP, eviction
 ```
 
@@ -67,9 +70,10 @@ The agentic loop repeats until `iteration.loopDirective` is `stop`. Processors c
 - **Processor**: `(context) => Promise<ProcessorResult>` — registered per stage, executes business logic. Substantive processors (`invokeLLM`, `buildContext`, etc.) live in `core/processors/` as factory functions; no-op extension points are const exports.
 - **Plugin**: factory function `(harness: HarnessAPI) => PluginRegistration` — registers processors, tools, hooks, resources
 - **Dynamic\<T\>**: `T | ((ctx) => T)` — AgentConfig fields resolved per-request at `processInput` stage
-- **ToolRegistry**: adapts Tool definitions to AI SDK format via `toAiSdkTools()`, the AI SDK handles tool-call detection and multi-step looping
-- **LLMInvoker**: wraps `ai.streamText()` with retry, token extraction, and streaming output
-- **Model resolution**: `resolveModel()` maps model strings (e.g. `"openai/gpt-4o"`) to AI SDK `LanguageModel` instances via provider map
+- **ToolRegistry**: adapts Tool definitions to AI SDK format via `toAiSdkToolSchemas()` (schemas only, no execute). AgentForge pipeline controls tool execution via `executeTool()` with before/after hooks.
+- **LLMInvoker**: wraps `ai.streamText()` for single-step LLM calls (no `maxSteps`), returns `fullStream` + `usage` + `reasoning` promises. Retry at invoke level only.
+- **Model resolution**: `resolveModel()` maps model strings (e.g. `"deepseek/deepseek-v4-flash"`) to AI SDK `LanguageModel` instances via pluggable `GatewayChain` (custom gateways → `BuiltInGateway`). Custom OpenAI-compatible endpoints via `GatewayConfig`.
+- **Provider compatibility**: `ProviderCapabilities` detection + `CompatRule` engine. Preemptive rules rewrite messages before LLM call; reactive rules fix history on API error. `providerOptions` passthrough from `AgentConfig` to `streamText()`.
 
 ### Configuration Merging
 

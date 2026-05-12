@@ -56,9 +56,9 @@ Compression, tool output truncation, progressive disclosure — preventing model
 - **Plugin system**: Code factory function — `(harness: HarnessAPI) => PluginRegistration`
 - **Observability backend**: Self-built lightweight abstraction (Span/Tracer/Metrics) + OTel Bridge
 - **Sub-agents**: Dual-mode — sync (tool-like, blocking) + async (background task, event notification)
-- **Tool execution**: Leverage AI SDK built-in multi-step loop — ToolRegistry generates AI SDK-compatible tools via `toAiSdkTools()` adapter, `streamText` + `maxSteps` handles detection/execution/looping; before/after hooks as execute wrapper callbacks, not separate sub-pipeline
+- **Tool execution**: AgentForge-controlled agentic loop — `invokeLLM` does single-step `streamText()` (no `maxSteps`, no execute on tools); `PipelineRunner` consumes `fullStream` extracting text/tool-calls/reasoning; `executeTools` processor executes pending tool calls via `ToolRegistry.executeTool()`; `evaluateIteration` loops on tool results. AI SDK provides schemas only via `toAiSdkToolSchemas()`.
 - **Package structure**: 5-package monorepo — core, observability, plugins, tools, sdk
-- **LLM Provider**: Bundled SDK Map + LLMInvoker — `resolveModel()` resolves model strings to `LanguageModel` instances (zero config, SDK instance caching); `LLMInvoker` wraps the AI SDK call owning retry + token extraction; created once per Agent (lazy init), receives pre-resolved `LanguageModel`
+- **LLM Provider**: Pluggable GatewayChain + dedicated providers — `resolveModel()` delegates to `GatewayChain` (custom gateways → `BuiltInGateway`); native `@ai-sdk/deepseek` provider handles reasoning_content; `LLMInvoker` wraps single-step `streamText()` owning retry + token + reasoning extraction
 - **Memory**: Processor plugin (not core) — official MemoryProcessor in plugins package, storage backends injectable
 - **Compression**: Hybrid two-phase — micro-compression (truncate tool output) first, then LLM summarization if needed
 - **Streaming**: Unified single path — `run()` and `stream()` share the same pipeline; `PipelineRunner.run()` collects textStream into response, `PipelineRunner.stream()` yields `StreamEvent` chunks; LLMInvoker always produces streaming output, consumption mode differs at PipelineRunner level
@@ -71,11 +71,12 @@ Compression, tool output truncation, progressive disclosure — preventing model
 - **Hook system**: Lightweight interception alongside Processors — Hooks observe/modify context without control flow; Processors handle business logic with abort capability; Hooks have explicit priority ordering
 - **EventBus**: Decoupled broadcast system — lifecycle events emitted at each pipeline point; plugins and subsystems subscribe to relevant events; backbone for session persistence, background tasks, and monitoring
 - **Dynamic config**: `Dynamic<T> = T | ((ctx) => T)` — AgentConfig fields accept functions resolved per-request at `processInput` stage
-- **Model routing**: Gateway chain — pluggable `ModelGateway` implementations replace hardcoded provider map; first-match-wins resolution
+- **Model routing**: Gateway chain — pluggable `ModelGateway` implementations via `GatewayChain`; `BuiltInGateway` wraps 4 native providers (openai, anthropic, google, deepseek); `OpenAICompatibleGateway` connects custom endpoints via `GatewayConfig`; first-match-wins resolution; `registerProvider()` backward compatible
 - **Model profile**: Per-model behavior customization — `ModelProfile` with systemPromptSuffix, toolOverrides, extraPromptFragments; registered per model pattern
 - **Runtime safety**: Built-in circuit breaker (consecutive tool call limit, total tool call limit, stagnation detection), model fallback chains (ordered retry across providers), concurrency controller (per-key slot management)
 - **Tool management**: Dynamic tool group activation/deactivation; tool result eviction for large outputs
 - **Processor modularity**: 8 built-in processors extracted from Agent into `core/processors/` — each stage is a standalone module; factory functions for dependency-injected processors (`invokeLLM`, `buildContext`, `prepareStep`), const exports for pure/no-op processors; Agent is pure orchestration
+- **Provider compatibility**: `ProviderCapabilities` detection per model string + `CompatRule` engine with preemptive (message rewrite before LLM call) and reactive (history fix on API error) rules; `providerOptions` passthrough from `AgentConfig` to `streamText()`; dedicated `@ai-sdk/deepseek` provider for native reasoning_content handling
 
 ## Pipeline Architecture
 
@@ -88,7 +89,7 @@ Each stage is simultaneously an **extension point** (Processor interface), an **
 PipelineContext
 ├── request       — immutable input data (user message, session ID, metadata)
 ├── agent         — agent configuration (config, systemPrompt, toolDeclarations, promptFragments)
-├── iteration     — current step state (step number, textStream, response, toolCalls, stopLoop, retryFrom)
+├── iteration     — current step state (step number, fullStream, response, pendingToolCalls, reasoningContent, loopDirective, span)
 └── session       — cross-iteration state (messageHistory, totalTokenUsage, custom plugin data)
 ```
 
@@ -102,10 +103,10 @@ processInput → buildContext → [Agentic Loop:
 - `processInput`: Input validation/transformation, Dynamic config resolution
 - `buildContext`: System prompt construction from PromptFragments, tool declarations, memory loading, ModelProfile application
 - `prepareStep`: Message history preparation/compression, tool availability filtering (tool groups)
-- `invokeLLM`: LLM streaming call + output stream interception/transformation
-- `processStepOutput`: Output validation (guardrail) + fact injection point
-- `executeTools`: Tool dispatch (parallel/sequential) + per-tool sub-pipeline (beforeTool → execute → afterTool)
-- `evaluateIteration`: Iteration decision (continue/stop/redirect), context overflow detection, compression trigger, circuit breaker
+- `invokeLLM`: Single-step `streamText()` call with compat rules preprocessing + providerOptions passthrough
+- `processStepOutput`: Appends assistant message (text + toolCalls + reasoningContent) to history
+- `executeTools`: Executes pending tool calls via `ToolRegistry.executeTool()`, appends tool result messages to history
+- `evaluateIteration`: Token accumulation; loops on tool results (`continue`), stops otherwise; token overflow guard
 - `processOutput`: Final output post-processing, result recording, session persistence
 
 ### Hook Points
