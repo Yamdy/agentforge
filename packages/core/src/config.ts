@@ -1,4 +1,5 @@
 import type { HarnessConfig } from '@agentforge/sdk';
+import { z } from 'zod';
 import { deepMerge } from './config-merge.js';
 
 // ---------------------------------------------------------------------------
@@ -86,7 +87,15 @@ export class ConfigLoader {
       {} as Record<string, unknown>,
     );
 
-    return merged as HarnessConfig;
+    const result = HarnessConfigSchema.safeParse(merged);
+    if (!result.success) {
+      const issues = result.error.issues
+        .map((i) => `  ${i.path.join('.')}: ${i.message}`)
+        .join('\n');
+      throw new Error(`Invalid config:\n${issues}`);
+    }
+
+    return result.data as HarnessConfig;
   }
 }
 
@@ -150,3 +159,16 @@ function stripJsonc(input: string): string {
 
   return result;
 }
+
+// ---------------------------------------------------------------------------
+// Zod schema for HarnessConfig validation
+// ---------------------------------------------------------------------------
+
+const HarnessConfigSchema = z.object({
+  agents: z.record(z.string(), z.unknown()).optional(),
+  tools: z.object({ enabled: z.array(z.string()).optional(), disabled: z.array(z.string()).optional() }).optional(),
+  plugins: z.array(z.string()).optional(),
+  session: z.object({ storage: z.enum(['file', 'memory']).optional(), path: z.string().optional() }).optional(),
+  modelProfiles: z.array(z.unknown()).optional(),
+  modelGateways: z.array(z.unknown()).optional(),
+}).passthrough();

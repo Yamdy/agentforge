@@ -1,11 +1,11 @@
-import type { SubAgentConfig, SubAgentResult, Tool, ToolDefinition } from '@agentforge/sdk';
+import type { SubAgentConfig, SubAgentResult, Tool, ToolDefinition, Tracer } from '@agentforge/sdk';
 import { Agent } from './agent.js';
 
 interface SubAgentParentContext {
   model: string;
   tools: ToolDefinition[];
   eventBus?: { emit: (event: string, data: unknown) => void };
-  tracer?: unknown;
+  tracer?: Tracer;
   getSessionState?: () => Record<string, unknown>;
 }
 
@@ -30,7 +30,7 @@ export function createSubAgentTool(
           systemPrompt: config.systemPrompt,
           tools: childTools,
           maxIterations: config.maxIterations,
-        });
+        }, { tracer: parent.tracer });
 
         if (config.contextPolicy === 'inherit' && parent.getSessionState) {
           const parentState = parent.getSessionState();

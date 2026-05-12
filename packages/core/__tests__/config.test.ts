@@ -145,4 +145,16 @@ describe('ConfigLoader.load', () => {
     expect(result.session?.storage).toBe('file');
     expect(result.session?.path).toBe('/override');
   });
+
+  it('produces validation error for invalid config values', async () => {
+    const loader = new ConfigLoader({
+      fileReader: () => Promise.reject(new Error('not found')),
+    });
+
+    await expect(
+      loader.load({
+        session: { plugins: 123 } as unknown as Partial<HarnessConfig>,
+      }),
+    ).rejects.toThrow(/Invalid config/);
+  });
 });

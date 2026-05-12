@@ -136,6 +136,9 @@ export class PluginManager {
       registerTool: (tool: ToolDefinition) => {
         this.registry.register(tool);
       },
+      unregisterTool: (name: string) => {
+        return this.registry.unregister(name);
+      },
       registerCommand: (name: string, handler: (args: string) => Promise<void>) => {
         this.commands.set(name, handler);
       },
