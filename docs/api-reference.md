@@ -1,0 +1,904 @@
+# API Reference
+
+AgentForge 公共 API 参考。按包分组，覆盖类型、类和函数导出。
+
+> **包版本**: @agentforge/core 0.0.1
+
+---
+
+## 目录
+
+- [@agentforge/sdk — 类型定义](#agentsdorge-sdk--类型定义)
+  - [PipelineContext 四区域](#pipelinecontext-四区域)
+  - [Processor 系统](#processor-系统)
+  - [Tool 系统](#tool-系统)
+  - [Plugin 系统](#plugin-系统)
+  - [消息与指令](#消息与指令)
+  - [可观测性类型](#可观测性类型)
+  - [模型与网关](#模型与网关)
+  - [Provider 兼容性](#provider-兼容性)
+  - [Session 持久化](#session-持久化)
+  - [Sub-Agent](#sub-agent)
+  - [运行时安全](#运行时安全)
+  - [其他类型](#其他类型)
+- [@agentforge/core — 运行时](#agentdorge-core--运行时)
+  - [Agent](#agent)
+  - [PipelineRunner](#pipelinerunner)
+  - [LLMInvoker](#llminvoker)
+  - [ToolRegistry](#toolregistry)
+  - [Session 类](#session-类)
+  - [ConfigLoader](#configloader)
+  - [Processors](#processors)
+  - [Gateways](#gateways)
+  - [Provider Capabilities](#provider-capabilities)
+  - [工具函数](#工具函数)
+  - [并发与容错](#并发与容错)
+  - [Sub-Agent](#sub-agent-1)
+- [@agentforge/tools — 内置工具](#agentdorge-tools--内置工具)
+- [@agentforge/observability — 可观测性](#agentdorge-observability--可观测性)
+- [@agentforge/plugins — 官方插件](#agentdorge-plugins--官方插件)
+  - [memoryPlugin](#memoryplugin)
+  - [compressionPlugin](#compressionplugin)
+  - [evictionPlugin](#evictionplugin)
+  - [permissionPlugin](#permissionplugin)
+  - [skillPlugin](#skillplugin)
+  - [mcpPlugin](#mcpplugin)
+
+---
+
+## @agentforge/sdk — 类型定义
+
+零运行时依赖的纯类型包。所有导出均为 TypeScript 类型/接口。
+
+```ts
+import type { AgentConfig, Processor, Tool, PipelineContext } from '@agentforge/sdk';
+```
+
+### PipelineContext 四区域
+
+每个 pipeline 阶段接收一个 `PipelineContext`，包含四个区域：
+
+#### `RequestRegion` — 不可变输入
+
+```ts
+interface RequestRegion {
+  input: string;       // 用户消息
+  sessionId: string;   // 会话 ID
+}
+```
+
+#### `AgentRegion` — Agent 配置
+
+```ts
+interface AgentRegion {
+  config: AgentConfig;
+  systemPrompt?: string;
+  toolDeclarations: Array<{ name: string; description: string }>;
+  promptFragments: string[];
+  providerOptions?: Record<string, Record<string, unknown>>;
+}
+```
+
+#### `IterationRegion` — 单步状态
+
+```ts
+interface IterationRegion {
+  step: number;
+  loopDirective?: LoopDirective;
+  fullStream?: AsyncIterable<unknown>;
+  usagePromise?: Promise<TokenUsage>;
+  reasoningPromise?: Promise<string | undefined>;
+  response?: string;
+  tokenUsage?: TokenUsage;
+  pendingToolCalls?: ToolCall[];
+  reasoningContent?: string;
+  toolResults?: ToolResult[];
+  span?: Span;
+}
+```
+
+#### `SessionRegion` — 跨步状态
+
+```ts
+interface SessionRegion {
+  messageHistory?: Message[];
+  totalTokenUsage?: TokenUsage;
+  custom: Record<string, unknown>;  // 插件扩展点
+}
+```
+
+#### `PipelineContext`
+
+```ts
+interface PipelineContext {
+  request: RequestRegion;
+  agent: AgentRegion;
+  iteration: IterationRegion;
+  session: SessionRegion;
+}
+```
+
+### Processor 系统
+
+#### `PipelineStage`
+
+11 个生命周期阶段：
+
+```ts
+type PipelineStage =
+  | 'processInput' | 'buildContext' | 'prepareStep' | 'invokeLLM'
+  | 'processStepOutput' | 'executeTools' | 'evaluateIteration' | 'processOutput'
+  | 'beforeTool' | 'execute' | 'afterTool';
+```
+
+Pipeline 流程：
+
+```
+processInput → buildContext → [Agentic Loop:
+  prepareStep → invokeLLM → processStepOutput → executeTools → evaluateIteration
+] → processOutput
+```
+
+#### `Processor`
+
+```ts
+interface Processor {
+  stage: PipelineStage;
+  execute(context: PipelineContext): Promise<ProcessorResult>;
+}
+```
+
+#### `ProcessorResult`
+
+```ts
+type ProcessorResult = PipelineContext | AbortSignal;
+```
+
+#### `AbortSignal`
+
+```ts
+interface AbortSignal {
+  type: 'abort';
+  reason: string;
+  retryFrom?: PipelineStage;
+}
+```
+
+### Tool 系统
+
+#### `Tool<TInput, TOutput>`
+
+```ts
+interface Tool<TInput = unknown, TOutput = unknown> {
+  name: string;
+  description: string;
+  inputSchema: unknown;           // Zod schema
+  outputSchema?: unknown;
+  execute(input: TInput, context: ToolExecutionContext): Promise<TOutput>;
+  requireApproval?: boolean;
+  renderCall?(input: TInput): string;
+  renderResult?(output: TOutput): string;
+}
+```
+
+#### `ToolExecutionContext`
+
+```ts
+interface ToolExecutionContext {
+  harness?: unknown;
+  span?: unknown;
+  sessionId?: string;
+  pluginManager?: WrapHookInvoker;
+}
+```
+
+### Plugin 系统
+
+#### `HarnessAPI`
+
+插件通过 HarnessAPI 与框架交互：
+
+```ts
+interface HarnessAPI {
+  registerProcessor(processor: Processor): void;
+  registerTool(tool: ToolDefinition): void;
+  unregisterTool(name: string): void;
+  registerCommand(name: string, handler: (args: string) => Promise<void>): void;
+  registerHook(hook: Hook): void;
+  subscribe(eventType: string, handler: (...args: unknown[]) => void): void;
+  registerResource(resource: ResourceDeclaration): void;
+  registerProvider(name: string, factory: ProviderFactory): void;
+}
+```
+
+#### `PluginRegistration`
+
+```ts
+interface PluginRegistration {
+  processors?: Processor[];
+  tools?: ToolDefinition[];
+  commands?: Record<string, (args: string) => Promise<void>>;
+}
+```
+
+插件是一个工厂函数：
+
+```ts
+type PluginFactory = (harness: HarnessAPI) => PluginRegistration | Promise<PluginRegistration>;
+```
+
+#### `HookPoint`
+
+12 个拦截点：
+
+| HookPoint | 时机 | 用途 |
+|-----------|------|------|
+| `agent.start` | Pipeline 开始前 | 初始化、遥测 |
+| `agent.end` | Pipeline 完成后 | 清理、指标 |
+| `stage.before` | 任意阶段执行前 | 上下文注入 |
+| `stage.after` | 任意阶段完成后 | 后处理 |
+| `llm.before` | LLM 调用前 | Prompt 修改 |
+| `llm.after` | LLM 响应后 | 响应转换 |
+| `llm.wrap` | 包裹整个 LLM 调用 | 错误恢复、缓存 |
+| `tool.before` | 工具执行前 | 权限检查 |
+| `tool.after` | 工具执行后 | 日志、驱逐 |
+| `tool.wrap` | 包裹整个工具执行 | 结果驱逐、计时 |
+| `iteration.end` | 每次循环迭代后 | 进度追踪 |
+| `error` | 任何错误时 | 错误上报 |
+
+### 消息与指令
+
+#### `Message`
+
+```ts
+type Message =
+  | { role: 'user'; content: string }
+  | { role: 'assistant'; content: string; toolCalls?: ToolCall[]; reasoningContent?: string }
+  | { role: 'tool'; content: string; toolCallId: string; toolName: string; result?: unknown; error?: string };
+```
+
+#### `LoopDirective`
+
+```ts
+type LoopDirective =
+  | { action: 'continue' }
+  | { action: 'stop' }
+  | { action: 'retry'; retryFrom: PipelineStage };
+```
+
+### 可观测性类型
+
+#### `Span`
+
+```ts
+interface Span {
+  readonly name: string;
+  startChild(name: string): Span;
+  end(): void;
+  setAttribute(key: string, value: unknown): Span;
+  addEvent(name: string, attributes?: Record<string, unknown>): Span;
+  spanContext(): SpanContext;
+}
+```
+
+#### `Tracer`
+
+```ts
+interface Tracer {
+  startSpan(name: string): Span;
+  getCurrentSpan(): Span | undefined;
+}
+```
+
+#### `TokenUsage`
+
+```ts
+interface TokenUsage {
+  input: number;
+  output: number;
+}
+```
+
+### 模型与网关
+
+#### `AgentConfig`
+
+```ts
+interface AgentConfig {
+  model: string;                                // "provider/modelId" 格式
+  systemPrompt?: Dynamic<string>;
+  maxIterations?: Dynamic<number>;
+  tools?: Tool[];
+  providerOptions?: Record<string, Record<string, unknown>>;
+}
+```
+
+#### `Dynamic<T>`
+
+静态值或根据请求上下文动态解析的函数：
+
+```ts
+type Dynamic<T> = T | ((ctx: ResolveContext) => T | Promise<T>);
+
+interface ResolveContext {
+  input: string;
+  sessionId: string;
+  metadata: Record<string, unknown>;
+}
+```
+
+#### `ModelProfile`
+
+按模型模式匹配的行为定制：
+
+```ts
+interface ModelProfile {
+  modelPattern: string | RegExp;
+  systemPromptSuffix?: string;
+  toolOverrides?: { [toolName: string]: { description?: string; exclude?: boolean } };
+  extraPromptFragments?: PromptFragment[];
+}
+```
+
+#### `GatewayConfig`
+
+```ts
+interface GatewayConfig {
+  name: string;
+  url: string;
+  apiKey?: string;
+}
+```
+
+#### `ModelGateway`
+
+```ts
+interface ModelGateway {
+  name: string;
+  canResolve(modelString: string): boolean;
+  resolve(modelString: string): Promise<unknown>;
+}
+```
+
+### Provider 兼容性
+
+#### `ProviderCapabilities`
+
+```ts
+interface ProviderCapabilities {
+  supportsReasoning: boolean;
+  supportsToolCalling: boolean;
+  supportsParallelToolCalls: boolean;
+  requiresAlternatingRoles: boolean;
+  rejectsEmptyAssistantContent: boolean;
+  toolCallIdPattern?: RegExp;
+}
+```
+
+#### `CompatRule`
+
+```ts
+interface CompatRule {
+  name: string;
+  providers: string[];
+  applyToPrompt?(messages: Message[], capabilities: ProviderCapabilities): Message[];
+  fixHistory?(history: Message[], error: unknown): Message[];
+  errorPatterns?: RegExp[];
+}
+```
+
+### Session 持久化
+
+#### `SessionRecord`
+
+```ts
+interface SessionRecord {
+  sessionId: string;
+  parentSessionId?: string;
+  createdAt: string;
+  updatedAt: string;
+  status: SessionStatus;  // 'active' | 'completed' | 'suspended' | 'error'
+  model?: string;
+  tokenUsage?: TokenUsage;
+}
+```
+
+#### `SessionManager`
+
+```ts
+interface SessionManager {
+  start(input: string, options?: unknown): Promise<SessionRecord>;
+  restore(sessionId: string): Promise<SessionRecord>;
+  suspend(sessionId: string, reason: string): Promise<void>;
+  resume(sessionId: string, input?: string): Promise<SessionRecord>;
+  list(filter?: unknown): Promise<SessionRecord[]>;
+}
+```
+
+### Sub-Agent
+
+#### `SubAgentConfig`
+
+```ts
+interface SubAgentConfig {
+  name: string;
+  description?: string;
+  inputSchema?: unknown;
+  model?: string;
+  systemPrompt?: string;
+  tools?: Tool[];
+  maxIterations?: number;
+  contextPolicy: 'isolated' | 'inherit' | 'summary-only';
+}
+```
+
+### 运行时安全
+
+#### `ConcurrencySlot`
+
+```ts
+interface ConcurrencySlot {
+  key: string;
+  maxConcurrent: number;
+}
+```
+
+#### `FallbackEntry`
+
+```ts
+interface FallbackEntry {
+  model: string;
+  priority: number;
+}
+```
+
+#### `AsyncTaskHandle`
+
+```ts
+interface AsyncTaskHandle {
+  taskId: string;
+  status: AsyncTaskStatus;
+  result?: SubAgentResult;
+  error?: Error;
+  cancel(): void;
+  on_complete(handler: (result: SubAgentResult) => void): void;
+}
+```
+
+### 其他类型
+
+#### `StreamEvent`
+
+```ts
+type StreamEvent =
+  | { type: 'text_delta'; text: string }
+  | { type: 'stage_start'; stage: PipelineStage }
+  | { type: 'stage_complete'; stage: PipelineStage }
+  | { type: 'tool_call'; toolCall: ToolCall }
+  | { type: 'tool_result'; toolResult: ToolResult }
+  | { type: 'complete'; response: string }
+  | { type: 'abort'; signal: AbortSignal };
+```
+
+#### `SpanType`
+
+```ts
+const SpanType = {
+  AGENT_RUN: 'agent_run',
+  MODEL_STEP: 'model_step',
+  TOOL_CALL: 'tool_call',
+  PROCESSOR_RUN: 'processor_run',
+} as const;
+```
+
+#### `McpServerConfig`
+
+```ts
+interface McpServerConfig {
+  name: string;
+  transport?: 'stdio' | 'sse' | 'http';
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string;
+}
+```
+
+---
+
+## @agentforge/core — 运行时
+
+```ts
+import { Agent, PipelineRunner, resolveModel, registerProvider } from '@agentforge/core';
+```
+
+### Agent
+
+顶层 Agent 编排器。
+
+```ts
+const agent = new Agent(config: AgentConfig, options?: { tracer?: Tracer });
+```
+
+**方法：**
+
+| 方法 | 签名 | 说明 |
+|------|------|------|
+| `use` | `(factory: PluginFactory) => void` | 加载插件 |
+| `run` | `(input: string, signal?: AbortSignal) => Promise<string>` | 运行并返回完整响应 |
+| `stream` | `(input: string, signal?: AbortSignal) => AsyncIterable<StreamEvent>` | 流式运行，逐事件返回 |
+
+**属性：**
+
+| 属性 | 类型 | 说明 |
+|------|------|------|
+| `pipelineRunner` | `PipelineRunner` | 内部 pipeline 运行器 |
+| `toolRegistry` | `ToolRegistry` | 工具注册表 |
+| `pluginManager` | `PluginManager` | 插件管理器 |
+
+### PipelineRunner
+
+执行 Processor 链。
+
+```ts
+const runner = new PipelineRunner(options?: PipelineRunnerOptions);
+```
+
+**方法：**
+
+| 方法 | 签名 | 说明 |
+|------|------|------|
+| `register` | `(processor: Processor) => void` | 注册 Processor |
+| `run` | `(context: PipelineContext, stages: PipelineStage[]) => Promise<PipelineContext>` | 顺序执行阶段 |
+| `stream` | `(context: PipelineContext, stages: PipelineStage[]) => AsyncIterable<StreamEvent>` | 流式执行阶段 |
+
+### LLMInvoker
+
+封装 AI SDK `streamText()` 的单步 LLM 调用。
+
+```ts
+const invoker = new LLMInvoker(options: LLMInvokerOptions);
+```
+
+**方法：**
+
+| 方法 | 签名 | 说明 |
+|------|------|------|
+| `invoke` | `(input: LLMInvokeInput) => Promise<LLMInvokeResult>` | 同步调用 |
+| `stream` | `(input: LLMInvokeInput) => LLMStreamHandle` | 流式调用 |
+
+### ToolRegistry
+
+工具注册与执行。
+
+```ts
+const registry = new ToolRegistry(options?: ToolRegistryOptions);
+```
+
+**方法：**
+
+| 方法 | 签名 | 说明 |
+|------|------|------|
+| `register` | `(tool: ToolDefinition) => void` | 注册工具 |
+| `unregister` | `(name: string) => void` | 移除工具 |
+| `get` | `(name: string) => ToolDefinition \| undefined` | 获取工具 |
+| `getAll` | `() => ToolDefinition[]` | 获取所有工具 |
+| `toAiSdkToolSchemas` | `() => AiSdkToolSchema[]` | 转为 AI SDK schema（不含 execute） |
+| `executeTool` | `(name: string, args: unknown, context?) => Promise<unknown>` | 执行工具 |
+| `addBeforeHook` | `(hook: ToolHook) => void` | 添加 before hook |
+| `addAfterHook` | `(hook: ToolHook) => void` | 添加 after hook |
+
+### Session 类
+
+#### `FilesystemSessionStorage`
+
+JSONL 文件存储：
+
+```ts
+const storage = new FilesystemSessionStorage(basePath: string);
+```
+
+#### `SessionPersistence`
+
+桥接 EventBus 事件到 SessionStorage：
+
+```ts
+const persistence = new SessionPersistence(bus: EventBus, storage: SessionStorage);
+```
+
+#### `SessionManagerImpl`
+
+```ts
+const sessionMgr = new SessionManagerImpl(storage: SessionStorage, bus: EventBus);
+```
+
+### ConfigLoader
+
+JSONC 多层配置加载：
+
+```ts
+const loader = new ConfigLoader(options?: { basePath?: string });
+const config = await loader.load({
+  env: 'AGENTFORGE_CONFIG',
+  project: '.agentforge/config.jsonc',
+  session: sessionLevelConfig,
+});
+```
+
+### Processors
+
+8 个内置 Processor，通过工厂函数创建：
+
+| 导出 | 工厂/单例 | Stage | 说明 |
+|------|-----------|-------|------|
+| `processInputProcessor` | 单例 | `processInput` | 解析 Dynamic 配置 |
+| `createBuildContextProcessor(registry)` | 工厂 | `buildContext` | 构建 systemPrompt、toolDeclarations |
+| `createPrepareStepProcessor(registry)` | 工厂 | `prepareStep` | 裁剪历史、刷新工具声明 |
+| `createInvokeLLMProcessor(deps)` | 工厂 | `invokeLLM` | 调用 LLM、应用 compat 规则 |
+| `processStepOutputProcessor` | 单例 | `processStepOutput` | 追加 assistant 消息到历史 |
+| `createExecuteToolsProcessor(registry)` | 工厂 | `executeTools` | 执行待处理工具调用 |
+| `evaluateIterationProcessor` | 单例 | `evaluateIteration` | 设置循环指令、token 溢出保护 |
+| `processOutputProcessor` | 单例 | `processOutput` | 透传（扩展点） |
+
+### Gateways
+
+#### `GatewayChain`
+
+有序网关链，先匹配先使用：
+
+```ts
+const chain = new GatewayChain();
+chain.register(customGateway);
+chain.register(new BuiltInGateway());
+const model = await chain.resolve('deepseek/deepseek-v4-flash');
+```
+
+#### `BuiltInGateway`
+
+内置支持：`openai/*`, `anthropic/*`, `google/*`, `deepseek/*`
+
+#### `OpenAICompatibleGateway`
+
+自定义 OpenAI 兼容端点：
+
+```ts
+const gateway = new OpenAICompatibleGateway({
+  name: 'my-provider',
+  url: 'https://api.example.com/v1',
+  apiKey: 'sk-xxx',
+});
+```
+
+### Provider Capabilities
+
+```ts
+import { detectProvider, detectCapabilities } from '@agentforge/core';
+
+const provider = detectProvider('deepseek/deepseek-v4-flash'); // 'deepseek'
+const caps = detectCapabilities('deepseek/deepseek-v4-flash');
+// { supportsReasoning: true, supportsToolCalling: true, ... }
+```
+
+6 个内置 CompatRule：
+- `strip-unsupported-reasoning` — 非推理模型移除 reasoning 部分
+- `strip-foreign-reasoning` — Anthropic 移除 reasoning
+- `ensure-alternating-roles` — Anthropic 插入填充消息
+- `fix-empty-assistant-content` — 空内容填充空格
+- `sanitize-tool-call-ids` — 修复非法 tool call ID 字符（响应式）
+- `deepseek-reasoning-required` — DeepSeek 添加空 reasoningContent（响应式）
+
+### 工具函数
+
+| 函数 | 签名 | 说明 |
+|------|------|------|
+| `resolveModel` | `(modelString: string) => Promise<LanguageModel>` | 解析 "provider/model" 为 AI SDK 模型 |
+| `registerProvider` | `(name: string, factory: ProviderFactory) => void` | 注册自定义 provider |
+| `parseModel` | `(modelString: string) => ParsedModel` | 解析为 `{provider, modelId}` |
+| `streamWithRetry` | `<T>(fn, options) => Promise<T>` | 指数退避重试 |
+| `deepMerge` | `(target, ...sources) => Record<string, unknown>` | 非变更式深度合并 |
+| `resolveDynamic` | `<T>(value: Dynamic<T>, ctx) => Promise<T>` | 解析 Dynamic 值 |
+| `matchProfile` | `(model, profiles) => ModelProfile \| undefined` | 匹配 ModelProfile |
+| `applyProfile` | `(ctx, profile) => PipelineContext` | 应用 Profile 到上下文 |
+
+### 并发与容错
+
+#### `ConcurrencyController`
+
+命名信号量槽位管理：
+
+```ts
+const controller = new ConcurrencyController([
+  { key: 'research', maxConcurrent: 3 },
+]);
+await controller.acquire('research');
+```
+
+#### `FallbackRunner`
+
+有序模型回退链：
+
+```ts
+const runner = new FallbackRunner({
+  fallbacks: [
+    { model: 'openai/gpt-4o', priority: 1 },
+    { model: 'anthropic/claude-sonnet-4-6', priority: 2 },
+  ],
+});
+```
+
+### Sub-Agent
+
+#### `createSubAgentTool`
+
+创建子 Agent 工具：
+
+```ts
+const researchTool = createSubAgentTool({
+  name: 'researcher',
+  model: 'deepseek/deepseek-v4-flash',
+  systemPrompt: '你是一个研究助手',
+  contextPolicy: 'isolated',
+  maxIterations: 3,
+}, parentAgent);
+```
+
+#### `TaskManagerImpl`
+
+异步子 Agent 任务管理：
+
+```ts
+const taskMgr = new TaskManagerImpl();
+const handle = await taskMgr.launch(config, prompt);
+handle.on_complete((result) => console.log(result.response));
+```
+
+---
+
+## @agentforge/tools — 内置工具
+
+```ts
+import { echoTool } from '@agentforge/tools';
+```
+
+| 工具 | 输入 Schema | 输出 | 说明 |
+|------|------------|------|------|
+| `echoTool` | `{ message: z.string() }` | `string` | 回显输入消息 |
+
+---
+
+## @agentforge/observability — 可观测性
+
+```ts
+import { OTelBridge, TracerImpl, NoOpTracer, TestExporter } from '@agentforge/observability';
+```
+
+| 导出 | 类型 | 说明 |
+|------|------|------|
+| `NoOpTracer` | 类 | 零操作 Tracer，用于不追踪的场景 |
+| `TracerImpl` | 类 | 具体 Tracer 实现 |
+| `OTelBridge` | 类 | OpenTelemetry SDK 桥接 |
+| `TestExporter` | 类 | 测试用 Span 导出器 |
+
+**OTelBridge 用法：**
+
+```ts
+import { OTelBridge } from '@agentforge/observability';
+import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
+
+const exporter = new InMemorySpanExporter();
+const provider = new BasicTracerProvider();
+provider.addSpanProcessor(new SimpleSpanProcessor(exporter));
+
+const tracer = new OTelBridge({ tracerProvider: provider, eventBus: bus });
+```
+
+---
+
+## @agentforge/plugins — 官方插件
+
+```ts
+import {
+  memoryPlugin, compressionPlugin, evictionPlugin,
+  permissionPlugin, skillPlugin, mcpPlugin,
+} from '@agentforge/plugins';
+```
+
+### memoryPlugin
+
+会话记忆存储与检索。
+
+```ts
+agent.use(memoryPlugin({
+  backend: new InMemoryBackend(),  // 或 SQLiteBackend
+  triggerMode: { type: 'automatic', onLoad: 'always' },
+}));
+```
+
+**triggerMode 选项：**
+- `{ type: 'automatic', onLoad: 'always' | 'on-session-start' }` — 自动注入记忆
+- `{ type: 'agent-controlled' }` — 注册 `retrieve_from_memory` / `record_to_memory` 工具
+- `{ type: 'both' }` — 同时自动注入和提供工具
+
+**后端：** `InMemoryBackend` | `SQLiteBackend`
+
+### compressionPlugin
+
+上下文压缩，防止 token 溢出。
+
+```ts
+agent.use(compressionPlugin({
+  maxContextTokens: 8000,
+  phases: [
+    { type: 'truncate', maxLength: 500 },
+    { type: 'summarize', model: 'deepseek/deepseek-v4-flash', maxTokens: 2000 },
+    { type: 'prune', keepRecent: 10 },
+  ],
+}));
+```
+
+**阶段按顺序执行，满足条件后停止。**
+
+### evictionPlugin
+
+大工具输出自动驱逐。
+
+```ts
+agent.use(evictionPlugin({
+  maxSize: 500,                      // 超过此大小的工具输出被驱逐
+  storage: new InMemoryEvictionStorage(),
+  previewLength: 200,                // 驱逐后保留的预览长度
+}));
+```
+
+驱逐后工具结果替换为 `{ preview, reference, evicted: true }`，可通过 `EvictionStorage` 检索完整内容。
+
+### permissionPlugin
+
+工具执行权限控制。
+
+```ts
+agent.use(permissionPlugin({
+  mode: 'interactive',  // 'full-auto' | 'plan-only' | 'interactive'
+  rules: [
+    { tool: 'shell_exec', action: 'deny' },
+    { tool: 'file_write', action: 'ask' },
+    { tool: 'echo', action: 'allow' },
+  ],
+}));
+```
+
+**模式：**
+- `full-auto` — 所有工具允许
+- `plan-only` — 危险工具自动拒绝
+- `interactive` — 按规则评估，`ask` 暂停等待人工审批
+
+### skillPlugin
+
+基于 SKILL.md 文件的技能发现与注入。
+
+```ts
+agent.use(skillPlugin({
+  skills: [{ name: 'summarize', description: '文本摘要', content: '...' }],
+  // 或自动发现:
+  directories: ['./skills', './.skills'],
+}));
+```
+
+注册 `read_skill` 工具供 Agent 按需读取技能内容。
+
+### mcpPlugin
+
+Model Context Protocol 服务器集成。
+
+```ts
+agent.use(mcpPlugin({
+  servers: [{
+    name: 'filesystem',
+    transport: 'stdio',
+    command: 'node',
+    args: ['server-entry.js', '/path/to/dir'],
+  }],
+}));
+```
+
+MCP 工具名自动添加 `serverName__` 前缀防止冲突。生命周期通过 `ResourceDeclaration` 管理：`start()` 连接并发现工具，`stop()` 断开并注销。
