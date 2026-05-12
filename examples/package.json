@@ -4,10 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "weather": "tsx weather-agent.ts",
-    "plugin": "tsx plugin-demo.ts",
-    "sub-agent": "tsx sub-agent-demo.ts",
-    "kitchen-sink": "tsx kitchen-sink.ts"
+    "demo": "tsx --env-file=.env unified-demo.ts",
+    "demo:dry": "tsx --env-file=.env unified-demo.ts"
   },
   "dependencies": {
     "@agentforge/core": "workspace:*",

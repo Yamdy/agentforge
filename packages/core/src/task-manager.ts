@@ -71,12 +71,11 @@ class InternalAsyncTaskHandle implements AsyncTaskHandle {
 const defaultRunAgent = async (
   config: AgentConfig,
   input: string,
-  _signal?: AbortSignal,
+  signal?: AbortSignal,
 ): Promise<SubAgentResult> => {
   const { Agent } = await import('./agent.js');
   const agent = new Agent(config);
-  // TODO: integrate signal for cancellation
-  const response = await agent.run(input);
+  const response = await agent.run(input, signal);
   return {
     response,
     tokenUsage: { input: 0, output: 0 },
