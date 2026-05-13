@@ -1,20 +1,16 @@
 /**
  * AgentForge 统一演示 — 全特性真实 LLM 验证
  *
- * 合并所有 example 为一个文件，按 Region 分区验证：
- *   R1  Provider + Model Resolution
- *   R2  基础 Agent + Streaming + Custom Processor
- *   R3  Tool System (Zod schema + echo + calculator + weather + travel)
- *   R4  Plugin System (Processor + Hook + Resource + Subscribe)
- *   R5  OTel Bridge (Span 树)
- *   R6  Sub-Agents (sync: isolated + summary-only)
- *   R7  Session Persistence (JSONL) + Suspend/Resume
- *   R8  Memory / Compression / Permission / Skill / Eviction 插件
- *   R9  Config System (JSONC + 多层合并 + ModelProfile + Dynamic)
- *   R10 MCP Plugin (真实 filesystem server)
- *   R11 Async Sub-Agents (ConcurrencyController + TaskManager + 取消)
+ * 按 Region 分区验证：
+ *   R1  Agent + Streaming + Tools (基础对话 + 天气/旅行/计算器工具链)
+ *   R2  Sub-Agents (isolated + summary-only)
+ *   R3  Session Persistence (JSONL + Suspend/Resume)
+ *   R4  Config System (JSONC + 多层合并 + ModelProfile + Dynamic)
+ *   R5  MCP Plugin (真实 filesystem server)
+ *   R6  Async Sub-Agents (ConcurrencyController + TaskManager + 取消)
+ *   R7  Infrastructure 健康检查 (Plugin + OTel + Memory)
  *
- * 运行: npx tsx --env-file=examples/.env examples/unified-demo.ts
+ * 运行: npx tsx --env-file=.env unified-demo.ts
  */
 
 import {
@@ -43,6 +39,7 @@ import {
   InMemoryEvictionStorage,
   mcpPlugin,
 } from '@agentforge/plugins';
+import { echoTool } from '@agentforge/tools';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import type { HarnessAPI, PluginRegistration, Tool, PipelineContext, PromptFragment } from '@agentforge/sdk';
 import type { SkillDefinition } from '@agentforge/plugins';
@@ -80,12 +77,12 @@ function separator(title: string) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// R1  Provider + Model Resolution
+// Provider
 // ═══════════════════════════════════════════════════════════════════════════════
 
 registerProvider('deepseek', (modelId: string) => {
   const apiKey = process.env.DEEPSEEK_API_KEY;
-  if (!apiKey) throw new Error('DEEPSEEK_API_KEY 未设置。请创建 examples/.env 文件。');
+  if (!apiKey) throw new Error('DEEPSEEK_API_KEY 未设置。请创建 .env 文件。');
   const sdk = createOpenAICompatible({ baseURL: 'https://api.deepseek.com', apiKey } as any);
   return sdk.languageModel(modelId);
 });
@@ -119,7 +116,7 @@ const sessionMgr = new SessionManagerImpl(storage, bus);
 const tracer = new OTelBridge({ tracerProvider: otelProvider, eventBus: bus });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// R2+R3  Tools (getWeather + getTravelAdvice + calculator)
+// Tools
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const weatherData: Record<string, { temp: number; condition: string; humidity: number }> = {
@@ -177,7 +174,7 @@ const calculatorTool: Tool<{ expression: string }, string> = {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// R6  Sub-Agent tools
+// Sub-Agent tools
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const translatorTool = createSubAgentTool(
@@ -217,7 +214,7 @@ const codeReviewerTool = createSubAgentTool(
 );
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// R4  Monitoring plugin
+// Monitoring plugin (Processor + Hook + Resource + Subscribe)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function monitoringPlugin(api: HarnessAPI): PluginRegistration {
@@ -254,7 +251,7 @@ function monitoringPlugin(api: HarnessAPI): PluginRegistration {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Create main agent (R2–R6 + R8)
+// Create main agent
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const memoryBackend = new InMemoryBackend();
@@ -279,7 +276,7 @@ const agent = new Agent(
       '- 调用 echo 回显文本',
       '用中文回答，简洁清晰。',
     ].join('\n'),
-    tools: [getWeatherTool, getTravelAdviceTool, calculatorTool, translatorTool, codeReviewerTool],
+    tools: [getWeatherTool, getTravelAdviceTool, calculatorTool, translatorTool, codeReviewerTool, echoTool],
     maxIterations: 5,
   },
   { tracer },
@@ -323,7 +320,7 @@ async function query(label: string, prompt: string): Promise<string> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Main
+// Main — 7 Regions
 // ═══════════════════════════════════════════════════════════════════════════════
 
 async function main() {
@@ -335,117 +332,65 @@ async function main() {
     await agent.pluginManager.initializeAll();
     console.log('[Init] 基础设施就绪\n');
 
-    // ── R2  基础 Agent + Streaming ──────────────────────────────────────────
-    separator('R2  基础 Agent + Streaming');
+    // ── R1  Agent + Streaming + Tools ──────────────────────────────────────
+    separator('R1  Agent + Streaming + Tools');
     try {
-      const r2 = await query('R2', '你好！用一句话介绍你自己。');
-      if (r2.length > 0) ok('R2', `Streaming 回复 ${r2.length} 字符`);
-      else fail('R2', '空回复');
-    } catch (e) { fail('R2', 'Agent 运行失败', e); }
+      const r1a = await query('R1', '你好！用一句话介绍你自己。');
+      if (r1a.length > 0) ok('R1', `基础 Streaming ${r1a.length} 字符`);
+      else fail('R1', '空回复');
 
-    // ── R3  Tool System (weather + travel) ──────────────────────────────────
-    separator('R3  Tool System — 天气 + 旅行建议');
+      const r1b = await query('R1', '北京今天天气怎么样？适合出去玩吗？');
+      if (r1b.length > 0) ok('R1', `天气+旅行工具链 ${r1b.length} 字符`);
+      else fail('R1', '天气工具空回复');
+
+      const r1c = await query('R1', '帮我算一下 123 * 456 + 789 等于多少？');
+      if (r1c.length > 0) ok('R1', `计算器工具 ${r1c.length} 字符`);
+      else fail('R1', '计算器空回复');
+    } catch (e) { fail('R1', 'Agent 运行失败', e); }
+
+    // ── R2  Sub-Agents ─────────────────────────────────────────────────────
+    separator('R2  Sub-Agents');
     try {
-      const r3 = await query('R3', '北京今天天气怎么样？适合出去玩吗？');
-      if (r3.length > 0) ok('R3', `工具调用链 ${r3.length} 字符`);
-      else fail('R3', '空回复');
-    } catch (e) { fail('R3', '工具调用失败', e); }
+      const r2a = await query('R2', '请把"人工智能正在改变世界"翻译成英文');
+      if (r2a.length > 0) ok('R2', `翻译 (isolated) ${r2a.length} 字符`);
+      else fail('R2', '翻译空回复');
 
-    // ── R3b  Calculator ─────────────────────────────────────────────────────
-    separator('R3b  Tool System — 计算器');
-    try {
-      const r3b = await query('R3b', '帮我算一下 123 * 456 + 789 等于多少？');
-      if (r3b.length > 0) ok('R3b', `计算工具 ${r3b.length} 字符`);
-      else fail('R3b', '空回复');
-    } catch (e) { fail('R3b', '计算工具失败', e); }
+      const r2b = await query('R2', '请审查这段代码: function add(a: any, b: any) { return a + b; }');
+      if (r2b.length > 0) ok('R2', `代码审查 (summary-only) ${r2b.length} 字符`);
+      else fail('R2', '代码审查空回复');
+    } catch (e) { fail('R2', 'Sub-Agent 失败', e); }
 
-    // ── R6  Sub-Agents — translator (isolated) ──────────────────────────────
-    separator('R6a  Sub-Agent — 翻译 (isolated)');
-    try {
-      const r6a = await query('R6a', '请把"人工智能正在改变世界"翻译成英文');
-      if (r6a.length > 0) ok('R6a', `翻译子代理 ${r6a.length} 字符`);
-      else fail('R6a', '空回复');
-    } catch (e) { fail('R6a', '翻译子代理失败', e); }
-
-    // ── R6b  Sub-Agents — code reviewer (summary-only) ──────────────────────
-    separator('R6b  Sub-Agent — 代码审查 (summary-only)');
-    try {
-      const r6b = await query('R6b', '请审查这段代码: function add(a: any, b: any) { return a + b; }');
-      if (r6b.length > 0) ok('R6b', `代码审查子代理 ${r6b.length} 字符`);
-      else fail('R6b', '空回复');
-    } catch (e) { fail('R6b', '代码审查子代理失败', e); }
-
-    // ── R5  OTel Bridge — Span 树 ───────────────────────────────────────────
-    separator('R5  OTel Bridge');
-    try {
-      await otelProvider.forceFlush();
-      const spans = otelExporter.getFinishedSpans();
-      if (spans.length > 0) {
-        console.log(`  共 ${spans.length} 个 span:`);
-        for (const span of spans.slice(0, 5)) {
-          const parent = (span as any).parentSpanContext as { spanId: string } | undefined;
-          const indent = parent?.spanId ? '  └─ ' : '';
-          console.log(`  ${indent}${span.name} [${span.spanContext().spanId.slice(0, 8)}]`);
-        }
-        if (spans.length > 5) console.log(`  ... 还有 ${spans.length - 5} 个 span`);
-        ok('R5', `${spans.length} 个 span 已采集`);
-      } else {
-        fail('R5', '无 span 采集');
-      }
-    } catch (e) { fail('R5', 'OTel 失败', e); }
-
-    // ── R4  Plugin System 验证 ──────────────────────────────────────────────
-    separator('R4  Plugin System');
-    try {
-      const errors = agent.pluginManager.getErrors();
-      if (errors.length === 0) ok('R4', 'PluginManager 无错误');
-      else fail('R4', `${errors.length} 个插件错误: ${errors.map(String).join(', ')}`);
-    } catch (e) { fail('R4', '插件检查失败', e); }
-
-    // ── R7  Session Persistence + Suspend/Resume ────────────────────────────
-    separator('R7  Session — Suspend/Resume');
+    // ── R3  Session Persistence ────────────────────────────────────────────
+    separator('R3  Session — Suspend/Resume');
     try {
       await persistence.stop();
 
       const sessions = await sessionMgr.list();
       if (sessions.length > 0) {
-        ok('R7a', `${sessions.length} 个会话已持久化`);
+        ok('R3', `${sessions.length} 个会话已持久化`);
 
-        // 检查 JSONL
         const firstSession = sessions[0];
         const jsonlPath = join(sessionBase, firstSession.sessionId, 'events.jsonl');
         try {
           const lines = readFileSync(jsonlPath, 'utf-8').split('\n').filter(l => l.trim()).length;
-          ok('R7b', `JSONL ${lines} 条事件`);
+          ok('R3', `JSONL ${lines} 条事件`);
         } catch { /* jsonl may not exist for all sessions */ }
 
-        // Suspend
         await sessionMgr.suspend(firstSession.sessionId, '演示暂停');
-        ok('R7c', '会话已 suspend');
+        ok('R3', '会话已 suspend');
 
-        // Restore
         const restored = await sessionMgr.restore(firstSession.sessionId);
-        ok('R7d', `restore 成功, input="${restored.request.input.slice(0, 30)}..."`);
+        ok('R3', `restore 成功, input="${restored.request.input.slice(0, 30)}..."`);
 
-        // Resume
         const newSessionId = await sessionMgr.resume(firstSession.sessionId, '确认继续');
-        ok('R7e', `resume 新会话 ${newSessionId.slice(0, 8)}..., parent=${firstSession.sessionId.slice(0, 8)}...`);
+        ok('R3', `resume 新会话 ${newSessionId.slice(0, 8)}..., parent=${firstSession.sessionId.slice(0, 8)}...`);
       } else {
-        fail('R7', '无会话记录');
+        fail('R3', '无会话记录');
       }
-    } catch (e) { fail('R7', 'Session 操作失败', e); }
+    } catch (e) { fail('R3', 'Session 操作失败', e); }
 
-    // ── R8  Built-in Plugins 验证 ───────────────────────────────────────────
-    separator('R8  内置插件');
-    try {
-      const memStore = memoryBackend.store;
-      const memKeys = memStore ? Object.keys(memStore) : [];
-      ok('R8a', `Memory Backend: ${memKeys.length} 条记录`);
-      ok('R8b', 'Compression/Permission/Skill/Eviction 插件已加载');
-    } catch (e) { fail('R8', '插件验证失败', e); }
-
-    // ── R9  Config System ────────────────────────────────────────────────────
-    separator('R9  Config System');
+    // ── R4  Config System ──────────────────────────────────────────────────
+    separator('R4  Config System');
     try {
       const configDir = mkdtempSync(join(tmpdir(), 'agentforge-cfg-'));
       const configJsonc = join(configDir, 'config.jsonc');
@@ -466,12 +411,12 @@ async function main() {
         session: { session: { storage: 'memory' } },
       });
 
-      ok('R9a', `JSONC 多层合并: plugins=${JSON.stringify(config.plugins)}, storage=${config.session?.storage}`);
+      ok('R4', `JSONC 多层合并: plugins=${JSON.stringify(config.plugins)}, storage=${config.session?.storage}`);
 
       if (config.modelProfiles && config.modelProfiles.length > 0) {
         const profile = matchProfile('deepseek/deepseek-v4-flash', config.modelProfiles);
         if (profile) {
-          ok('R9b', `ModelProfile 匹配: suffix="${profile.systemPromptSuffix}"`);
+          ok('R4', `ModelProfile 匹配: suffix="${profile.systemPromptSuffix}"`);
 
           const fakeCtx: PipelineContext = {
             request: { input: 'test', sessionId: 'demo-001' },
@@ -484,7 +429,7 @@ async function main() {
             session: { custom: {} },
           };
           const withProfile = applyProfile(fakeCtx, profile);
-          ok('R9c', `applyProfile: ${withProfile.agent.promptFragments.length} fragments`);
+          ok('R4', `applyProfile: ${withProfile.agent.promptFragments.length} fragments`);
         }
       }
 
@@ -492,13 +437,13 @@ async function main() {
         (ctx) => `[Dynamic] 会话 ${ctx.sessionId.slice(0, 8)}`,
         { input: 'test', sessionId: crypto.randomUUID(), metadata: {} },
       );
-      ok('R9d', `resolveDynamic: ${dynamicValue.slice(0, 40)}`);
+      ok('R4', `resolveDynamic: ${dynamicValue.slice(0, 40)}`);
 
       rmSync(configDir, { recursive: true, force: true });
-    } catch (e) { fail('R9', 'Config 失败', e); }
+    } catch (e) { fail('R4', 'Config 失败', e); }
 
-    // ── R10  MCP Plugin ─────────────────────────────────────────────────────
-    separator('R10  MCP Plugin');
+    // ── R5  MCP Plugin ─────────────────────────────────────────────────────
+    separator('R5  MCP Plugin');
     try {
       const mcpDataDir = mkdtempSync(join(tmpdir(), 'agentforge-mcp-'));
       writeFileSync(join(mcpDataDir, 'notes.txt'), 'AgentForge MCP 集成测试文件。\n框架支持 MCP 工具的自动发现和调用。');
@@ -519,8 +464,8 @@ async function main() {
       }));
 
       await mcpAgent.pluginManager.initializeAll();
-      const mcpTools = mcpAgent['registry'].getAll();
-      ok('R10a', `MCP 发现 ${mcpTools.length} 个工具: ${mcpTools.slice(0, 3).map((t: any) => t.name).join(', ')}`);
+      const mcpTools = mcpAgent.toolRegistry.getAll();
+      ok('R5', `MCP 发现 ${mcpTools.length} 个工具: ${mcpTools.slice(0, 3).map((t: any) => t.name).join(', ')}`);
 
       const mcpQuery = '请列出当前目录的文件，然后读取 notes.txt 的内容。';
       let mcpResponse = '';
@@ -528,17 +473,17 @@ async function main() {
         mcpResponse += chunk;
       }
       if (mcpResponse.length > 0) {
-        ok('R10b', `MCP LLM 回复 ${mcpResponse.length} 字符`);
+        ok('R5', `MCP LLM 回复 ${mcpResponse.length} 字符`);
       } else {
-        fail('R10b', 'MCP 空回复');
+        fail('R5', 'MCP 空回复');
       }
 
       await mcpAgent.pluginManager.shutdown();
       rmSync(mcpDataDir, { recursive: true, force: true });
-    } catch (e) { fail('R10', 'MCP 失败', e); }
+    } catch (e) { fail('R5', 'MCP 失败', e); }
 
-    // ── R11  Async Sub-Agents ────────────────────────────────────────────────
-    separator('R11  Async Sub-Agents');
+    // ── R6  Async Sub-Agents ───────────────────────────────────────────────
+    separator('R6  Async Sub-Agents');
     try {
       const cc = new ConcurrencyController([{ key: 'translate', maxConcurrent: 2 }]);
       const tm = new TaskManagerImpl({
@@ -571,10 +516,10 @@ async function main() {
         ),
       );
 
-      ok('R11a', `启动 ${handles.length} 个异步翻译任务`);
+      ok('R6', `启动 ${handles.length} 个异步翻译任务`);
 
       handles[2].cancel();
-      ok('R11b', `已取消: ${languages[2]} 任务 (status=${handles[2].status})`);
+      ok('R6', `已取消: ${languages[2]} 任务 (status=${handles[2].status})`);
 
       const results = new Map<string, string>();
       await new Promise<void>((resolveAll) => {
@@ -592,14 +537,41 @@ async function main() {
       for (const [lang, text] of results) {
         console.log(`    ${lang}: ${text.slice(0, 60)}${text.length > 60 ? '...' : ''}`);
       }
-      ok('R11c', `${results.size} 个翻译完成`);
+      ok('R6', `${results.size} 个翻译完成`);
 
       const allTasks = tm.list();
       const statuses = allTasks.map(t => `${t.taskId.slice(0, 6)}(${t.status})`).join(', ');
-      ok('R11d', `任务列表: ${statuses}`);
-    } catch (e) { fail('R11', 'Async Sub-Agents 失败', e); }
+      ok('R6', `任务列表: ${statuses}`);
+    } catch (e) { fail('R6', 'Async Sub-Agents 失败', e); }
 
-    // ── Shutdown ─────────────────────────────────────────────────────────────
+    // ── R7  Infrastructure 健康检查 ────────────────────────────────────────
+    separator('R7  Infrastructure 健康检查');
+    try {
+      const errors = agent.pluginManager.getErrors();
+      if (errors.length === 0) ok('R7', 'PluginManager 无错误');
+      else fail('R7', `${errors.length} 个插件错误: ${errors.map(String).join(', ')}`);
+
+      await otelProvider.forceFlush();
+      const spans = otelExporter.getFinishedSpans();
+      if (spans.length > 0) {
+        console.log(`  共 ${spans.length} 个 span:`);
+        for (const span of spans.slice(0, 5)) {
+          const parent = (span as any).parentSpanContext as { spanId: string } | undefined;
+          const indent = parent?.spanId ? '  └─ ' : '';
+          console.log(`  ${indent}${span.name} [${span.spanContext().spanId.slice(0, 8)}]`);
+        }
+        if (spans.length > 5) console.log(`  ... 还有 ${spans.length - 5} 个 span`);
+        ok('R7', `${spans.length} 个 OTel span 已采集`);
+      } else {
+        fail('R7', '无 span 采集');
+      }
+
+      const memEntries = await memoryBackend.search('');
+      ok('R7', `Memory Backend: ${memEntries.length} 条记录`);
+      ok('R7', 'Compression/Permission/Skill/Eviction 插件已加载');
+    } catch (e) { fail('R7', '健康检查失败', e); }
+
+    // ── Shutdown ───────────────────────────────────────────────────────────
     separator('Shutdown');
     await agent.pluginManager.shutdown();
     console.log(`  PluginManager shutdown, errors: ${agent.pluginManager.getErrors().length}`);
@@ -608,7 +580,7 @@ async function main() {
     rmSync(sessionBase, { recursive: true, force: true });
   }
 
-  // ── Summary ───────────────────────────────────────────────────────────────
+  // ── Summary ─────────────────────────────────────────────────────────────
   separator('验证结果');
   console.log(`\n  通过: ${passed.length}  失败: ${failed.length}`);
   if (failed.length > 0) {

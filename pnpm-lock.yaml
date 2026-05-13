@@ -45,6 +45,9 @@ importers:
       '@agentforge/sdk':
         specifier: workspace:*
         version: link:../packages/sdk
+      '@agentforge/tools':
+        specifier: workspace:*
+        version: link:../packages/tools
       '@ai-sdk/openai-compatible':
         specifier: ^2.0.47
         version: 2.0.47(zod@4.4.3)
