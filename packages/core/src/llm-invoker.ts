@@ -63,7 +63,7 @@ export class LLMInvoker {
           streamOpts.providerOptions = input.providerOptions;
         }
 
-        span?.setAttribute('llm.model', this.options.model.modelId);
+        span?.setAttribute('llm.model', (this.options.model as any).modelId ?? 'unknown');
 
         const result = streamText(streamOpts as any);
 
