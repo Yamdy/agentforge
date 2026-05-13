@@ -228,13 +228,17 @@ describe('HarnessAPI', () => {
         registered.push('event');
         return () => {};
       },
+      emit(_eventType, _data?) {
+        registered.push('emit');
+      },
     };
     api.registerProcessor('processInput', {} as Processor);
     api.registerTool({} as ToolDefinition);
     api.registerCommand('test', async () => {});
     api.registerProvider('test', {} as never);
     api.subscribe('agent:start', () => {});
-    expect(registered).toHaveLength(5);
+    api.emit('test.event', {});
+    expect(registered).toHaveLength(6);
   });
 });
 

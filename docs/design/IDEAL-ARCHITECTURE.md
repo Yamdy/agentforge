@@ -653,11 +653,11 @@ this.runner = new PipelineRunner({
 | 8 | ~~Agent 构造函数不注入依赖~~ | 16 | P1 | **已修复** | `agent.ts` — 构造函数接受 `AgentDependencies` 接口 |
 | 9 | ~~无 gateLLM / gateTool stage~~ | 14 | P1 | **已修复** | `sdk/index.ts` — PipelineStage 新增 `gateLLM` / `gateTool` |
 | 10 | ~~全局 AbortSignal 只在循环顶部检查~~ | 13 | P1 | **已修复** | `pipeline.ts` — `run()/stream()` 接受 signal，stage 间检查 |
-| 11 | 全局 defaultChain / customProviders | 18 | P2 | 待修复 | `model-resolver.ts:29`, `builtin-gateway.ts:27` |
-| 12 | Processor append-only (不可 replace/remove) | 5 | P2 | 待修复 | `pipeline.ts:44` — 只有 `register()` |
-| 13 | 无 StateMachine | 15 | P2 | 待修复 | 全局搜索无 `StateMachine` |
-| 14 | Session restore context 不完整 | 11, 12 | P2 | 待修复 | `session-manager.ts:62` — `config: {} as any` |
-| 15 | Permission onDecision 空操作 | 14 | P2 | 待修复 | `permission-processor.ts:207-211` — 空回调体 |
+| 11 | ~~全局 defaultChain / customProviders~~ | 18 | P2 | **已修复** | `model-factory.ts` — ModelFactory 类封装，通过 DI 注入 |
+| 12 | ~~Processor append-only (不可 replace/remove)~~ | 5 | P2 | **已修复** | `pipeline.ts` — 新增 `unregister()` / `replace()` |
+| 13 | ~~无 StateMachine~~ | 15 | P2 | **已修复** | `state-machine.ts` — 6 状态 + 转移守卫 + error 可恢复 |
+| 14 | ~~Session restore context 不完整~~ | 11, 12 | P2 | **已修复** | `session-manager.ts` — 从 `agent:start` 事件提取完整 config |
+| 15 | ~~Permission onDecision 空操作~~ | 14 | P2 | **已修复** | `permission-processor.ts` — `api.emit('permission.decision', event)` |
 
 ---
 
@@ -725,35 +725,37 @@ Step 6: ✅ Agent teardown 生命周期
   效果: 解除差距 #6
 ```
 
-### Phase 3: P2 架构完善 (1-2 周)
+### Phase 3: P2 架构完善 ✅ 已完成
 
 **目标：** 全局状态清理、状态机、checkpoint 完整性。
 
 ```
-Step 1: ModelFactory 消除全局单例
-  文件: model-resolver.ts, builtin-gateway.ts
-  改动: 封装为 ModelFactory 类，通过 DI 注入
-  依赖: Phase 2 Step 2
+Step 1: ✅ ModelFactory 消除全局单例
+  文件: model-factory.ts, agent.ts
+  改动: 封装为 ModelFactory 类，通过 AgentDependencies.modelFactory 注入
+  效果: 解除差距 #11
 
-Step 2: StateMachine 实现
-  文件: 新建 state-machine.ts
-  改动: 6 状态 + 转移守卫 + error 可恢复
-  依赖: Phase 2 Step 1 (三态 ProcessorResult)
+Step 2: ✅ StateMachine 实现
+  文件: state-machine.ts
+  改动: 6 状态 + 转移守卫 + error 可恢复 + onTransition 回调
+  效果: 解除差距 #13
 
-Step 3: SerializablePipelineContext
-  文件: sdk/index.ts, 新建 serialize.ts
-  改动: 定义序列化子集 + serialize/deserialize 函数
-  依赖: Phase 2 Step 1
+Step 3: ✅ SerializablePipelineContext
+  文件: serialize.ts
+  改动: 定义序列化子集 + serialize/deserialize 函数，剔除 fullStream/usagePromise/reasoningPromise/span
+  效果: 解除差距 #14 (前置)
 
-Step 4: Session restore 完整化
+Step 4: ✅ Session restore 完整化
   文件: session-manager.ts
-  改动: 用 SerializablePipelineContext 替代 {} as any
-  依赖: Step 3
+  改动: 从 agent:start 事件提取 agentConfig/promptFragments/toolDeclarations
+  效果: 解除差距 #14
 
-Step 5: Permission onDecision 接线
-  文件: permission-processor.ts
-  改动: 将 onDecision 连接到 PluginManager.emitEvent
-  依赖: Phase 1 (EventBus 可用)
+Step 5: ✅ Permission onDecision 接线
+  文件: permission-processor.ts, sdk/index.ts, plugin-manager.ts
+  改动: HarnessAPI 新增 emit; permissionPlugin 通过 api.emit('permission.decision', event) 发射审计事件
+  效果: 解除差距 #15
+
+测试: 28 个新测试，369 总测试通过，零回归
 ```
 
 ### Phase 依赖图

@@ -36,17 +36,22 @@ export class SessionManagerImpl implements SessionManager {
       throw new Error(`Session not found: ${sessionId}`);
     }
 
-    // Replay events to reconstruct context
     let input = '';
     let lastStep = 0;
     const messageHistory: Array<Record<string, unknown>> = [];
+    let agentConfig: Record<string, unknown> = {};
+    let promptFragments: string[] = [];
+    let toolDeclarations: Array<{ name: string; description: string }> = [];
 
     for (const event of events) {
       const payload = event.payload as Record<string, unknown> | undefined;
       if (!payload) continue;
 
-      if (event.type === 'agent:start' && payload.input) {
-        input = payload.input as string;
+      if (event.type === 'agent:start') {
+        if (payload.input) input = payload.input as string;
+        if (payload.agentConfig) agentConfig = payload.agentConfig as Record<string, unknown>;
+        if (payload.promptFragments) promptFragments = payload.promptFragments as string[];
+        if (payload.toolDeclarations) toolDeclarations = payload.toolDeclarations as Array<{ name: string; description: string }>;
       }
 
       if (event.type === 'iteration.end') {
@@ -59,9 +64,9 @@ export class SessionManagerImpl implements SessionManager {
 
     return {
       request: { input, sessionId },
-      agent: { config: {} as any, promptFragments: [], toolDeclarations: [] },
+      agent: { config: agentConfig as unknown as PipelineContext['agent']['config'], promptFragments, toolDeclarations },
       iteration: { step: lastStep },
-      session: { messageHistory: messageHistory as any, custom: {} },
+      session: { messageHistory: messageHistory as PipelineContext['session']['messageHistory'], custom: {} },
     };
   }
 

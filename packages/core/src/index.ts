@@ -20,3 +20,6 @@ export { ConfigLoader, type ConfigSource } from './config.js';
 export { ConcurrencyController } from './concurrency-controller.js';
 export { FallbackRunner, type FallbackInvoker, type FallbackRunnerOptions } from './fallback-runner.js';
 export { TaskManagerImpl } from './task-manager.js';
+export { StateMachine, type AgentState } from './state-machine.js';
+export { ModelFactory } from './model-factory.js';
+export { serialize, deserialize } from './serialize.js';

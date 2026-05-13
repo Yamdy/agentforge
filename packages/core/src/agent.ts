@@ -13,6 +13,7 @@ import { ToolRegistry } from './tool-registry.js';
 import { PluginManager, type PluginFactory } from './plugin-manager.js';
 import { LLMInvoker } from './llm-invoker.js';
 import { resolveModel } from './model-resolver.js';
+import type { ModelFactory } from './model-factory.js';
 import { applyReactiveRules } from './processors/provider-history-compat.js';
 import { echoTool } from '@agentforge/tools';
 import {
@@ -31,6 +32,7 @@ export interface AgentDependencies {
   registry?: ToolRegistry;
   pluginManager?: PluginManager;
   tracer?: Tracer;
+  modelFactory?: ModelFactory;
 }
 
 const PRE_LOOP_STAGES: PipelineStage[] = ['processInput', 'buildContext'];
@@ -45,9 +47,11 @@ export class Agent {
   private registry: ToolRegistry;
   private _pluginManager: PluginManager;
   private _model: import('ai').LanguageModel | null = null;
+  private modelFactory?: ModelFactory;
 
   constructor(config: AgentConfig, deps?: AgentDependencies) {
     this.config = config;
+    this.modelFactory = deps?.modelFactory;
     this.runner = deps?.runner ?? new PipelineRunner({ tracer: deps?.tracer });
     this.registry = deps?.registry ?? new ToolRegistry();
     this._pluginManager = deps?.pluginManager ?? new PluginManager(this.runner, this.registry);
@@ -219,7 +223,9 @@ export class Agent {
 
   private async getLLM(systemPrompt?: string): Promise<LLMInvoker> {
     if (!this._model) {
-      this._model = await resolveModel(this.config.model);
+      this._model = this.modelFactory
+        ? await this.modelFactory.resolve(this.config.model)
+        : await resolveModel(this.config.model);
     }
     return new LLMInvoker({
       model: this._model,

@@ -102,6 +102,46 @@ describe('SessionManager', () => {
       expect(history).toHaveLength(2);
     });
 
+    it('restores agent.config with model from persisted context', async () => {
+      const sessionId = 'restore-config';
+      const now = new Date().toISOString();
+
+      const events: SessionEvent[] = [
+        { seq: 1, timestamp: now, type: 'agent:start', payload: { sessionId, input: 'test', agentConfig: { model: 'deepseek/chat' } } },
+        { seq: 2, timestamp: now, type: 'iteration.end', payload: { sessionId, step: 0, response: 'ok' } },
+      ];
+      for (const event of events) {
+        await storage.append(sessionId, event);
+      }
+
+      const ctx = await manager.restore(sessionId);
+
+      expect(ctx.agent.config).toBeDefined();
+      expect(ctx.agent.config.model).toBe('deepseek/chat');
+    });
+
+    it('restores promptFragments and toolDeclarations from persisted context', async () => {
+      const sessionId = 'restore-fragments';
+      const now = new Date().toISOString();
+
+      const events: SessionEvent[] = [
+        { seq: 1, timestamp: now, type: 'agent:start', payload: {
+          sessionId, input: 'test', agentConfig: { model: 'test/m' },
+          promptFragments: ['system instruction'],
+          toolDeclarations: [{ name: 'echo', description: 'echo' }],
+        } },
+        { seq: 2, timestamp: now, type: 'iteration.end', payload: { sessionId, step: 0, response: 'done' } },
+      ];
+      for (const event of events) {
+        await storage.append(sessionId, event);
+      }
+
+      const ctx = await manager.restore(sessionId);
+
+      expect(ctx.agent.promptFragments).toEqual(['system instruction']);
+      expect(ctx.agent.toolDeclarations).toEqual([{ name: 'echo', description: 'echo' }]);
+    });
+
     it('throws on non-existent session', async () => {
       await expect(manager.restore('no-such-session')).rejects.toThrow(/not found/i);
     });

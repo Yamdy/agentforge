@@ -313,6 +313,7 @@ export interface HarnessAPI {
   subscribe(eventType: string, handler: (data?: unknown) => void): () => void;
   registerResource(declaration: ResourceDeclaration): void;
   registerProvider(name: string, factory: unknown): void;
+  emit(eventType: string, data?: unknown): void;
 }
 
 export interface PluginRegistration {

@@ -132,6 +132,9 @@ export class PluginManager {
       registerProvider: (_name: string, _factory: unknown) => {
         // Will be implemented when provider registration is needed
       },
+      emit: (eventType: string, data?: unknown) => {
+        this.emitEvent(eventType, data);
+      },
     };
   }
 }

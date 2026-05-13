@@ -205,10 +205,7 @@ export function permissionPlugin(options: PermissionPluginOptions): (api: Harnes
       mode: options.mode,
       rules: options.rules,
       onDecision: (event: PermissionDecisionEvent) => {
-        // In a fully integrated setup, this callback would be wired to emit
-        // events via PluginManager.emitEvent('permission.decision', event).
-        // For now, onDecision is the primary audit trail mechanism.
-        // Consumers can provide their own onDecision callback to capture decisions.
+        api.emit('permission.decision', event);
       },
     });
 

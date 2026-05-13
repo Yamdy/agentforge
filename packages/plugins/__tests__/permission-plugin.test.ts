@@ -2,19 +2,23 @@ import { describe, it, expect } from 'vitest';
 import { permissionPlugin, createPermissionProcessor, type PermissionDecisionEvent } from '../src/permission/index.js';
 import type { HarnessAPI, PipelineContext } from '@agentforge/sdk';
 
-function createHarnessAPI(): { api: HarnessAPI; processors: Map<string, unknown> } {
+function createHarnessAPI(): { api: HarnessAPI; processors: Map<string, unknown>; emitted: Array<{ type: string; data: unknown }> } {
   const processors = new Map<string, unknown>();
+  const emitted: Array<{ type: string; data: unknown }> = [];
 
   const api: HarnessAPI = {
     registerProcessor: (stage, processor) => { processors.set(stage, processor); },
     registerTool: () => {},
+    unregisterTool: () => false,
     registerCommand: () => {},
     registerHook: () => {},
     subscribe: () => () => {},
     registerResource: () => {},
+    registerProvider: () => {},
+    emit: (type, data) => { emitted.push({ type, data }); },
   };
 
-  return { api, processors };
+  return { api, processors, emitted };
 }
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
@@ -92,6 +96,55 @@ describe('permissionPlugin', () => {
 
     const result = await processor.execute(ctx);
     expect(isAbort(result)).toBe(false);
+  });
+
+  it('emits permission.decision event via api.emit when deny rule triggers', async () => {
+    const { api, processors, emitted } = createHarnessAPI();
+
+    permissionPlugin({
+      mode: 'plan-only',
+      rules: [{ tool: 'shell_exec', action: 'deny' }],
+    })(api);
+
+    const processor = processors.get('beforeTool') as { stage: string; execute: (ctx: PipelineContext) => Promise<unknown> };
+    const ctx = makeContext({
+      iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'shell_exec', args: { command: 'ls' } }] },
+    });
+
+    await processor.execute(ctx);
+
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0].type).toBe('permission.decision');
+    expect(emitted[0].data).toMatchObject({
+      decision: 'deny',
+      toolName: 'shell_exec',
+      rule: 'shell_exec',
+      mode: 'plan-only',
+    });
+  });
+
+  it('emits permission.decision event for allow decisions in interactive mode', async () => {
+    const { api, processors, emitted } = createHarnessAPI();
+
+    permissionPlugin({
+      mode: 'interactive',
+      rules: [],
+    })(api);
+
+    const processor = processors.get('beforeTool') as { stage: string; execute: (ctx: PipelineContext) => Promise<unknown> };
+    const ctx = makeContext({
+      iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'read_file', args: { path: '/tmp/x' } }] },
+    });
+
+    await processor.execute(ctx);
+
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0].type).toBe('permission.decision');
+    expect(emitted[0].data).toMatchObject({
+      decision: 'allow',
+      toolName: 'read_file',
+      mode: 'interactive',
+    });
   });
 
   it('onDecision callback captures audit events during processor execution', async () => {
