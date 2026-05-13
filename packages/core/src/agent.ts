@@ -256,7 +256,7 @@ export class Agent {
   private registerBuiltinProcessors(): void {
     this.runner.register(processInputProcessor);
     this.runner.register(createBuildContextProcessor(this.registry));
-    this.runner.register(createPrepareStepProcessor(this.registry));
+    this.runner.register(createPrepareStepProcessor());
     this.runner.register(createInvokeLLMProcessor({
       getLLM: (systemPrompt) => this.getLLM(systemPrompt),
       registry: this.registry,

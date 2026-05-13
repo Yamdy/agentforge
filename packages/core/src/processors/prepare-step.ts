@@ -1,7 +1,6 @@
 import type { Processor } from '@agentforge/sdk';
-import type { ToolRegistry } from '../tool-registry.js';
 
-export function createPrepareStepProcessor(registry: ToolRegistry): Processor {
+export function createPrepareStepProcessor(): Processor {
   return {
     stage: 'prepareStep',
     execute: async (ctx) => {
@@ -11,15 +10,9 @@ export function createPrepareStepProcessor(registry: ToolRegistry): Processor {
         ? history.slice(-maxHistory)
         : history;
 
-      const toolDeclarations = registry.getAll().map(t => ({
-        name: t.name,
-        description: t.description,
-      }));
-
       return {
         ...ctx,
         session: { ...ctx.session, messageHistory },
-        agent: { ...ctx.agent, toolDeclarations },
       };
     },
   };

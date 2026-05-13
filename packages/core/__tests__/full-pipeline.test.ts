@@ -208,6 +208,39 @@ describe('Full Pipeline Stages', () => {
     expect(invokeCount).toBe(2);
   });
 
+  it('prepareStep only trims messageHistory without touching toolDeclarations', async () => {
+    const { createPrepareStepProcessor } = await import('../src/processors/prepare-step.js');
+
+    // prepareStep should work with no registry argument — it only trims history
+    const processor = createPrepareStepProcessor();
+
+    const longHistory = Array.from({ length: 60 }, (_, i) => ({
+      role: 'user' as const,
+      content: `msg ${i}`,
+    }));
+
+    const ctx: PipelineContext = {
+      request: { input: 'test', sessionId: 's1' },
+      agent: {
+        config: { model: 'mock/test' },
+        toolDeclarations: [{ name: 'myTool', description: 'should survive' }],
+        promptFragments: ['keep me'],
+      },
+      iteration: { step: 0 },
+      session: { messageHistory: longHistory, custom: {} },
+    };
+
+    const result = (await processor.execute(ctx)) as PipelineContext;
+
+    // messageHistory trimmed to last 50
+    expect(result.session.messageHistory).toHaveLength(50);
+    expect(result.session.messageHistory![0].content).toBe('msg 10');
+
+    // toolDeclarations and promptFragments untouched
+    expect(result.agent.toolDeclarations).toEqual([{ name: 'myTool', description: 'should survive' }]);
+    expect(result.agent.promptFragments).toEqual(['keep me']);
+  });
+
   it('end-to-end: agent calls tool, loops, and produces final output', async () => {
     const calcTool: Tool<{ a: number; b: number }, number> = {
       name: 'add',
