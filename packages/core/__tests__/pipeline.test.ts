@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { PipelineRunner } from '../src/pipeline.js';
 import { HookManager } from '../src/hook-manager.js';
 import { EventBus } from '../src/event-bus.js';
-import type { PipelineContext, Processor } from '@agentforge/sdk';
+import type { PipelineContext, Processor, SuspensionSignal } from '@agentforge/sdk';
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
@@ -259,6 +259,273 @@ describe('PipelineRunner', () => {
 
       await runner.run(makeContext(), ['processInput']);
       expect(events).toEqual(['before', 'after']);
+    });
+  });
+
+  describe('SuspensionSignal', () => {
+    it('stops the pipeline when a processor returns a SuspensionSignal', async () => {
+      const order: string[] = [];
+      const runner = new PipelineRunner();
+
+      runner.register({
+        stage: 'processInput',
+        execute: async (ctx) => {
+          order.push('processInput');
+          return ctx;
+        },
+      });
+      runner.register({
+        stage: 'invokeLLM',
+        execute: async (ctx) => ({
+          type: 'suspend' as const,
+          suspensionId: 'sus-001',
+          reason: 'needs approval',
+          checkpoint: {
+            context: ctx,
+            nextStages: ['processStepOutput', 'executeTools'],
+            iteration: ctx.iteration.step,
+          },
+        }),
+      });
+      runner.register({
+        stage: 'processOutput',
+        execute: async (ctx) => {
+          order.push('processOutput');
+          return ctx;
+        },
+      });
+
+      const result = await runner.run(makeContext(), ['processInput', 'invokeLLM', 'processOutput']);
+
+      expect(result).toEqual({
+        type: 'suspend',
+        suspensionId: 'sus-001',
+        reason: 'needs approval',
+        checkpoint: {
+          context: expect.any(Object),
+          nextStages: ['processStepOutput', 'executeTools'],
+          iteration: 0,
+        },
+      });
+      expect(order).toEqual(['processInput']);
+    });
+
+    it('returns a SuspensionSignal with expiresAt', async () => {
+      const runner = new PipelineRunner();
+      const expiresAt = new Date(Date.now() + 60000).toISOString();
+
+      runner.register({
+        stage: 'invokeLLM',
+        execute: async (ctx) => ({
+          type: 'suspend' as const,
+          suspensionId: 'sus-002',
+          reason: 'timeout test',
+          checkpoint: { context: ctx, nextStages: [], iteration: 0 },
+          expiresAt,
+        }),
+      });
+
+      const result = await runner.run(makeContext(), ['invokeLLM']) as SuspensionSignal;
+
+      expect(result.type).toBe('suspend');
+      expect(result.expiresAt).toBe(expiresAt);
+    });
+  });
+
+  describe('AbortSignal passthrough', () => {
+    it('throws AbortError when signal is already aborted before run', async () => {
+      const runner = new PipelineRunner();
+      const controller = new AbortController();
+      controller.abort();
+
+      runner.register({
+        stage: 'processInput',
+        execute: async (ctx) => ctx,
+      });
+
+      await expect(runner.run(makeContext(), ['processInput'], { signal: controller.signal }))
+        .rejects.toThrow('Pipeline aborted');
+    });
+
+    it('checks signal between stages and aborts mid-pipeline', async () => {
+      const runner = new PipelineRunner();
+      const controller = new AbortController();
+      const order: string[] = [];
+
+      runner.register({
+        stage: 'processInput',
+        execute: async (ctx) => {
+          order.push('processInput');
+          return ctx;
+        },
+      });
+      runner.register({
+        stage: 'invokeLLM',
+        execute: async (ctx) => {
+          order.push('invokeLLM');
+          controller.abort();
+          return ctx;
+        },
+      });
+      runner.register({
+        stage: 'processOutput',
+        execute: async (ctx) => {
+          order.push('processOutput');
+          return ctx;
+        },
+      });
+
+      await expect(runner.run(makeContext(), ['processInput', 'invokeLLM', 'processOutput'], { signal: controller.signal }))
+        .rejects.toThrow('Pipeline aborted');
+      expect(order).toEqual(['processInput', 'invokeLLM']);
+    });
+  });
+
+  describe('unregister / replace', () => {
+    it('unregister removes all processors for a stage', async () => {
+      const runner = new PipelineRunner();
+      const order: string[] = [];
+
+      runner.register({
+        stage: 'processInput',
+        execute: async (ctx) => {
+          order.push('processInput');
+          return ctx;
+        },
+      });
+      runner.register({
+        stage: 'invokeLLM',
+        execute: async (ctx) => {
+          order.push('invokeLLM');
+          return { ...ctx, iteration: { ...ctx.iteration, response: 'from-llm' } };
+        },
+      });
+
+      runner.unregister('invokeLLM');
+      const result = await runner.run(makeContext(), ['processInput', 'invokeLLM']);
+
+      expect(order).toEqual(['processInput']);
+      expect((result as PipelineContext).iteration.response).toBeUndefined();
+    });
+
+    it('replace swaps all processors for a stage', async () => {
+      const runner = new PipelineRunner();
+      const order: string[] = [];
+
+      runner.register({
+        stage: 'processInput',
+        execute: async (ctx) => {
+          order.push('original');
+          return ctx;
+        },
+      });
+
+      runner.replace('processInput', {
+        stage: 'processInput',
+        execute: async (ctx) => {
+          order.push('replacement');
+          return { ...ctx, session: { ...ctx.session, custom: { ...ctx.session.custom, replaced: true } } };
+        },
+      });
+
+      const result = await runner.run(makeContext(), ['processInput']);
+      expect(order).toEqual(['replacement']);
+      expect((result as PipelineContext).session.custom.replaced).toBe(true);
+    });
+
+    it('replace with no prior processors still works', async () => {
+      const runner = new PipelineRunner();
+
+      runner.replace('invokeLLM', {
+        stage: 'invokeLLM',
+        execute: async (ctx) => ({ ...ctx, iteration: { ...ctx.iteration, response: 'mocked' } }),
+      });
+
+      const result = await runner.run(makeContext(), ['invokeLLM']);
+      expect((result as PipelineContext).iteration.response).toBe('mocked');
+    });
+  });
+
+  describe('gate stages (gateLLM / gateTool)', () => {
+    it('passes through transparently when no processor is registered', async () => {
+      const runner = new PipelineRunner();
+      const order: string[] = [];
+
+      runner.register({
+        stage: 'prepareStep',
+        execute: async (ctx) => { order.push('prepareStep'); return ctx; },
+      });
+      runner.register({
+        stage: 'invokeLLM',
+        execute: async (ctx) => { order.push('invokeLLM'); return ctx; },
+      });
+
+      const result = await runner.run(makeContext(), ['prepareStep', 'gateLLM', 'invokeLLM']);
+
+      expect(order).toEqual(['prepareStep', 'invokeLLM']);
+      expect('type' in result).toBe(false);
+    });
+
+    it('aborts pipeline when gateLLM processor returns AbortSignal', async () => {
+      const runner = new PipelineRunner();
+      const order: string[] = [];
+
+      runner.register({
+        stage: 'gateLLM',
+        execute: async () => ({ type: 'abort' as const, reason: 'quota exceeded' }),
+      });
+      runner.register({
+        stage: 'invokeLLM',
+        execute: async (ctx) => { order.push('invokeLLM'); return ctx; },
+      });
+
+      const result = await runner.run(makeContext(), ['gateLLM', 'invokeLLM']);
+
+      expect(result).toEqual({ type: 'abort', reason: 'quota exceeded' });
+      expect(order).toEqual([]);
+    });
+
+    it('suspends pipeline when gateTool processor returns SuspensionSignal', async () => {
+      const runner = new PipelineRunner();
+      const order: string[] = [];
+
+      runner.register({
+        stage: 'gateTool',
+        execute: async (ctx) => ({
+          type: 'suspend' as const,
+          suspensionId: 'hitl-001',
+          reason: 'requires human approval',
+          checkpoint: { context: ctx, nextStages: ['executeTools'], iteration: 0 },
+        }),
+      });
+      runner.register({
+        stage: 'executeTools',
+        execute: async (ctx) => { order.push('executeTools'); return ctx; },
+      });
+
+      const result = await runner.run(makeContext(), ['gateTool', 'executeTools']) as SuspensionSignal;
+
+      expect(result.type).toBe('suspend');
+      expect(result.suspensionId).toBe('hitl-001');
+      expect(order).toEqual([]);
+    });
+
+    it('allows pipeline to continue when gate processor returns context', async () => {
+      const runner = new PipelineRunner();
+      const order: string[] = [];
+
+      runner.register({
+        stage: 'gateLLM',
+        execute: async (ctx) => { order.push('gateLLM'); return ctx; },
+      });
+      runner.register({
+        stage: 'invokeLLM',
+        execute: async (ctx) => { order.push('invokeLLM'); return ctx; },
+      });
+
+      await runner.run(makeContext(), ['gateLLM', 'invokeLLM']);
+
+      expect(order).toEqual(['gateLLM', 'invokeLLM']);
     });
   });
 });

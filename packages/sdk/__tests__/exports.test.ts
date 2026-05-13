@@ -14,7 +14,8 @@ import type {
   HarnessAPI,
   PluginRegistration,
   AgentConfig,
-  SuspendResult,
+  SuspensionSignal,
+  PipelineCheckpoint,
   TokenUsage,
   StreamEvent,
   LoopDirective,
@@ -262,15 +263,22 @@ describe('AgentConfig', () => {
   });
 });
 
-describe('SuspendResult', () => {
-  it('carries a resume token and reason', () => {
-    const result: SuspendResult = {
-      type: 'suspended',
-      resumeToken: 'tok-123',
-      reason: 'awaiting human approval',
+describe('SuspensionSignal', () => {
+  it('carries suspension id, reason, and checkpoint', () => {
+    const checkpoint: PipelineCheckpoint = {
+      context: {} as any,
+      nextStages: ['executeTools'],
+      iteration: 1,
     };
-    expect(result.type).toBe('suspended');
-    expect(result.resumeToken).toBe('tok-123');
+    const result: SuspensionSignal = {
+      type: 'suspend',
+      suspensionId: 'sus-123',
+      reason: 'awaiting human approval',
+      checkpoint,
+    };
+    expect(result.type).toBe('suspend');
+    expect(result.suspensionId).toBe('sus-123');
+    expect(result.checkpoint.nextStages).toEqual(['executeTools']);
   });
 });
 

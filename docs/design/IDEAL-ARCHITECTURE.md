@@ -648,11 +648,11 @@ this.runner = new PipelineRunner({
 | 3 | ~~PipelineRunner 不调用 hooks~~ | 1, 6 | P0 | **已修复** | `pipeline.ts:47` — 新增 `setHookManager()` |
 | 4 | ~~LLMInvoker 忽略 tracer~~ | 6, 7 | P0 | **已修复** | `llm-invoker.ts:48-92` — invoke() 中 tracer.startSpan/end |
 | 5 | ~~Agent 不持有 EventBus~~ | 9, 10 | P0 | **已修复** | `agent.ts:69` — `get eventBus()` getter |
-| 6 | Agent 不调用 PluginManager.shutdown | 17 | P1 | 待修复 | `agent.ts` — 无 teardown/shutdown 方法 |
-| 7 | ProcessorResult 只有二态 (缺 suspend) | 11 | P1 | 待修复 | `sdk/index.ts:131` — `PipelineContext \| AbortSignal` |
-| 8 | Agent 构造函数不注入依赖 | 16 | P1 | 待修复 | `agent.ts:40` — 只接受 `{ tracer? }` |
-| 9 | 无 gateLLM / gateTool stage | 14 | P1 | 待修复 | `sdk/index.ts:8-19` — 不含这两个值 |
-| 10 | 全局 AbortSignal 只在循环顶部检查 | 13 | P1 | 待修复 | `agent.ts:86,149` — 不在 stage 间检查 |
+| 6 | ~~Agent 不调用 PluginManager.shutdown~~ | 17 | P1 | **已修复** | `agent.ts` — 新增 `teardown()` 调用 `pluginManager.shutdown()` |
+| 7 | ~~ProcessorResult 只有二态 (缺 suspend)~~ | 11 | P1 | **已修复** | `sdk/index.ts` — `ProcessorResult = PipelineContext \| AbortSignal \| SuspensionSignal` |
+| 8 | ~~Agent 构造函数不注入依赖~~ | 16 | P1 | **已修复** | `agent.ts` — 构造函数接受 `AgentDependencies` 接口 |
+| 9 | ~~无 gateLLM / gateTool stage~~ | 14 | P1 | **已修复** | `sdk/index.ts` — PipelineStage 新增 `gateLLM` / `gateTool` |
+| 10 | ~~全局 AbortSignal 只在循环顶部检查~~ | 13 | P1 | **已修复** | `pipeline.ts` — `run()/stream()` 接受 signal，stage 间检查 |
 | 11 | 全局 defaultChain / customProviders | 18 | P2 | 待修复 | `model-resolver.ts:29`, `builtin-gateway.ts:27` |
 | 12 | Processor append-only (不可 replace/remove) | 5 | P2 | 待修复 | `pipeline.ts:44` — 只有 `register()` |
 | 13 | 无 StateMachine | 15 | P2 | 待修复 | 全局搜索无 `StateMachine` |
@@ -689,40 +689,40 @@ Step 4: ✅ 事件覆盖率测试
   结果: 325/325 全部通过，零回归
 ```
 
-### Phase 2: P1 核心能力 (1 周)
+### Phase 2: P1 核心能力 ✅ 已完成
 
 **目标：** 补齐 Processor 系统、依赖注入、门控 stage。
 
 ```
-Step 1: ProcessorResult 三态
-  文件: sdk/index.ts
-  改动: ProcessorResult 增加 SuspensionSignal
-  依赖: Phase 1
+Step 1: ✅ ProcessorResult 三态
+  文件: sdk/index.ts, pipeline.ts, agent.ts
+  改动: ProcessorResult 增加 SuspensionSignal + PipelineCheckpoint; StreamEvent 增加 suspended; PipelineRunner 识别 suspend 短路
+  效果: 解除差距 #7
 
-Step 2: 依赖注入重构
-  文件: agent.ts, sdk/index.ts
-  改动: Agent 构造函数接受 AgentDependencies
-  依赖: Phase 1 (hookManager 接线)
+Step 2: ✅ 依赖注入重构
+  文件: agent.ts
+  改动: 新增 AgentDependencies 接口; 构造函数接受 runner/registry/pluginManager/tracer
+  效果: 解除差距 #8
 
-Step 3: PipelineRunner 增加 unregister/replace
+Step 3: ✅ PipelineRunner 增加 unregister/replace
   文件: pipeline.ts
-  改动: 新增方法操作 processors 数组
-  依赖: 无
+  改动: 新增 unregister(stage) 和 replace(stage, processor) 方法
+  效果: 部分解除差距 #12 (Processor 可替换)
 
-Step 4: gateLLM / gateTool stage
+Step 4: ✅ gateLLM / gateTool stage
   文件: sdk/index.ts, agent.ts
-  改动: PipelineStage 增加新值，Agent 循环插入新 stage
-  依赖: Step 1 (三态 ProcessorResult)
+  改动: PipelineStage 新增 gateLLM/gateTool; Agent 循环数组插入门控 stage
+  效果: 解除差距 #9
 
-Step 5: 全局 AbortSignal 透传
+Step 5: ✅ 全局 AbortSignal 透传
   文件: pipeline.ts, agent.ts
-  改动: PipelineRunner.run() 接受 signal 参数，stage 间检查
-  依赖: 无
+  改动: PipelineRunner.run()/stream() 接受 { signal } 参数; stage 间检查; Agent 透传 signal
+  效果: 解除差距 #10
 
-Step 6: Agent teardown 生命周期
+Step 6: ✅ Agent teardown 生命周期
   文件: agent.ts, plugin-manager.ts
-  改动: 新增 teardown() 方法，调用 PluginManager.shutdown()
-  依赖: Step 2 (依赖注入)
+  改动: Agent 新增 teardown(); PluginManager.shutdown() 变为幂等
+  效果: 解除差距 #6
 ```
 
 ### Phase 3: P2 架构完善 (1-2 周)

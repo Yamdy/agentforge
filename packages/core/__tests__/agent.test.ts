@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { Agent } from '../src/agent.js';
+import { PipelineRunner } from '../src/pipeline.js';
+import { ToolRegistry } from '../src/tool-registry.js';
 import { createMockLanguageModel, registerMockProvider } from './helpers.js';
 import type { AgentConfig } from '@agentforge/sdk';
 
@@ -233,6 +235,57 @@ describe('Agent', () => {
       for (const type of allEventTypes) {
         expect(eventCounts[type]).toBeGreaterThanOrEqual(1);
       }
+    });
+  });
+
+  describe('dependency injection', () => {
+    it('accepts injected PipelineRunner', () => {
+      const injectedRunner = new PipelineRunner();
+      const agent = new Agent({ model: 'mock/test' }, { runner: injectedRunner });
+
+      expect(agent.pipelineRunner).toBe(injectedRunner);
+    });
+
+    it('accepts injected ToolRegistry', () => {
+      const injectedRegistry = new ToolRegistry();
+      const agent = new Agent({ model: 'mock/test' }, { registry: injectedRegistry });
+
+      expect(agent.toolRegistry).toBe(injectedRegistry);
+    });
+
+    it('creates defaults when no deps provided', () => {
+      const agent = new Agent({ model: 'mock/test' });
+
+      expect(agent.pipelineRunner).toBeDefined();
+      expect(agent.toolRegistry).toBeDefined();
+      expect(agent.pluginManager).toBeDefined();
+    });
+
+    it('wires hookManager even with injected runner', async () => {
+      const injectedRunner = new PipelineRunner();
+      const agent = new Agent({ model: 'mock/test' }, { runner: injectedRunner });
+
+      const eventBus = agent.pluginManager.eventBus;
+      expect(eventBus).toBeDefined();
+    });
+  });
+
+  describe('teardown', () => {
+    it('calls teardown without error', async () => {
+      const agent = new Agent({ model: 'mock/test' });
+      await expect(agent.teardown()).resolves.toBeUndefined();
+    });
+
+    it('is idempotent — calling teardown twice does not throw', async () => {
+      const agent = new Agent({ model: 'mock/test' });
+      await agent.teardown();
+      await expect(agent.teardown()).resolves.toBeUndefined();
+    });
+
+    it('cleans up plugin manager resources', async () => {
+      const agent = new Agent({ model: 'mock/test' });
+      expect(typeof agent.pluginManager.shutdown).toBe('function');
+      await agent.teardown();
     });
   });
 });

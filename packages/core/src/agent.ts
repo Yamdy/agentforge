@@ -4,7 +4,9 @@ import type {
   PipelineContext,
   PipelineStage,
   Processor,
+  SuspensionSignal,
   Tool,
+  Tracer,
 } from '@agentforge/sdk';
 import { PipelineRunner } from './pipeline.js';
 import { ToolRegistry } from './tool-registry.js';
@@ -24,9 +26,16 @@ import {
   processOutputProcessor,
 } from './processors/index.js';
 
+export interface AgentDependencies {
+  runner?: PipelineRunner;
+  registry?: ToolRegistry;
+  pluginManager?: PluginManager;
+  tracer?: Tracer;
+}
+
 const PRE_LOOP_STAGES: PipelineStage[] = ['processInput', 'buildContext'];
 const LOOP_STAGES: PipelineStage[] = [
-  'prepareStep', 'invokeLLM', 'processStepOutput', 'executeTools', 'evaluateIteration',
+  'prepareStep', 'gateLLM', 'invokeLLM', 'processStepOutput', 'gateTool', 'executeTools', 'evaluateIteration',
 ];
 const POST_LOOP_STAGES: PipelineStage[] = ['processOutput'];
 
@@ -37,11 +46,11 @@ export class Agent {
   private _pluginManager: PluginManager;
   private _model: import('ai').LanguageModel | null = null;
 
-  constructor(config: AgentConfig, options?: { tracer?: import('@agentforge/sdk').Tracer }) {
+  constructor(config: AgentConfig, deps?: AgentDependencies) {
     this.config = config;
-    this.runner = new PipelineRunner({ tracer: options?.tracer });
-    this.registry = new ToolRegistry();
-    this._pluginManager = new PluginManager(this.runner, this.registry);
+    this.runner = deps?.runner ?? new PipelineRunner({ tracer: deps?.tracer });
+    this.registry = deps?.registry ?? new ToolRegistry();
+    this._pluginManager = deps?.pluginManager ?? new PluginManager(this.runner, this.registry);
     this.runner.setHookManager(this._pluginManager.hookManager);
     this.registerTools();
     this.registerBuiltinProcessors();
@@ -53,6 +62,10 @@ export class Agent {
     } else {
       this.runner.register(factory as Processor);
     }
+  }
+
+  async teardown(): Promise<void> {
+    await this._pluginManager.shutdown();
   }
 
   get pipelineRunner(): PipelineRunner {
@@ -81,8 +94,9 @@ export class Agent {
     await hm.invoke('agent.start', { sessionId: context.request.sessionId, request: context.request, agentConfig: this.config }, {});
 
     // Pre-loop stages
-    let result = await this.runner.run(context, PRE_LOOP_STAGES);
+    let result = await this.runner.run(context, PRE_LOOP_STAGES, { signal });
     if (this.isAbort(result)) throw new Error(`Agent aborted: ${(result as AbortSignal).reason}`);
+    if (this.isSuspend(result)) throw new Error(`Agent suspended: ${(result as SuspensionSignal).reason}`);
 
     // Agentic loop
     let ctx = result as PipelineContext;
@@ -94,7 +108,7 @@ export class Agent {
       ctx = loopCtx;
 
       try {
-        result = await this.runner.run(ctx, stages);
+        result = await this.runner.run(ctx, stages, { signal });
       } catch (error) {
         await hm.invoke('error', { error, stage: 'invokeLLM' as PipelineStage, sessionId: ctx.request.sessionId }, {});
         const fixed = applyReactiveRules(
@@ -116,6 +130,9 @@ export class Agent {
         }
         throw new Error(`Agent aborted: ${abort.reason}`);
       }
+      if (this.isSuspend(result)) {
+        throw new Error(`Agent suspended: ${(result as SuspensionSignal).reason}`);
+      }
       ctx = result as PipelineContext;
 
       // iteration.end hook
@@ -127,8 +144,9 @@ export class Agent {
     if (signal?.aborted) throw new DOMException('Agent run aborted', 'AbortError');
 
     // Post-loop stage
-    result = await this.runner.run(ctx, POST_LOOP_STAGES);
+    result = await this.runner.run(ctx, POST_LOOP_STAGES, { signal });
     if (this.isAbort(result)) throw new Error(`Agent aborted: ${(result as AbortSignal).reason}`);
+    if (this.isSuspend(result)) throw new Error(`Agent suspended: ${(result as SuspensionSignal).reason}`);
 
     // agent.end hook
     await hm.invoke('agent.end', { sessionId: context.request.sessionId }, {});
@@ -142,7 +160,7 @@ export class Agent {
     const context = this.createContext(input);
 
     let ctx = context;
-    for await (const event of this.runner.stream(ctx, PRE_LOOP_STAGES)) {
+    for await (const event of this.runner.stream(ctx, PRE_LOOP_STAGES, { signal })) {
       if (signal?.aborted) throw new DOMException('Agent stream aborted', 'AbortError');
       if (event.type === 'abort') throw new Error(`Agent aborted: ${(event as AbortSignal).reason}`);
       if (event.type === 'text_delta') yield event.text;
@@ -159,7 +177,7 @@ export class Agent {
       let loopBreak = false;
       let compatRetry = false;
       try {
-        for await (const event of this.runner.stream(ctx, stages)) {
+        for await (const event of this.runner.stream(ctx, stages, { signal })) {
           if (signal?.aborted) throw new DOMException('Agent stream aborted', 'AbortError');
           if (event.type === 'abort') {
             const abortEvent = event as { type: 'abort'; reason: string; retryFrom?: PipelineStage };
@@ -193,7 +211,7 @@ export class Agent {
 
     if (signal?.aborted) throw new DOMException('Agent stream aborted', 'AbortError');
 
-    for await (const event of this.runner.stream(ctx, POST_LOOP_STAGES)) {
+    for await (const event of this.runner.stream(ctx, POST_LOOP_STAGES, { signal })) {
       if (event.type === 'abort') throw new Error(`Agent aborted: ${(event as AbortSignal).reason}`);
       if (event.type === 'text_delta') yield event.text;
     }
@@ -256,7 +274,11 @@ export class Agent {
     return { ctx: newCtx, stages };
   }
 
-  private isAbort(result: PipelineContext | AbortSignal): result is AbortSignal {
+  private isAbort(result: PipelineContext | AbortSignal | SuspensionSignal): result is AbortSignal {
     return 'type' in result && result.type === 'abort';
+  }
+
+  private isSuspend(result: PipelineContext | AbortSignal | SuspensionSignal): result is SuspensionSignal {
+    return 'type' in result && result.type === 'suspend';
   }
 }

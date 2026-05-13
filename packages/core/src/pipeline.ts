@@ -6,6 +6,7 @@ import type {
   ProcessorResult,
   Span,
   StreamEvent,
+  SuspensionSignal,
   ToolCall,
   Tracer,
   TokenUsage,
@@ -13,7 +14,7 @@ import type {
 import { NoOpTracer } from '@agentforge/observability';
 import type { HookManager } from './hook-manager.js';
 
-export type RunResult = PipelineContext | AbortSignal;
+export type RunResult = PipelineContext | AbortSignal | SuspensionSignal;
 
 export interface PipelineRunnerOptions {
   tracer?: Tracer;
@@ -45,20 +46,31 @@ export class PipelineRunner {
     this.processors.push(processor);
   }
 
+  unregister(stage: PipelineStage): void {
+    this.processors = this.processors.filter((p) => p.stage !== stage);
+  }
+
+  replace(stage: PipelineStage, processor: Processor): void {
+    this.processors = this.processors.filter((p) => p.stage !== stage);
+    this.processors.push(processor);
+  }
+
   setHookManager(hookManager: HookManager): void {
     this.hookManager = hookManager;
   }
 
-  async run(context: PipelineContext, stages: PipelineStage[]): Promise<RunResult> {
+  async run(context: PipelineContext, stages: PipelineStage[], options?: { signal?: globalThis.AbortSignal }): Promise<RunResult> {
     const rootSpan = this.tracer.startSpan('pipeline');
+    const signal = options?.signal;
     let ctx = context;
 
     try {
       for (const stage of stages) {
+        if (signal?.aborted) throw new DOMException('Pipeline aborted', 'AbortError');
         const stageSpan = rootSpan.startChild(stage);
         try {
           const stageResult = await this.executeStage(ctx, stage, stageSpan);
-          if (this.isAbort(stageResult)) {
+          if (this.isAbort(stageResult) || this.isSuspend(stageResult)) {
             stageSpan.end();
             rootSpan.end();
             return stageResult;
@@ -76,12 +88,14 @@ export class PipelineRunner {
     return ctx;
   }
 
-  async *stream(context: PipelineContext, stages: PipelineStage[]): AsyncGenerator<StreamEvent> {
+  async *stream(context: PipelineContext, stages: PipelineStage[], options?: { signal?: globalThis.AbortSignal }): AsyncGenerator<StreamEvent> {
     const rootSpan = this.tracer.startSpan('pipeline');
+    const signal = options?.signal;
     let ctx = context;
 
     try {
       for (const stage of stages) {
+        if (signal?.aborted) throw new DOMException('Pipeline aborted', 'AbortError');
         yield { type: 'stage_start', stage };
         const stageSpan = rootSpan.startChild(stage);
         try {
@@ -90,6 +104,12 @@ export class PipelineRunner {
             stageSpan.end();
             rootSpan.end();
             yield { type: 'abort', reason: stageResult.reason, ...(stageResult.retryFrom ? { retryFrom: stageResult.retryFrom } : {}) };
+            return;
+          }
+          if (this.isSuspend(stageResult)) {
+            stageSpan.end();
+            rootSpan.end();
+            yield { type: 'suspended', suspensionId: stageResult.suspensionId, reason: stageResult.reason, checkpoint: stageResult.checkpoint };
             return;
           }
           ctx = stageResult;
@@ -159,7 +179,7 @@ export class PipelineRunner {
     ctx: PipelineContext,
     stage: PipelineStage,
     stageSpan: Span,
-  ): Promise<PipelineContext | AbortSignal> {
+  ): Promise<PipelineContext | AbortSignal | SuspensionSignal> {
     const stageProcessors = this.processors.filter((p) => p.stage === stage);
 
     // stage.before hook
@@ -174,7 +194,7 @@ export class PipelineRunner {
         iteration: { ...currentCtx.iteration, span: stageSpan },
       });
       const result: ProcessorResult = await processor.execute(ctxWithSpan);
-      if ('type' in result && result.type === 'abort') {
+      if ('type' in result && (result.type === 'abort' || result.type === 'suspend')) {
         return result;
       }
       currentCtx = Object.freeze({ ...(result as PipelineContext) });
@@ -188,8 +208,12 @@ export class PipelineRunner {
     return currentCtx;
   }
 
-  private isAbort(result: PipelineContext | AbortSignal): result is AbortSignal {
+  private isAbort(result: RunResult): result is AbortSignal {
     return 'type' in result && result.type === 'abort';
+  }
+
+  private isSuspend(result: RunResult): result is SuspensionSignal {
+    return 'type' in result && result.type === 'suspend';
   }
 
   private async consumeStream(ctx: PipelineContext): Promise<PipelineContext> {

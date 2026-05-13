@@ -84,7 +84,12 @@ export class PluginManager {
     }
   }
 
+  private _shutdown = false;
+
   async shutdown(): Promise<void> {
+    if (this._shutdown) return;
+    this._shutdown = true;
+
     for (const resource of [...this.resources].reverse()) {
       const instance = this.resourceInstances.get(resource.id);
       try {

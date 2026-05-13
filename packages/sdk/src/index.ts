@@ -4,13 +4,15 @@
 // Pipeline Stage
 // ---------------------------------------------------------------------------
 
-/** The 8 agent lifecycle stages + tool sub-pipeline stages. */
+/** The agent lifecycle stages + gate stages + tool sub-pipeline stages. */
 export type PipelineStage =
   | 'processInput'
   | 'buildContext'
   | 'prepareStep'
+  | 'gateLLM'
   | 'invokeLLM'
   | 'processStepOutput'
+  | 'gateTool'
   | 'executeTools'
   | 'evaluateIteration'
   | 'processOutput'
@@ -128,7 +130,21 @@ export interface AbortSignal {
   retryFrom?: PipelineStage;
 }
 
-export type ProcessorResult = PipelineContext | AbortSignal;
+export interface PipelineCheckpoint {
+  context: PipelineContext;
+  nextStages: PipelineStage[];
+  iteration: number;
+}
+
+export interface SuspensionSignal {
+  type: 'suspend';
+  suspensionId: string;
+  reason: string;
+  checkpoint: PipelineCheckpoint;
+  expiresAt?: string;
+}
+
+export type ProcessorResult = PipelineContext | AbortSignal | SuspensionSignal;
 
 export interface Processor {
   stage: PipelineStage;
@@ -220,7 +236,8 @@ export type StreamEvent =
   | { type: 'tool_call'; name: string; args: unknown }
   | { type: 'tool_result'; name: string; result: unknown }
   | { type: 'complete'; context: PipelineContext }
-  | { type: 'abort'; reason: string; retryFrom?: PipelineStage };
+  | { type: 'abort'; reason: string; retryFrom?: PipelineStage }
+  | { type: 'suspended'; suspensionId: string; reason: string; checkpoint: PipelineCheckpoint };
 
 // ---------------------------------------------------------------------------
 // Plugin System
@@ -536,16 +553,6 @@ export interface TaskManager {
   get(taskId: string): AsyncTaskHandle | undefined;
   cancel(taskId: string): void;
   list(filter?: { parentSessionId?: string }): AsyncTaskHandle[];
-}
-
-// ---------------------------------------------------------------------------
-// Suspend / Resume
-// ---------------------------------------------------------------------------
-
-export interface SuspendResult {
-  type: 'suspended';
-  resumeToken: string;
-  reason: string;
 }
 
 // ---------------------------------------------------------------------------
