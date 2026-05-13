@@ -71,8 +71,8 @@ describe('ConfigLoader.load', () => {
       session: { plugins: ['custom'] },
     });
 
-    // Session overrides global + project (arrays replace, not merge)
-    expect(result.plugins).toEqual(['custom']);
+    // Session-level plugins concat with global + project
+    expect(result.plugins).toEqual(['memory', 'skill', 'custom']);
     // Project-level agent config preserved
     expect(result.agents?.default?.model).toBe('openai/gpt-4');
   });
@@ -107,8 +107,8 @@ describe('ConfigLoader.load', () => {
       env: '{ "plugins": ["env-plugin"] }',
     });
 
-    // env is lowest priority, global overwrites plugins (array replace)
-    expect(result.plugins).toEqual(['base']);
+    // env is lowest priority, plugins concat across layers
+    expect(result.plugins).toEqual(['env-plugin', 'base']);
   });
 
   it('returns empty config when no sources provided', async () => {

@@ -547,8 +547,8 @@ async function main() {
         runAgentFn: async (agentConfig, input, _signal) => {
           const { Agent: AgentCtor } = await import('@agentforge/core');
           const taskAgent = new AgentCtor(agentConfig, { eventBus: bus } as any);
-          const response = await taskAgent.run(input);
-          return { response, tokenUsage: { input: 0, output: 0 }, sessionId: crypto.randomUUID() };
+          const result = await taskAgent.run(input);
+          return { response: result.response, tokenUsage: result.tokenUsage, sessionId: result.sessionId };
         },
       });
 

@@ -20,7 +20,7 @@ describe('Agent', () => {
     const agent = new Agent(config);
 
     const response = await agent.run('Hi there');
-    expect(response).toBe('Hello from test!');
+    expect(response.response).toBe('Hello from test!');
   });
 
   it('passes user input through to the model', async () => {
@@ -30,7 +30,7 @@ describe('Agent', () => {
 
     const agent = new Agent({ model: 'capture/test' });
     const response = await agent.run('what is 2+2?');
-    expect(response).toBe('response');
+    expect(response.response).toBe('response');
   });
 
   it('respects maxIterations from config', async () => {
@@ -56,7 +56,7 @@ describe('Agent', () => {
     });
 
     const result = await agent.run('hello');
-    expect(result).toBe('dynamic response');
+    expect(result.response).toBe('dynamic response');
   });
 
   it('resolves Dynamic maxIterations at processInput stage', async () => {

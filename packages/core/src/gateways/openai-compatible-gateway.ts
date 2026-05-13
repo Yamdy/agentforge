@@ -1,5 +1,5 @@
 import type { ModelGateway, GatewayConfig } from '@agentforge/sdk';
-import { parseModel } from '../model-resolver.js';
+import { parseModel } from '../parse-model.js';
 
 export class OpenAICompatibleGateway implements ModelGateway {
   readonly name: string;

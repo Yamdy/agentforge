@@ -34,7 +34,7 @@ describe('Agent streaming through pipeline', () => {
     }
     const streamResult = streamChunks.join('');
 
-    expect(runResult).toBe(streamResult);
+    expect(runResult.response).toBe(streamResult);
   });
 
   it('throws when a processor returns an AbortSignal', async () => {

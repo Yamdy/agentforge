@@ -1,4 +1,4 @@
-import type { Span, SpanContext, Tracer } from '@agentforge/sdk';
+import type { Metrics, Span, SpanContext, Tracer } from '@agentforge/sdk';
 
 export interface SpanData {
   name: string;
@@ -10,28 +10,33 @@ export interface SpanData {
   ended: boolean;
 }
 
+export type OnSpanEndCallback = (span: SpanData) => void;
+
 export class SpanImpl implements Span {
   readonly name: string;
   private readonly _traceId: string;
   private readonly _spanId: string;
   private readonly _parentSpanId?: string;
+  private readonly _onSpanEnd?: OnSpanEndCallback;
   private _ended = false;
   private _attributes: Record<string, unknown> = {};
   private _events: Array<{ name: string; attributes?: Record<string, unknown> }> = [];
 
-  constructor(name: string, traceId: string, spanId: string, parentSpanId?: string) {
+  constructor(name: string, traceId: string, spanId: string, parentSpanId?: string, onSpanEnd?: OnSpanEndCallback) {
     this.name = name;
     this._traceId = traceId;
     this._spanId = spanId;
     this._parentSpanId = parentSpanId;
+    this._onSpanEnd = onSpanEnd;
   }
 
   startChild(name: string): Span {
-    return new SpanImpl(name, this._traceId, crypto.randomUUID(), this._spanId);
+    return new SpanImpl(name, this._traceId, crypto.randomUUID(), this._spanId, this._onSpanEnd);
   }
 
   end(): void {
     this._ended = true;
+    this._onSpanEnd?.(this.toData());
   }
 
   setAttribute(key: string, value: unknown): Span {
@@ -70,12 +75,20 @@ export class SpanImpl implements Span {
 }
 
 export class TracerImpl implements Tracer {
+  private readonly _traceId: string;
   private _currentSpan: Span | undefined;
 
+  constructor() {
+    this._traceId = crypto.randomUUID();
+  }
+
   startSpan(name: string): Span {
-    const traceId = crypto.randomUUID();
     const spanId = crypto.randomUUID();
-    return new SpanImpl(name, traceId, spanId);
+    return new SpanImpl(name, this._traceId, spanId);
+  }
+
+  get traceId(): string {
+    return this._traceId;
   }
 
   getCurrentSpan(): Span | undefined {
@@ -91,4 +104,10 @@ export class TracerImpl implements Tracer {
       this._currentSpan = previous;
     }
   }
+}
+
+export class NoOpMetrics implements Metrics {
+  increment(_name: string): void {}
+  gauge(_name: string, _value: number): void {}
+  histogram(_name: string, _value: number): void {}
 }

@@ -26,7 +26,7 @@ describe('Agent multi-step tool execution', () => {
     });
 
     const result = await agent.run('test input');
-    expect(result).toContain('Echo says');
+    expect(result.response).toContain('Echo says');
   });
 
   it('executes multiple tool calls in parallel from a single LLM step', async () => {
@@ -105,7 +105,7 @@ describe('Agent multi-step tool execution', () => {
     expect(executionOrder).toHaveLength(2);
     expect(executionOrder).toContain('a');
     expect(executionOrder).toContain('b');
-    expect(result).toContain('All done');
+    expect(result.response).toContain('All done');
   });
 
   it('echo tool is available as a built-in without explicit registration', async () => {
@@ -121,7 +121,7 @@ describe('Agent multi-step tool execution', () => {
     });
 
     const result = await agent.run('test built-in echo');
-    expect(result).toContain('Got:');
+    expect(result.response).toContain('Got:');
   });
 
   it('handles tool execution errors gracefully and continues', async () => {
@@ -166,6 +166,6 @@ describe('Agent multi-step tool execution', () => {
     });
 
     const result = await agent.run('trigger error');
-    expect(result).toContain('Recovered from error');
+    expect(result.response).toContain('Recovered from error');
   });
 });

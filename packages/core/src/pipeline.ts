@@ -13,6 +13,29 @@ import type {
 } from '@agentforge/sdk';
 import { NoOpTracer } from '@agentforge/observability';
 import type { HookManager } from './hook-manager.js';
+import { extractTokenUsage } from './llm-invoker.js';
+
+/**
+ * Recursively freezes an object and all nested plain objects / arrays.
+ * Uses a WeakSet to guard against circular references.
+ * Skips null, non-objects, and already-frozen objects.
+ */
+function deepFreeze<T>(obj: T, seen: WeakSet<object> = new WeakSet()): Readonly<T> {
+  if (obj === null || typeof obj !== 'object') return obj as Readonly<T>;
+  if (Object.isFrozen(obj)) return obj as Readonly<T>;
+  if (seen.has(obj as object)) return obj as Readonly<T>;
+
+  seen.add(obj as object);
+  Object.freeze(obj);
+
+  for (const value of Object.values(obj as Record<string, unknown>)) {
+    if (value !== null && typeof value === 'object' && (Array.isArray(value) || Object.getPrototypeOf(value) === Object.prototype)) {
+      deepFreeze(value, seen);
+    }
+  }
+
+  return obj as Readonly<T>;
+}
 
 export type RunResult = PipelineContext | AbortSignal | SuspensionSignal;
 
@@ -21,15 +44,60 @@ export interface PipelineRunnerOptions {
   hookManager?: HookManager;
 }
 
-function extractTokenUsage(usage: any): TokenUsage {
-  return {
-    input: typeof usage?.inputTokens === 'number'
-      ? usage.inputTokens
-      : (usage?.inputTokens as any)?.total ?? 0,
-    output: typeof usage?.outputTokens === 'number'
-      ? usage.outputTokens
-      : (usage?.outputTokens as any)?.total ?? 0,
-  };
+interface FullStreamCallbacks {
+  onTextDelta?: (text: string) => void;
+  onToolCall?: (tc: ToolCall) => void;
+}
+
+interface FullStreamResult {
+  chunks: string[];
+  toolCalls: ToolCall[];
+  reasoningParts: string[];
+  usage: TokenUsage | undefined;
+}
+
+async function parseFullStream(
+  fullStream: AsyncIterable<any>,
+  callbacks?: FullStreamCallbacks,
+): Promise<FullStreamResult> {
+  const chunks: string[] = [];
+  const toolCalls: ToolCall[] = [];
+  const reasoningParts: string[] = [];
+  let usage: TokenUsage | undefined;
+
+  for await (const event of fullStream) {
+    if (event.type === 'text-delta') {
+      chunks.push(event.text);
+      callbacks?.onTextDelta?.(event.text);
+    } else if (event.type === 'tool-call') {
+      const tc: ToolCall = {
+        id: event.toolCallId ?? event.id ?? '',
+        name: event.toolName ?? event.name ?? '',
+        args: event.args ?? event.input ?? {},
+      };
+      toolCalls.push(tc);
+      callbacks?.onToolCall?.(tc);
+    } else if (event.type === 'reasoning') {
+      reasoningParts.push(event.textDelta ?? event.text ?? '');
+    } else if (event.type === 'finish-step') {
+      usage = extractTokenUsage(event.usage);
+    } else if (event.type === 'error') {
+      throw event.error;
+    }
+  }
+
+  return { chunks, toolCalls, reasoningParts, usage };
+}
+
+async function resolveReasoningContent(
+  reasoningParts: string[],
+  reasoningPromise: Promise<string | undefined> | undefined,
+): Promise<string | undefined> {
+  let reasoningContent = reasoningParts.length > 0 ? reasoningParts.join('') : undefined;
+  if (!reasoningContent && reasoningPromise) {
+    try { reasoningContent = await reasoningPromise ?? undefined; } catch { /* ignore */ }
+  }
+  return reasoningContent;
 }
 
 export class PipelineRunner {
@@ -149,7 +217,7 @@ export class PipelineRunner {
               try { reasoningContent = await ctx.iteration.reasoningPromise ?? undefined; } catch { /* ignore */ }
             }
 
-            ctx = Object.freeze({
+            ctx = deepFreeze({
               ...ctx,
               iteration: {
                 ...ctx.iteration,
@@ -189,7 +257,7 @@ export class PipelineRunner {
 
     let currentCtx = ctx;
     for (const processor of stageProcessors) {
-      const ctxWithSpan = Object.freeze({
+      const ctxWithSpan = deepFreeze({
         ...currentCtx,
         iteration: { ...currentCtx.iteration, span: stageSpan },
       });
@@ -197,7 +265,7 @@ export class PipelineRunner {
       if ('type' in result && (result.type === 'abort' || result.type === 'suspend')) {
         return result;
       }
-      currentCtx = Object.freeze({ ...(result as PipelineContext) });
+      currentCtx = deepFreeze({ ...(result as PipelineContext) });
     }
 
     // stage.after hook
@@ -252,7 +320,7 @@ export class PipelineRunner {
       try { reasoningContent = await ctx.iteration.reasoningPromise ?? undefined; } catch { /* ignore */ }
     }
 
-    return Object.freeze({
+    return deepFreeze({
       ...ctx,
       iteration: {
         ...ctx.iteration,

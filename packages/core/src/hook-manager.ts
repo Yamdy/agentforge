@@ -3,6 +3,18 @@ import type { EventBus } from './event-bus.js';
 
 const DEFAULT_PRIORITY = 100;
 
+const HOOK_TO_EVENT: Record<string, string> = {
+  'agent.start': 'agent:start',
+  'agent.end': 'agent:end',
+  'stage.before': 'stage:before',
+  'stage.after': 'stage:after',
+  'llm.before': 'llm:before',
+  'llm.after': 'llm:after',
+  'tool.before': 'tool:before',
+  'tool.after': 'tool:after',
+  'error': 'error',
+};
+
 export interface HookManagerOptions {
   profile?: HookProfile;
   disabledHooks?: string[];
@@ -85,7 +97,7 @@ export class HookManager {
   }
 
   private bridge(point: HookPoint, data: unknown): void {
-    const eventType = point.replace('.', ':');
+    const eventType = HOOK_TO_EVENT[point] ?? point.replace('.', ':');
     try {
       this.eventBus.emit(eventType, data);
     } catch {

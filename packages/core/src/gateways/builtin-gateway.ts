@@ -1,6 +1,6 @@
 import type { LanguageModel } from 'ai';
 import type { ModelGateway } from '@agentforge/sdk';
-import { parseModel } from '../model-resolver.js';
+import { parseModel } from '../parse-model.js';
 
 type ProviderFactory = (modelId: string) => LanguageModel;
 type SdkInstance = { languageModel: (id: string) => LanguageModel };

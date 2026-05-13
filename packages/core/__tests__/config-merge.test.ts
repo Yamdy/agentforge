@@ -22,9 +22,19 @@ describe('deepMerge', () => {
     });
   });
 
-  it('arrays do NOT merge — later replaces', () => {
+  it('plugins arrays are concatenated', () => {
     const result = deepMerge({ plugins: ['a'] }, { plugins: ['b'] });
-    expect(result).toEqual({ plugins: ['b'] });
+    expect(result).toEqual({ plugins: ['a', 'b'] });
+  });
+
+  it('modelGateways arrays are concatenated', () => {
+    const result = deepMerge({ modelGateways: ['g1'] }, { modelGateways: ['g2'] });
+    expect(result).toEqual({ modelGateways: ['g1', 'g2'] });
+  });
+
+  it('other arrays are replaced, not concatenated', () => {
+    const result = deepMerge({ tags: ['a'] }, { tags: ['b'] });
+    expect(result).toEqual({ tags: ['b'] });
   });
 
   it('handles undefined/null sources gracefully', () => {

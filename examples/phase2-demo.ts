@@ -64,7 +64,7 @@ async function demo_dependency_injection() {
   log('toolRegistry === 注入的 registry?', agent.toolRegistry === registry);
 
   const reply = await agent.run('一句话解释依赖注入');
-  log('LLM:', reply.slice(0, 100));
+  log('LLM:', reply.response.slice(0, 100));
 
   await agent.teardown();
 }
@@ -91,7 +91,7 @@ async function demo_gate_llm() {
   });
 
   const reply = await agent.run('1+1=?');
-  log('LLM 回复:', reply.slice(0, 60));
+  log('LLM 回复:', reply.response.slice(0, 60));
 
   // 场景 B: 配额耗尽，阻止
   const agent2 = new Agent({
@@ -231,7 +231,7 @@ async function demo_replace() {
   });
 
   const reply = await agent.run('随便什么');
-  log('回复:', reply);
+  log('回复:', reply.response);
   log('→ 不消耗 API token，适合本地开发和测试');
 
   // 恢复真实 LLM：先 unregister mock，再注册真实 processor
@@ -253,7 +253,7 @@ async function demo_teardown() {
   });
 
   const reply = await agent.run('说"你好"');
-  log('LLM:', reply.slice(0, 60));
+  log('LLM:', reply.response.slice(0, 60));
 
   // 用完后清理：停止插件资源、取消事件订阅
   await agent.teardown();

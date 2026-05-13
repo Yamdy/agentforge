@@ -1,14 +1,14 @@
 // @agentforge/core — Agent Loop, Processor Pipeline, Context, Tool Registry
 
 export { PipelineRunner, type PipelineRunnerOptions } from './pipeline.js';
-export { Agent, type AgentDependencies } from './agent.js';
+export { Agent, type AgentDependencies, type AgentRunResult } from './agent.js';
 export { LLMInvoker, type LLMInvokerOptions, type LLMInvokeInput, type LLMInvokeResult, type LLMStreamHandle } from './llm-invoker.js';
 export { resolveModel, registerProvider, parseModel, type ParsedModel } from './model-resolver.js';
 export { streamWithRetry, type RetryOptions } from './retry.js';
 export { PluginManager, type PluginFactory } from './plugin-manager.js';
 export { EventBus } from './event-bus.js';
 export { HookManager, type HookManagerOptions } from './hook-manager.js';
-export { ToolRegistry, type AiSdkToolDef, type AiSdkToolSchema, type ToolRegistryOptions } from './tool-registry.js';
+export { ToolRegistry, type AiSdkToolSchema, type ToolRegistryOptions } from './tool-registry.js';
 export { FilesystemSessionStorage } from './session-storage.js';
 export { SessionPersistence } from './session-persistence.js';
 export { SessionManagerImpl } from './session-manager.js';
@@ -22,4 +22,5 @@ export { FallbackRunner, type FallbackInvoker, type FallbackRunnerOptions } from
 export { TaskManagerImpl } from './task-manager.js';
 export { StateMachine, type AgentState } from './state-machine.js';
 export { ModelFactory } from './model-factory.js';
+export { LoopOrchestrator, type LoopOptions } from './loop-orchestrator.js';
 export { serialize, deserialize } from './serialize.js';

@@ -125,7 +125,7 @@ describe('Agent edge cases', () => {
 
       const agent = new Agent({ model: 'no-tools/test' });
       const result = await agent.run('test');
-      expect(result).toBe('no tools needed');
+      expect(result.response).toBe('no tools needed');
     });
   });
 
@@ -178,8 +178,8 @@ describe('Agent edge cases', () => {
       const agent = new Agent({ model: 'cached/test' });
       const r1 = await agent.run('first');
       const r2 = await agent.run('second');
-      expect(r1).toContain('resolved');
-      expect(r2).toContain('resolved');
+      expect(r1.response).toContain('resolved');
+      expect(r2.response).toContain('resolved');
     });
   });
 });

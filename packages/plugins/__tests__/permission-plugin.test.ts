@@ -36,7 +36,7 @@ function isAbort(result: PipelineContext | { type: 'abort'; reason: string }): r
 }
 
 describe('permissionPlugin', () => {
-  it('registers a processor at beforeTool stage', () => {
+  it('registers a processor at gateTool stage', () => {
     const { api, processors } = createHarnessAPI();
 
     permissionPlugin({
@@ -44,7 +44,7 @@ describe('permissionPlugin', () => {
       rules: [],
     })(api);
 
-    expect(processors.has('beforeTool')).toBe(true);
+    expect(processors.has('gateTool')).toBe(true);
   });
 
   it('returns PluginRegistration with the processor', () => {
@@ -57,7 +57,7 @@ describe('permissionPlugin', () => {
 
     expect(registration.processors).toBeDefined();
     expect(registration.processors!.length).toBeGreaterThanOrEqual(1);
-    expect(registration.processors![0].stage).toBe('beforeTool');
+    expect(registration.processors![0].stage).toBe('gateTool');
   });
 
   it('processor from plugin denies tools in plan-only mode', async () => {
@@ -68,7 +68,7 @@ describe('permissionPlugin', () => {
       rules: [],
     })(api);
 
-    const processor = processors.get('beforeTool') as { stage: string; execute: (ctx: PipelineContext) => Promise<unknown> };
+    const processor = processors.get('gateTool') as { stage: string; execute: (ctx: PipelineContext) => Promise<unknown> };
     expect(processor).toBeDefined();
 
     const ctx = makeContext({
@@ -87,7 +87,7 @@ describe('permissionPlugin', () => {
       rules: [],
     })(api);
 
-    const processor = processors.get('beforeTool') as { stage: string; execute: (ctx: PipelineContext) => Promise<unknown> };
+    const processor = processors.get('gateTool') as { stage: string; execute: (ctx: PipelineContext) => Promise<unknown> };
     expect(processor).toBeDefined();
 
     const ctx = makeContext({
@@ -106,7 +106,7 @@ describe('permissionPlugin', () => {
       rules: [{ tool: 'shell_exec', action: 'deny' }],
     })(api);
 
-    const processor = processors.get('beforeTool') as { stage: string; execute: (ctx: PipelineContext) => Promise<unknown> };
+    const processor = processors.get('gateTool') as { stage: string; execute: (ctx: PipelineContext) => Promise<unknown> };
     const ctx = makeContext({
       iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'shell_exec', args: { command: 'ls' } }] },
     });
@@ -131,7 +131,7 @@ describe('permissionPlugin', () => {
       rules: [],
     })(api);
 
-    const processor = processors.get('beforeTool') as { stage: string; execute: (ctx: PipelineContext) => Promise<unknown> };
+    const processor = processors.get('gateTool') as { stage: string; execute: (ctx: PipelineContext) => Promise<unknown> };
     const ctx = makeContext({
       iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'read_file', args: { path: '/tmp/x' } }] },
     });

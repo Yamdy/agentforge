@@ -60,6 +60,11 @@ export function createCompressionProcessor(config: CompressionConfig): Processor
           compressed = compressed.slice(-phase.keepRecent);
           phasesApplied++;
         } else if (phase.type === 'summarize') {
+          if (!phase.summarizeFn) {
+            console.warn(
+              '[CompressionProcessor] summarize phase configured without summarizeFn — skipping compression.',
+            );
+          }
           compressed = await applySummarize(compressed, phase);
           phasesApplied++;
         }

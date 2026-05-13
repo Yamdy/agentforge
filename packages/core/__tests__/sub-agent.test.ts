@@ -49,7 +49,7 @@ describe('SubAgent', () => {
     });
 
     const result = await agent.run('Research X for me');
-    expect(result).toBe('Parent final answer');
+    expect(result.response).toBe('Parent final answer');
   });
 
   it('isolated policy: getSessionState is not called, child runs with fresh context', async () => {
@@ -265,7 +265,7 @@ describe('SubAgent', () => {
 
     // Should NOT throw — error is caught and returned as summary
     const result = await agent.run('Delegate to failworker');
-    expect(result).toBe('Parent handled error');
+    expect(result.response).toBe('Parent handled error');
 
     // task:end should contain error summary
     const endData = events[0].data as any;

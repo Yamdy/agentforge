@@ -1,10 +1,8 @@
 import type {
-  AbortSignal,
   AgentConfig,
   PipelineContext,
-  PipelineStage,
   Processor,
-  SuspensionSignal,
+  SessionManager,
   Tool,
   Tracer,
 } from '@agentforge/sdk';
@@ -12,9 +10,9 @@ import { PipelineRunner } from './pipeline.js';
 import { ToolRegistry } from './tool-registry.js';
 import { PluginManager, type PluginFactory } from './plugin-manager.js';
 import { LLMInvoker } from './llm-invoker.js';
-import { resolveModel } from './model-resolver.js';
-import type { ModelFactory } from './model-factory.js';
-import { applyReactiveRules } from './processors/provider-history-compat.js';
+import { ModelFactory } from './model-factory.js';
+import { BuiltInGateway } from './gateways/builtin-gateway.js';
+import { LoopOrchestrator } from './loop-orchestrator.js';
 import { echoTool } from '@agentforge/tools';
 import {
   processInputProcessor,
@@ -33,13 +31,14 @@ export interface AgentDependencies {
   pluginManager?: PluginManager;
   tracer?: Tracer;
   modelFactory?: ModelFactory;
+  sessionManager?: SessionManager;
 }
 
-const PRE_LOOP_STAGES: PipelineStage[] = ['processInput', 'buildContext'];
-const LOOP_STAGES: PipelineStage[] = [
-  'prepareStep', 'gateLLM', 'invokeLLM', 'processStepOutput', 'gateTool', 'executeTools', 'evaluateIteration',
-];
-const POST_LOOP_STAGES: PipelineStage[] = ['processOutput'];
+export interface AgentRunResult {
+  response: string;
+  tokenUsage: import('@agentforge/sdk').TokenUsage;
+  sessionId: string;
+}
 
 export class Agent {
   private config: AgentConfig;
@@ -47,15 +46,20 @@ export class Agent {
   private registry: ToolRegistry;
   private _pluginManager: PluginManager;
   private _model: import('ai').LanguageModel | null = null;
-  private modelFactory?: ModelFactory;
+  private modelFactory: ModelFactory;
+  private orchestrator: LoopOrchestrator;
+  private sessionManager?: SessionManager;
 
   constructor(config: AgentConfig, deps?: AgentDependencies) {
     this.config = config;
-    this.modelFactory = deps?.modelFactory;
+    this.modelFactory = deps?.modelFactory ?? new ModelFactory();
+    this.modelFactory.registerGateway(new BuiltInGateway());
     this.runner = deps?.runner ?? new PipelineRunner({ tracer: deps?.tracer });
     this.registry = deps?.registry ?? new ToolRegistry();
     this._pluginManager = deps?.pluginManager ?? new PluginManager(this.runner, this.registry);
     this.runner.setHookManager(this._pluginManager.hookManager);
+    this.orchestrator = new LoopOrchestrator(this.runner, this._pluginManager.hookManager);
+    this.sessionManager = deps?.sessionManager;
     this.registerTools();
     this.registerBuiltinProcessors();
   }
@@ -88,144 +92,84 @@ export class Agent {
     return this._pluginManager.eventBus;
   }
 
-  async run(input: string, signal?: globalThis.AbortSignal): Promise<string> {
+  get state(): import('./state-machine.js').AgentState {
+    return this.orchestrator.state;
+  }
+
+  async run(input: string, signal?: globalThis.AbortSignal): Promise<AgentRunResult> {
     if (signal?.aborted) throw new DOMException('Agent run aborted', 'AbortError');
 
-    const context = this.createContext(input);
+    const context = await this.createContext(input);
     const hm = this._pluginManager.hookManager;
 
     // agent.start hook
     await hm.invoke('agent.start', { sessionId: context.request.sessionId, request: context.request, agentConfig: this.config }, {});
 
-    // Pre-loop stages
-    let result = await this.runner.run(context, PRE_LOOP_STAGES, { signal });
-    if (this.isAbort(result)) throw new Error(`Agent aborted: ${(result as AbortSignal).reason}`);
-    if (this.isSuspend(result)) throw new Error(`Agent suspended: ${(result as SuspensionSignal).reason}`);
-
-    // Agentic loop
-    let ctx = result as PipelineContext;
-    const maxIter = typeof ctx.agent.config.maxIterations === 'number' ? ctx.agent.config.maxIterations : 10;
-    for (let i = 0; i < maxIter; i++) {
-      if (signal?.aborted) throw new DOMException('Agent run aborted', 'AbortError');
-
-      const { ctx: loopCtx, stages } = this.computeLoopStages(ctx, i);
-      ctx = loopCtx;
-
-      try {
-        result = await this.runner.run(ctx, stages, { signal });
-      } catch (error) {
-        await hm.invoke('error', { error, stage: 'invokeLLM' as PipelineStage, sessionId: ctx.request.sessionId }, {});
-        const fixed = applyReactiveRules(
-          ctx.session.messageHistory ?? [],
-          ctx.agent.config.model,
-          error,
-        );
-        if (fixed) {
-          ctx = { ...ctx, session: { ...ctx.session, messageHistory: fixed } };
-          continue;
-        }
-        throw error;
-      }
-      if (this.isAbort(result)) {
-        const abort = result as AbortSignal;
-        if (abort.retryFrom) {
-          ctx = { ...ctx, iteration: { ...ctx.iteration, loopDirective: { action: 'retry', retryFrom: abort.retryFrom } } };
-          continue;
-        }
-        throw new Error(`Agent aborted: ${abort.reason}`);
-      }
-      if (this.isSuspend(result)) {
-        throw new Error(`Agent suspended: ${(result as SuspensionSignal).reason}`);
-      }
-      ctx = result as PipelineContext;
-
-      // iteration.end hook
-      await hm.invoke('iteration.end', { step: ctx.iteration.step, sessionId: ctx.request.sessionId }, {});
-
-      if (ctx.iteration.loopDirective?.action === 'stop') break;
-    }
-
-    if (signal?.aborted) throw new DOMException('Agent run aborted', 'AbortError');
-
-    // Post-loop stage
-    result = await this.runner.run(ctx, POST_LOOP_STAGES, { signal });
-    if (this.isAbort(result)) throw new Error(`Agent aborted: ${(result as AbortSignal).reason}`);
-    if (this.isSuspend(result)) throw new Error(`Agent suspended: ${(result as SuspensionSignal).reason}`);
+    const maxIter = typeof this.config.maxIterations === 'number' ? this.config.maxIterations : 10;
+    const finalCtx = await this.orchestrator.runLoop(context, {
+      maxIterations: maxIter,
+      signal,
+      modelString: this.config.model,
+      sessionId: context.request.sessionId,
+    });
 
     // agent.end hook
     await hm.invoke('agent.end', { sessionId: context.request.sessionId }, {});
 
-    return (result as PipelineContext).iteration.response as string ?? '';
+    return {
+      response: finalCtx.iteration.response as string ?? '',
+      tokenUsage: finalCtx.session.totalTokenUsage ?? { input: 0, output: 0 },
+      sessionId: context.request.sessionId,
+    };
+  }
+
+  async resume(sessionId: string, signal?: globalThis.AbortSignal): Promise<AgentRunResult> {
+    if (signal?.aborted) throw new DOMException('Agent resume aborted', 'AbortError');
+
+    const hm = this._pluginManager.hookManager;
+    const maxIter = typeof this.config.maxIterations === 'number' ? this.config.maxIterations : 10;
+
+    const finalCtx = await this.orchestrator.resumeLoop(sessionId, {
+      maxIterations: maxIter,
+      signal,
+      modelString: this.config.model,
+      sessionId,
+    });
+
+    // agent.end hook
+    await hm.invoke('agent.end', { sessionId }, {});
+
+    return {
+      response: finalCtx.iteration.response as string ?? '',
+      tokenUsage: finalCtx.session.totalTokenUsage ?? { input: 0, output: 0 },
+      sessionId,
+    };
   }
 
   async *stream(input: string, signal?: globalThis.AbortSignal): AsyncGenerator<string> {
     if (signal?.aborted) throw new DOMException('Agent stream aborted', 'AbortError');
 
-    const context = this.createContext(input);
+    const context = await this.createContext(input);
+    const hm = this._pluginManager.hookManager;
 
-    let ctx = context;
-    for await (const event of this.runner.stream(ctx, PRE_LOOP_STAGES, { signal })) {
-      if (signal?.aborted) throw new DOMException('Agent stream aborted', 'AbortError');
-      if (event.type === 'abort') throw new Error(`Agent aborted: ${(event as AbortSignal).reason}`);
-      if (event.type === 'text_delta') yield event.text;
-      if (event.type === 'complete') ctx = (event as { context: PipelineContext }).context;
-    }
+    // agent.start hook
+    await hm.invoke('agent.start', { sessionId: context.request.sessionId, request: context.request, agentConfig: this.config }, {});
 
-    const maxIter = typeof ctx.agent.config.maxIterations === 'number' ? ctx.agent.config.maxIterations : 10;
-    for (let i = 0; i < maxIter; i++) {
-      if (signal?.aborted) throw new DOMException('Agent stream aborted', 'AbortError');
+    const maxIter = typeof this.config.maxIterations === 'number' ? this.config.maxIterations : 10;
+    yield* this.orchestrator.streamLoop(context, {
+      maxIterations: maxIter,
+      signal,
+      modelString: this.config.model,
+      sessionId: context.request.sessionId,
+    });
 
-      const { ctx: loopCtx, stages } = this.computeLoopStages(ctx, i);
-      ctx = loopCtx;
-
-      let loopBreak = false;
-      let compatRetry = false;
-      try {
-        for await (const event of this.runner.stream(ctx, stages, { signal })) {
-          if (signal?.aborted) throw new DOMException('Agent stream aborted', 'AbortError');
-          if (event.type === 'abort') {
-            const abortEvent = event as { type: 'abort'; reason: string; retryFrom?: PipelineStage };
-            if (abortEvent.retryFrom) {
-              ctx = { ...ctx, iteration: { ...ctx.iteration, loopDirective: { action: 'retry', retryFrom: abortEvent.retryFrom } } };
-              loopBreak = true;
-              break;
-            }
-            throw new Error(`Agent aborted: ${abortEvent.reason}`);
-          }
-          if (event.type === 'text_delta') yield event.text;
-          if (event.type === 'complete') ctx = (event as { context: PipelineContext }).context;
-        }
-      } catch (error) {
-        const fixed = applyReactiveRules(
-          ctx.session.messageHistory ?? [],
-          ctx.agent.config.model,
-          error,
-        );
-        if (fixed) {
-          ctx = { ...ctx, session: { ...ctx.session, messageHistory: fixed } };
-          compatRetry = true;
-        } else {
-          throw error;
-        }
-      }
-      if (compatRetry) continue;
-      if (loopBreak) continue;
-      if (ctx.iteration.loopDirective?.action === 'stop') break;
-    }
-
-    if (signal?.aborted) throw new DOMException('Agent stream aborted', 'AbortError');
-
-    for await (const event of this.runner.stream(ctx, POST_LOOP_STAGES, { signal })) {
-      if (event.type === 'abort') throw new Error(`Agent aborted: ${(event as AbortSignal).reason}`);
-      if (event.type === 'text_delta') yield event.text;
-    }
+    // agent.end hook
+    await hm.invoke('agent.end', { sessionId: context.request.sessionId }, {});
   }
 
   private async getLLM(systemPrompt?: string): Promise<LLMInvoker> {
     if (!this._model) {
-      this._model = this.modelFactory
-        ? await this.modelFactory.resolve(this.config.model)
-        : await resolveModel(this.config.model);
+      this._model = await this.modelFactory.resolve(this.config.model);
     }
     return new LLMInvoker({
       model: this._model,
@@ -234,9 +178,14 @@ export class Agent {
     });
   }
 
-  private createContext(input: string): PipelineContext {
+  private async createContext(input: string): Promise<PipelineContext> {
+    let sessionId: string = crypto.randomUUID();
+    if (this.sessionManager) {
+      const record = await this.sessionManager.start(input);
+      sessionId = record.sessionId;
+    }
     return {
-      request: { input, sessionId: crypto.randomUUID() },
+      request: { input, sessionId },
       agent: { config: { ...this.config }, promptFragments: [], toolDeclarations: [] },
       iteration: { step: 0 },
       session: { custom: {} },
@@ -267,24 +216,5 @@ export class Agent {
     this.runner.register(createExecuteToolsProcessor(this.registry));
     this.runner.register(evaluateIterationProcessor);
     this.runner.register(processOutputProcessor);
-  }
-
-  private computeLoopStages(
-    ctx: PipelineContext,
-    step: number,
-  ): { ctx: PipelineContext; stages: PipelineStage[] } {
-    const prevDirective = ctx.iteration.loopDirective;
-    const newCtx = { ...ctx, iteration: { ...ctx.iteration, step, loopDirective: undefined } };
-    const retryFrom = prevDirective?.action === 'retry' ? prevDirective.retryFrom : undefined;
-    const stages = retryFrom ? LOOP_STAGES.slice(LOOP_STAGES.indexOf(retryFrom)) : LOOP_STAGES;
-    return { ctx: newCtx, stages };
-  }
-
-  private isAbort(result: PipelineContext | AbortSignal | SuspensionSignal): result is AbortSignal {
-    return 'type' in result && result.type === 'abort';
-  }
-
-  private isSuspend(result: PipelineContext | AbortSignal | SuspensionSignal): result is SuspensionSignal {
-    return 'type' in result && result.type === 'suspend';
   }
 }

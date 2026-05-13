@@ -132,7 +132,7 @@ export function createPermissionProcessor(config: PermissionConfig): Processor {
   const emit = config.onDecision ?? (() => {});
 
   return {
-    stage: 'beforeTool',
+    stage: 'gateTool',
     execute: async (ctx: PipelineContext): Promise<ProcessorResult> => {
       // full-auto mode: allow everything
       if (config.mode === 'full-auto') {
@@ -195,7 +195,7 @@ export interface PermissionPluginOptions {
 
 /**
  * PermissionPlugin factory function.
- * Creates a PermissionProcessor registered at the `beforeTool` stage.
+ * Creates a PermissionProcessor registered at the `gateTool` stage.
  * Each permission decision is emitted through the `onDecision` callback,
  * which the plugin wires to the EventBus via HarnessAPI.subscribe.
  */
@@ -209,7 +209,7 @@ export function permissionPlugin(options: PermissionPluginOptions): (api: Harnes
       },
     });
 
-    api.registerProcessor('beforeTool', processor);
+    api.registerProcessor('gateTool', processor);
 
     return { processors: [processor] };
   };

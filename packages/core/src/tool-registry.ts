@@ -2,12 +2,6 @@ import { jsonSchema } from 'ai';
 import type { Tool, ToolExecutionContext, ToolResult } from '@agentforge/sdk';
 import type { HookManager } from './hook-manager.js';
 
-export interface AiSdkToolDef {
-  description: string;
-  inputSchema: unknown;
-  execute?: (args: Record<string, unknown>) => Promise<unknown>;
-}
-
 export interface AiSdkToolSchema {
   description: string;
   inputSchema: unknown;
@@ -127,63 +121,6 @@ export class ToolRegistry {
 
     const output = this.truncateOutput(toolOutput);
     return { toolCallId, name: tool.name, output };
-  }
-
-  toAiSdkTools(): Record<string, AiSdkToolDef> {
-    const result: Record<string, AiSdkToolDef> = {};
-    for (const tool of this.tools.values()) {
-      const schema = isZodSchema(tool.inputSchema)
-        ? tool.inputSchema
-        : jsonSchema(tool.inputSchema as Record<string, unknown>);
-
-      result[tool.name] = {
-        description: tool.description,
-        inputSchema: schema,
-        execute: async (args) => {
-          if (isZodSchema(tool.inputSchema)) {
-            const parsed = tool.inputSchema.safeParse(args);
-            if (!parsed.success) {
-              const issues =
-                parsed.error?.issues
-                  ?.map((i) => `${i.path.join('.')}: ${i.message}`)
-                  .join('; ') ??
-                parsed.error?.message ??
-                'Unknown validation error';
-              throw new Error(
-                `Tool "${tool.name}" input validation failed: ${issues}`,
-              );
-            }
-          }
-
-          const hookInput = { toolName: tool.name, args, sessionId: this.executionContext.sessionId ?? '' };
-
-          if (this.hookManager) {
-            await this.hookManager.invoke('tool.before', hookInput, {});
-          }
-
-          let toolResult: unknown;
-          try {
-            toolResult = await tool.execute(args, this.executionContext);
-          } catch (err) {
-            if (this.hookManager) {
-              await this.hookManager.invoke('tool.after', hookInput, { error: err instanceof Error ? err.message : String(err) });
-            }
-            throw err;
-          }
-
-          if (this.hookManager) {
-            const hookOutput: Record<string, unknown> = { result: toolResult };
-            await this.hookManager.invoke('tool.after', hookInput, hookOutput);
-            if (hookOutput.result !== undefined) {
-              toolResult = hookOutput.result;
-            }
-          }
-
-          return this.truncateOutput(toolResult);
-        },
-      };
-    }
-    return result;
   }
 
   private truncateOutput(output: unknown): unknown {

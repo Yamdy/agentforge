@@ -10,9 +10,9 @@ const VALID_TRANSITIONS: Record<AgentState, AgentState[]> = {
   pending: ['running'],
   running: ['paused', 'completed', 'cancelled', 'error'],
   paused: ['running', 'cancelled'],
-  completed: [],
-  cancelled: [],
-  error: [],
+  completed: ['pending'],
+  cancelled: ['pending'],
+  error: ['pending'],
 };
 
 export class StateMachine {

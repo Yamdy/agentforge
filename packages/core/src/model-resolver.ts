@@ -6,30 +6,16 @@ import { OpenAICompatibleGateway } from './gateways/openai-compatible-gateway.js
 
 export { registerProvider } from './gateways/builtin-gateway.js';
 export { GatewayChain, BuiltInGateway, OpenAICompatibleGateway };
-
-export interface ParsedModel {
-  provider: string;
-  modelId: string;
-}
-
-export function parseModel(modelString: string): ParsedModel {
-  const idx = modelString.indexOf('/');
-  if (idx < 1 || idx === modelString.length - 1) {
-    throw new Error(
-      `Invalid model string: "${modelString}". Expected format: "provider/model-name"`,
-    );
-  }
-  return {
-    provider: modelString.slice(0, idx),
-    modelId: modelString.slice(idx + 1),
-  };
-}
+export { parseModel, type ParsedModel } from './parse-model.js';
 
 // Global default chain: BuiltInGateway is always last.
 const defaultChain = new GatewayChain();
 defaultChain.register(new BuiltInGateway());
 
-/** Resolve a model string to a LanguageModel using the default gateway chain. */
+/**
+ * Resolve a model string to a LanguageModel using the default gateway chain.
+ * @deprecated Use `ModelFactory` instead for injectable, instance-based resolution.
+ */
 export async function resolveModel(modelString: string): Promise<LanguageModel> {
   return defaultChain.resolve(modelString);
 }

@@ -90,14 +90,14 @@ describe('Agent with four-region context', () => {
   it('produces response in iteration region', async () => {
     const agent = new Agent({ model: 'mock/test', maxIterations: 1 });
     const response = await agent.run('Hi');
-    expect(response).toBe('Hello world');
+    expect(response.response).toBe('Hello world');
   });
 
   it('stops after first iteration when evaluateIteration sets stop (default)', async () => {
     registerMockProvider('mock', () => createMockLanguageModel({ text: 'step done' }));
     const agent = new Agent({ model: 'mock/test', maxIterations: 5 });
     const response = await agent.run('test');
-    expect(response).toBe('step done');
+    expect(response.response).toBe('step done');
   });
 
   it('continues loop when evaluateIteration sets continue', async () => {

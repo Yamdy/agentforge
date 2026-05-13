@@ -75,11 +75,11 @@ const defaultRunAgent = async (
 ): Promise<SubAgentResult> => {
   const { Agent } = await import('./agent.js');
   const agent = new Agent(config);
-  const response = await agent.run(input, signal);
+  const result = await agent.run(input, signal);
   return {
-    response,
-    tokenUsage: { input: 0, output: 0 },
-    sessionId: crypto.randomUUID(),
+    response: result.response,
+    tokenUsage: result.tokenUsage,
+    sessionId: result.sessionId,
   };
 };
 

@@ -265,6 +265,6 @@ describe('Full Pipeline Stages', () => {
     });
 
     const result = await agent.run('What is 2+3?');
-    expect(result).toBe('The answer is 5.');
+    expect(result.response).toBe('The answer is 5.');
   });
 });

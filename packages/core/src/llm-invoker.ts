@@ -27,7 +27,7 @@ export interface LLMStreamHandle {
   reasoning: Promise<string | undefined>;
 }
 
-function extractTokenUsage(usage: any): TokenUsage {
+export function extractTokenUsage(usage: any): TokenUsage {
   return {
     input: typeof usage?.inputTokens === 'number'
       ? usage.inputTokens
@@ -98,6 +98,8 @@ export class LLMInvoker {
   }
 
   stream(input: LLMInvokeInput): LLMStreamHandle {
+    const span = this.options.tracer?.startSpan('llm.stream');
+
     const streamOpts: Record<string, unknown> = {
       model: this.options.model,
       system: this.options.system,
@@ -112,19 +114,40 @@ export class LLMInvoker {
       streamOpts.providerOptions = input.providerOptions;
     }
 
-    const result = streamText(streamOpts as any);
+    span?.setAttribute('llm.model', (this.options.model as any).modelId ?? 'unknown');
+
+    // Retry only the initial streamText() call (connection phase).
+    // Subsequent stream iteration errors are not retried here.
+    const maxRetries = this.options.retryOptions?.maxRetries ?? 3;
+    let result: ReturnType<typeof streamText>;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        result = streamText(streamOpts as any);
+        break;
+      } catch (error) {
+        if (attempt >= maxRetries) {
+          span?.end();
+          throw error;
+        }
+      }
+    }
 
     // Suppress AI_NoOutputGeneratedError: when the model returns only tool-calls
     // (no text), the AI SDK's internal flush rejects. Since we consume fullStream
     // directly to extract tool-call events, this error is expected and harmless.
-    Promise.resolve(result.text).catch(() => {});
+    Promise.resolve(result!.text).catch(() => {});
+
+    // End the span when usage resolves (i.e. after the stream finishes),
+    // matching the lifecycle span pattern used in invoke().
+    const endSpan = (): void => { span?.end(); };
 
     return {
-      fullStream: result.fullStream,
-      usage: Promise.resolve(result.usage)
-        .then(extractTokenUsage)
-        .catch(() => ({ input: 0, output: 0 })),
-      reasoning: Promise.resolve(result.reasoningText).catch(() => undefined),
+      fullStream: result!.fullStream,
+      usage: Promise.resolve(result!.usage)
+        .then((u) => { endSpan(); return extractTokenUsage(u); })
+        .catch((err) => { endSpan(); return { input: 0, output: 0 }; }),
+      reasoning: Promise.resolve(result!.reasoningText).catch(() => undefined),
     };
   }
 }

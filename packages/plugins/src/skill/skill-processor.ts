@@ -19,13 +19,8 @@ export interface SkillFileSystem {
 }
 
 export interface SkillPluginOptions {
-  /** Pre-discovered skills. Can be provided directly or via discoverSkills(). */
+  /** Pre-discovered skills. Use discoverSkills() to auto-discover before passing them here. */
   skills?: SkillDefinition[];
-  /** Skill source directories for auto-discovery. Later directories override earlier ones by skill name.
-   *  Requires fileSystem or Node.js fs. */
-  directories?: string[];
-  /** Injectable file system for testing. Defaults to Node.js fs when directories is used. */
-  fileSystem?: SkillFileSystem;
 }
 
 // ---------------------------------------------------------------------------
@@ -194,20 +189,15 @@ export function createReadSkillTool(skills: SkillDefinition[]): ToolDefinition {
  * Injects skill summaries into buildContext (progressive disclosure) and
  * provides a read_skill tool for on-demand full content loading.
  *
- * Two usage patterns:
- *
- * 1. Pre-discovered skills:
+ * Usage:
  *    const skills = await discoverSkills(['/path/to/skills'], fs);
  *    skillPlugin({ skills })
- *
- * 2. Auto-discovery (requires directories + fileSystem):
- *    skillPlugin({ directories: ['/global/skills', '/project/skills'], fileSystem: nodeFs })
  *
  * Skills can also declare resources (e.g., MCP servers) and custom tools,
  * which are registered via HarnessAPI.
  */
 export function skillPlugin(options: SkillPluginOptions): (api: HarnessAPI) => PluginRegistration {
-  const { skills: preDiscoveredSkills, directories, fileSystem } = options;
+  const { skills: preDiscoveredSkills } = options;
 
   return (api: HarnessAPI): PluginRegistration => {
     // Use pre-discovered skills if provided, otherwise use an empty array.
