@@ -46,48 +46,55 @@ export class LLMInvoker {
   }
 
   async invoke(input: LLMInvokeInput): Promise<LLMInvokeResult> {
-    return streamWithRetry(async () => {
-      const streamOpts: Record<string, unknown> = {
-        model: this.options.model,
-        system: this.options.system,
-        messages: input.messages,
-        maxRetries: 0,
-      };
+    const span = this.options.tracer?.startSpan('llm.invoke');
+    try {
+      return await streamWithRetry(async () => {
+        const streamOpts: Record<string, unknown> = {
+          model: this.options.model,
+          system: this.options.system,
+          messages: input.messages,
+          maxRetries: 0,
+        };
 
-      if (input.tools && Object.keys(input.tools).length > 0) {
-        streamOpts.tools = input.tools;
-      }
-      if (input.providerOptions) {
-        streamOpts.providerOptions = input.providerOptions;
-      }
-
-      const result = streamText(streamOpts as any);
-
-      const chunks: string[] = [];
-      let usage: any = null;
-
-      for await (const event of result.fullStream) {
-        switch (event.type) {
-          case 'text-delta':
-            chunks.push(event.text);
-            break;
-          case 'error':
-            throw event.error;
-          case 'finish-step':
-            usage = event.usage;
-            break;
+        if (input.tools && Object.keys(input.tools).length > 0) {
+          streamOpts.tools = input.tools;
         }
-      }
+        if (input.providerOptions) {
+          streamOpts.providerOptions = input.providerOptions;
+        }
 
-      if (!usage) {
-        try { usage = await result.usage; } catch { /* usage unavailable */ }
-      }
+        span?.setAttribute('llm.model', this.options.model.modelId);
 
-      return {
-        response: chunks.join(''),
-        tokenUsage: extractTokenUsage(usage),
-      };
-    }, this.options.retryOptions ?? { maxRetries: 3, baseDelay: 1000 });
+        const result = streamText(streamOpts as any);
+
+        const chunks: string[] = [];
+        let usage: any = null;
+
+        for await (const event of result.fullStream) {
+          switch (event.type) {
+            case 'text-delta':
+              chunks.push(event.text);
+              break;
+            case 'error':
+              throw event.error;
+            case 'finish-step':
+              usage = event.usage;
+              break;
+          }
+        }
+
+        if (!usage) {
+          try { usage = await result.usage; } catch { /* usage unavailable */ }
+        }
+
+        return {
+          response: chunks.join(''),
+          tokenUsage: extractTokenUsage(usage),
+        };
+      }, this.options.retryOptions ?? { maxRetries: 3, baseDelay: 1000 });
+    } finally {
+      span?.end();
+    }
   }
 
   stream(input: LLMInvokeInput): LLMStreamHandle {

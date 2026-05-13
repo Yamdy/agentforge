@@ -42,6 +42,7 @@ export class Agent {
     this.runner = new PipelineRunner({ tracer: options?.tracer });
     this.registry = new ToolRegistry();
     this._pluginManager = new PluginManager(this.runner, this.registry);
+    this.runner.setHookManager(this._pluginManager.hookManager);
     this.registerTools();
     this.registerBuiltinProcessors();
   }
@@ -64,6 +65,10 @@ export class Agent {
 
   get pluginManager(): PluginManager {
     return this._pluginManager;
+  }
+
+  get eventBus(): import('./event-bus.js').EventBus {
+    return this._pluginManager.eventBus;
   }
 
   async run(input: string, signal?: globalThis.AbortSignal): Promise<string> {

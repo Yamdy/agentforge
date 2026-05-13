@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { LLMInvoker } from '../src/llm-invoker.js';
 import { createMockLanguageModel } from './helpers.js';
-import type { TokenUsage } from '@agentforge/sdk';
+import type { TokenUsage, Tracer, Span } from '@agentforge/sdk';
 
 describe('LLMInvoker', () => {
   it('invoke returns response and token usage', async () => {
@@ -77,6 +77,67 @@ describe('LLMInvoker', () => {
 
       const usage = await handle.usage;
       expect(usage).toEqual({ input: 15, output: 3 } as TokenUsage);
+    });
+  });
+
+  describe('tracer integration', () => {
+    function createMockTracer() {
+      const spans: { name: string; ended: boolean; attributes: Record<string, unknown> }[] = [];
+      const tracer: Tracer = {
+        startSpan(name: string): Span {
+          const record = { name, ended: false, attributes: {} as Record<string, unknown> };
+          spans.push(record);
+          return {
+            name,
+            startChild(childName: string) { return tracer.startSpan(childName); },
+            end() { record.ended = true; },
+            setAttribute(key: string, value: unknown) { record.attributes[key] = value; return this as Span; },
+            addEvent() { return this as Span; },
+            spanContext() { return { spanId: 'mock', traceId: 'mock' }; },
+          };
+        },
+        getCurrentSpan() { return undefined; },
+      };
+      return { tracer, spans };
+    }
+
+    it('invoke creates a span and ends it when done', async () => {
+      const { tracer, spans } = createMockTracer();
+      const model = createMockLanguageModel({ text: 'traced' });
+      const invoker = new LLMInvoker({ model, tracer });
+
+      await invoker.invoke({ messages: [{ role: 'user', content: 'hi' }] });
+
+      expect(spans.length).toBeGreaterThanOrEqual(1);
+      const llmSpan = spans.find(s => s.name === 'llm.invoke');
+      expect(llmSpan).toBeDefined();
+      expect(llmSpan!.ended).toBe(true);
+    });
+
+    it('invoke sets model attribute on span', async () => {
+      const { tracer, spans } = createMockTracer();
+      const model = createMockLanguageModel({ text: 'traced' });
+      const invoker = new LLMInvoker({ model, tracer });
+
+      await invoker.invoke({ messages: [{ role: 'user', content: 'hi' }] });
+
+      const llmSpan = spans.find(s => s.name === 'llm.invoke');
+      expect(llmSpan!.attributes['llm.model']).toBe('mock-model');
+    });
+
+    it('invoke ends span even on error', async () => {
+      const { tracer, spans } = createMockTracer();
+      const model = createMockLanguageModel({ text: 'nope' });
+      (model as any).doStream = async () => { throw new Error('LLM failed'); };
+
+      const invoker = new LLMInvoker({ model, tracer, retryOptions: { maxRetries: 0, baseDelay: 1 } });
+
+      await expect(invoker.invoke({ messages: [{ role: 'user', content: 'hi' }] }))
+        .rejects.toThrow('LLM failed');
+
+      const llmSpan = spans.find(s => s.name === 'llm.invoke');
+      expect(llmSpan).toBeDefined();
+      expect(llmSpan!.ended).toBe(true);
     });
   });
 });

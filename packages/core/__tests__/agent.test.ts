@@ -153,4 +153,86 @@ describe('Agent', () => {
       expect(callCount).toBeGreaterThanOrEqual(1);
     });
   });
+
+  describe('EventBus access', () => {
+    it('exposes eventBus from PluginManager', () => {
+      const agent = new Agent({ model: 'mock/test' });
+      expect(agent.eventBus).toBeDefined();
+    });
+
+    it('eventBus is the same instance as PluginManager internal EventBus', () => {
+      const agent = new Agent({ model: 'mock/test' });
+      const received: unknown[] = [];
+      agent.eventBus.subscribe('test:event', (data) => received.push(data));
+      agent.eventBus.emit('test:event', { value: 42 });
+      expect(received).toEqual([{ value: 42 }]);
+    });
+  });
+
+  describe('HookManager wiring to PipelineRunner', () => {
+    it('stage:before and stage:after events fire during agent.run()', async () => {
+      const agent = new Agent({ model: 'mock/test' });
+      const events: string[] = [];
+
+      agent.eventBus.subscribe('stage:before', (data: any) => events.push(`before:${data.stage}`));
+      agent.eventBus.subscribe('stage:after', (data: any) => events.push(`after:${data.stage}`));
+
+      await agent.run('hello');
+
+      expect(events.some(e => e.startsWith('before:'))).toBe(true);
+      expect(events.some(e => e.startsWith('after:'))).toBe(true);
+    });
+
+    it('agent:start and agent:end events fire during a full run', async () => {
+      const agent = new Agent({ model: 'mock/test' });
+      const events: string[] = [];
+
+      agent.eventBus.subscribe('agent:start', () => events.push('agent:start'));
+      agent.eventBus.subscribe('agent:end', () => events.push('agent:end'));
+
+      await agent.run('hello');
+
+      expect(events).toContain('agent:start');
+      expect(events).toContain('agent:end');
+      expect(events.indexOf('agent:start')).toBeLessThan(events.indexOf('agent:end'));
+    });
+
+    it('iteration:end event fires after each loop iteration', async () => {
+      let callCount = 0;
+      registerMockProvider('iter-track', () => {
+        callCount++;
+        return createMockLanguageModel({ text: 'response' });
+      });
+
+      const agent = new Agent({ model: 'iter-track/test', maxIterations: 2 });
+      const iterationEnds: number[] = [];
+      agent.eventBus.subscribe('iteration:end', (data: any) => iterationEnds.push(data.step));
+
+      await agent.run('test');
+
+      expect(iterationEnds.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('all expected event types are emitted during a full agent run', async () => {
+      const agent = new Agent({ model: 'mock/test' });
+      const eventCounts: Record<string, number> = {};
+
+      const allEventTypes = [
+        'agent:start', 'agent:end',
+        'stage:before', 'stage:after',
+        'iteration:end',
+      ];
+
+      for (const type of allEventTypes) {
+        eventCounts[type] = 0;
+        agent.eventBus.subscribe(type, () => { eventCounts[type]++; });
+      }
+
+      await agent.run('hello');
+
+      for (const type of allEventTypes) {
+        expect(eventCounts[type]).toBeGreaterThanOrEqual(1);
+      }
+    });
+  });
 });

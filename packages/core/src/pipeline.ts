@@ -45,6 +45,10 @@ export class PipelineRunner {
     this.processors.push(processor);
   }
 
+  setHookManager(hookManager: HookManager): void {
+    this.hookManager = hookManager;
+  }
+
   async run(context: PipelineContext, stages: PipelineStage[]): Promise<RunResult> {
     const rootSpan = this.tracer.startSpan('pipeline');
     let ctx = context;

@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { PipelineRunner } from '../src/pipeline.js';
+import { HookManager } from '../src/hook-manager.js';
+import { EventBus } from '../src/event-bus.js';
 import type { PipelineContext, Processor } from '@agentforge/sdk';
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
@@ -166,5 +168,97 @@ describe('PipelineRunner', () => {
     expect(ctx.iteration.tokenUsage).toEqual({ input: 10, output: 2 });
     expect(ctx.iteration.fullStream).toBeUndefined();
     expect(ctx.iteration.usagePromise).toBeUndefined();
+  });
+
+  describe('with HookManager wired', () => {
+    it('invokes stage.before and stage.after hooks around each stage', async () => {
+      const eventBus = new EventBus();
+      const hookManager = new HookManager(eventBus);
+      const events: string[] = [];
+      eventBus.subscribe('stage:before', (data: any) => events.push(`before:${data.stage}`));
+      eventBus.subscribe('stage:after', (data: any) => events.push(`after:${data.stage}`));
+
+      const runner = new PipelineRunner({ hookManager });
+      runner.register({
+        stage: 'processInput',
+        execute: async (ctx) => ctx,
+      });
+      runner.register({
+        stage: 'invokeLLM',
+        execute: async (ctx) => ctx,
+      });
+
+      await runner.run(makeContext(), ['processInput', 'invokeLLM']);
+
+      expect(events).toEqual([
+        'before:processInput', 'after:processInput',
+        'before:invokeLLM', 'after:invokeLLM',
+      ]);
+    });
+
+    it('hooks receive context at each stage boundary', async () => {
+      const eventBus = new EventBus();
+      const hookManager = new HookManager(eventBus);
+      const beforeContexts: unknown[] = [];
+      const afterContexts: unknown[] = [];
+      eventBus.subscribe('stage:before', (data: any) => beforeContexts.push(data));
+      eventBus.subscribe('stage:after', (data: any) => afterContexts.push(data));
+
+      const runner = new PipelineRunner({ hookManager });
+      runner.register({
+        stage: 'processInput',
+        execute: async (ctx) => ({
+          ...ctx,
+          session: { ...ctx.session, custom: { ...ctx.session.custom, modified: true } },
+        }),
+      });
+
+      await runner.run(makeContext(), ['processInput']);
+
+      expect(beforeContexts).toHaveLength(1);
+      expect(afterContexts).toHaveLength(1);
+      expect((afterContexts[0] as any).context.session.custom.modified).toBe(true);
+    });
+
+    it('stage.before hook can mutate context before processor runs', async () => {
+      const eventBus = new EventBus();
+      const hookManager = new HookManager(eventBus);
+      hookManager.register({
+        point: 'stage.before',
+        handler: (data: any) => {
+          data.context.session.custom.injected = true;
+        },
+      });
+
+      const runner = new PipelineRunner({ hookManager });
+      let processorSawInjected = false;
+      runner.register({
+        stage: 'processInput',
+        execute: async (ctx) => {
+          processorSawInjected = (ctx.session.custom as any).injected === true;
+          return ctx;
+        },
+      });
+
+      await runner.run(makeContext(), ['processInput']);
+      expect(processorSawInjected).toBe(true);
+    });
+
+    it('still emits events when no hooks are registered for a point', async () => {
+      const eventBus = new EventBus();
+      const hookManager = new HookManager(eventBus);
+      const events: string[] = [];
+      eventBus.subscribe('stage:before', () => events.push('before'));
+      eventBus.subscribe('stage:after', () => events.push('after'));
+
+      const runner = new PipelineRunner({ hookManager });
+      runner.register({
+        stage: 'processInput',
+        execute: async (ctx) => ctx,
+      });
+
+      await runner.run(makeContext(), ['processInput']);
+      expect(events).toEqual(['before', 'after']);
+    });
   });
 });

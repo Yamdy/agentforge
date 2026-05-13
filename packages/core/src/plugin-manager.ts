@@ -19,12 +19,16 @@ export class PluginManager {
   private runner: PipelineRunner;
   private registry: ToolRegistry;
   private commands = new Map<string, (args: string) => Promise<void>>();
-  private eventBus = new EventBus();
+  private _eventBus = new EventBus();
   readonly hookManager: HookManager;
   private resources: ResourceDeclaration[] = [];
   private unsubFns: Array<() => void> = [];
   private resourceInstances = new Map<string, unknown>();
   private errors: Array<{ source: string; error: Error }> = [];
+
+  get eventBus(): EventBus {
+    return this._eventBus;
+  }
 
   constructor(runner: PipelineRunner, registry: ToolRegistry) {
     this.runner = runner;
