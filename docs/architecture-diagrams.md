@@ -7,7 +7,7 @@ graph TD
     SDK["<b>sdk</b><br/>纯类型定义 (554行)<br/>零依赖"]
     TOOLS["<b>tools</b><br/>echo tool"]
     OBS["<b>observability</b><br/>Span/Tracer/Metrics<br/>+ OTel Bridge"]
-    CORE["<b>core</b><br/>Pipeline/Agent/LLM<br/>ToolRegistry/Session"]
+    CORE["<b>core</b><br/>Pipeline/Agent/LLM<br/>ToolRegistry/Session<br/>LoopOrchestrator/StateMachine<br/>parse-model/serialize"]
     PLUGINS["<b>plugins</b><br/>6个处理器插件"]
 
     SDK --> TOOLS
@@ -438,4 +438,37 @@ flowchart LR
     VALIDATE --> CONFIG["HarnessConfig"]
 
     style SOURCES fill:#f3e5f5
+```
+
+## 13. LoopOrchestrator + StateMachine 状态流转
+
+```mermaid
+stateDiagram-v2
+    [*] --> pending : Agent 构造
+
+    pending --> running : run() / stream()
+    running --> completed : loopDirective=stop
+    running --> paused : suspend()
+    running --> cancelled : AbortSignal
+    running --> error : 未捕获异常
+
+    paused --> running : resume(sessionId)<br/>反序列化 checkpoint
+    completed --> pending : reset()
+    cancelled --> pending : reset()
+    error --> pending : reset()
+
+    state running {
+        [*] --> prepareStep
+        prepareStep --> gateLLM : 权限检查
+        gateLLM --> invokeLLM : 允许
+        gateLLM --> evaluateIteration : 拒绝 (abort)
+        invokeLLM --> processStepOutput
+        processStepOutput --> gateTool : 有 pendingToolCalls
+        gateTool --> executeTools : 允许
+        gateTool --> evaluateIteration : 拒绝 (abort)
+        executeTools --> evaluateIteration
+        processStepOutput --> evaluateIteration : 无 toolCalls
+        evaluateIteration --> prepareStep : continue
+        evaluateIteration --> [*] : stop / abort
+    }
 ```

@@ -42,6 +42,10 @@ packages/
     provider-history-compat (compat rules engine)
     core/gateways/ — GatewayChain, BuiltInGateway, OpenAICompatibleGateway
     provider-capabilities.ts — Provider capability detection
+    loop-orchestrator.ts — Loop orchestration logic (extracted from Agent, shared by run/stream)
+    parse-model.ts — parseModel function (extracted from model-resolver, eliminates circular dep)
+    state-machine.ts — Agent lifecycle state machine (pending→running→completed/paused/cancelled/error)
+    serialize.ts — PipelineContext serialization/deserialization (for suspend checkpoint)
   plugins/     — Processor plugins: memory, compression, permission, skill, MCP, eviction
 ```
 
@@ -59,7 +63,7 @@ Every stage receives a `PipelineContext` with four regions:
 
 ```
 processInput → buildContext → [Agentic Loop:
-  prepareStep → invokeLLM → processStepOutput → executeTools → evaluateIteration
+  prepareStep → gateLLM → invokeLLM → processStepOutput → gateTool → executeTools → evaluateIteration
 ] → processOutput
 ```
 
@@ -71,8 +75,12 @@ The agentic loop repeats until `iteration.loopDirective` is `stop`. Processors c
 - **Plugin**: factory function `(harness: HarnessAPI) => PluginRegistration` — registers processors, tools, hooks, resources
 - **Dynamic\<T\>**: `T | ((ctx) => T)` — AgentConfig fields resolved per-request at `processInput` stage
 - **ToolRegistry**: adapts Tool definitions to AI SDK format via `toAiSdkToolSchemas()` (schemas only, no execute). AgentForge pipeline controls tool execution via `executeTool()` with before/after hooks.
-- **LLMInvoker**: wraps `ai.streamText()` for single-step LLM calls (no `maxSteps`), returns `fullStream` + `usage` + `reasoning` promises. Retry at invoke level only.
-- **Model resolution**: `resolveModel()` maps model strings (e.g. `"deepseek/deepseek-v4-flash"`) to AI SDK `LanguageModel` instances via pluggable `GatewayChain` (custom gateways → `BuiltInGateway`). Custom OpenAI-compatible endpoints via `GatewayConfig`.
+- **LoopOrchestrator**: extracted loop orchestration logic shared by `run()`/`stream()` — handles abort, retry, compat rule application, and suspend checkpointing. Agent is now a thin facade (construct + register + delegate).
+- **AgentRunResult**: `run()` returns `{ response, tokenUsage, sessionId }` rather than a bare string.
+- **Model resolution**: `ModelFactory` is the single canonical path (instantiated, injectable). `resolveModel()` is `@deprecated`. `parseModel` is exported from `parse-model.ts`, eliminating the circular dependency in model-resolver.
+- **StateMachine**: Agent lifecycle states (`pending`/`running`/`paused`/`completed`/`cancelled`/`error`). Terminal states can be reset back to `pending` to support multiple `run()` calls.
+- **Suspend/Resume**: on suspend, `serialize()` stores a checkpoint; `Agent.resume(sessionId)` deserializes and continues the loop.
+- **LLMInvoker**: wraps `ai.streamText()` for single-step LLM calls (no `maxSteps`), returns `fullStream` + `usage` + `reasoning` promises. `stream()` now includes `llm.stream` span tracking and retry on initial streamText connection. Retry at invoke level only.
 - **Provider compatibility**: `ProviderCapabilities` detection + `CompatRule` engine. Preemptive rules rewrite messages before LLM call; reactive rules fix history on API error. `providerOptions` passthrough from `AgentConfig` to `streamText()`.
 
 ### Configuration Merging
@@ -83,9 +91,11 @@ Multi-level JSONC config (highest priority first):
 3. Global-level — `~/.agentforge/config.jsonc`
 4. Environment — `AGENTFORGE_CONFIG` env var
 
+Arrays `plugins` and `modelGateways` use concat merge; all other arrays are overridden.
+
 ### Session Persistence
 
-JSONL file storage with tree branching via `parentSessionId`. Supports suspend/resume for HITL workflows.
+SessionManagerImpl.restore() handles all 11 event types. Agent supports optional SessionManager dependency injection. JSONL file storage with tree branching via `parentSessionId`. Supports suspend/resume + checkpoint for HITL workflows.
 
 ## Agent skills
 

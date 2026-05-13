@@ -193,3 +193,37 @@ Nested objects in PipelineContext can still be mutated despite freeze.
 3. **Plugin HarnessAPI** surface is complete
 4. **Dynamic<T>** pattern solves per-request config resolution
 5. **Permission plugin** (allow/deny/ask + glob) is among the most complete implementations
+
+---
+
+## Remediation Status (2026-05-13)
+
+**Commit**: `65cab53` -- 37 files, +1126/-596 lines, 511 tests passing
+
+### Phase 1: P0 Behavioral Bugs (3/3 fixed)
+- C-1: stream() hook parity -- All 4 hooks + isSuspend added
+- C-2: Permission stage -- `beforeTool` -> `gateTool`
+- C-3: AgentRunResult -- run() returns structured result
+
+### Phase 2: P1 Architecture (5/5 fixed)
+- A-3: Dead code -- toAiSdkTools() + AiSdkToolDef deleted
+- D-4: extractTokenUsage -- Shared export from LLMInvoker
+- A-2: Stream parsing -- parseFullStream() unified
+- A-4: ModelFactory canonical -- Circular dep fixed via parse-model.ts
+- A-1/A-5: LoopOrchestrator -- Extracted, Agent is thin facade
+
+### Phase 3: P2 Feature Integration (6/6 done)
+- StateMachine lifecycle -- Integrated into LoopOrchestrator
+- Suspend checkpoint -- serialize/deserialize + Agent.resume()
+- SessionManager -- DI into Agent, async createContext()
+- restore() -- All 11 event types handled
+- LLMInvoker stream -- Span + retry on streamText
+- TracerImpl -- Shared traceId, span.end callback, NoOpMetrics
+
+### Phase 4: P3 Design Improvements (6/6 done)
+- D-1: HookPoint mapping -- Explicit Record<HookPoint, string>
+- D-2: acquire timeout -- Optional timeoutMs with cleanup
+- D-3: Array merge -- plugins/modelGateways concat
+- D-4: deepFreeze -- Recursive with WeakSet guard
+- D-5: Compression warning -- console.warn on missing summarizeFn
+- D-6: Skill dead params -- directories/fileSystem removed
