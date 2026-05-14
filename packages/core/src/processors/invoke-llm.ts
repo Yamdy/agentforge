@@ -99,10 +99,9 @@ export function createInvokeLLMProcessor(deps: InvokeLLMDeps): Processor {
           fullStream: handle.fullStream,
           usagePromise: handle.usage,
           reasoningPromise: handle.reasoning,
+          _modelString: deps.modelString,
         },
       };
-
-      await deps.hookManager.invoke('llm.after', { model: deps.modelString }, { response: result.iteration.response });
 
       return result;
     },

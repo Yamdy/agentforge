@@ -45,6 +45,7 @@ export class Agent {
   private runner: PipelineRunner;
   private registry: ToolRegistry;
   private _pluginManager: PluginManager;
+  private _tracer?: Tracer;
   private _model: import('ai').LanguageModel | null = null;
   private modelFactory: ModelFactory;
   private orchestrator: LoopOrchestrator;
@@ -54,9 +55,11 @@ export class Agent {
     this.config = config;
     this.modelFactory = deps?.modelFactory ?? new ModelFactory();
     this.modelFactory.registerGateway(new BuiltInGateway());
+    this._tracer = deps?.tracer;
     this.runner = deps?.runner ?? new PipelineRunner({ tracer: deps?.tracer });
     this.registry = deps?.registry ?? new ToolRegistry();
     this._pluginManager = deps?.pluginManager ?? new PluginManager(this.runner, this.registry);
+    this.registry.setHookManager(this._pluginManager.hookManager);
     this.runner.setHookManager(this._pluginManager.hookManager);
     this.orchestrator = new LoopOrchestrator(this.runner, this._pluginManager.hookManager);
     this.sessionManager = deps?.sessionManager;
@@ -106,19 +109,22 @@ export class Agent {
     await hm.invoke('agent.start', { sessionId: context.request.sessionId, request: context.request, agentConfig: this.config }, {});
 
     const maxIter = typeof this.config.maxIterations === 'number' ? this.config.maxIterations : 10;
-    const finalCtx = await this.orchestrator.runLoop(context, {
-      maxIterations: maxIter,
-      signal,
-      modelString: this.config.model,
-      sessionId: context.request.sessionId,
-    });
-
-    // agent.end hook
-    await hm.invoke('agent.end', { sessionId: context.request.sessionId }, {});
+    let finalCtx: PipelineContext;
+    try {
+      finalCtx = await this.orchestrator.runLoop(context, {
+        maxIterations: maxIter,
+        signal,
+        modelString: this.config.model,
+        sessionId: context.request.sessionId,
+      });
+    } finally {
+      // agent.end hook — always fires, even on error
+      await hm.invoke('agent.end', { sessionId: context.request.sessionId }, {});
+    }
 
     return {
-      response: finalCtx.iteration.response as string ?? '',
-      tokenUsage: finalCtx.session.totalTokenUsage ?? { input: 0, output: 0 },
+      response: finalCtx!.iteration.response as string ?? '',
+      tokenUsage: finalCtx!.session.totalTokenUsage ?? { input: 0, output: 0 },
       sessionId: context.request.sessionId,
     };
   }
@@ -156,15 +162,17 @@ export class Agent {
     await hm.invoke('agent.start', { sessionId: context.request.sessionId, request: context.request, agentConfig: this.config }, {});
 
     const maxIter = typeof this.config.maxIterations === 'number' ? this.config.maxIterations : 10;
-    yield* this.orchestrator.streamLoop(context, {
-      maxIterations: maxIter,
-      signal,
-      modelString: this.config.model,
-      sessionId: context.request.sessionId,
-    });
-
-    // agent.end hook
-    await hm.invoke('agent.end', { sessionId: context.request.sessionId }, {});
+    try {
+      yield* this.orchestrator.streamLoop(context, {
+        maxIterations: maxIter,
+        signal,
+        modelString: this.config.model,
+        sessionId: context.request.sessionId,
+      });
+    } finally {
+      // agent.end hook — always fires, even on error
+      await hm.invoke('agent.end', { sessionId: context.request.sessionId }, {});
+    }
   }
 
   private async getLLM(systemPrompt?: string): Promise<LLMInvoker> {
@@ -175,6 +183,7 @@ export class Agent {
       model: this._model,
       system: systemPrompt,
       retryOptions: { maxRetries: 3, baseDelay: 1000 },
+      tracer: this._tracer,
     });
   }
 

@@ -76,15 +76,17 @@ export class SpanImpl implements Span {
 
 export class TracerImpl implements Tracer {
   private readonly _traceId: string;
+  private readonly _onSpanEnd?: OnSpanEndCallback;
   private _currentSpan: Span | undefined;
 
-  constructor() {
+  constructor(onSpanEnd?: OnSpanEndCallback) {
     this._traceId = crypto.randomUUID();
+    this._onSpanEnd = onSpanEnd;
   }
 
   startSpan(name: string): Span {
     const spanId = crypto.randomUUID();
-    return new SpanImpl(name, this._traceId, spanId);
+    return new SpanImpl(name, this._traceId, spanId, undefined, this._onSpanEnd);
   }
 
   get traceId(): string {

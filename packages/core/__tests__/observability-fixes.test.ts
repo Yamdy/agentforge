@@ -69,7 +69,7 @@ describe('Observability fixes — RED phase', () => {
       const exported: SpanData[] = [];
       const onSpanEnd = (data: SpanData) => exported.push(data);
 
-      const tracer = new TracerImpl();
+      const tracer = new TracerImpl(onSpanEnd);
       const span = tracer.startSpan('test-span');
       span.end();
 
@@ -82,7 +82,7 @@ describe('Observability fixes — RED phase', () => {
       const exported: SpanData[] = [];
       const onSpanEnd = (data: SpanData) => exported.push(data);
 
-      const tracer = new TracerImpl();
+      const tracer = new TracerImpl(onSpanEnd);
       const parent = tracer.startSpan('parent');
       const child = parent.startChild('child');
       child.end();
