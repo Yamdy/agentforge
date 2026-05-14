@@ -1,4 +1,5 @@
 import type {
+  CompressionStrategy,
   EventType,
   HarnessAPI,
   Hook,
@@ -10,6 +11,7 @@ import type {
 } from '@agentforge/sdk';
 import type { PipelineRunner } from './pipeline.js';
 import type { ToolRegistry } from './tool-registry.js';
+import type { ContextBuilder } from './context-builder.js';
 import { EventBus } from './event-bus.js';
 import { EventSystem } from './event-system.js';
 import { HookManager } from './hook-manager.js';
@@ -19,6 +21,7 @@ export type PluginFactory = (api: HarnessAPI) => PluginRegistration | void;
 export class PluginManager {
   private runner: PipelineRunner;
   private registry: ToolRegistry;
+  private contextBuilder?: ContextBuilder;
   private commands = new Map<string, (args: string) => Promise<void>>();
   private _eventSystem = new EventSystem();
   readonly hookManager: HookManager;
@@ -35,9 +38,10 @@ export class PluginManager {
     return this._eventSystem;
   }
 
-  constructor(runner: PipelineRunner, registry: ToolRegistry) {
+  constructor(runner: PipelineRunner, registry: ToolRegistry, contextBuilder?: ContextBuilder) {
     this.runner = runner;
     this.registry = registry;
+    this.contextBuilder = contextBuilder;
     this.hookManager = new HookManager(this.eventBus);
     registry.setHookManager(this.hookManager);
   }
@@ -139,6 +143,11 @@ export class PluginManager {
       },
       emit: (eventType: string, data?: unknown) => {
         this.emitEvent(eventType, data);
+      },
+      registerCompressionStrategy: (strategy: CompressionStrategy) => {
+        if (this.contextBuilder) {
+          this.contextBuilder.setCompressionStrategy(strategy);
+        }
       },
     };
   }

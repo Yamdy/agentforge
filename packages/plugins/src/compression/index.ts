@@ -1,6 +1,6 @@
 import type { HarnessAPI, PluginRegistration } from '@agentforge/sdk';
 import {
-  createCompressionProcessor,
+  createCompressionStrategy,
   type CompressionConfig,
   type CompressionPhase,
   type SummarizeFn,
@@ -8,7 +8,7 @@ import {
 } from './compression-processor.js';
 
 export type { CompressionConfig, CompressionPhase, SummarizeFn, Message };
-export { createCompressionProcessor } from './compression-processor.js';
+export { createCompressionStrategy } from './compression-processor.js';
 
 export interface CompressionPluginOptions {
   maxContextTokens: number;
@@ -23,9 +23,9 @@ export function compressionPlugin(options: CompressionPluginOptions): (api: Harn
   };
 
   return (api: HarnessAPI): PluginRegistration => {
-    const processor = createCompressionProcessor(config);
-    api.registerProcessor('prepareStep', processor);
+    const strategy = createCompressionStrategy(config);
+    api.registerCompressionStrategy(strategy);
 
-    return { processors: [processor] };
+    return { compressionStrategy: strategy };
   };
 }

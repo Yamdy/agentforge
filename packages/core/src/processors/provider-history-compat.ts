@@ -145,7 +145,12 @@ export function applyReactiveRules(
     if (rule.providers !== '*' && !rule.providers.includes(provider)) continue;
     if (!rule.errorPatterns.some(p => p.test(errorMsg))) continue;
     const fixed = rule.fixHistory(history, error);
-    if (fixed) return fixed;
+    if (fixed) {
+      return fixed.map((msg: any, i: number) => {
+        const original = (history as any[])[i];
+        return msg !== original ? { ...msg, _compatFixed: true } : msg;
+      });
+    }
   }
   return null;
 }

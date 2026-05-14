@@ -8,6 +8,9 @@ export interface SpanData {
   attributes: Record<string, unknown>;
   events: Array<{ name: string; attributes?: Record<string, unknown> }>;
   ended: boolean;
+  startTime: number;
+  endTime: number;
+  durationMs: number;
 }
 
 export type OnSpanEndCallback = (span: SpanData) => void;
@@ -21,6 +24,7 @@ export class SpanImpl implements Span {
   private _ended = false;
   private _attributes: Record<string, unknown> = {};
   private _events: Array<{ name: string; attributes?: Record<string, unknown> }> = [];
+  private readonly _startTime: number;
 
   constructor(name: string, traceId: string, spanId: string, parentSpanId?: string, onSpanEnd?: OnSpanEndCallback) {
     this.name = name;
@@ -28,6 +32,7 @@ export class SpanImpl implements Span {
     this._spanId = spanId;
     this._parentSpanId = parentSpanId;
     this._onSpanEnd = onSpanEnd;
+    this._startTime = Date.now();
   }
 
   startChild(name: string): Span {
@@ -37,6 +42,10 @@ export class SpanImpl implements Span {
   end(): void {
     this._ended = true;
     this._onSpanEnd?.(this.toData());
+  }
+
+  get startTime(): number {
+    return this._startTime;
   }
 
   setAttribute(key: string, value: unknown): Span {
@@ -62,6 +71,7 @@ export class SpanImpl implements Span {
   }
 
   toData(): SpanData {
+    const endTime = this._ended ? Date.now() : this._startTime;
     return {
       name: this.name,
       spanId: this._spanId,
@@ -70,6 +80,9 @@ export class SpanImpl implements Span {
       attributes: { ...this._attributes },
       events: [...this._events],
       ended: this._ended,
+      startTime: this._startTime,
+      endTime,
+      durationMs: endTime - this._startTime,
     };
   }
 }

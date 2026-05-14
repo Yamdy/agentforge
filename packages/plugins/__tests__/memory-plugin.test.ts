@@ -73,8 +73,9 @@ describe('memoryPlugin — automatic mode', () => {
     expect(history[0].content).toBe('What is TypeScript?');
     expect(history[1].content).toBe('A typed superset of JavaScript');
 
+    // Default injectionMode='history' no longer injects promptFragments
     const fragments = result.agent.promptFragments as string[];
-    expect(fragments[0]).toContain('What is TypeScript?');
+    expect(fragments).toHaveLength(0);
   });
 });
 

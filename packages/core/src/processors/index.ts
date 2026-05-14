@@ -1,6 +1,6 @@
 export { processInputProcessor } from './process-input.js';
-export { createBuildContextProcessor } from './build-context.js';
-export { createPrepareStepProcessor, slidingWindowStrategy } from './prepare-step.js';
+export { buildContextExtensionPoint } from './build-context.js';
+export { prepareStepExtensionPoint } from './prepare-step.js';
 export { createInvokeLLMProcessor, type InvokeLLMDeps } from './invoke-llm.js';
 export { processStepOutputProcessor } from './process-step-output.js';
 export { createExecuteToolsProcessor } from './execute-tools.js';

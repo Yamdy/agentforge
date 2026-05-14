@@ -360,3 +360,43 @@ describe('BUILTIN_COMPAT_RULES', () => {
     expect(BUILTIN_COMPAT_RULES.filter(r => r.fixHistory && r.errorPatterns)).toHaveLength(2);
   });
 });
+
+// ---------------------------------------------------------------------------
+// R-2: Reactive compat marks modified history entries
+// ---------------------------------------------------------------------------
+
+describe('R-2: reactive compat marks modified entries', () => {
+  it('sanitizeToolCallIds marks modified messages with _compatFixed', () => {
+    const history = [
+      { role: 'assistant' as const, content: 'ok', toolCalls: [{ id: 'tc!bad@id', name: 'foo', args: {} }] },
+      { role: 'tool' as const, content: 'result', toolCallId: 'tc!bad@id', toolName: 'foo' },
+    ];
+    const result = applyReactiveRules(history, 'anthropic/claude', new Error('tool id invalid format'));
+    expect(result).not.toBeNull();
+
+    // The modified assistant message should be marked
+    const assistantMsg = result!.find((m: any) => m.role === 'assistant') as any;
+    expect(assistantMsg._compatFixed).toBe(true);
+
+    // The unmodified tool message should NOT be marked
+    const toolMsg = result!.find((m: any) => m.role === 'tool') as any;
+    expect(toolMsg._compatFixed).toBeUndefined();
+  });
+
+  it('deepseekReasoningRequired marks modified messages with _compatFixed', () => {
+    const history = [
+      { role: 'user' as const, content: 'hello' },
+      { role: 'assistant' as const, content: 'hi' },
+    ];
+    const result = applyReactiveRules(history, 'deepseek/chat', new Error('reasoning_content must be passed back'));
+    expect(result).not.toBeNull();
+
+    // The modified last assistant message should be marked
+    const lastAssistant = result!.filter((m: any) => m.role === 'assistant').pop() as any;
+    expect(lastAssistant._compatFixed).toBe(true);
+
+    // The user message should NOT be marked
+    const userMsg = result!.find((m: any) => m.role === 'user') as any;
+    expect(userMsg._compatFixed).toBeUndefined();
+  });
+});

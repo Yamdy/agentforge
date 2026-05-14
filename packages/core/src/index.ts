@@ -27,3 +27,7 @@ export { ModelFactory } from './model-factory.js';
 export { LoopOrchestrator, type LoopOptions } from './loop-orchestrator.js';
 export { serialize, deserialize } from './serialize.js';
 export { InMemoryCheckpointStore, JsonlCheckpointStore } from './checkpoint-store.js';
+export { ContextBuilder, type ContextBuilderOptions } from './context-builder.js';
+export { TiktokenCounter } from './token-counter.js';
+export type { StreamEvent } from '@agentforge/sdk';
+export { OpenAICompatibleGateway } from './gateways/openai-compatible-gateway.js';

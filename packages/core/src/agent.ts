@@ -18,14 +18,15 @@ import { LoopOrchestrator } from './loop-orchestrator.js';
 import { echoTool } from '@agentforge/tools';
 import {
   processInputProcessor,
-  createBuildContextProcessor,
-  createPrepareStepProcessor,
+  buildContextExtensionPoint,
+  prepareStepExtensionPoint,
   createInvokeLLMProcessor,
   processStepOutputProcessor,
   createExecuteToolsProcessor,
   createEvaluateIterationProcessor,
   processOutputProcessor,
 } from './processors/index.js';
+import { ContextBuilder, type ContextBuilderOptions } from './context-builder.js';
 
 export interface AgentDependencies {
   runner?: PipelineRunner;
@@ -35,6 +36,7 @@ export interface AgentDependencies {
   modelFactory?: ModelFactory;
   sessionManager?: SessionManager;
   checkpointStore?: CheckpointStore<ReturnType<typeof serialize>>;
+  contextBuilder?: ContextBuilder;
 }
 
 export interface AgentRunResult {
@@ -53,6 +55,7 @@ export class Agent {
   private modelFactory: ModelFactory;
   private orchestrator: LoopOrchestrator;
   private sessionManager?: SessionManager;
+  private contextBuilder: ContextBuilder;
 
   constructor(config: AgentConfig, deps?: AgentDependencies) {
     this.config = config;
@@ -61,7 +64,8 @@ export class Agent {
     this._tracer = deps?.tracer;
     this.runner = deps?.runner ?? new PipelineRunner({ tracer: deps?.tracer });
     this.registry = deps?.registry ?? new ToolRegistry();
-    this._pluginManager = deps?.pluginManager ?? new PluginManager(this.runner, this.registry);
+    this.contextBuilder = deps?.contextBuilder ?? new ContextBuilder({ registry: this.registry });
+    this._pluginManager = deps?.pluginManager ?? new PluginManager(this.runner, this.registry, this.contextBuilder);
     this.registry.setHookManager(this._pluginManager.hookManager);
     this.registry.setEventBus(this._pluginManager.eventBus);
     this.runner.setHookManager(this._pluginManager.hookManager);
@@ -105,6 +109,10 @@ export class Agent {
 
   get state(): import('./state-machine.js').AgentState {
     return this.orchestrator.state;
+  }
+
+  get _contextBuilder(): ContextBuilder {
+    return this.contextBuilder;
   }
 
   async run(input: string, signal?: globalThis.AbortSignal): Promise<AgentRunResult> {
@@ -182,6 +190,27 @@ export class Agent {
     }
   }
 
+  async *streamEvents(input: string, signal?: globalThis.AbortSignal): AsyncGenerator<import('@agentforge/sdk').StreamEvent> {
+    if (signal?.aborted) throw new DOMException('Agent stream aborted', 'AbortError');
+
+    const context = await this.createContext(input);
+    const hm = this._pluginManager.hookManager;
+
+    await hm.invoke('agent.start', { sessionId: context.request.sessionId, request: context.request, agentConfig: this.config }, {});
+
+    const maxIter = typeof this.config.maxIterations === 'number' ? this.config.maxIterations : 10;
+    try {
+      yield* this.orchestrator.streamEvents(context, {
+        maxIterations: maxIter,
+        signal,
+        modelString: this.config.model,
+        sessionId: context.request.sessionId,
+      });
+    } finally {
+      try { await hm.invoke('agent.end', { sessionId: context.request.sessionId }, {}); } catch { /* hook error must not mask original */ }
+    }
+  }
+
   private async getLLM(systemPrompt?: string): Promise<LLMInvoker> {
     if (!this._model) {
       this._model = await this.modelFactory.resolve(this.config.model);
@@ -220,8 +249,8 @@ export class Agent {
 
   private registerBuiltinProcessors(): void {
     this.runner.register(processInputProcessor);
-    this.runner.register(createBuildContextProcessor(this.registry));
-    this.runner.register(createPrepareStepProcessor());
+    this.runner.register(this.contextBuilder.createProcessor());
+    this.runner.register(prepareStepExtensionPoint);
     this.runner.register(createInvokeLLMProcessor({
       getLLM: (systemPrompt) => this.getLLM(systemPrompt),
       registry: this.registry,

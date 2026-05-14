@@ -224,6 +224,9 @@ describe('HarnessAPI', () => {
       registerProvider(_name, _factory) {
         registered.push('provider');
       },
+      registerCompressionStrategy(_strategy) {
+        registered.push('compression');
+      },
       subscribe(_eventType, _handler) {
         registered.push('event');
         return () => {};
@@ -236,9 +239,10 @@ describe('HarnessAPI', () => {
     api.registerTool({} as ToolDefinition);
     api.registerCommand('test', async () => {});
     api.registerProvider('test', {} as never);
+    api.registerCompressionStrategy(async (_msgs, _tc, _budget) => []);
     api.subscribe('agent:start', () => {});
     api.emit('test.event', {});
-    expect(registered).toHaveLength(6);
+    expect(registered).toHaveLength(7);
   });
 });
 

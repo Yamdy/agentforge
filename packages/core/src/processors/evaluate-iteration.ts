@@ -22,9 +22,12 @@ function collectCalledToolNames(history: Message[], pendingToolCalls?: ToolCall[
   return called;
 }
 
+const REQUIRED_TOOLS_MAX_RETRIES = 3;
+
 export function createEvaluateIterationProcessor(deps?: EvaluateIterationDeps): Processor {
   const eventBus = deps?.eventBus;
   let warnedUnknownTools = false;
+  const failCounts: Record<string, number> = {};
 
   return {
     stage: 'evaluateIteration',
@@ -78,8 +81,47 @@ export function createEvaluateIterationProcessor(deps?: EvaluateIterationDeps): 
         const uncalled = requiredTools.filter(name => !calledTools.has(name));
 
         if (uncalled.length > 0) {
+          for (const name of uncalled) {
+            failCounts[name] = (failCounts[name] ?? 0) + 1;
+          }
+          for (const name of requiredTools) {
+            if (calledTools.has(name)) failCounts[name] = 0;
+          }
+
+          const exhausted = uncalled.filter(name => (failCounts[name] ?? 0) >= REQUIRED_TOOLS_MAX_RETRIES);
+
           ctx.iteration.span?.setAttribute('required_tools.incomplete', true);
           ctx.iteration.span?.setAttribute('required_tools.uncalled', uncalled.join(','));
+
+          if (exhausted.length > 0) {
+            eventBus?.emit('required_tools:exhausted', {
+              exhausted,
+              failCounts: { ...failCounts },
+              step: ctx.iteration.step,
+              sessionId: ctx.request.sessionId,
+            });
+            ctx.iteration.span?.setAttribute('required_tools.exhausted', exhausted.join(','));
+
+            return {
+              ...ctx,
+              agent: {
+                ...ctx.agent,
+                promptFragments: [
+                  ...ctx.agent.promptFragments,
+                  `[system] Required tools exhausted after ${REQUIRED_TOOLS_MAX_RETRIES} retries: ${exhausted.join(', ')}. Halting loop.`,
+                ],
+              },
+              iteration: {
+                ...ctx.iteration,
+                loopDirective: { action: 'stop' } as LoopDirective,
+              },
+              session: {
+                ...ctx.session,
+                totalTokenUsage,
+              },
+            };
+          }
+
           eventBus?.emit('required_tools:incomplete', {
             uncalled,
             called: [...calledTools],

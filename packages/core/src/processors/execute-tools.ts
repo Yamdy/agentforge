@@ -20,14 +20,24 @@ export function createExecuteToolsProcessor(registry: ToolRegistry): Processor {
         toolResults.push({ ...result, toolCallId: tc.id });
       }
 
-      const toolMessages: Message[] = toolResults.map((tr) => ({
-        role: 'tool' as const,
-        content: tr.error ?? (typeof tr.output === 'string' ? tr.output : JSON.stringify(tr.output)),
-        toolCallId: tr.toolCallId,
-        toolName: tr.name,
-        result: tr.output,
-        error: tr.error,
-      }));
+      const toolMessages: Message[] = toolResults.map((tr) => {
+        let content = tr.error ?? (typeof tr.output === 'string' ? tr.output : JSON.stringify(tr.output));
+        if (tr.validationError && !tr.error) {
+          content = `[Warning: ${tr.validationError}]\n${content}`;
+        }
+        const msg: Message = {
+          role: 'tool' as const,
+          content,
+          toolCallId: tr.toolCallId,
+          toolName: tr.name,
+          result: tr.output,
+          error: tr.error,
+        };
+        if (tr.mutated) (msg as any).mutated = true;
+        if (tr.truncated) (msg as any).truncated = true;
+        if (tr.validationError) (msg as any).validationError = tr.validationError;
+        return msg;
+      });
 
       const history: Message[] = [...(ctx.session.messageHistory ?? [])];
       history.push(...toolMessages);

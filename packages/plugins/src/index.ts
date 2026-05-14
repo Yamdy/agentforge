@@ -13,7 +13,7 @@ export {
 
 export {
   compressionPlugin,
-  createCompressionProcessor,
+  createCompressionStrategy,
   type CompressionPluginOptions,
   type CompressionConfig,
   type CompressionPhase,
