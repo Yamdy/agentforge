@@ -73,7 +73,7 @@ export function createSubAgentTool(
           name: config.name,
           error: errorSummary,
         });
-        return errorSummary;
+        throw new Error(errorSummary);
       }
     },
   };

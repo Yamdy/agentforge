@@ -88,7 +88,11 @@ describe('EventBus default error handling', () => {
     bus.emit('test', 'data');
 
     expect(consoleSpy).toHaveBeenCalled();
-    expect(consoleSpy.mock.calls[0][1]).toContain('handler boom');
+    // console.error called with: formatString, errorObj
+    const callArgs = consoleSpy.mock.calls[0];
+    const errorArg = callArgs[1];
+    const errorMsg = errorArg instanceof Error ? errorArg.message : String(errorArg);
+    expect(errorMsg).toContain('handler boom');
 
     consoleSpy.mockRestore();
   });

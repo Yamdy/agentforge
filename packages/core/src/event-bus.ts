@@ -1,7 +1,13 @@
 export class EventBus {
   private handlers = new Map<string, Set<(data?: unknown) => void>>();
 
-  constructor(private onError?: (error: unknown, eventType: string) => void) {}
+  constructor(private onError?: (error: unknown, eventType: string) => void) {
+    if (!this.onError) {
+      this.onError = (error: unknown, eventType: string) => {
+        console.error(`[EventBus] Unhandled error in "${eventType}" handler:`, error);
+      };
+    }
+  }
 
   emit(eventType: string, data?: unknown): void {
     const set = this.handlers.get(eventType);
