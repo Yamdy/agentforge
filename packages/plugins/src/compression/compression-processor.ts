@@ -1,11 +1,11 @@
-import type { Processor, PipelineContext, ProcessorResult, Span, Message } from '@agentforge/sdk';
+import type { CompressionStrategy, Message, TokenCounter } from '@agentforge/sdk';
 
 export type { Message };
 
 export type SummarizeFn = (messages: Message[]) => Promise<string>;
 
 export type CompressionPhase =
-  | { type: 'truncate'; maxLength: number }
+  | { type: 'truncate'; maxTokens: number }
   | { type: 'summarize'; model: string; maxTokens: number; summarizeFn?: SummarizeFn }
   | { type: 'prune'; keepRecent: number };
 
@@ -14,16 +14,25 @@ export interface CompressionConfig {
   phases: CompressionPhase[];
 }
 
-function estimateTokens(messages: Message[]): number {
-  return messages.reduce((sum, m) => sum + Math.ceil(m.content.length / 4), 0);
+function applyTruncate(messages: Message[], tc: TokenCounter, maxTokens: number): Message[] {
+  const result: Message[] = [];
+  let budget = maxTokens;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    const cost = tc.count(m.content);
+    if (cost > budget) {
+      const truncated = { ...m, content: m.content.slice(0, Math.floor(budget * 4)) + '...' };
+      result.unshift(truncated);
+      break;
+    }
+    result.unshift(m);
+    budget -= cost;
+  }
+  return result;
 }
 
-function applyTruncate(messages: Message[], maxLength: number): Message[] {
-  return messages.map((m) =>
-    m.content.length > maxLength
-      ? { ...m, content: m.content.slice(0, maxLength - 3) + '...' }
-      : m,
-  );
+function applyPrune(messages: Message[], keepRecent: number): Message[] {
+  return messages.slice(-keepRecent);
 }
 
 async function applySummarize(
@@ -31,59 +40,31 @@ async function applySummarize(
   phase: Extract<CompressionPhase, { type: 'summarize' }>,
 ): Promise<Message[]> {
   if (messages.length <= 1) return messages;
-
-  const summarizeFn = phase.summarizeFn;
-  if (!summarizeFn) return messages;
-
-  const summary = await summarizeFn(messages);
+  if (!phase.summarizeFn) return messages;
+  const summary = await phase.summarizeFn(messages);
   return [{ role: 'assistant', content: summary }];
 }
 
-export function createCompressionProcessor(config: CompressionConfig): Processor {
-  return {
-    stage: 'prepareStep',
-    execute: async (ctx: PipelineContext): Promise<ProcessorResult> => {
-      const history = ctx.session.messageHistory;
-      if (!history || history.length === 0) return ctx;
+export function createCompressionStrategy(config: CompressionConfig): CompressionStrategy {
+  return async (messages: Message[], tc: TokenCounter, budget: number): Promise<Message[]> => {
+    const totalTokens = tc.countMessages(messages);
+    if (totalTokens <= budget) return messages;
 
-      const tokensBefore = estimateTokens(history);
-      if (tokensBefore <= config.maxContextTokens) return ctx;
+    let compressed = [...messages];
 
-      let compressed = [...history];
-      let phasesApplied = 0;
-
-      for (const phase of config.phases) {
-        if (phase.type === 'truncate') {
-          compressed = applyTruncate(compressed, phase.maxLength);
-          phasesApplied++;
-        } else if (phase.type === 'prune') {
-          compressed = compressed.slice(-phase.keepRecent);
-          phasesApplied++;
-        } else if (phase.type === 'summarize') {
-          if (!phase.summarizeFn) {
-            console.warn(
-              '[CompressionProcessor] summarize phase configured without summarizeFn — skipping compression.',
-            );
-          }
-          compressed = await applySummarize(compressed, phase);
-          phasesApplied++;
+    for (const phase of config.phases) {
+      if (phase.type === 'truncate') {
+        compressed = applyTruncate(compressed, tc, phase.maxTokens);
+      } else if (phase.type === 'prune') {
+        compressed = applyPrune(compressed, phase.keepRecent);
+      } else if (phase.type === 'summarize') {
+        if (!phase.summarizeFn) {
+          console.warn('[CompressionStrategy] summarize phase configured without summarizeFn — skipping.');
         }
+        compressed = await applySummarize(compressed, phase);
       }
+    }
 
-      const tokensAfter = estimateTokens(compressed);
-      const span = ctx.iteration.span;
-      if (span) {
-        span
-          .setAttribute('compression.triggered', true)
-          .setAttribute('compression.phases_applied', phasesApplied)
-          .setAttribute('compression.tokens_before', tokensBefore)
-          .setAttribute('compression.tokens_after', tokensAfter);
-      }
-
-      return {
-        ...ctx,
-        session: { ...ctx.session, messageHistory: compressed },
-      };
-    },
+    return compressed;
   };
 }
