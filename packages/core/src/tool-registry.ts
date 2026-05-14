@@ -1,6 +1,7 @@
 import { jsonSchema } from 'ai';
 import type { Tool, ToolExecutionContext, ToolResult } from '@agentforge/sdk';
 import type { HookManager } from './hook-manager.js';
+import type { EventBus } from './event-bus.js';
 
 export interface AiSdkToolSchema {
   description: string;
@@ -30,6 +31,7 @@ export class ToolRegistry {
   private maxOutputLength: number;
   private executionContext: ToolExecutionContext = {};
   private hookManager?: HookManager;
+  private eventBus?: EventBus;
 
   constructor(options: ToolRegistryOptions = {}) {
     this.maxOutputLength = options.maxOutputLength ?? Infinity;
@@ -56,6 +58,10 @@ export class ToolRegistry {
 
   setHookManager(hookManager: HookManager): void {
     this.hookManager = hookManager;
+  }
+
+  setEventBus(eventBus: EventBus): void {
+    this.eventBus = eventBus;
   }
 
   setToolExecutionContext(context: ToolExecutionContext): void {
@@ -114,7 +120,8 @@ export class ToolRegistry {
     if (this.hookManager) {
       const hookOutput: Record<string, unknown> = { result: toolOutput };
       await this.hookManager.invoke('tool.after', hookInput, hookOutput);
-      if (hookOutput.result !== undefined) {
+      if (hookOutput.result !== undefined && hookOutput.result !== toolOutput) {
+        this.eventBus?.emit('tool:output_mutated', { toolName: tool.name, original: toolOutput, mutated: hookOutput.result });
         toolOutput = hookOutput.result;
       }
     }

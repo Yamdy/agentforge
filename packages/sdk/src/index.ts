@@ -46,6 +46,21 @@ export type Message =
   | { role: 'tool'; content: string; toolCallId: string; toolName: string; result?: unknown; error?: string };
 
 // ---------------------------------------------------------------------------
+// Compression Strategy (F-3)
+// ---------------------------------------------------------------------------
+
+/** Function that compresses/trim message history before sending to LLM. */
+export type CompressionStrategy = (
+  messages: Message[],
+) => Message[] | Promise<Message[]>;
+
+/** Options for the built-in sliding-window strategy. */
+export interface SlidingWindowOptions {
+  /** Maximum number of most-recent messages to keep. Default: 50. */
+  keepRecent?: number;
+}
+
+// ---------------------------------------------------------------------------
 // Loop Directive (replaces _stopLoop + _retryFrom)
 // ---------------------------------------------------------------------------
 
@@ -352,6 +367,8 @@ export interface AgentConfig {
   maxIterations?: Dynamic<number>;
   tools?: Tool[];
   providerOptions?: Record<string, Record<string, unknown>>;
+  /** Tool names that must be called at least once before the loop can stop. */
+  requiredTools?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -474,6 +491,17 @@ export interface SessionStorage {
   read(sessionId: string): AsyncIterable<SessionEvent>;
   list(filter?: { parentSessionId?: string; status?: SessionStatus }): Promise<SessionRecord[]>;
   updateMeta(sessionId: string, meta: Partial<SessionRecord>): Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
+// Checkpoint Store
+// ---------------------------------------------------------------------------
+
+export interface CheckpointStore<T = unknown> {
+  save(sessionId: string, data: T): Promise<void>;
+  load(sessionId: string): Promise<T | undefined>;
+  delete(sessionId: string): Promise<void>;
+  list(): Promise<string[]>;
 }
 
 // ---------------------------------------------------------------------------

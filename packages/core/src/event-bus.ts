@@ -1,10 +1,19 @@
 export class EventBus {
   private handlers = new Map<string, Set<(data?: unknown) => void>>();
 
+  constructor(private onError?: (error: unknown, eventType: string) => void) {}
+
   emit(eventType: string, data?: unknown): void {
     const set = this.handlers.get(eventType);
     if (set) {
-      for (const handler of set) handler(data);
+      for (const handler of set) {
+        try {
+          handler(data);
+        } catch (err) {
+          // isolate handler errors — one failing handler must not prevent others from running
+          this.onError?.(err, eventType);
+        }
+      }
     }
   }
 

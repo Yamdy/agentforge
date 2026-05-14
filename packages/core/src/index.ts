@@ -24,3 +24,4 @@ export { StateMachine, type AgentState } from './state-machine.js';
 export { ModelFactory } from './model-factory.js';
 export { LoopOrchestrator, type LoopOptions } from './loop-orchestrator.js';
 export { serialize, deserialize } from './serialize.js';
+export { InMemoryCheckpointStore, JsonlCheckpointStore } from './checkpoint-store.js';

@@ -175,7 +175,7 @@ describe('Observability fixes — RED phase', () => {
         name: 'my_tool',
         description: 'A test tool',
         inputSchema: z.object({ x: z.number() }),
-        execute: async ({ x }) => (x as number) * 2,
+        execute: async ({ x }: { x: number }) => x * 2,
       };
 
       const registry = new ToolRegistry();

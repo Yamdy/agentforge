@@ -247,4 +247,73 @@ describe('ToolRegistry edge cases', () => {
       expect(order).toEqual([1, 2]);
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // F-5: tool:output_mutated observability
+  // ---------------------------------------------------------------------------
+
+  describe('output mutation tracking', () => {
+    it('emits tool:output_mutated when hook changes result', async () => {
+      const events: Array<{ type: string; data: unknown }> = [];
+      const eventBus = new EventBus();
+      eventBus.subscribe('tool:output_mutated', (data) => {
+        events.push({ type: 'tool:output_mutated', data });
+      });
+
+      const hookManager = new HookManager(eventBus);
+      hookManager.register({
+        point: 'tool.after',
+        handler: (_input, output) => {
+          (output as Record<string, unknown>).result = 'HOOKED';
+        },
+      });
+
+      const registry = new ToolRegistry();
+      registry.setHookManager(hookManager);
+      registry.setEventBus(eventBus);
+      registry.register({
+        name: 'mutate_me',
+        description: 'Test',
+        inputSchema: z.object({}),
+        execute: async () => 'original',
+      });
+
+      const result = await registry.executeTool('mutate_me', {});
+      expect(result.output).toBe('HOOKED');
+      expect(events).toHaveLength(1);
+      expect(events[0].data).toMatchObject({
+        toolName: 'mutate_me',
+        original: 'original',
+        mutated: 'HOOKED',
+      });
+    });
+
+    it('does not emit tool:output_mutated when hook does not change result', async () => {
+      const events: Array<{ type: string; data: unknown }> = [];
+      const eventBus = new EventBus();
+      eventBus.subscribe('tool:output_mutated', (data) => {
+        events.push({ type: 'tool:output_mutated', data });
+      });
+
+      const hookManager = new HookManager(eventBus);
+      hookManager.register({
+        point: 'tool.after',
+        handler: () => {},
+      });
+
+      const registry = new ToolRegistry();
+      registry.setHookManager(hookManager);
+      registry.setEventBus(eventBus);
+      registry.register({
+        name: 'no_mutate',
+        description: 'Test',
+        inputSchema: z.object({}),
+        execute: async () => 'original',
+      });
+
+      const result = await registry.executeTool('no_mutate', {});
+      expect(result.output).toBe('original');
+      expect(events).toHaveLength(0);
+    });
+  });
 });

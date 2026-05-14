@@ -1,14 +1,17 @@
 import type {
   AbortSignal,
+  CheckpointStore,
   PipelineContext,
   PipelineStage,
   SuspensionSignal,
 } from '@agentforge/sdk';
 import type { PipelineRunner } from './pipeline.js';
 import type { HookManager } from './hook-manager.js';
+import type { EventBus } from './event-bus.js';
 import { applyReactiveRules } from './processors/provider-history-compat.js';
 import { StateMachine, type AgentState } from './state-machine.js';
 import { serialize, deserialize } from './serialize.js';
+import { InMemoryCheckpointStore } from './checkpoint-store.js';
 
 const PRE_LOOP_STAGES: PipelineStage[] = ['processInput', 'buildContext'];
 const LOOP_STAGES: PipelineStage[] = [
@@ -25,12 +28,18 @@ export interface LoopOptions {
 
 export class LoopOrchestrator {
   readonly stateMachine = new StateMachine();
-  private checkpoints = new Map<string, ReturnType<typeof serialize>>();
+  private checkpointStore: CheckpointStore<ReturnType<typeof serialize>>;
+  private eventBus?: EventBus;
 
   constructor(
     private runner: PipelineRunner,
     private hookManager: HookManager,
-  ) {}
+    checkpointStore?: CheckpointStore<ReturnType<typeof serialize>>,
+    eventBus?: EventBus,
+  ) {
+    this.checkpointStore = checkpointStore ?? new InMemoryCheckpointStore<ReturnType<typeof serialize>>();
+    this.eventBus = eventBus;
+  }
 
   get state(): AgentState {
     return this.stateMachine.current;
@@ -45,7 +54,7 @@ export class LoopOrchestrator {
       // Pre-loop stages
       let result = await this.runner.run(ctx, PRE_LOOP_STAGES, { signal });
       this.checkAbort(result, signal);
-      this.checkSuspendAndCheckpoint(result, ctx, sessionId);
+      await this.checkSuspendAndCheckpoint(result, ctx, sessionId);
 
       // Agentic loop
       let loopCtx = result as PipelineContext;
@@ -65,6 +74,7 @@ export class LoopOrchestrator {
             error,
           );
           if (fixed) {
+            this.eventBus?.emit('compat:retry', { step: i, sessionId });
             loopCtx = { ...loopCtx, session: { ...loopCtx.session, messageHistory: fixed } };
             continue;
           }
@@ -79,7 +89,7 @@ export class LoopOrchestrator {
           throw new Error(`Agent aborted: ${abort.reason}`);
         }
         if (this.isSuspend(result)) {
-          this.saveCheckpoint(sessionId, loopCtx);
+          await this.saveCheckpoint(sessionId, loopCtx);
           this.stateMachine.transition('paused');
           throw new Error(`Agent suspended: ${(result as SuspensionSignal).reason}`);
         }
@@ -95,7 +105,7 @@ export class LoopOrchestrator {
       // Post-loop stage
       result = await this.runner.run(loopCtx, POST_LOOP_STAGES, { signal });
       this.checkAbort(result, signal);
-      this.checkSuspendAndCheckpoint(result, loopCtx, sessionId);
+      await this.checkSuspendAndCheckpoint(result, loopCtx, sessionId);
 
       this.stateMachine.transition('completed');
       return result as PipelineContext;
@@ -106,11 +116,12 @@ export class LoopOrchestrator {
   }
 
   async resumeLoop(sessionId: string, options: LoopOptions): Promise<PipelineContext> {
-    const checkpoint = this.checkpoints.get(sessionId);
+    const checkpoint = await this.checkpointStore.load(sessionId);
     if (!checkpoint) throw new Error(`No checkpoint found for session: ${sessionId}`);
-    this.checkpoints.delete(sessionId);
     const ctx = deserialize(checkpoint);
-    return this.runLoop(ctx, options);
+    const result = await this.runLoop(ctx, options);
+    await this.checkpointStore.delete(sessionId);
+    return result;
   }
 
   async *streamLoop(ctx: PipelineContext, options: LoopOptions): AsyncGenerator<string> {
@@ -124,6 +135,7 @@ export class LoopOrchestrator {
         if (signal?.aborted) throw new DOMException('Agent stream aborted', 'AbortError');
         if (event.type === 'abort') throw new Error(`Agent aborted: ${(event as AbortSignal).reason}`);
         if (event.type === 'suspended') {
+          await this.saveCheckpoint(sessionId, loopCtx);
           this.stateMachine.transition('paused');
           yield ` [suspended: ${(event as { reason: string }).reason}]`;
           return;
@@ -153,6 +165,7 @@ export class LoopOrchestrator {
               throw new Error(`Agent aborted: ${abortEvent.reason}`);
             }
             if (event.type === 'suspended') {
+              await this.saveCheckpoint(sessionId, loopCtx);
               this.stateMachine.transition('paused');
               yield ` [suspended: ${(event as { reason: string }).reason}]`;
               return;
@@ -168,6 +181,7 @@ export class LoopOrchestrator {
             error,
           );
           if (fixed) {
+            this.eventBus?.emit('compat:retry', { step: i, sessionId });
             loopCtx = { ...loopCtx, session: { ...loopCtx.session, messageHistory: fixed } };
             compatRetry = true;
           } else {
@@ -203,8 +217,8 @@ export class LoopOrchestrator {
     this.stateMachine.transition('running');
   }
 
-  private saveCheckpoint(sessionId: string, ctx: PipelineContext): void {
-    this.checkpoints.set(sessionId, serialize(ctx));
+  private async saveCheckpoint(sessionId: string, ctx: PipelineContext): Promise<void> {
+    await this.checkpointStore.save(sessionId, serialize(ctx));
   }
 
   private computeLoopStages(
@@ -227,13 +241,13 @@ export class LoopOrchestrator {
     }
   }
 
-  private checkSuspendAndCheckpoint(
+  private async checkSuspendAndCheckpoint(
     result: PipelineContext | AbortSignal | SuspensionSignal,
     ctx: PipelineContext,
     sessionId: string,
-  ): void {
+  ): Promise<void> {
     if (this.isSuspend(result)) {
-      this.saveCheckpoint(sessionId, ctx);
+      await this.saveCheckpoint(sessionId, ctx);
       this.stateMachine.transition('paused');
       throw new Error(`Agent suspended: ${(result as SuspensionSignal).reason}`);
     }

@@ -164,6 +164,64 @@ describe('Agent edge cases', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // F-2: compat:retry observability
+  // ---------------------------------------------------------------------------
+
+  describe('compat:retry event', () => {
+    it('emits compat:retry event via EventBus on reactive compat retry', async () => {
+      const { LoopOrchestrator } = await import('../src/loop-orchestrator.js');
+      const { EventBus } = await import('../src/event-bus.js');
+
+      const eventBus = new EventBus();
+      const events: Array<unknown> = [];
+      eventBus.subscribe('compat:retry', (data) => events.push(data));
+
+      // Build a history with an assistant message containing a tool call with non-alphanumeric ID
+      const historyWithBadToolCall = [
+        { role: 'user' as const, content: 'do something' },
+        { role: 'assistant' as const, content: '', toolCalls: [{ id: 'bad!id@chars', name: 'myTool', args: {} }] },
+      ];
+
+      let loopCallCount = 0;
+      const mockRunner = {
+        run: async (ctx: any, stages: any) => {
+          // Pre-loop stages (processInput, buildContext)
+          if (stages[0] === 'processInput') {
+            return { ...ctx, session: { ...ctx.session, messageHistory: historyWithBadToolCall } };
+          }
+          // Loop stages
+          if (stages.includes('evaluateIteration')) {
+            loopCallCount++;
+            if (loopCallCount === 1) {
+              throw new Error('tool call id invalid format');
+            }
+            return { ...ctx, iteration: { ...ctx.iteration, loopDirective: { action: 'stop' } } };
+          }
+          // Post-loop stages
+          return ctx;
+        },
+        stream: async function* () {},
+        setHookManager() {},
+      };
+
+      const mockHookManager = { invoke: async () => {} };
+      const orchestrator = new LoopOrchestrator(mockRunner as any, mockHookManager as any, undefined, eventBus);
+
+      const ctx = {
+        request: { input: 'test', sessionId: 'test-session' },
+        agent: { config: {} as any, toolDeclarations: [], promptFragments: [] },
+        iteration: { step: 0 },
+        session: { messageHistory: [], custom: {} },
+      };
+
+      await orchestrator.runLoop(ctx, { maxIterations: 5, modelString: 'anthropic/test', sessionId: 'test-session' });
+
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({ step: 0, sessionId: 'test-session' });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // Model resolution caching
   // ---------------------------------------------------------------------------
 

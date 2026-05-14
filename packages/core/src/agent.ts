@@ -1,5 +1,6 @@
 import type {
   AgentConfig,
+  CheckpointStore,
   PipelineContext,
   Processor,
   SessionManager,
@@ -7,6 +8,7 @@ import type {
   Tracer,
 } from '@agentforge/sdk';
 import { PipelineRunner } from './pipeline.js';
+import { serialize } from './serialize.js';
 import { ToolRegistry } from './tool-registry.js';
 import { PluginManager, type PluginFactory } from './plugin-manager.js';
 import { LLMInvoker } from './llm-invoker.js';
@@ -21,7 +23,7 @@ import {
   createInvokeLLMProcessor,
   processStepOutputProcessor,
   createExecuteToolsProcessor,
-  evaluateIterationProcessor,
+  createEvaluateIterationProcessor,
   processOutputProcessor,
 } from './processors/index.js';
 
@@ -32,6 +34,7 @@ export interface AgentDependencies {
   tracer?: Tracer;
   modelFactory?: ModelFactory;
   sessionManager?: SessionManager;
+  checkpointStore?: CheckpointStore<ReturnType<typeof serialize>>;
 }
 
 export interface AgentRunResult {
@@ -60,8 +63,9 @@ export class Agent {
     this.registry = deps?.registry ?? new ToolRegistry();
     this._pluginManager = deps?.pluginManager ?? new PluginManager(this.runner, this.registry);
     this.registry.setHookManager(this._pluginManager.hookManager);
+    this.registry.setEventBus(this._pluginManager.eventBus);
     this.runner.setHookManager(this._pluginManager.hookManager);
-    this.orchestrator = new LoopOrchestrator(this.runner, this._pluginManager.hookManager);
+    this.orchestrator = new LoopOrchestrator(this.runner, this._pluginManager.hookManager, deps?.checkpointStore, this._pluginManager.eventBus);
     this.sessionManager = deps?.sessionManager;
     this.registerTools();
     this.registerBuiltinProcessors();
@@ -222,7 +226,7 @@ export class Agent {
     }));
     this.runner.register(processStepOutputProcessor);
     this.runner.register(createExecuteToolsProcessor(this.registry));
-    this.runner.register(evaluateIterationProcessor);
+    this.runner.register(createEvaluateIterationProcessor({ eventBus: this._pluginManager.eventBus }));
     this.runner.register(processOutputProcessor);
   }
 }

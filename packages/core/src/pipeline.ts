@@ -213,14 +213,10 @@ export class PipelineRunner {
               }
             }
 
+            const reasoningContent = await resolveReasoningContent(reasoningParts, ctx.iteration.reasoningPromise);
             const pendingUsage = ctx.iteration.usagePromise
               ? await ctx.iteration.usagePromise
               : undefined;
-
-            let reasoningContent = reasoningParts.length > 0 ? reasoningParts.join('') : undefined;
-            if (!reasoningContent && ctx.iteration.reasoningPromise) {
-              try { reasoningContent = await ctx.iteration.reasoningPromise ?? undefined; } catch { /* ignore */ }
-            }
 
             ctx = deepFreeze({
               ...ctx,
@@ -298,46 +294,20 @@ export class PipelineRunner {
     const fullStream = ctx.iteration.fullStream;
     if (!fullStream) return ctx;
 
-    const chunks: string[] = [];
-    const toolCalls: ToolCall[] = [];
-    const reasoningParts: string[] = [];
-    let usage: TokenUsage | undefined;
-
-    for await (const event of fullStream as AsyncIterable<any>) {
-      if (event.type === 'text-delta') {
-        chunks.push(event.text);
-      } else if (event.type === 'tool-call') {
-        toolCalls.push({
-          id: event.toolCallId ?? event.id ?? '',
-          name: event.toolName ?? event.name ?? '',
-          args: event.args ?? event.input ?? {},
-        });
-      } else if (event.type === 'reasoning') {
-        reasoningParts.push(event.textDelta ?? event.text ?? '');
-      } else if (event.type === 'finish-step') {
-        usage = extractTokenUsage(event.usage);
-      } else if (event.type === 'error') {
-        throw event.error;
-      }
-    }
-
+    const result = await parseFullStream(fullStream);
+    const reasoningContent = await resolveReasoningContent(result.reasoningParts, ctx.iteration.reasoningPromise);
     const pendingUsage = ctx.iteration.usagePromise
       ? await ctx.iteration.usagePromise
       : undefined;
-
-    let reasoningContent = reasoningParts.length > 0 ? reasoningParts.join('') : undefined;
-    if (!reasoningContent && ctx.iteration.reasoningPromise) {
-      try { reasoningContent = await ctx.iteration.reasoningPromise ?? undefined; } catch { /* ignore */ }
-    }
 
     return deepFreeze({
       ...ctx,
       iteration: {
         ...ctx.iteration,
-        response: chunks.join('') || ctx.iteration.response,
-        pendingToolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+        response: result.chunks.join('') || ctx.iteration.response,
+        pendingToolCalls: result.toolCalls.length > 0 ? result.toolCalls : undefined,
         reasoningContent,
-        tokenUsage: usage ?? pendingUsage,
+        tokenUsage: result.usage ?? pendingUsage,
         fullStream: undefined,
         usagePromise: undefined,
         reasoningPromise: undefined,
