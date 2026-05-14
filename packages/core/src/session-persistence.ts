@@ -1,5 +1,6 @@
 import type { SessionStorage, SessionEvent } from '@agentforge/sdk';
 import type { EventBus } from './event-bus.js';
+import { REPLAY_SENTINEL } from './event-system.js';
 
 const SUBSCRIBED_EVENTS = [
   'agent:start',
@@ -36,6 +37,10 @@ export class SessionPersistence {
   }
 
   private onEvent(eventType: string, data: unknown): void {
+    // Skip replayed events to avoid duplicate writes
+    if (typeof data === 'object' && data !== null && REPLAY_SENTINEL in (data as Record<string, unknown>)) {
+      return;
+    }
     const payload = data as Record<string, unknown> | undefined;
     const sessionId = payload?.sessionId as string | undefined;
     if (!sessionId) return;

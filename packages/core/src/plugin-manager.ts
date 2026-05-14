@@ -11,6 +11,7 @@ import type {
 import type { PipelineRunner } from './pipeline.js';
 import type { ToolRegistry } from './tool-registry.js';
 import { EventBus } from './event-bus.js';
+import { EventSystem } from './event-system.js';
 import { HookManager } from './hook-manager.js';
 
 export type PluginFactory = (api: HarnessAPI) => PluginRegistration | void;
@@ -19,7 +20,7 @@ export class PluginManager {
   private runner: PipelineRunner;
   private registry: ToolRegistry;
   private commands = new Map<string, (args: string) => Promise<void>>();
-  private _eventBus = new EventBus();
+  private _eventSystem = new EventSystem();
   readonly hookManager: HookManager;
   private resources: ResourceDeclaration[] = [];
   private unsubFns: Array<() => void> = [];
@@ -27,7 +28,11 @@ export class PluginManager {
   private errors: Array<{ source: string; error: Error }> = [];
 
   get eventBus(): EventBus {
-    return this._eventBus;
+    return this._eventSystem.bus;
+  }
+
+  get eventSystem(): EventSystem {
+    return this._eventSystem;
   }
 
   constructor(runner: PipelineRunner, registry: ToolRegistry) {

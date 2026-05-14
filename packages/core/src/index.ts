@@ -7,6 +7,8 @@ export { resolveModel, registerProvider, parseModel, type ParsedModel } from './
 export { streamWithRetry, type RetryOptions } from './retry.js';
 export { PluginManager, type PluginFactory } from './plugin-manager.js';
 export { EventBus } from './event-bus.js';
+export { EventSystem, REPLAY_SENTINEL } from './event-system.js';
+export { StorageReplayBackend } from './storage-replay-backend.js';
 export { HookManager, type HookManagerOptions } from './hook-manager.js';
 export { ToolRegistry, type AiSdkToolSchema, type ToolRegistryOptions } from './tool-registry.js';
 export { FilesystemSessionStorage } from './session-storage.js';

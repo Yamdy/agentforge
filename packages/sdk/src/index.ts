@@ -505,6 +505,26 @@ export interface CheckpointStore<T = unknown> {
 }
 
 // ---------------------------------------------------------------------------
+// Event Replay (EventSystem)
+// ---------------------------------------------------------------------------
+
+/** Backend capable of querying persisted events for replay. */
+export interface ReplayBackend {
+  /** Return all stored events for a session, ordered by sequence number. */
+  query(sessionId: string): Promise<SessionEvent[]>;
+}
+
+/** Options controlling which events are replayed and how. */
+export interface ReplayOptions {
+  /** Only replay events whose type is in this list. Undefined = all types. */
+  eventTypes?: string[];
+  /** Start replaying from this sequence number (inclusive). Default: 1. */
+  fromSeq?: number;
+  /** Stop replaying at this sequence number (inclusive). Undefined = no upper bound. */
+  toSeq?: number;
+}
+
+// ---------------------------------------------------------------------------
 // Session Manager
 // ---------------------------------------------------------------------------
 

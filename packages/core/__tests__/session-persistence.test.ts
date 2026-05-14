@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { EventBus } from '../src/event-bus.js';
 import { FilesystemSessionStorage } from '../src/session-storage.js';
 import { SessionPersistence } from '../src/session-persistence.js';
+import { REPLAY_SENTINEL } from '../src/event-system.js';
 import type { SessionEvent } from '@agentforge/sdk';
 
 describe('SessionPersistence', () => {
@@ -112,6 +113,26 @@ describe('SessionPersistence', () => {
 
     expect(events).toHaveLength(1);
     expect(events[0].type).toBe('agent:start');
+  });
+
+  it('skips replayed events with __replay sentinel', async () => {
+    const sessionId = 's1';
+
+    // Normal event — should be persisted
+    bus.emit('agent:start', { sessionId, input: 'hello' });
+
+    // Replayed event — should be skipped
+    bus.emit('agent:start', { sessionId, input: 'replayed', [REPLAY_SENTINEL]: true });
+
+    await persistence.stop();
+
+    const events: SessionEvent[] = [];
+    for await (const e of storage.read(sessionId)) {
+      events.push(e);
+    }
+
+    expect(events).toHaveLength(1);
+    expect((events[0].payload as Record<string, unknown>).input).toBe('hello');
   });
 });
 

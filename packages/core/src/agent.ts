@@ -99,6 +99,10 @@ export class Agent {
     return this._pluginManager.eventBus;
   }
 
+  get eventSystem(): import('./event-system.js').EventSystem {
+    return this._pluginManager.eventSystem;
+  }
+
   get state(): import('./state-machine.js').AgentState {
     return this.orchestrator.state;
   }
