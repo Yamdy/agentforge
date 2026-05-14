@@ -5,6 +5,11 @@ import type { HookManager } from '../hook-manager.js';
 import { detectCapabilities } from '../provider-capabilities.js';
 import { applyPreemptiveRules } from './provider-history-compat.js';
 
+export function validateLlmHookOutput(hookMessages: unknown, original: unknown[]): unknown[] {
+  if (!Array.isArray(hookMessages) || hookMessages.length === 0) return original;
+  return hookMessages;
+}
+
 export interface InvokeLLMDeps {
   getLLM: (systemPrompt?: string) => Promise<LLMInvoker>;
   registry: ToolRegistry;
@@ -87,7 +92,7 @@ export function createInvokeLLMProcessor(deps: InvokeLLMDeps): Processor {
       await deps.hookManager.invoke('llm.before', llmInput, llmOutput);
 
       const handle = llm.stream({
-        messages: llmOutput.messages as unknown[] ?? llmInput.messages,
+        messages: validateLlmHookOutput(llmOutput.messages, llmInput.messages),
         tools: (llmOutput.tools ?? llmInput.tools) as Record<string, unknown> | undefined,
         providerOptions: ctx.agent.providerOptions,
       });
