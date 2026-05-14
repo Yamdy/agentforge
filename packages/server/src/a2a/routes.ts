@@ -3,7 +3,8 @@ import type { AgentRegistry } from '../registry.js';
 import { A2ARequestHandler } from './server.js';
 import { InMemoryTaskStore } from './task-store.js';
 import { buildAgentCard } from './agent-card.js';
-import type { A2AAgentCard, AgentCardOptions } from './types.js';
+import type { AgentCardOptions } from './agent-card.js';
+import type { A2AAgentCard } from './types.js';
 
 export interface A2ARoutesOptions {
   registry: AgentRegistry;
@@ -19,9 +20,10 @@ export function a2aRoutes(options: A2ARoutesOptions): { app: Hono; card: A2AAgen
   const taskStore = new InMemoryTaskStore();
   const handler = new A2ARequestHandler({ agent, taskStore });
 
+  const schemas = agent.toolRegistry.toAiSdkToolSchemas();
   const card = buildAgentCard({
     ...options.cardOptions,
-    tools: agent.toolDeclarations?.map((t) => ({ name: t.name, description: t.description })) ?? [],
+    tools: Object.entries(schemas).map(([name, s]) => ({ name, description: s.description })),
   });
 
   app.get('/.well-known/agent-card.json', (c) => c.json(card));
