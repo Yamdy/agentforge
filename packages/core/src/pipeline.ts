@@ -236,6 +236,11 @@ export class PipelineRunner {
               },
             });
           }
+
+          // Fire llm.after after stream is consumed (response is now available)
+          if (stage === 'invokeLLM' && this.hookManager && (ctx.iteration as any)._modelString) {
+            await this.hookManager.invoke('llm.after', { model: (ctx.iteration as any)._modelString }, { response: ctx.iteration.response });
+          }
         } finally {
           stageSpan.end();
         }

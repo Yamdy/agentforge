@@ -109,24 +109,23 @@ export class Agent {
     await hm.invoke('agent.start', { sessionId: context.request.sessionId, request: context.request, agentConfig: this.config }, {});
 
     const maxIter = typeof this.config.maxIterations === 'number' ? this.config.maxIterations : 10;
-    let finalCtx: PipelineContext;
     try {
-      finalCtx = await this.orchestrator.runLoop(context, {
+      const finalCtx = await this.orchestrator.runLoop(context, {
         maxIterations: maxIter,
         signal,
         modelString: this.config.model,
         sessionId: context.request.sessionId,
       });
-    } finally {
-      // agent.end hook — always fires, even on error
-      await hm.invoke('agent.end', { sessionId: context.request.sessionId }, {});
-    }
 
-    return {
-      response: finalCtx!.iteration.response as string ?? '',
-      tokenUsage: finalCtx!.session.totalTokenUsage ?? { input: 0, output: 0 },
-      sessionId: context.request.sessionId,
-    };
+      return {
+        response: finalCtx.iteration.response as string ?? '',
+        tokenUsage: finalCtx.session.totalTokenUsage ?? { input: 0, output: 0 },
+        sessionId: context.request.sessionId,
+      };
+    } finally {
+      // agent.end hook — always fires, even on error; suppress hook errors to preserve original
+      try { await hm.invoke('agent.end', { sessionId: context.request.sessionId }, {}); } catch { /* hook error must not mask original */ }
+    }
   }
 
   async resume(sessionId: string, signal?: globalThis.AbortSignal): Promise<AgentRunResult> {
@@ -135,21 +134,22 @@ export class Agent {
     const hm = this._pluginManager.hookManager;
     const maxIter = typeof this.config.maxIterations === 'number' ? this.config.maxIterations : 10;
 
-    const finalCtx = await this.orchestrator.resumeLoop(sessionId, {
-      maxIterations: maxIter,
-      signal,
-      modelString: this.config.model,
-      sessionId,
-    });
+    try {
+      const finalCtx = await this.orchestrator.resumeLoop(sessionId, {
+        maxIterations: maxIter,
+        signal,
+        modelString: this.config.model,
+        sessionId,
+      });
 
-    // agent.end hook
-    await hm.invoke('agent.end', { sessionId }, {});
-
-    return {
-      response: finalCtx.iteration.response as string ?? '',
-      tokenUsage: finalCtx.session.totalTokenUsage ?? { input: 0, output: 0 },
-      sessionId,
-    };
+      return {
+        response: finalCtx.iteration.response as string ?? '',
+        tokenUsage: finalCtx.session.totalTokenUsage ?? { input: 0, output: 0 },
+        sessionId,
+      };
+    } finally {
+      try { await hm.invoke('agent.end', { sessionId }, {}); } catch { /* hook error must not mask original */ }
+    }
   }
 
   async *stream(input: string, signal?: globalThis.AbortSignal): AsyncGenerator<string> {
@@ -170,8 +170,7 @@ export class Agent {
         sessionId: context.request.sessionId,
       });
     } finally {
-      // agent.end hook — always fires, even on error
-      await hm.invoke('agent.end', { sessionId: context.request.sessionId }, {});
+      try { await hm.invoke('agent.end', { sessionId: context.request.sessionId }, {}); } catch { /* hook error must not mask original */ }
     }
   }
 
