@@ -227,6 +227,25 @@ describe('EventSystem', () => {
 
       expect(received).toEqual(['hello', 42, null]);
     });
+
+    it('replay preserves array payloads without sentinel corruption', async () => {
+      const arr = [1, 2, 3];
+      const events: SessionEvent[] = [
+        { seq: 1, timestamp: new Date().toISOString(), type: 'test:array', payload: arr },
+      ];
+      for (const e of events) await storage.append('s1', e);
+
+      const sys = new EventSystem();
+      sys.setReplayBackend(new StorageReplayBackend(storage));
+
+      let captured: unknown;
+      sys.subscribe('test:array', (d) => { captured = d; });
+
+      await sys.replay('s1');
+
+      expect(Array.isArray(captured)).toBe(true);
+      expect(captured).toEqual([1, 2, 3]);
+    });
   });
 });
 

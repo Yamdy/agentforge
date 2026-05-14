@@ -10,9 +10,9 @@
 
 | Field | Value |
 |-------|-------|
-| Overall Health | **Medium Risk** |
-| Primary Failure Mode | ContextBuilder + CheckpointStore dual gap |
-| Most Urgent Fix | CheckpointStore persistence + ContextBuilder compression |
+| Overall Health | **Healthy** |
+| Primary Failure Mode | All findings resolved |
+| Most Urgent Fix | None — all F-1 through F-8 resolved |
 
 ---
 
@@ -33,14 +33,14 @@
 | # | Ideal Module | Actual Implementation | Status | Gap |
 |---|-------------|----------------------|--------|-----|
 | 1 | PipelineRunner | `pipeline.ts` + `loop-orchestrator.ts` + `state-machine.ts` | ✅ | StateMachine correctly embedded in LoopOrchestrator |
-| 2 | ContextBuilder | `build-context.ts` + `prepare-step.ts` | ⚠️ | Only field mapping + hard truncation (last 50), no compression |
+| 2 | ContextBuilder | `build-context.ts` + `prepare-step.ts` + `CompressionStrategy` | ✅ | SlidingWindowStrategy built-in, plugin extensibility |
 | 3 | LLMInvoker | `llm-invoker.ts` | ✅ | invoke/stream dual mode, clean retry |
 | 4 | ToolRegistry | `tool-registry.ts` | ✅ | Register/validate(Zod)/execute/hooks/truncate |
-| 5 | EventSystem | `event-bus.ts` + `session-persistence.ts` | ⚠️ | Split into two, no replay capability |
+| 5 | EventSystem | `event-system.ts` + `session-persistence.ts` + `storage-replay-backend.ts` | ✅ | Unified EventSystem with query/replay, sentinel dedup |
 | 6 | HookManager | `hook-manager.ts` | ✅ | Priority/profile/disable |
-| 7 | CheckpointStore | `serialize.ts` + `LoopOrchestrator.checkpoints` | ⚠️ | In-memory Map only, lost on crash |
+| 7 | CheckpointStore | `serialize.ts` + `checkpoint-store.ts` (InMemory + Jsonl) | ✅ | Persistent via JsonlCheckpointStore, injected into LoopOrchestrator |
 
-**Score: 4/7 complete, 3 with gaps.**
+**Score: 7/7 complete.**
 
 ---
 

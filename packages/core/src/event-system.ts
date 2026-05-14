@@ -1,8 +1,8 @@
 import type { ReplayBackend, ReplayOptions, SessionEvent } from '@agentforge/sdk';
 import { EventBus } from './event-bus.js';
 
-/** Sentinel key added to replayed event payloads. */
-export const REPLAY_SENTINEL = '__replay';
+/** Sentinel key added to replayed event payloads. Reserved namespace: plugins MUST NOT use this key in event payloads. */
+export const REPLAY_SENTINEL = '__agentforge_replay';
 
 export class EventSystem {
   private _bus: EventBus;
@@ -41,7 +41,7 @@ export class EventSystem {
 
     const filtered = this.filterEvents(events, options);
     for (const event of filtered) {
-      const payload = typeof event.payload === 'object' && event.payload !== null
+      const payload = typeof event.payload === 'object' && event.payload !== null && !Array.isArray(event.payload)
         ? { ...event.payload, [REPLAY_SENTINEL]: true }
         : event.payload;
       this._bus.emit(event.type, payload);
