@@ -64,6 +64,10 @@ export function createInvokeLLMProcessor(deps: InvokeLLMDeps): Processor {
       const llm = await deps.getLLM(systemPrompt);
       const sdkToolSchemas = deps.registry.toAiSdkToolSchemas();
 
+      if (ctx.iteration.span) {
+        ctx.iteration.span.setAttribute('model', deps.modelString);
+      }
+
       deps.registry.setToolExecutionContext({
         span: {
           spanId: `tool-${ctx.request.sessionId}-${ctx.iteration.step}`,
