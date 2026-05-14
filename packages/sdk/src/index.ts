@@ -37,13 +37,36 @@ export interface ToolResult {
   name: string;
   output: unknown;
   error?: string;
+  mutated?: boolean;
+  truncated?: boolean;
+  validationError?: string;
 }
 
 /** Structured conversation message supporting tool-call round-trips. */
 export type Message =
   | { role: 'user'; content: string }
   | { role: 'assistant'; content: string; toolCalls?: ToolCall[]; reasoningContent?: string }
-  | { role: 'tool'; content: string; toolCallId: string; toolName: string; result?: unknown; error?: string };
+  | { role: 'tool'; content: string; toolCallId: string; toolName: string; result?: unknown; error?: string; mutated?: boolean; truncated?: boolean; validationError?: string };
+
+// ---------------------------------------------------------------------------
+// Token Counting
+// ---------------------------------------------------------------------------
+
+/** Abstract token counter — implementations choose encoding strategy. */
+export interface TokenCounter {
+  count(text: string, model?: string): number;
+  countMessages(messages: Message[], model?: string): number;
+}
+
+// ---------------------------------------------------------------------------
+// Context Budget
+// ---------------------------------------------------------------------------
+
+export interface ContextBudget {
+  maxTokens: number;
+  reservedForSystem?: number;
+  reservedForTools?: number;
+}
 
 // ---------------------------------------------------------------------------
 // Compression Strategy (F-3)
@@ -52,6 +75,8 @@ export type Message =
 /** Function that compresses/trim message history before sending to LLM. */
 export type CompressionStrategy = (
   messages: Message[],
+  tokenCounter: TokenCounter,
+  budget: number,
 ) => Message[] | Promise<Message[]>;
 
 /** Options for the built-in sliding-window strategy. */
@@ -183,6 +208,7 @@ export interface Tool<TInput = unknown, TOutput = unknown> {
   outputSchema?: unknown;
   execute(input: TInput, context: ToolExecutionContext): Promise<TOutput>;
   requireApproval?: boolean;
+  allowOutputMutation?: boolean;
   renderCall?(input: TInput): string;
   renderResult?(output: TOutput): string;
 }
@@ -328,6 +354,7 @@ export interface HarnessAPI {
   subscribe(eventType: string, handler: (data?: unknown) => void): () => void;
   registerResource(declaration: ResourceDeclaration): void;
   registerProvider(name: string, factory: unknown): void;
+  registerCompressionStrategy(strategy: CompressionStrategy): void;
   emit(eventType: string, data?: unknown): void;
 }
 
@@ -335,6 +362,7 @@ export interface PluginRegistration {
   processors?: Processor[];
   tools?: ToolDefinition[];
   commands?: Record<string, (args: string) => Promise<void>>;
+  compressionStrategy?: CompressionStrategy;
 }
 
 // ---------------------------------------------------------------------------

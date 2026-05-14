@@ -252,6 +252,72 @@ describe('ToolRegistry edge cases', () => {
   // F-5: tool:output_mutated observability
   // ---------------------------------------------------------------------------
 
+  describe('output mutation policy', () => {
+    it('blocks hook from mutating output when tool lacks allowOutputMutation', async () => {
+      const events: Array<{ type: string; data: unknown }> = [];
+      const eventBus = new EventBus();
+      eventBus.subscribe('tool:output_blocked', (data) => {
+        events.push({ type: 'tool:output_blocked', data });
+      });
+
+      const hookManager = new HookManager(eventBus);
+      hookManager.register({
+        point: 'tool.after',
+        handler: (_input, output) => {
+          (output as Record<string, unknown>).result = 'MUTATED';
+        },
+      });
+
+      const registry = new ToolRegistry();
+      registry.setHookManager(hookManager);
+      registry.setEventBus(eventBus);
+      // Tool WITHOUT allowOutputMutation — mutation should be blocked
+      registry.register({
+        name: 'protected_tool',
+        description: 'Protected',
+        inputSchema: z.object({}),
+        execute: async () => 'original',
+      });
+
+      const result = await registry.executeTool('protected_tool', {});
+      // Output should remain unchanged
+      expect(result.output).toBe('original');
+      // Should emit a blocked event
+      expect(events).toHaveLength(1);
+      expect(events[0].data).toMatchObject({
+        toolName: 'protected_tool',
+        original: 'original',
+        attempted: 'MUTATED',
+      });
+    });
+
+    it('allows hook to mutate output when tool declares allowOutputMutation', async () => {
+      const eventBus = new EventBus();
+      const hookManager = new HookManager(eventBus);
+      hookManager.register({
+        point: 'tool.after',
+        handler: (_input, output) => {
+          (output as Record<string, unknown>).result = 'HOOKED';
+        },
+      });
+
+      const registry = new ToolRegistry();
+      registry.setHookManager(hookManager);
+      registry.setEventBus(eventBus);
+      registry.register({
+        name: 'open_tool',
+        description: 'Open',
+        inputSchema: z.object({}),
+        execute: async () => 'original',
+        allowOutputMutation: true,
+      });
+
+      const result = await registry.executeTool('open_tool', {});
+      expect(result.output).toBe('HOOKED');
+      expect(result.mutated).toBe(true);
+    });
+  });
+
   describe('output mutation tracking', () => {
     it('emits tool:output_mutated when hook changes result', async () => {
       const events: Array<{ type: string; data: unknown }> = [];
@@ -276,6 +342,7 @@ describe('ToolRegistry edge cases', () => {
         description: 'Test',
         inputSchema: z.object({}),
         execute: async () => 'original',
+        allowOutputMutation: true,
       });
 
       const result = await registry.executeTool('mutate_me', {});

@@ -107,6 +107,7 @@ export class ToolRegistry {
 
     let toolOutput: unknown;
     let toolError: string | undefined;
+    let validationError: string | undefined;
     try {
       toolOutput = await tool.execute(args, execCtx);
     } catch (err) {
@@ -117,25 +118,44 @@ export class ToolRegistry {
       return { toolCallId, name: tool.name, output: undefined, error: toolError };
     }
 
+    if (tool.outputSchema && isZodSchema(tool.outputSchema)) {
+      const parsed = (tool.outputSchema as { safeParse: (args: unknown) => SafeParseResult }).safeParse(toolOutput);
+      if (!parsed.success) {
+        const issues = parsed.error?.issues?.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') ?? parsed.error?.message ?? 'Unknown validation error';
+        validationError = `Output validation failed: ${issues}`;
+        this.eventBus?.emit('tool:output_invalid', { toolName: tool.name, error: validationError });
+      }
+    }
+
+    let mutated = false;
     if (this.hookManager) {
       const hookOutput: Record<string, unknown> = { result: toolOutput };
       await this.hookManager.invoke('tool.after', hookInput, hookOutput);
       if (hookOutput.result !== undefined && hookOutput.result !== toolOutput) {
-        this.eventBus?.emit('tool:output_mutated', { toolName: tool.name, original: toolOutput, mutated: hookOutput.result });
-        toolOutput = hookOutput.result;
+        if (tool.allowOutputMutation) {
+          this.eventBus?.emit('tool:output_mutated', { toolName: tool.name, original: toolOutput, mutated: hookOutput.result });
+          toolOutput = hookOutput.result;
+          mutated = true;
+        } else {
+          this.eventBus?.emit('tool:output_blocked', { toolName: tool.name, original: toolOutput, attempted: hookOutput.result });
+        }
       }
     }
 
-    const output = this.truncateOutput(toolOutput);
-    return { toolCallId, name: tool.name, output };
+    const { value: output, truncated } = this.truncateOutput(toolOutput);
+    const result: ToolResult = { toolCallId, name: tool.name, output };
+    if (mutated) result.mutated = true;
+    if (truncated) result.truncated = true;
+    if (validationError) result.validationError = validationError;
+    return result;
   }
 
-  private truncateOutput(output: unknown): unknown {
+  private truncateOutput(output: unknown): { value: unknown; truncated: boolean } {
     if (output && typeof output === 'object' && 'evicted' in output) {
-      return output;
+      return { value: output, truncated: false };
     }
     if (typeof output === 'string' && output.length > this.maxOutputLength) {
-      return output.slice(0, this.maxOutputLength) + '... [truncated]';
+      return { value: output.slice(0, this.maxOutputLength) + '... [truncated]', truncated: true };
     }
     if (
       typeof output !== 'string' &&
@@ -145,12 +165,12 @@ export class ToolRegistry {
       try {
         const serialized = JSON.stringify(output);
         if (serialized.length > this.maxOutputLength) {
-          return { truncated: true, preview: serialized.slice(0, this.maxOutputLength) };
+          return { value: { truncated: true, preview: serialized.slice(0, this.maxOutputLength) }, truncated: true };
         }
       } catch {
-        return { truncated: true, preview: String(output).slice(0, this.maxOutputLength) };
+        return { value: { truncated: true, preview: String(output).slice(0, this.maxOutputLength) }, truncated: true };
       }
     }
-    return output;
+    return { value: output, truncated: false };
   }
 }
