@@ -11,6 +11,7 @@ export type MemoryInjectionMode = 'history' | 'prompt' | 'both';
 export interface MemoryAdmissionPolicy {
   dedup?: boolean;
   maxEntryLength?: number;
+  correctionEnabled?: boolean;
 }
 
 export interface MemoryConfig {
@@ -85,6 +86,9 @@ export function createMemoryOutputProcessor(config: MemoryConfig): Processor {
 
       const response = ctx.iteration.response;
       if (!response) return ctx;
+
+      const userInput = ctx.request.input?.trim();
+      if (!userInput) return ctx;
 
       const now = new Date().toISOString();
       await backend.store(ctx.request.sessionId, {

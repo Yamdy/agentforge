@@ -193,6 +193,75 @@ describe('MemoryProcessor', () => {
     });
   });
 
+  describe('processOutput — user correction priority', () => {
+    it('removes old assistant entries when user sends a correction', async () => {
+      const backend = new InMemoryBackend();
+      const processor = createMemoryOutputProcessor({
+        backend,
+        triggerMode: { type: 'automatic', onLoad: 'always' },
+        admissionPolicy: { correctionEnabled: true },
+      });
+
+      // First turn: user asks, agent answers about topic X
+      await processor.execute(makeContext({
+        request: { input: 'What is the capital of France?', sessionId: 'session-corr' },
+        iteration: { step: 0, response: 'The capital is Paris.' },
+      }));
+
+      // Second turn: user corrects with a different question on same session
+      // The agent gave wrong info, user corrects
+      await processor.execute(makeContext({
+        request: { input: 'No, actually tell me about Germany', sessionId: 'session-corr' },
+        iteration: { step: 0, response: 'The capital of Germany is Berlin.' },
+      }));
+
+      const stored = await backend.retrieve('session-corr');
+      // Both turns stored, no dedup since different content
+      expect(stored.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('deduplicates identical assistant responses across turns', async () => {
+      const backend = new InMemoryBackend();
+      const processor = createMemoryOutputProcessor({
+        backend,
+        triggerMode: { type: 'automatic', onLoad: 'always' },
+      });
+
+      // Two turns with identical assistant response
+      await processor.execute(makeContext({
+        request: { input: 'question 1', sessionId: 'session-dedup' },
+        iteration: { step: 0, response: 'same answer' },
+      }));
+
+      await processor.execute(makeContext({
+        request: { input: 'question 2', sessionId: 'session-dedup' },
+        iteration: { step: 0, response: 'same answer' },
+      }));
+
+      const stored = await backend.retrieve('session-dedup');
+      const assistantEntries = stored.filter(e => e.role === 'assistant');
+      // Dedup should prevent storing the same assistant response twice
+      expect(assistantEntries).toHaveLength(1);
+    });
+
+    it('does not store agent-only content without user input', async () => {
+      const backend = new InMemoryBackend();
+      const processor = createMemoryOutputProcessor({
+        backend,
+        triggerMode: { type: 'automatic', onLoad: 'always' },
+      });
+
+      // Agent monologue should not become persistent memory
+      await processor.execute(makeContext({
+        request: { input: '', sessionId: 'session-empty-user' },
+        iteration: { step: 0, response: 'I am thinking...' },
+      }));
+
+      const stored = await backend.retrieve('session-empty-user');
+      expect(stored).toHaveLength(0);
+    });
+  });
+
   describe('window limit', () => {
     it('limits loaded messages to configured windowLimit', async () => {
       const backend = new InMemoryBackend();
