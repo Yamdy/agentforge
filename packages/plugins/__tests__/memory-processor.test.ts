@@ -42,7 +42,7 @@ describe('MemoryProcessor', () => {
       expect(history[1].content).toBe('previous answer');
     });
 
-    it('injects memory as promptFragment in pipeline', async () => {
+    it('does not inject promptFragment by default (history mode)', async () => {
       const backend = new InMemoryBackend();
       const processor = createMemoryProcessor({ backend, triggerMode: { type: 'automatic', onLoad: 'always' } });
 
@@ -56,7 +56,43 @@ describe('MemoryProcessor', () => {
       const result = await processor.execute(ctx);
 
       const fragments = (result as PipelineContext).agent.promptFragments as string[];
+      expect(fragments).toHaveLength(0);
+    });
+
+    it('injects memory as promptFragment when injectionMode is both', async () => {
+      const backend = new InMemoryBackend();
+      const processor = createMemoryProcessor({ backend, triggerMode: { type: 'automatic', onLoad: 'always' }, injectionMode: 'both' });
+
+      await backend.store('session-1', {
+        role: 'user',
+        content: 'remember this',
+        timestamp: new Date().toISOString(),
+      });
+
+      const ctx = makeContext();
+      const result = await processor.execute(ctx);
+
+      const fragments = (result as PipelineContext).agent.promptFragments as string[];
       expect(fragments).toBeDefined();
+      expect(fragments.length).toBeGreaterThan(0);
+      expect(fragments[0]).toContain('remember this');
+    });
+
+    it('only injects promptFragment when injectionMode is prompt', async () => {
+      const backend = new InMemoryBackend();
+      const processor = createMemoryProcessor({ backend, triggerMode: { type: 'automatic', onLoad: 'always' }, injectionMode: 'prompt' });
+
+      await backend.store('session-1', {
+        role: 'user',
+        content: 'remember this',
+        timestamp: new Date().toISOString(),
+      });
+
+      const ctx = makeContext();
+      const result = await processor.execute(ctx);
+
+      expect((result as PipelineContext).session.messageHistory).toBeUndefined();
+      const fragments = (result as PipelineContext).agent.promptFragments as string[];
       expect(fragments.length).toBeGreaterThan(0);
       expect(fragments[0]).toContain('remember this');
     });
@@ -95,6 +131,65 @@ describe('MemoryProcessor', () => {
 
       const stored = await backend.retrieve('session-3');
       expect(stored).toHaveLength(0);
+    });
+  });
+
+  describe('buildContext — merge with existing history', () => {
+    it('prepends memory entries to existing messageHistory instead of replacing', async () => {
+      const backend = new InMemoryBackend();
+      const processor = createMemoryProcessor({ backend, triggerMode: { type: 'automatic', onLoad: 'always' } });
+
+      await backend.store('session-1', {
+        role: 'user',
+        content: 'old memory question',
+        timestamp: new Date().toISOString(),
+      });
+      await backend.store('session-1', {
+        role: 'assistant',
+        content: 'old memory answer',
+        timestamp: new Date().toISOString(),
+      });
+
+      const ctx = makeContext({
+        session: {
+          messageHistory: [
+            { role: 'user', content: 'current session question' },
+          ],
+          custom: {},
+        },
+      });
+      const result = await processor.execute(ctx);
+      const history = (result as PipelineContext).session.messageHistory as Array<{ role: string; content: string }>;
+
+      expect(history).toHaveLength(3);
+      expect(history[0].content).toBe('old memory question');
+      expect(history[1].content).toBe('old memory answer');
+      expect(history[2].content).toBe('current session question');
+    });
+
+    it('preserves existing promptFragments when injecting into prompt mode', async () => {
+      const backend = new InMemoryBackend();
+      const processor = createMemoryProcessor({ backend, triggerMode: { type: 'automatic', onLoad: 'always' }, injectionMode: 'prompt' });
+
+      await backend.store('session-1', {
+        role: 'user',
+        content: 'memory fact',
+        timestamp: new Date().toISOString(),
+      });
+
+      const ctx = makeContext({
+        agent: {
+          config: { model: 'mock/test' },
+          promptFragments: ['<existing>system fragment</existing>'],
+          toolDeclarations: [],
+        },
+      });
+      const result = await processor.execute(ctx);
+      const fragments = (result as PipelineContext).agent.promptFragments as string[];
+
+      expect(fragments).toHaveLength(2);
+      expect(fragments[0]).toBe('<existing>system fragment</existing>');
+      expect(fragments[1]).toContain('memory fact');
     });
   });
 
