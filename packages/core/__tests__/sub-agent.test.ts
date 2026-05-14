@@ -263,7 +263,8 @@ describe('SubAgent', () => {
       tools: [subAgentTool],
     });
 
-    // Should NOT throw — error is caught and returned as summary
+    // SubAgent throws, ToolRegistry catches and wraps as ToolResult.error,
+    // parent agent still completes normally
     const result = await agent.run('Delegate to failworker');
     expect(result.response).toBe('Parent handled error');
 
