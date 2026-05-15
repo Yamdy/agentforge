@@ -179,6 +179,87 @@ describe('SubAgent', () => {
     expect(getSessionState).toHaveBeenCalled();
   });
 
+  it('inherit policy: child accumulated history is not overwritten by parent state', async () => {
+    // Capture the processor registered via childAgent.use()
+    const capturedProcessors: Array<{ stage: string; execute: (ctx: any) => Promise<any> }> = [];
+    const originalUse = Agent.prototype.use;
+    Agent.prototype.use = function (processor: any) {
+      if (processor.stage === 'prepareStep') {
+        capturedProcessors.push(processor);
+      }
+      return originalUse.call(this, processor);
+    };
+
+    try {
+      const parentModel = createMockModelWithToolCalls(
+        [{ toolName: 'worker', args: { task: 'test' } }],
+        'Done',
+      );
+      registerMockProvider('merge-parent', () => parentModel);
+      registerMockProvider('merge-child', () =>
+        createMockLanguageModel({ text: 'Child result' }),
+      );
+
+      const parentMessages = [
+        { role: 'user' as const, content: 'parent q' },
+        { role: 'assistant' as const, content: 'parent a' },
+      ];
+
+      const getSessionState = vi.fn(() => ({ messageHistory: parentMessages }));
+      const eventBus = new EventBus();
+
+      const subAgentTool = createSubAgentTool(
+        {
+          name: 'worker',
+          description: 'Worker',
+          model: 'merge-child/mock',
+          contextPolicy: 'inherit',
+          inputSchema: z.object({ task: z.string() }),
+        },
+        {
+          model: 'merge-parent/mock',
+          tools: [],
+          eventBus,
+          getSessionState: getSessionState as any,
+        },
+      );
+
+      const agent = new Agent({
+        model: 'merge-parent/mock',
+        tools: [subAgentTool],
+      });
+
+      await agent.run('Test inherit merge');
+    } finally {
+      Agent.prototype.use = originalUse;
+    }
+
+    // We captured the prepareStep processor from createSubAgentTool
+    expect(capturedProcessors.length).toBeGreaterThanOrEqual(1);
+    const processor = capturedProcessors[0];
+
+    // Simulate iteration 1: child has accumulated its own messages
+    const ctxWithChildHistory = {
+      session: {
+        messageHistory: [
+          { role: 'user', content: 'parent q' },
+          { role: 'assistant', content: 'parent a' },
+          { role: 'user', content: 'child input' },
+          { role: 'assistant', content: 'child response' },
+        ],
+        custom: {},
+      },
+    };
+
+    const result = await processor.execute(ctxWithChildHistory as any);
+
+    // The child's own messages must be preserved, not overwritten by parent
+    const history = result.session.messageHistory;
+    expect(history).toHaveLength(4);
+    expect(history).toContainEqual(expect.objectContaining({ content: 'child input' }));
+    expect(history).toContainEqual(expect.objectContaining({ content: 'child response' }));
+  });
+
   it('emits task:start and task:end events via EventBus', async () => {
     const parentModel = createMockModelWithToolCalls(
       [{ toolName: 'worker', args: { task: 'job' } }],

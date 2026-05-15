@@ -177,6 +177,53 @@ describe('FallbackRunner', () => {
     });
   });
 
+  it('includes latencyMs in fallback event', async () => {
+    const eventBus = new EventBus();
+    const events: Array<{ type: string; data: unknown }> = [];
+    eventBus.subscribe('task:fallback', (data) =>
+      events.push({ type: 'task:fallback', data }),
+    );
+
+    const invokers = new Map<string, FallbackInvoker>();
+    invokers.set(
+      'slow-fail',
+      createMockInvoker(async () => {
+        await new Promise((r) => setTimeout(r, 10));
+        throw new Error('timeout');
+      }),
+    );
+    invokers.set(
+      'ok-model',
+      createMockInvoker(async () => ({
+        response: 'ok',
+        tokenUsage: { input: 1, output: 1 },
+      })),
+    );
+
+    const factory = (model: string) => {
+      const inv = invokers.get(model);
+      if (!inv) throw new Error(`No mock for ${model}`);
+      return inv;
+    };
+
+    const runner = new FallbackRunner({
+      entries: [
+        { model: 'slow-fail', priority: 0 },
+        { model: 'ok-model', priority: 1 },
+      ],
+      invokerFactory: factory,
+      eventBus,
+    });
+
+    await runner.run({ prompt: 'test' });
+    expect(events).toHaveLength(1);
+    const data = events[0].data as Record<string, unknown>;
+    expect(data.from).toBe('slow-fail');
+    expect(data.to).toBe('ok-model');
+    expect(typeof data.latencyMs).toBe('number');
+    expect(data.latencyMs as number).toBeGreaterThanOrEqual(10);
+  });
+
   it('sorts entries by priority regardless of input order', async () => {
     const invokers = new Map<string, FallbackInvoker>();
     invokers.set(
