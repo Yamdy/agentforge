@@ -41,9 +41,29 @@ export function createEvaluateIterationProcessor(deps?: EvaluateIterationDeps): 
 
       const totalTokens = totalTokenUsage.input + totalTokenUsage.output;
 
+      const requiredTools = ctx.agent.config.requiredTools;
+
       if (totalTokens > 100_000) {
         ctx.iteration.span?.setAttribute('token.overflow', true);
         ctx.iteration.span?.setAttribute('token.total', totalTokens);
+
+        // Emit unsatisfied if required tools are not all called
+        if (requiredTools && requiredTools.length > 0) {
+          const calledTools = collectCalledToolNames(
+            ctx.session.messageHistory ?? [],
+            ctx.iteration.pendingToolCalls,
+          );
+          const uncalled = requiredTools.filter(name => !calledTools.has(name));
+          if (uncalled.length > 0) {
+            eventBus?.emit('required_tools:unsatisfied', {
+              uncalled,
+              reason: 'token_overflow',
+              step: ctx.iteration.step,
+              sessionId: ctx.request.sessionId,
+            });
+          }
+        }
+
         return {
           ...ctx,
           iteration: {
@@ -57,7 +77,6 @@ export function createEvaluateIterationProcessor(deps?: EvaluateIterationDeps): 
         };
       }
 
-      const requiredTools = ctx.agent.config.requiredTools;
       if (requiredTools && requiredTools.length > 0) {
         if (!warnedUnknownTools) {
           const registeredNames = new Set(ctx.agent.toolDeclarations.map(t => t.name));

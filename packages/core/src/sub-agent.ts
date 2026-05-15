@@ -39,7 +39,7 @@ export function createSubAgentTool(
             stage: 'prepareStep',
             execute: async (ctx: PipelineContext) => ({
               ...ctx,
-              session: { ...ctx.session, ...parentState },
+              session: mergeSessionState(ctx.session, parentState),
             }),
           });
         }
@@ -89,4 +89,23 @@ function summarizeSessionState(state: Record<string, unknown>): string {
   return history
     .map((m) => `${m.role}: ${m.content}`)
     .join('\n');
+}
+
+function mergeSessionState(
+  child: Record<string, unknown>,
+  parent: Record<string, unknown>,
+): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...child };
+  for (const [key, parentVal] of Object.entries(parent)) {
+    if (Array.isArray(parentVal) && Array.isArray(merged[key])) {
+      // Merge arrays: parent prefix + child-only suffix
+      const childArr = merged[key] as unknown[];
+      const parentLen = parentVal.length;
+      const childExtras = childArr.slice(parentLen);
+      merged[key] = [...parentVal, ...childExtras];
+    } else {
+      merged[key] = parentVal;
+    }
+  }
+  return merged;
 }

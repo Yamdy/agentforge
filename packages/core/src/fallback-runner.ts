@@ -38,11 +38,13 @@ export class FallbackRunner {
 
     for (let i = 0; i < this.sorted.length; i++) {
       const entry = this.sorted[i];
+      const start = Date.now();
       try {
         const invoker = this.invokerFactory(entry.model);
         return await invoker.invoke(input);
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
+        const latencyMs = Date.now() - start;
 
         // Emit fallback event if there's a next entry
         if (i < this.sorted.length - 1) {
@@ -50,6 +52,7 @@ export class FallbackRunner {
             from: entry.model,
             to: this.sorted[i + 1].model,
             error: lastError,
+            latencyMs,
           });
         }
       }
