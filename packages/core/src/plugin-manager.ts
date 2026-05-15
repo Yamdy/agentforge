@@ -12,11 +12,25 @@ import type {
 import type { PipelineRunner } from './pipeline.js';
 import type { ToolRegistry } from './tool-registry.js';
 import type { ContextBuilder } from './context-builder.js';
+import { resolve, relative, isAbsolute } from 'node:path';
 import { EventBus } from './event-bus.js';
 import { EventSystem } from './event-system.js';
 import { HookManager } from './hook-manager.js';
 
 export type PluginFactory = (api: HarnessAPI) => PluginRegistration | void;
+
+function validatePluginPath(filePath: string): { valid: boolean; reason?: string } {
+  if (/^(@[a-zA-Z0-9_-]+\/)?[a-zA-Z0-9_-]+$/.test(filePath)) {
+    return { valid: true };
+  }
+  const root = resolve(process.cwd());
+  const resolved = resolve(root, filePath);
+  const rel = relative(root, resolved);
+  if (rel.startsWith('..') || isAbsolute(rel)) {
+    return { valid: false, reason: `Plugin path "${filePath}" resolves outside project root` };
+  }
+  return { valid: true };
+}
 
 export class PluginManager {
   private runner: PipelineRunner;
@@ -47,6 +61,11 @@ export class PluginManager {
   }
 
   async loadPlugin(filePath: string): Promise<void> {
+    const validation = validatePluginPath(filePath);
+    if (!validation.valid) {
+      this.errors.push({ source: filePath, error: new Error(validation.reason!) });
+      return;
+    }
     try {
       const module = await import(filePath);
       const factory = module.default ?? module;
@@ -65,6 +84,13 @@ export class PluginManager {
   initializePlugin(factory: PluginFactory): void {
     const api = this.createHarnessAPI();
     factory(api);
+  }
+
+  async loadPluginsFromConfig(config: { plugins?: Array<{ path: string }> }): Promise<void> {
+    const plugins = config.plugins ?? [];
+    for (const { path } of plugins) {
+      await this.loadPlugin(path);
+    }
   }
 
   getCommand(name: string): ((args: string) => Promise<void>) | undefined {

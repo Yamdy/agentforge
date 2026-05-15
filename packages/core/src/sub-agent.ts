@@ -1,4 +1,4 @@
-import type { PipelineContext, SubAgentConfig, SubAgentResult, Tool, ToolDefinition, Tracer } from '@agentforge/sdk';
+import type { PipelineContext, SessionRegion, SubAgentConfig, SubAgentResult, Tool, ToolDefinition, Tracer } from '@agentforge/sdk';
 import { Agent } from './agent.js';
 import type { AgentRunResult } from './agent.js';
 
@@ -37,10 +37,12 @@ export function createSubAgentTool(
           const parentState = parent.getSessionState();
           childAgent.use({
             stage: 'prepareStep',
-            execute: async (ctx: PipelineContext) => ({
-              ...ctx,
-              session: mergeSessionState(ctx.session, parentState),
-            }),
+            execute: async (ctx: PipelineContext) => {
+              if (ctx.iteration?.step === 0) {
+                return { ...ctx, session: mergeSessionState(ctx.session, parentState) };
+              }
+              return ctx;
+            },
           });
         }
 
@@ -51,7 +53,7 @@ export function createSubAgentTool(
             stage: 'prepareStep',
             execute: async (ctx: PipelineContext) => ({
               ...ctx,
-              session: { ...ctx.session, parentContextSummary: summary },
+              session: { ...ctx.session, custom: { ...ctx.session.custom, parentContextSummary: summary } },
             }),
           });
         }
@@ -92,13 +94,12 @@ function summarizeSessionState(state: Record<string, unknown>): string {
 }
 
 function mergeSessionState(
-  child: Record<string, unknown>,
+  child: SessionRegion,
   parent: Record<string, unknown>,
-): Record<string, unknown> {
+): SessionRegion {
   const merged: Record<string, unknown> = { ...child };
   for (const [key, parentVal] of Object.entries(parent)) {
     if (Array.isArray(parentVal) && Array.isArray(merged[key])) {
-      // Merge arrays: parent prefix + child-only suffix
       const childArr = merged[key] as unknown[];
       const parentLen = parentVal.length;
       const childExtras = childArr.slice(parentLen);
@@ -107,5 +108,5 @@ function mergeSessionState(
       merged[key] = parentVal;
     }
   }
-  return merged;
+  return merged as unknown as SessionRegion;
 }
