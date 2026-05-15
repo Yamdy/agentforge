@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@agentforge/core": "workspace:*",
+    "@agentforge/plugins": "workspace:*",
     "@agentforge/sdk": "workspace:*",
     "@hono/node-server": "^2.0.2",
     "hono": "^4.7.0"

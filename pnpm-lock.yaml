@@ -172,6 +172,9 @@ importers:
       '@agentforge/core':
         specifier: workspace:*
         version: link:../core
+      '@agentforge/plugins':
+        specifier: workspace:*
+        version: link:../plugins
       '@agentforge/sdk':
         specifier: workspace:*
         version: link:../sdk

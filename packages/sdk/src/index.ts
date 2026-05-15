@@ -724,3 +724,19 @@ export interface AuthAdapter {
 export { AgentForgeClient } from './client.js';
 export type { ClientOptions, AgentRunResult, SSEMessage } from './client.js';
 export { parseSSE } from './client.js';
+
+// ---------------------------------------------------------------------------
+// Agent Profiles
+// ---------------------------------------------------------------------------
+
+export interface AgentProfile {
+  name: string;
+  description?: string;
+  extends?: string;
+  plugins?: Array<(api: HarnessAPI) => PluginRegistration>;
+  tools?: Tool[];
+  config?: Partial<HarnessConfig>;
+  systemPrompt?: string;
+  model?: string;
+  maxIterations?: number;
+}
