@@ -198,12 +198,6 @@ function createSseClient(config: McpServerConfig): McpClient {
       const transport = new SSEClientTransport(new URL(config.url!));
       const client = new Client({ name: `agentforge-${config.name}`, version: '0.0.1' });
 
-      client.fallbackHandler = async (notification: any) => {
-        if (notification.method === 'notifications/tools/list_changed') {
-          mcpClient.onToolsChanged?.();
-        }
-      };
-
       await client.connect(transport);
       clientPromise = Promise.resolve(client);
       this.connected = true;
@@ -254,12 +248,6 @@ function createHttpClient(config: McpServerConfig): McpClient {
 
       const transport = new StreamableHTTPClientTransport(new URL(config.url!));
       const client = new Client({ name: `agentforge-${config.name}`, version: '0.0.1' });
-
-      client.fallbackHandler = async (notification: any) => {
-        if (notification.method === 'notifications/tools/list_changed') {
-          mcpClient.onToolsChanged?.();
-        }
-      };
 
       await client.connect(transport);
       clientPromise = Promise.resolve(client);
