@@ -262,6 +262,44 @@ export const SpanType = {
   MODEL_STEP: 'model_step',
   TOOL_CALL: 'tool_call',
   PROCESSOR_RUN: 'processor_run',
+  // Phase 2 — harness & detailed observability
+  LLM_STREAM: 'llm.stream',
+  TOOL_EXECUTE: 'tool.execute',
+  GATE_DECISION: 'harness.gate',
+  COST_CAP_CHECK: 'harness.cost-cap',
+  TOKEN_BUDGET_CHECK: 'harness.token-budget',
+  GOAL_ECHO: 'harness.goal-echo',
+  FACT_INJECTION: 'harness.fact-injection',
+  COMPRESSION: 'harness.compression',
+} as const;
+
+/** Standard span attribute keys for consistent observability across the framework. */
+export const SpanAttributeKeys = {
+  // Token / Cost
+  TOKENS_INPUT: 'tokens.input',
+  TOKENS_OUTPUT: 'tokens.output',
+  TOKENS_TOTAL: 'tokens.total',
+  COST_ESTIMATED: 'cost.estimated',
+  COST_CUMULATIVE: 'cost.cumulative',
+  COST_BUDGET: 'cost.budget',
+  // Model
+  MODEL_NAME: 'model.name',
+  // Tool
+  TOOL_NAME: 'tool.name',
+  TOOL_RESULT_SIZE: 'tool.result_size',
+  // Harness gates
+  HARNESS_DECISION: 'harness.decision',
+  HARNESS_REASON: 'harness.reason',
+  // Budget
+  BUDGET_CONTEXT_MAX: 'budget.context_max',
+  BUDGET_CONTEXT_USED: 'budget.context_used',
+  BUDGET_RESERVED_OUTPUT: 'budget.reserved_output',
+  // Goal echo
+  GOAL_TEXT: 'goal.text',
+  GOAL_PROGRESS: 'goal.progress',
+  GOAL_ITERATION: 'goal.iteration',
+  // Fact injection
+  FACT_COUNT: 'fact.count',
 } as const;
 
 export type SpanType = (typeof SpanType)[keyof typeof SpanType];
@@ -489,6 +527,25 @@ export interface HarnessConfig {
   modelProfiles?: ModelProfile[];
   modelGateways?: GatewayConfig[];
   hooks?: { profile?: HookProfile; disabledHooks?: string[] };
+  // Phase 2 — harness processor configurations
+  costCap?: {
+    maxCost: number;
+    strategy: 'block' | 'warn';
+    modelPricing?: Record<string, { input: number; output: number }>;
+  };
+  tokenBudget?: {
+    maxContextTokens: number;
+    reservedOutputTokens: number;
+    strategy: 'compress' | 'truncate' | 'block';
+  };
+  goalEcho?: {
+    enabled: boolean;
+    echoFrequency: number;
+    progressTracking: boolean;
+  };
+  factInjection?: {
+    facts: string[] | ((ctx: PipelineContext) => string[] | Promise<string[]>);
+  };
 }
 
 // ---------------------------------------------------------------------------

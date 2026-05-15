@@ -64,3 +64,17 @@ export {
   createMockMcpClient,
   type McpClient,
 } from './mcp/mcp-client.js';
+
+export {
+  createFactInjectionProcessor,
+  createGoalEchoProcessor,
+  createTokenBudgetProcessor,
+  createCostCapProcessor,
+  setGateDecision,
+  setCostAttributes,
+  setBudgetAttributes,
+  type FactInjectionConfig,
+  type GoalEchoConfig,
+  type TokenBudgetConfig,
+  type CostCapConfig,
+} from './harness/index.js';

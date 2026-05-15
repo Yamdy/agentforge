@@ -1,4 +1,5 @@
 import type { Processor, Message, ToolResult } from '@agentforge/sdk';
+import { SpanAttributeKeys, SpanType } from '@agentforge/sdk';
 import type { ToolRegistry } from '../tool-registry.js';
 
 export function createExecuteToolsProcessor(registry: ToolRegistry): Processor {
@@ -12,12 +13,22 @@ export function createExecuteToolsProcessor(registry: ToolRegistry): Processor {
 
       const toolResults: ToolResult[] = [];
       for (const tc of toolCalls) {
-        const result = await registry.executeTool(tc.name, tc.args, {
-          toolCallId: tc.id,
-          span: ctx.iteration.span,
-          sessionId: ctx.request.sessionId,
-        });
-        toolResults.push({ ...result, toolCallId: tc.id });
+        const toolSpan = ctx.iteration.span?.startChild(SpanType.TOOL_EXECUTE);
+        toolSpan?.setAttribute(SpanAttributeKeys.TOOL_NAME, tc.name);
+        try {
+          const result = await registry.executeTool(tc.name, tc.args, {
+            toolCallId: tc.id,
+            span: toolSpan ?? ctx.iteration.span,
+            sessionId: ctx.request.sessionId,
+          });
+          const outputSize = typeof result.output === 'string'
+            ? result.output.length
+            : JSON.stringify(result.output).length;
+          toolSpan?.setAttribute(SpanAttributeKeys.TOOL_RESULT_SIZE, outputSize);
+          toolResults.push({ ...result, toolCallId: tc.id });
+        } finally {
+          toolSpan?.end();
+        }
       }
 
       const toolMessages: Message[] = toolResults.map((tr) => {
