@@ -143,7 +143,7 @@ export class ToolRegistry {
       }
     }
 
-    const { value: output, truncated } = this.truncateOutput(toolOutput);
+    const { value: output, truncated } = this.truncateOutput(toolOutput, tool.name);
     const result: ToolResult = { toolCallId, name: tool.name, output };
     if (mutated) result.mutated = true;
     if (truncated) result.truncated = true;
@@ -151,12 +151,15 @@ export class ToolRegistry {
     return result;
   }
 
-  private truncateOutput(output: unknown): { value: unknown; truncated: boolean } {
+  private truncateOutput(output: unknown, toolName?: string): { value: unknown; truncated: boolean } {
     if (output && typeof output === 'object' && 'evicted' in output) {
       return { value: output, truncated: false };
     }
     if (typeof output === 'string' && output.length > this.maxOutputLength) {
-      return { value: output.slice(0, this.maxOutputLength) + '... [truncated]', truncated: true };
+      const originalSize = output.length;
+      const value = output.slice(0, this.maxOutputLength) + '... [truncated]';
+      this.eventBus?.emit('tool:output_truncated', { toolName, originalSize, truncatedSize: value.length });
+      return { value, truncated: true };
     }
     if (
       typeof output !== 'string' &&
@@ -166,9 +169,11 @@ export class ToolRegistry {
       try {
         const serialized = JSON.stringify(output);
         if (serialized.length > this.maxOutputLength) {
+          this.eventBus?.emit('tool:output_truncated', { toolName, originalSize: serialized.length, truncatedSize: this.maxOutputLength });
           return { value: { truncated: true, preview: serialized.slice(0, this.maxOutputLength) }, truncated: true };
         }
       } catch {
+        this.eventBus?.emit('tool:output_truncated', { toolName, originalSize: String(output).length, truncatedSize: this.maxOutputLength });
         return { value: { truncated: true, preview: String(output).slice(0, this.maxOutputLength) }, truncated: true };
       }
     }

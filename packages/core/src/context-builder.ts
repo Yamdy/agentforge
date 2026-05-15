@@ -95,7 +95,8 @@ export class ContextBuilder {
         ...ctx.agent,
         systemPrompt,
         promptFragments,
-      },
+        _assembledFragmentCount: promptFragments.length,
+      } as any,
     };
   }
 
