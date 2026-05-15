@@ -145,7 +145,13 @@ export class ContextBuilder {
 
     if (historyTokens <= historyBudget) return ctx;
 
-    const compressed = await this.compressionStrategy(history, this.tokenCounter, historyBudget);
+    let compressed = history;
+    let compressedTokens = historyTokens;
+    const maxPasses = 5;
+    for (let pass = 0; pass < maxPasses && compressedTokens > historyBudget; pass++) {
+      compressed = await this.compressionStrategy(compressed, this.tokenCounter, historyBudget);
+      compressedTokens = this.tokenCounter.countMessages(compressed, model);
+    }
 
     return {
       ...ctx,

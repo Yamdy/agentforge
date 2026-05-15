@@ -8,6 +8,7 @@ import { createExecuteToolsProcessor } from '../src/processors/execute-tools.js'
 import { createEvaluateIterationProcessor } from '../src/processors/evaluate-iteration.js';
 import { processStepOutputProcessor } from '../src/processors/process-step-output.js';
 import { createSubAgentTool } from '../src/sub-agent.js';
+import { ContextBuilder } from '../src/context-builder.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -225,5 +226,58 @@ describe('F-9: Sub-agent error propagation', () => {
     expect(caught!.message).toContain('failing-agent');
     // The original error should be preserved as cause
     expect((caught as any).cause).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F-10: Compression strategy should verify post-compression budget
+// ---------------------------------------------------------------------------
+
+describe('F-10: ContextBuilder post-compression budget check', () => {
+  it('re-applies compression when result still exceeds budget', async () => {
+    const registry = new ToolRegistry();
+    // A compression strategy that only removes 1 message per call,
+    // so multiple passes are needed for large histories
+    let callCount = 0;
+    const lazyStrategy = (_messages: Message[], _tc: any, _budget: number) => {
+      callCount++;
+      // Only trim 1 message per call — simulates conservative compression
+      return Promise.resolve(_messages.slice(0, -1));
+    };
+
+    const tc = {
+      count: (text: string) => text.length,
+      countMessages: (msgs: Message[]) => msgs.reduce((sum, m) => sum + m.content.length, 0),
+    };
+
+    const builder = new ContextBuilder({
+      registry,
+      tokenCounter: tc as any,
+      compressionStrategy: lazyStrategy,
+      budget: { maxTokens: 20 },
+    });
+
+    // Create history that needs multiple compression passes
+    // Each message is 10 chars, 5 messages = 50 tokens, budget is 20
+    const history: Message[] = Array.from({ length: 5 }, (_, i) => ({
+      role: 'user' as const,
+      content: `msg-${i}----`, // 10 chars each
+    }));
+
+    const ctx: PipelineContext = {
+      request: { input: 'test', sessionId: 's-1' },
+      agent: { config: { model: 'test/m' }, promptFragments: [], toolDeclarations: [], systemPrompt: '' },
+      iteration: { step: 0 },
+      session: { messageHistory: history, custom: {} },
+    };
+
+    const result = await builder.assemble(ctx);
+    const resultHistory = result.session.messageHistory!;
+    const resultTokens = resultHistory.reduce((sum, m) => sum + m.content.length, 0);
+
+    // After compression, the result must fit within budget
+    expect(resultTokens).toBeLessThanOrEqual(20);
+    // The lazy strategy should have been called multiple times
+    expect(callCount).toBeGreaterThan(1);
   });
 });
