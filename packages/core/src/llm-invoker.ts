@@ -154,7 +154,10 @@ export class LLMInvoker {
           this.options.eventBus?.emit('llm:usage_unavailable', { error: err instanceof Error ? err.message : String(err) });
           return { input: 0, output: 0 };
         }),
-      reasoning: Promise.resolve(result!.reasoningText).catch(() => undefined),
+      reasoning: Promise.resolve(result!.reasoningText).catch((err) => {
+        this.options.eventBus?.emit('llm:reasoning_error', { error: err instanceof Error ? err.message : String(err) });
+        return undefined;
+      }),
     };
   }
 }
