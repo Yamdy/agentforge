@@ -31,8 +31,12 @@ function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   };
 }
 
-function isAbort(result: PipelineContext | { type: 'abort'; reason: string }): result is { type: 'abort'; reason: string } {
+function isAbort(result: PipelineContext | { type: string; reason: string }): result is { type: 'abort'; reason: string } {
   return 'type' in result && result.type === 'abort';
+}
+
+function isSuspend(result: PipelineContext | { type: string; reason: string }): result is { type: 'suspend'; suspensionId: string; reason: string } {
+  return 'type' in result && result.type === 'suspend';
 }
 
 describe('permissionPlugin', () => {
@@ -165,5 +169,62 @@ describe('permissionPlugin', () => {
     expect(decisions[0].decision).toBe('deny');
     expect(decisions[0].toolName).toBe('shell_exec');
     expect(decisions[0].rule).toBe('shell_exec');
+  });
+
+  it('ask rule in interactive mode returns SuspendSignal (not abort)', async () => {
+    const processor = createPermissionProcessor({
+      mode: 'interactive',
+      rules: [{ tool: 'shell_exec', action: 'ask' }],
+      onDecision: () => {},
+    });
+
+    const ctx = makeContext({
+      iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'shell_exec', args: { command: 'ls' } }] },
+    });
+
+    const result = await processor.execute(ctx);
+
+    // Must return suspend signal, not abort
+    expect(isSuspend(result)).toBe(true);
+    if (isSuspend(result)) {
+      expect(result.suspensionId).toBeDefined();
+      expect(result.reason).toContain('shell_exec');
+    }
+  });
+
+  it('ask rule in plan-only mode still returns abort (treated as deny)', async () => {
+    const processor = createPermissionProcessor({
+      mode: 'plan-only',
+      rules: [{ tool: 'shell_exec', action: 'ask' }],
+      onDecision: () => {},
+    });
+
+    const ctx = makeContext({
+      iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'shell_exec', args: { command: 'ls' } }] },
+    });
+
+    const result = await processor.execute(ctx);
+
+    // plan-only treats ask as deny → abort
+    expect(isAbort(result)).toBe(true);
+  });
+
+  it('ask rule emits decision event with decision=ask', async () => {
+    const decisions: PermissionDecisionEvent[] = [];
+    const processor = createPermissionProcessor({
+      mode: 'interactive',
+      rules: [{ tool: 'file_write', action: 'ask' }],
+      onDecision: (event) => decisions.push(event),
+    });
+
+    const ctx = makeContext({
+      iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'file_write', args: { path: '/etc/passwd' } }] },
+    });
+
+    await processor.execute(ctx);
+
+    expect(decisions).toHaveLength(1);
+    expect(decisions[0].decision).toBe('ask');
+    expect(decisions[0].toolName).toBe('file_write');
   });
 });

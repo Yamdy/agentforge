@@ -163,7 +163,7 @@ export function createPermissionProcessor(config: PermissionConfig): Processor {
             }
             // In interactive mode, 'ask' suspends awaiting human approval
             emit({ decision: 'ask', toolName: toolCall.name, rule: matched.rule.tool, mode: config.mode });
-            return { type: 'abort', reason: `Tool '${toolCall.name}' requires approval (ask rule)` };
+            return { type: 'suspend', suspensionId: `perm-${toolCall.name}-${Date.now()}`, reason: `Tool '${toolCall.name}' requires approval (ask rule)` };
         }
       }
 
