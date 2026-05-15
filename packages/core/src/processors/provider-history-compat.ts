@@ -2,6 +2,18 @@ import type { CompatRule, ProviderCapabilities } from '@agentforge/sdk';
 import { detectProvider } from '../provider-capabilities.js';
 
 // ---------------------------------------------------------------------------
+// Message shape for compat rules
+// ---------------------------------------------------------------------------
+
+type MessageShape = {
+  role: string;
+  content: unknown;
+  toolCalls?: Array<{ id: string; [key: string]: unknown }>;
+  reasoningContent?: string;
+  [key: string]: unknown;
+};
+
+// ---------------------------------------------------------------------------
 // Built-in compat rules
 // ---------------------------------------------------------------------------
 
@@ -10,10 +22,11 @@ const stripUnsupportedReasoning: CompatRule = {
   providers: '*',
   applyToPrompt(messages: unknown[], capabilities: ProviderCapabilities): unknown[] {
     if (capabilities.supportsReasoning) return messages;
-    return messages.map((msg: any) => {
-      if (msg.role !== 'assistant' || !Array.isArray(msg.content)) return msg;
-      const filtered = msg.content.filter((part: any) => part.type !== 'reasoning');
-      return filtered.length === msg.content.length ? msg : { ...msg, content: filtered };
+    return messages.map((msg) => {
+      const m = msg as MessageShape;
+      if (m.role !== 'assistant' || !Array.isArray(m.content)) return msg;
+      const filtered = m.content.filter((part) => (part as { type: string }).type !== 'reasoning');
+      return filtered.length === m.content.length ? msg : { ...m, content: filtered };
     });
   },
 };
@@ -22,10 +35,11 @@ const stripForeignReasoning: CompatRule = {
   name: 'strip-foreign-reasoning',
   providers: ['anthropic'],
   applyToPrompt(messages: unknown[]): unknown[] {
-    return messages.map((msg: any) => {
-      if (msg.role !== 'assistant' || !Array.isArray(msg.content)) return msg;
-      const filtered = msg.content.filter((part: any) => part.type !== 'reasoning');
-      return filtered.length === msg.content.length ? msg : { ...msg, content: filtered };
+    return messages.map((msg) => {
+      const m = msg as MessageShape;
+      if (m.role !== 'assistant' || !Array.isArray(m.content)) return msg;
+      const filtered = m.content.filter((part) => (part as { type: string }).type !== 'reasoning');
+      return filtered.length === m.content.length ? msg : { ...m, content: filtered };
     });
   },
 };
@@ -37,8 +51,8 @@ const ensureAlternatingRoles: CompatRule = {
     if (!capabilities.requiresAlternatingRoles) return messages;
     const result: unknown[] = [];
     for (const msg of messages) {
-      const lastRole = (result[result.length - 1] as any)?.role;
-      const currentRole = (msg as any).role;
+      const lastRole = (result[result.length - 1] as MessageShape | undefined)?.role;
+      const currentRole = (msg as MessageShape).role;
       if (lastRole && lastRole === currentRole && lastRole === 'assistant') {
         result.push({ role: 'user', content: [{ type: 'text', text: ' ' }] });
       }
@@ -53,14 +67,18 @@ const fixEmptyAssistantContent: CompatRule = {
   providers: '*',
   applyToPrompt(messages: unknown[], capabilities: ProviderCapabilities): unknown[] {
     if (!capabilities.rejectsEmptyAssistantContent) return messages;
-    return messages.map((msg: any) => {
-      if (msg.role !== 'assistant') return msg;
-      if (!Array.isArray(msg.content)) return msg;
-      const hasText = msg.content.some((part: any) =>
-        part.type === 'text' && part.text && part.text.length > 0,
+    return messages.map((msg) => {
+      const m = msg as MessageShape;
+      if (m.role !== 'assistant') return msg;
+      if (!Array.isArray(m.content)) return msg;
+      const hasText = m.content.some(
+        (part) => {
+          const p = part as { type: string; text?: string };
+          return p.type === 'text' && p.text && p.text.length > 0;
+        },
       );
       if (hasText) return msg;
-      return { ...msg, content: [...msg.content, { type: 'text', text: ' ' }] };
+      return { ...m, content: [...m.content, { type: 'text', text: ' ' }] };
     });
   },
 };
@@ -71,14 +89,15 @@ const sanitizeToolCallIds: CompatRule = {
   errorPatterns: [/tool.*id.*invalid/i, /tool.*id.*format/i],
   fixHistory(history, _error) {
     let changed = false;
-    const next = history.map((msg: any) => {
-      if (msg.role !== 'assistant' || !msg.toolCalls) return msg;
-      const toolCalls = msg.toolCalls.map((tc: any) => {
-        const sanitized = tc.id.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const next = history.map((msg) => {
+      const m = msg as MessageShape;
+      if (m.role !== 'assistant' || !m.toolCalls) return msg;
+      const toolCalls = m.toolCalls.map((tc) => {
+        const sanitized = String(tc.id).replace(/[^a-zA-Z0-9_-]/g, '_');
         if (sanitized !== tc.id) { changed = true; return { ...tc, id: sanitized }; }
         return tc;
       });
-      return changed ? { ...msg, toolCalls } : msg;
+      return changed ? { ...m, toolCalls } : msg;
     });
     return changed ? next : null;
   },
@@ -90,12 +109,13 @@ const deepseekReasoningRequired: CompatRule = {
   errorPatterns: [/reasoning_content.*must be passed back/i],
   fixHistory(history, _error) {
     let changed = false;
-    const next = history.map((msg: any, i: number) => {
-      if (msg.role !== 'assistant' || msg.reasoningContent) return msg;
-      const hasLaterAssistant = history.slice(i + 1).some((m: any) => m.role === 'assistant');
+    const next = history.map((msg, i: number) => {
+      const m = msg as MessageShape;
+      if (m.role !== 'assistant' || m.reasoningContent) return msg;
+      const hasLaterAssistant = history.slice(i + 1).some((h) => (h as MessageShape).role === 'assistant');
       if (hasLaterAssistant) return msg;
       changed = true;
-      return { ...msg, reasoningContent: '' };
+      return { ...m, reasoningContent: '' };
     });
     return changed ? next : null;
   },
@@ -131,13 +151,13 @@ export function applyPreemptiveRules(
   return result;
 }
 
-/** Try reactive rules against an API error. Returns fixed history or null. */
+/** Try reactive rules against an API error. Returns fixed history + diff, or null. */
 export function applyReactiveRules(
   history: import('@agentforge/sdk').Message[],
   modelString: string,
   error: unknown,
   rules: CompatRule[] = BUILTIN_COMPAT_RULES,
-): import('@agentforge/sdk').Message[] | null {
+): import('@agentforge/sdk').CompatResult | null {
   const provider = detectProvider(modelString);
   const errorMsg = error instanceof Error ? error.message : String(error);
   for (const rule of rules) {
@@ -146,10 +166,16 @@ export function applyReactiveRules(
     if (!rule.errorPatterns.some(p => p.test(errorMsg))) continue;
     const fixed = rule.fixHistory(history, error);
     if (fixed) {
-      return fixed.map((msg: any, i: number) => {
-        const original = (history as any[])[i];
-        return msg !== original ? { ...msg, _compatFixed: true } : msg;
+      const diff: import('@agentforge/sdk').CompatDiffEntry[] = [];
+      const patched = fixed.map((msg: unknown, i: number): import('@agentforge/sdk').Message => {
+        const original = (history as unknown[])[i];
+        if (msg !== original) {
+          diff.push({ index: i, ruleName: rule.name, description: `modified by ${rule.name}` });
+          return { ...(msg as MessageShape), _compatFixed: true } as import('@agentforge/sdk').Message;
+        }
+        return msg as import('@agentforge/sdk').Message;
       });
+      return { history: patched, diff };
     }
   }
   return null;

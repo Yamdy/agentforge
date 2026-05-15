@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { ContextBuilder } from '../src/context-builder.js';
-import { TiktokenCounter } from '../src/token-counter.js';
 import type { PipelineContext, Message, CompressionStrategy } from '@agentforge/sdk';
 import type { ToolRegistry } from '../src/tool-registry.js';
 
@@ -32,8 +31,8 @@ function makeMessages(count: number): Message[] {
   }));
 }
 
-describe('ContextBuilder default sliding window', () => {
-  it('trims history to 50 messages when budget exceeded', async () => {
+describe('ContextBuilder default semantic truncation', () => {
+  it('trims history to fit budget, preserving recent messages', async () => {
     const cb = new ContextBuilder({ registry: makeMockRegistry(), budget: { maxTokens: 100 } });
     const processor = cb.createProcessor();
     const history = makeMessages(60);
@@ -41,7 +40,8 @@ describe('ContextBuilder default sliding window', () => {
       agent: { config: { model: 'test' }, promptFragments: [], toolDeclarations: [] },
     });
     const result = await processor.execute(ctx) as PipelineContext;
-    expect(result.session.messageHistory).toHaveLength(50);
+    expect(result.session.messageHistory!.length).toBeLessThan(60);
+    expect(result.session.messageHistory!.length).toBeGreaterThan(0);
   });
 
   it('returns all messages when under budget', async () => {

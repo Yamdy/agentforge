@@ -4,7 +4,7 @@ import {
   applyReactiveRules,
   BUILTIN_COMPAT_RULES,
 } from '../src/processors/provider-history-compat.js';
-import type { ProviderCapabilities, CompatRule } from '@agentforge/sdk';
+import type { Message, ProviderCapabilities, CompatRule, ToolCall } from '@agentforge/sdk';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -71,7 +71,7 @@ describe('applyPreemptiveRules', () => {
       ]},
     ];
     const result = applyPreemptiveRules(msgs, 'openai/gpt-4o', openaiCaps);
-    expect((result[0] as any).content).toEqual([
+    expect((result[0] as { content: Array<{ type: string; text: string }> }).content).toEqual([
       { type: 'text', text: 'answer' },
     ]);
   });
@@ -84,7 +84,7 @@ describe('applyPreemptiveRules', () => {
       ]},
     ];
     const result = applyPreemptiveRules(msgs, 'deepseek/deepseek-v4-flash', deepseekCaps);
-    expect((result[0] as any).content).toHaveLength(2);
+    expect((result[0] as { content: unknown[] }).content).toHaveLength(2);
   });
 
   it('does not modify non-assistant messages when stripping reasoning', () => {
@@ -93,7 +93,7 @@ describe('applyPreemptiveRules', () => {
       { role: 'assistant', content: [{ type: 'reasoning', text: 'think' }] },
     ];
     const result = applyPreemptiveRules(msgs, 'openai/gpt-4o', openaiCaps);
-    expect((result[0] as any).content).toBe('hello');
+    expect((result[0] as { content: string }).content).toBe('hello');
   });
 
   // --- strip-foreign-reasoning (Anthropic) ---
@@ -106,7 +106,7 @@ describe('applyPreemptiveRules', () => {
       ]},
     ];
     const result = applyPreemptiveRules(msgs, 'anthropic/claude', anthropicCaps);
-    expect((result[0] as any).content).toEqual([
+    expect((result[0] as { content: Array<{ type: string; text: string }> }).content).toEqual([
       { type: 'text', text: 'result' },
     ]);
   });
@@ -120,7 +120,7 @@ describe('applyPreemptiveRules', () => {
       { role: 'assistant', content: [{ type: 'text', text: 'b' }] },
     ];
     const result = applyPreemptiveRules(msgs, 'anthropic/claude', anthropicCaps);
-    const roles = result.map((m: any) => m.role);
+    const roles = result.map((m: unknown) => (m as { role: string }).role);
     expect(roles).toEqual(['user', 'assistant', 'user', 'assistant']);
   });
 
@@ -152,8 +152,8 @@ describe('applyPreemptiveRules', () => {
       ]},
     ];
     const result = applyPreemptiveRules(msgs, 'anthropic/claude', anthropicCaps);
-    const content = (result[0] as any).content;
-    expect(content.some((p: any) => p.type === 'text' && p.text === ' ')).toBe(true);
+    const content = (result[0] as { content: Array<{ type: string; text?: string }> }).content;
+    expect(content.some((p) => p.type === 'text' && p.text === ' ')).toBe(true);
   });
 
   it('does not add space when assistant already has text', () => {
@@ -161,7 +161,7 @@ describe('applyPreemptiveRules', () => {
       { role: 'assistant', content: [{ type: 'text', text: 'hello' }] },
     ];
     const result = applyPreemptiveRules(msgs, 'anthropic/claude', anthropicCaps);
-    const texts = (result[0] as any).content.filter((p: any) => p.type === 'text');
+    const texts = (result[0] as { content: Array<{ type: string }> }).content.filter((p) => p.type === 'text');
     expect(texts).toHaveLength(1);
   });
 
@@ -176,9 +176,9 @@ describe('applyPreemptiveRules', () => {
       ]},
     ];
     const result = applyPreemptiveRules(msgs, 'openai/gpt-4o', openaiCaps);
-    const content = (result[0] as any).content;
-    expect(content.every((p: any) => p.type !== 'reasoning')).toBe(true);
-    expect(content.some((p: any) => p.type === 'tool-use')).toBe(true);
+    const content = (result[0] as { content: Array<{ type: string }> }).content;
+    expect(content.every((p) => p.type !== 'reasoning')).toBe(true);
+    expect(content.some((p) => p.type === 'tool-use')).toBe(true);
   });
 
   // --- wildcard + provider-specific rule ordering ---
@@ -193,7 +193,7 @@ describe('applyPreemptiveRules', () => {
       ]},
     ];
     const result = applyPreemptiveRules(msgs, 'anthropic/claude', anthropicCaps);
-    const roles = result.map((m: any) => m.role);
+    const roles = result.map((m: unknown) => (m as { role: string }).role);
     expect(roles).toEqual(['assistant', 'user', 'assistant']);
   });
 });
@@ -225,7 +225,8 @@ describe('applyReactiveRules', () => {
     const err = new Error('tool call id format invalid');
     const result = applyReactiveRules(history, 'anthropic/claude', err);
     expect(result).not.toBeNull();
-    expect((result![0] as any).toolCalls[0].id).toBe('call____');
+    expect((result!.history[0] as { toolCalls: ToolCall[] }).toolCalls[0].id).toBe('call____');
+    expect(result!.diff.length).toBeGreaterThan(0);
   });
 
   it('returns null when tool call IDs are already valid', () => {
@@ -260,7 +261,8 @@ describe('applyReactiveRules', () => {
     const err = new Error('reasoning_content must be passed back');
     const result = applyReactiveRules(history, 'deepseek/deepseek-v4-flash', err);
     expect(result).not.toBeNull();
-    expect((result![1] as any).reasoningContent).toBe('');
+    expect((result!.history[1] as { reasoningContent: string }).reasoningContent).toBe('');
+    expect(result!.diff.length).toBeGreaterThan(0);
   });
 
   it('does not add reasoningContent if already present', () => {
@@ -319,7 +321,7 @@ describe('custom rule list', () => {
     const msgs = [{ role: 'user', content: 'hello' }];
     const result = applyPreemptiveRules(msgs, 'openai/gpt-4o', defaultCaps, [customRule]);
     expect(result).toHaveLength(2);
-    expect((result[0] as any).role).toBe('system');
+    expect((result[0] as { role: string }).role).toBe('system');
   });
 
   it('applyReactiveRules accepts custom rules', () => {
@@ -328,13 +330,14 @@ describe('custom rule list', () => {
       providers: '*',
       errorPatterns: [/custom error/i],
       fixHistory(history) {
-        return history.map((msg: any) => ({ ...msg, patched: true }));
+        return history.map((msg) => ({ ...msg, patched: true }));
       },
     };
     const history = [{ role: 'assistant' as const, content: 'text' }];
     const result = applyReactiveRules(history, 'openai/gpt-4o', new Error('custom error'), [customRule]);
     expect(result).not.toBeNull();
-    expect((result![0] as any).patched).toBe(true);
+    expect((result!.history[0] as { patched: boolean }).patched).toBe(true);
+    expect(result!.diff.length).toBeGreaterThan(0);
   });
 });
 
@@ -366,6 +369,8 @@ describe('BUILTIN_COMPAT_RULES', () => {
 // ---------------------------------------------------------------------------
 
 describe('R-2: reactive compat marks modified entries', () => {
+  type CompatFixedMessage = Message & { _compatFixed?: boolean };
+
   it('sanitizeToolCallIds marks modified messages with _compatFixed', () => {
     const history = [
       { role: 'assistant' as const, content: 'ok', toolCalls: [{ id: 'tc!bad@id', name: 'foo', args: {} }] },
@@ -375,12 +380,16 @@ describe('R-2: reactive compat marks modified entries', () => {
     expect(result).not.toBeNull();
 
     // The modified assistant message should be marked
-    const assistantMsg = result!.find((m: any) => m.role === 'assistant') as any;
+    const assistantMsg = result!.history.find((m): m is CompatFixedMessage => m.role === 'assistant') as unknown as CompatFixedMessage;
     expect(assistantMsg._compatFixed).toBe(true);
 
     // The unmodified tool message should NOT be marked
-    const toolMsg = result!.find((m: any) => m.role === 'tool') as any;
+    const toolMsg = result!.history.find((m): m is CompatFixedMessage => m.role === 'tool') as unknown as CompatFixedMessage;
     expect(toolMsg._compatFixed).toBeUndefined();
+
+    // Diff should describe the modification
+    expect(result!.diff.length).toBeGreaterThan(0);
+    expect(result!.diff[0].ruleName).toBe('sanitize-tool-call-ids');
   });
 
   it('deepseekReasoningRequired marks modified messages with _compatFixed', () => {
@@ -392,11 +401,15 @@ describe('R-2: reactive compat marks modified entries', () => {
     expect(result).not.toBeNull();
 
     // The modified last assistant message should be marked
-    const lastAssistant = result!.filter((m: any) => m.role === 'assistant').pop() as any;
+    const lastAssistant = result!.history.filter((m): m is CompatFixedMessage => m.role === 'assistant').pop() as unknown as CompatFixedMessage;
     expect(lastAssistant._compatFixed).toBe(true);
 
     // The user message should NOT be marked
-    const userMsg = result!.find((m: any) => m.role === 'user') as any;
+    const userMsg = result!.history.find((m): m is CompatFixedMessage => m.role === 'user') as unknown as CompatFixedMessage;
     expect(userMsg._compatFixed).toBeUndefined();
+
+    // Diff should describe the modification
+    expect(result!.diff.length).toBeGreaterThan(0);
+    expect(result!.diff[0].ruleName).toBe('deepseek-reasoning-required');
   });
 });

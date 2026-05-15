@@ -9,7 +9,8 @@ import { LoopOrchestrator, type LoopOptions } from '../src/loop-orchestrator.js'
 import { PipelineRunner } from '../src/pipeline.js';
 import { HookManager } from '../src/hook-manager.js';
 import { EventBus } from '../src/event-bus.js';
-import type { PipelineContext } from '@agentforge/sdk';
+import { serialize } from '../src/serialize.js';
+import type { CheckpointStore, PipelineContext } from '@agentforge/sdk';
 
 describe('Checkpoint persistence (P0)', () => {
   let dir: string;
@@ -26,15 +27,15 @@ describe('Checkpoint persistence (P0)', () => {
     const deps: AgentDependencies = { checkpointDir: dir };
     const agent = new Agent({ model: 'mock/test' }, deps);
 
-    const store = (agent as any).orchestrator.checkpointStore;
+    const store = (agent as unknown as { orchestrator: { checkpointStore: CheckpointStore<unknown> } }).orchestrator.checkpointStore;
     expect(store).toBeInstanceOf(JsonlCheckpointStore);
   });
 
-  it('Agent without checkpointDir defaults to InMemoryCheckpointStore', () => {
+  it('Agent without checkpointDir defaults to JsonlCheckpointStore', () => {
     const agent = new Agent({ model: 'mock/test' });
 
-    const store = (agent as any).orchestrator.checkpointStore;
-    expect(store).toBeInstanceOf(InMemoryCheckpointStore);
+    const store = (agent as unknown as { orchestrator: { checkpointStore: CheckpointStore<unknown> } }).orchestrator.checkpointStore;
+    expect(store).toBeInstanceOf(JsonlCheckpointStore);
   });
 
   it('JsonlCheckpointStore persists data across instances', async () => {
@@ -52,7 +53,7 @@ describe('Checkpoint persistence (P0)', () => {
     const deps: AgentDependencies = { checkpointDir: dir, checkpointStore: explicit };
     const agent = new Agent({ model: 'mock/test' }, deps);
 
-    const store = (agent as any).orchestrator.checkpointStore;
+    const store = (agent as unknown as { orchestrator: { checkpointStore: CheckpointStore<unknown> } }).orchestrator.checkpointStore;
     expect(store).toBe(explicit);
   });
 });
@@ -148,7 +149,7 @@ describe('Auto checkpoint per iteration (P0)', () => {
     const runner = new PipelineRunner({});
     const eventBus = new EventBus();
     const hm = new HookManager(eventBus);
-    const orchestrator = new LoopOrchestrator(runner, hm, store as any);
+    const orchestrator = new LoopOrchestrator(runner, hm, store as unknown as CheckpointStore<ReturnType<typeof serialize>>);
 
     runner.register({ stage: 'processInput', execute: async (ctx) => ctx });
     runner.register({ stage: 'buildContext', execute: async (ctx) => ctx });

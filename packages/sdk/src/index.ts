@@ -20,6 +20,13 @@ export type PipelineStage =
   | 'execute'
   | 'afterTool';
 
+/** Configurable pipeline stage sequence. Overrides default stage order when provided. */
+export interface PipelineStageConfig {
+  preLoop?: PipelineStage[];
+  loop?: PipelineStage[];
+  postLoop?: PipelineStage[];
+}
+
 // ---------------------------------------------------------------------------
 // Message (shared by memory, compression, session)
 // ---------------------------------------------------------------------------
@@ -487,6 +494,19 @@ export interface CompatRule {
   fixHistory?(history: Message[], error: unknown): Message[] | null;
   /** Patterns matched against API error messages for reactive rules. */
   errorPatterns?: RegExp[];
+}
+
+/** Describes a single modification made by a compat rule. */
+export interface CompatDiffEntry {
+  index: number;
+  ruleName: string;
+  description: string;
+}
+
+/** Result of applying reactive compat rules: fixed history + diff describing changes. */
+export interface CompatResult {
+  history: Message[];
+  diff: CompatDiffEntry[];
 }
 
 // ---------------------------------------------------------------------------

@@ -20,8 +20,54 @@ export interface ContextBuilderOptions {
 
 const DEFAULT_BUDGET: ContextBudget = { maxTokens: 128_000 };
 
-function slidingWindow(messages: Message[], _tc: TokenCounter, _budget: number): Message[] {
+export function slidingWindow(messages: Message[], _tc: TokenCounter, _budget: number): Message[] {
   return messages.length > 50 ? messages.slice(-50) : messages;
+}
+
+const RECENT_KEEP = 10;
+const TOOL_PREVIEW_LENGTH = 200;
+
+function semanticTruncation(messages: Message[], tc: TokenCounter, budget: number): Message[] {
+  if (messages.length === 0) return messages;
+
+  const recent = messages.slice(-RECENT_KEEP);
+  const recentTokens = tc.countMessages(recent);
+
+  if (recentTokens >= budget) {
+    const kept: Message[] = [];
+    for (let i = recent.length - 1; i >= 0; i--) {
+      const candidate = [recent[i], ...kept];
+      if (tc.countMessages(candidate) > budget) break;
+      kept.unshift(recent[i]);
+    }
+    return kept;
+  }
+
+  const older = messages.slice(0, -RECENT_KEEP);
+  if (older.length === 0) return messages;
+
+  const remainingBudget = budget - recentTokens;
+
+  const truncatedOlder = older.map(msg => {
+    if (msg.role === 'tool') {
+      const content = typeof msg.content === 'string' ? msg.content : String(msg.content);
+      if (content.length > TOOL_PREVIEW_LENGTH) {
+        return { ...msg, content: content.slice(0, TOOL_PREVIEW_LENGTH) + '... [truncated]' };
+      }
+    }
+    return msg;
+  });
+
+  const filled: Message[] = [];
+  let filledTokens = 0;
+  for (let i = truncatedOlder.length - 1; i >= 0; i--) {
+    const candidateTokens = tc.countMessages([truncatedOlder[i]]);
+    if (filledTokens + candidateTokens > remainingBudget) break;
+    filled.unshift(truncatedOlder[i]);
+    filledTokens += candidateTokens;
+  }
+
+  return [...filled, ...recent];
 }
 
 export class ContextBuilder {
@@ -34,7 +80,7 @@ export class ContextBuilder {
   constructor(options: ContextBuilderOptions) {
     this.registry = options.registry;
     this.tokenCounter = options.tokenCounter ?? new TiktokenCounter();
-    this.compressionStrategy = options.compressionStrategy ?? slidingWindow;
+    this.compressionStrategy = options.compressionStrategy ?? semanticTruncation;
     this.profiles = options.profiles ?? [];
     this.budget = options.budget ?? DEFAULT_BUDGET;
   }
@@ -96,7 +142,7 @@ export class ContextBuilder {
         systemPrompt,
         promptFragments,
         _assembledFragmentCount: promptFragments.length,
-      } as any,
+      } as unknown as PipelineContext,
     };
   }
 

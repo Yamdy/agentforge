@@ -2,6 +2,7 @@ import type {
   AgentConfig,
   CheckpointStore,
   PipelineContext,
+  PipelineStageConfig,
   Processor,
   SessionManager,
   Tool,
@@ -19,7 +20,6 @@ import { JsonlCheckpointStore } from './checkpoint-store.js';
 import { echoTool } from '@agentforge/tools';
 import {
   processInputProcessor,
-  buildContextExtensionPoint,
   prepareStepExtensionPoint,
   createInvokeLLMProcessor,
   processStepOutputProcessor,
@@ -28,7 +28,7 @@ import {
   createEvaluateIterationProcessor,
   processOutputProcessor,
 } from './processors/index.js';
-import { ContextBuilder, type ContextBuilderOptions } from './context-builder.js';
+import { ContextBuilder } from './context-builder.js';
 
 export interface AgentDependencies {
   runner?: PipelineRunner;
@@ -43,6 +43,8 @@ export interface AgentDependencies {
   /** When true, saves a checkpoint after each completed iteration */
   autoCheckpoint?: boolean;
   contextBuilder?: ContextBuilder;
+  /** Override default pipeline stage order. */
+  stageConfig?: PipelineStageConfig;
 }
 
 export interface AgentRunResult {
@@ -77,7 +79,7 @@ export class Agent {
     this.registry.setEventBus(this._pluginManager.eventBus);
     this.runner.setHookManager(this._pluginManager.hookManager);
     const store = deps?.checkpointStore ?? (deps?.checkpointDir ? new JsonlCheckpointStore<ReturnType<typeof serialize>>(deps.checkpointDir) : undefined);
-    this.orchestrator = new LoopOrchestrator(this.runner, this._pluginManager.hookManager, store, this._pluginManager.eventBus);
+    this.orchestrator = new LoopOrchestrator(this.runner, this._pluginManager.hookManager, store, this._pluginManager.eventBus, deps?.stageConfig);
     this.sessionManager = deps?.sessionManager;
     this._autoCheckpoint = deps?.autoCheckpoint ?? false;
     this.registerTools();

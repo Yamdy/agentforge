@@ -83,6 +83,43 @@ The agentic loop repeats until `iteration.loopDirective` is `stop`. Processors c
 - **LLMInvoker**: wraps `ai.streamText()` for single-step LLM calls (no `maxSteps`), returns `fullStream` + `usage` + `reasoning` promises. `stream()` now includes `llm.stream` span tracking and retry on initial streamText connection. Retry at invoke level only.
 - **Provider compatibility**: `ProviderCapabilities` detection + `CompatRule` engine. Preemptive rules rewrite messages before LLM call; reactive rules fix history on API error. `providerOptions` passthrough from `AgentConfig` to `streamText()`.
 
+### Three-Form / 7-Module / AOP Mapping
+
+**Three-Form → Code**
+
+| Form | Capability | Code |
+|------|-----------|------|
+| Form 1: Agent Loop | while loop | `LoopOrchestrator.runLoop/streamLoop` |
+| | LLM call | `LLMInvoker.invoke/stream` |
+| | Tools | `ToolRegistry` + `executeTools` processor |
+| | Context assembly | `ContextBuilder.assemble` |
+| Form 2: Harness | observe | `EventSystem` + span attributes + events |
+| | control | `StateMachine` + token cap + step limit |
+| | intervene | `HookManager` + compat rules + abort |
+| Form 3: Runtime | EventBus | `EventSystem` (EventBus + replay) |
+| | LifecycleState | `StateMachine` (inside LoopOrchestrator) |
+| | Hooks | `HookManager` |
+
+**7-Module → Source + Forms**
+
+| Module | Source | Forms |
+|--------|--------|-------|
+| PipelineRunner | `core/pipeline.ts` | 1 |
+| ContextBuilder | `core/context-builder.ts` | 1 |
+| LLMInvoker | `core/llm-invoker.ts` | 1 |
+| ToolRegistry | `core/tool-registry.ts` | 1 |
+| EventSystem | `core/event-system.ts` + `event-bus.ts` | 2, 3 |
+| HookManager | `core/hook-manager.ts` | 2, 3 |
+| CheckpointStore | `core/checkpoint-store.ts` | 2 |
+
+**AOP Three Methods → Code**
+
+| Method | Mechanism | Code |
+|--------|-----------|------|
+| Method 1: Callback/Hook | Fixed-position interception | `HookManager`, tool before/after hooks |
+| Method 2: Flow as Data | Configurable pipeline stages | `LoopOrchestrator` stage arrays + `PipelineStageConfig` |
+| Method 3: Side Observing | Non-intrusive event emission | `EventSystem` (emit + replay) |
+
 ### Configuration Merging
 
 Multi-level JSONC config (highest priority first):

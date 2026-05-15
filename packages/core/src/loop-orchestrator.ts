@@ -3,6 +3,7 @@ import type {
   CheckpointStore,
   PipelineContext,
   PipelineStage,
+  PipelineStageConfig,
   StreamEvent,
   SuspensionSignal,
 } from '@agentforge/sdk';
@@ -12,7 +13,8 @@ import type { EventBus } from './event-bus.js';
 import { applyReactiveRules } from './processors/provider-history-compat.js';
 import { StateMachine, type AgentState } from './state-machine.js';
 import { serialize, deserialize } from './serialize.js';
-import { InMemoryCheckpointStore } from './checkpoint-store.js';
+import { InMemoryCheckpointStore, JsonlCheckpointStore } from './checkpoint-store.js';
+import { join } from 'node:path';
 
 const PRE_LOOP_STAGES: PipelineStage[] = ['processInput', 'buildContext'];
 const LOOP_STAGES: PipelineStage[] = [
@@ -34,15 +36,24 @@ export class LoopOrchestrator {
   readonly stateMachine = new StateMachine();
   private checkpointStore: CheckpointStore<ReturnType<typeof serialize>>;
   private eventBus?: EventBus;
+  private readonly preLoopStages: PipelineStage[];
+  private readonly loopStages: PipelineStage[];
+  private readonly postLoopStages: PipelineStage[];
 
   constructor(
     private runner: PipelineRunner,
     private hookManager: HookManager,
     checkpointStore?: CheckpointStore<ReturnType<typeof serialize>>,
     eventBus?: EventBus,
+    stageConfig?: PipelineStageConfig,
   ) {
-    this.checkpointStore = checkpointStore ?? new InMemoryCheckpointStore<ReturnType<typeof serialize>>();
+    this.checkpointStore = checkpointStore ?? new JsonlCheckpointStore<ReturnType<typeof serialize>>(
+      join(process.cwd(), '.agentforge', 'checkpoints'),
+    );
     this.eventBus = eventBus;
+    this.preLoopStages = stageConfig?.preLoop ?? PRE_LOOP_STAGES;
+    this.loopStages = stageConfig?.loop ?? LOOP_STAGES;
+    this.postLoopStages = stageConfig?.postLoop ?? POST_LOOP_STAGES;
   }
 
   get state(): AgentState {
@@ -57,7 +68,7 @@ export class LoopOrchestrator {
 
     try {
       // Pre-loop stages
-      let result = await this.runner.run(ctx, PRE_LOOP_STAGES, { signal });
+      let result = await this.runner.run(ctx, this.preLoopStages, { signal });
       this.checkAbort(result, signal);
       await this.checkSuspendAndCheckpoint(result, ctx, sessionId);
 
@@ -74,19 +85,20 @@ export class LoopOrchestrator {
           result = await this.runner.run(loopCtx, stages, { signal });
         } catch (error) {
           await this.hookManager.invoke('error', { error, stage: 'invokeLLM' as PipelineStage, sessionId }, {});
-          const fixed = applyReactiveRules(
+          const compatResult = applyReactiveRules(
             loopCtx.session.messageHistory ?? [],
             modelString,
             error,
           );
-          if (fixed) {
+          if (compatResult) {
             compatRetryCount++;
             this.eventBus?.emit('compat:retry', { step: i, sessionId, retryCount: compatRetryCount, maxRetries: maxCompatRetries });
+            this.eventBus?.emit('compat:diff', { step: i, sessionId, diff: compatResult.diff });
             if (compatRetryCount > maxCompatRetries) {
               this.eventBus?.emit('compat:retry_exhausted', { step: i, sessionId, retryCount: compatRetryCount, maxRetries: maxCompatRetries });
               throw error;
             }
-            loopCtx = { ...loopCtx, session: { ...loopCtx.session, messageHistory: fixed } };
+            loopCtx = { ...loopCtx, session: { ...loopCtx.session, messageHistory: compatResult.history } };
             continue;
           }
           throw error;
@@ -118,7 +130,7 @@ export class LoopOrchestrator {
       if (signal?.aborted) throw new DOMException('Agent run aborted', 'AbortError');
 
       // Post-loop stage
-      result = await this.runner.run(loopCtx, POST_LOOP_STAGES, { signal });
+      result = await this.runner.run(loopCtx, this.postLoopStages, { signal });
       this.checkAbort(result, signal);
       await this.checkSuspendAndCheckpoint(result, loopCtx, sessionId);
 
@@ -148,7 +160,7 @@ export class LoopOrchestrator {
     let loopCtx = ctx;
     let compatRetryCount = 0;
     try {
-      for await (const event of this.runner.stream(loopCtx, PRE_LOOP_STAGES, { signal })) {
+      for await (const event of this.runner.stream(loopCtx, this.preLoopStages, { signal })) {
         if (signal?.aborted) throw new DOMException('Agent stream aborted', 'AbortError');
         if (event.type === 'abort') throw new Error(`Agent aborted: ${(event as AbortSignalType).reason}`);
         if (event.type === 'suspended') {
@@ -192,19 +204,20 @@ export class LoopOrchestrator {
           }
         } catch (error) {
           await this.hookManager.invoke('error', { error, stage: 'invokeLLM' as PipelineStage, sessionId }, {});
-          const fixed = applyReactiveRules(
+          const compatResult = applyReactiveRules(
             loopCtx.session.messageHistory ?? [],
             modelString,
             error,
           );
-          if (fixed) {
+          if (compatResult) {
             compatRetryCount++;
             this.eventBus?.emit('compat:retry', { step: i, sessionId, retryCount: compatRetryCount, maxRetries: maxCompatRetries });
+            this.eventBus?.emit('compat:diff', { step: i, sessionId, diff: compatResult.diff });
             if (compatRetryCount > maxCompatRetries) {
               this.eventBus?.emit('compat:retry_exhausted', { step: i, sessionId, retryCount: compatRetryCount, maxRetries: maxCompatRetries });
               throw error;
             }
-            loopCtx = { ...loopCtx, session: { ...loopCtx.session, messageHistory: fixed } };
+            loopCtx = { ...loopCtx, session: { ...loopCtx.session, messageHistory: compatResult.history } };
             compatRetry = true;
           } else {
             throw error;
@@ -224,7 +237,7 @@ export class LoopOrchestrator {
 
       if (signal?.aborted) throw new DOMException('Agent stream aborted', 'AbortError');
 
-      for await (const event of this.runner.stream(loopCtx, POST_LOOP_STAGES, { signal })) {
+      for await (const event of this.runner.stream(loopCtx, this.postLoopStages, { signal })) {
         if (event.type === 'abort') throw new Error(`Agent aborted: ${(event as AbortSignalType).reason}`);
         if (event.type === 'text_delta') yield event.text;
       }
@@ -245,7 +258,7 @@ export class LoopOrchestrator {
     let loopCtx = ctx;
     let compatRetryCount = 0;
     try {
-      for await (const event of this.runner.stream(loopCtx, PRE_LOOP_STAGES, { signal })) {
+      for await (const event of this.runner.stream(loopCtx, this.preLoopStages, { signal })) {
         if (signal?.aborted) throw new DOMException('Agent stream aborted', 'AbortError');
         if (event.type === 'abort') throw new Error(`Agent aborted: ${(event as AbortSignalType).reason}`);
         if (event.type === 'suspended') {
@@ -289,19 +302,20 @@ export class LoopOrchestrator {
           }
         } catch (error) {
           await this.hookManager.invoke('error', { error, stage: 'invokeLLM' as PipelineStage, sessionId }, {});
-          const fixed = applyReactiveRules(
+          const compatResult = applyReactiveRules(
             loopCtx.session.messageHistory ?? [],
             modelString,
             error,
           );
-          if (fixed) {
+          if (compatResult) {
             compatRetryCount++;
             this.eventBus?.emit('compat:retry', { step: i, sessionId, retryCount: compatRetryCount, maxRetries: maxCompatRetries });
+            this.eventBus?.emit('compat:diff', { step: i, sessionId, diff: compatResult.diff });
             if (compatRetryCount > maxCompatRetries) {
               this.eventBus?.emit('compat:retry_exhausted', { step: i, sessionId, retryCount: compatRetryCount, maxRetries: maxCompatRetries });
               throw error;
             }
-            loopCtx = { ...loopCtx, session: { ...loopCtx.session, messageHistory: fixed } };
+            loopCtx = { ...loopCtx, session: { ...loopCtx.session, messageHistory: compatResult.history } };
             compatRetry = true;
           } else {
             throw error;
@@ -321,7 +335,7 @@ export class LoopOrchestrator {
 
       if (signal?.aborted) throw new DOMException('Agent stream aborted', 'AbortError');
 
-      for await (const event of this.runner.stream(loopCtx, POST_LOOP_STAGES, { signal })) {
+      for await (const event of this.runner.stream(loopCtx, this.postLoopStages, { signal })) {
         if (event.type === 'abort') throw new Error(`Agent aborted: ${(event as AbortSignalType).reason}`);
         yield event;
       }
@@ -351,7 +365,7 @@ export class LoopOrchestrator {
     const prevDirective = ctx.iteration.loopDirective;
     const newCtx = { ...ctx, iteration: { ...ctx.iteration, step, loopDirective: undefined } };
     const retryFrom = prevDirective?.action === 'retry' ? prevDirective.retryFrom : undefined;
-    const stages = retryFrom ? LOOP_STAGES.slice(LOOP_STAGES.indexOf(retryFrom)) : LOOP_STAGES;
+    const stages = retryFrom ? this.loopStages.slice(this.loopStages.indexOf(retryFrom)) : this.loopStages;
     return { ctx: newCtx, stages };
   }
 

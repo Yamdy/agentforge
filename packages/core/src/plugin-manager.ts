@@ -1,13 +1,7 @@
 import type {
-  CompressionStrategy,
   EventType,
   HarnessAPI,
-  Hook,
   PluginRegistration,
-  PipelineStage,
-  Processor,
-  ResourceDeclaration,
-  ToolDefinition,
 } from '@agentforge/sdk';
 import type { PipelineRunner } from './pipeline.js';
 import type { ToolRegistry } from './tool-registry.js';
@@ -16,6 +10,7 @@ import { resolve, relative, isAbsolute } from 'node:path';
 import { EventBus } from './event-bus.js';
 import { EventSystem } from './event-system.js';
 import { HookManager } from './hook-manager.js';
+import { HarnessAPIImpl } from './harness.js';
 
 export type PluginFactory = (api: HarnessAPI) => PluginRegistration | void;
 
@@ -36,11 +31,9 @@ export class PluginManager {
   private runner: PipelineRunner;
   private registry: ToolRegistry;
   private contextBuilder?: ContextBuilder;
-  private commands = new Map<string, (args: string) => Promise<void>>();
   private _eventSystem = new EventSystem();
   readonly hookManager: HookManager;
-  private resources: ResourceDeclaration[] = [];
-  private unsubFns: Array<() => void> = [];
+  private _harnessInstances: HarnessAPIImpl[] = [];
   private resourceInstances = new Map<string, unknown>();
   private errors: Array<{ source: string; error: Error }> = [];
 
@@ -94,7 +87,11 @@ export class PluginManager {
   }
 
   getCommand(name: string): ((args: string) => Promise<void>) | undefined {
-    return this.commands.get(name);
+    for (const h of this._harnessInstances) {
+      const cmd = h.getCommands().get(name);
+      if (cmd) return cmd;
+    }
+    return undefined;
   }
 
   getErrors(): Array<{ source: string; error: Error }> {
@@ -106,7 +103,8 @@ export class PluginManager {
   }
 
   async initializeAll(): Promise<void> {
-    for (const resource of this.resources) {
+    const allResources = this._harnessInstances.flatMap(h => h.getResources());
+    for (const resource of allResources) {
       try {
         const instance = await resource.start();
         this.resourceInstances.set(resource.id, instance);
@@ -125,7 +123,8 @@ export class PluginManager {
     if (this._shutdown) return;
     this._shutdown = true;
 
-    for (const resource of [...this.resources].reverse()) {
+    const allResources = this._harnessInstances.flatMap(h => h.getResources());
+    for (const resource of [...allResources].reverse()) {
       const instance = this.resourceInstances.get(resource.id);
       try {
         await resource.stop(instance);
@@ -138,46 +137,24 @@ export class PluginManager {
     }
     this.resourceInstances.clear();
 
-    for (const unsub of this.unsubFns) unsub();
-    this.unsubFns.length = 0;
+    for (const h of this._harnessInstances) {
+      for (const unsub of h.getUnsubFns()) unsub();
+    }
+    this._harnessInstances = [];
   }
 
   private createHarnessAPI(): HarnessAPI {
-    return {
-      registerProcessor: (stage: PipelineStage, processor: Processor) => {
-        this.runner.register(processor);
-      },
-      registerTool: (tool: ToolDefinition) => {
-        this.registry.register(tool);
-      },
-      unregisterTool: (name: string) => {
-        return this.registry.unregister(name);
-      },
-      registerCommand: (name: string, handler: (args: string) => Promise<void>) => {
-        this.commands.set(name, handler);
-      },
-      registerHook: (hook: Hook) => {
-        this.hookManager.register(hook);
-      },
-      subscribe: (eventType: string, handler: (data?: unknown) => void): (() => void) => {
-        const unsub = this.eventBus.subscribe(eventType, handler);
-        this.unsubFns.push(unsub);
-        return unsub;
-      },
-      registerResource: (declaration: ResourceDeclaration) => {
-        this.resources.push(declaration);
-      },
-      registerProvider: (_name: string, _factory: unknown) => {
-        // Will be implemented when provider registration is needed
-      },
-      emit: (eventType: string, data?: unknown) => {
-        this.emitEvent(eventType, data);
-      },
-      registerCompressionStrategy: (strategy: CompressionStrategy) => {
-        if (this.contextBuilder) {
-          this.contextBuilder.setCompressionStrategy(strategy);
-        }
-      },
-    };
+    const impl = new HarnessAPIImpl({
+      runner: this.runner,
+      registry: this.registry,
+      hookManager: this.hookManager,
+      eventSystem: this._eventSystem,
+      eventBus: this.eventBus,
+      contextBuilder: this.contextBuilder,
+      emitEvent: (eventType, data) => this.emitEvent(eventType, data),
+      registerProvider: (_name, _factory) => {},
+    });
+    this._harnessInstances.push(impl);
+    return impl;
   }
 }
