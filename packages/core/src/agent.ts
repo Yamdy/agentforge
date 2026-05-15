@@ -15,6 +15,7 @@ import { LLMInvoker } from './llm-invoker.js';
 import { ModelFactory } from './model-factory.js';
 import { BuiltInGateway } from './gateways/builtin-gateway.js';
 import { LoopOrchestrator } from './loop-orchestrator.js';
+import { JsonlCheckpointStore } from './checkpoint-store.js';
 import { echoTool } from '@agentforge/tools';
 import {
   processInputProcessor,
@@ -36,6 +37,8 @@ export interface AgentDependencies {
   modelFactory?: ModelFactory;
   sessionManager?: SessionManager;
   checkpointStore?: CheckpointStore<ReturnType<typeof serialize>>;
+  /** When provided, creates a JsonlCheckpointStore for crash-safe checkpoint persistence */
+  checkpointDir?: string;
   contextBuilder?: ContextBuilder;
 }
 
@@ -69,7 +72,8 @@ export class Agent {
     this.registry.setHookManager(this._pluginManager.hookManager);
     this.registry.setEventBus(this._pluginManager.eventBus);
     this.runner.setHookManager(this._pluginManager.hookManager);
-    this.orchestrator = new LoopOrchestrator(this.runner, this._pluginManager.hookManager, deps?.checkpointStore, this._pluginManager.eventBus);
+    const store = deps?.checkpointStore ?? (deps?.checkpointDir ? new JsonlCheckpointStore<ReturnType<typeof serialize>>(deps.checkpointDir) : undefined);
+    this.orchestrator = new LoopOrchestrator(this.runner, this._pluginManager.hookManager, store, this._pluginManager.eventBus);
     this.sessionManager = deps?.sessionManager;
     this.registerTools();
     this.registerBuiltinProcessors();
