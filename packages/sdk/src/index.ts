@@ -716,3 +716,11 @@ export interface AuthResult {
 export interface AuthAdapter {
   authenticate(request: { header(name: string): string | undefined }): Promise<AuthResult>;
 }
+
+// ---------------------------------------------------------------------------
+// Client SDK
+// ---------------------------------------------------------------------------
+
+export { AgentForgeClient } from './client.js';
+export type { ClientOptions, AgentRunResult, SSEMessage } from './client.js';
+export { parseSSE } from './client.js';
