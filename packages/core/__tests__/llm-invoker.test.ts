@@ -109,7 +109,7 @@ describe('LLMInvoker', () => {
       await invoker.invoke({ messages: [{ role: 'user', content: 'hi' }] });
 
       expect(spans.length).toBeGreaterThanOrEqual(1);
-      const llmSpan = spans.find(s => s.name === 'llm.invoke');
+      const llmSpan = spans.find(s => s.name === 'model_step');
       expect(llmSpan).toBeDefined();
       expect(llmSpan!.ended).toBe(true);
     });
@@ -121,7 +121,7 @@ describe('LLMInvoker', () => {
 
       await invoker.invoke({ messages: [{ role: 'user', content: 'hi' }] });
 
-      const llmSpan = spans.find(s => s.name === 'llm.invoke');
+      const llmSpan = spans.find(s => s.name === 'model_step');
       expect(llmSpan!.attributes['llm.model']).toBe('mock-model');
     });
 
@@ -135,7 +135,7 @@ describe('LLMInvoker', () => {
       await expect(invoker.invoke({ messages: [{ role: 'user', content: 'hi' }] }))
         .rejects.toThrow('LLM failed');
 
-      const llmSpan = spans.find(s => s.name === 'llm.invoke');
+      const llmSpan = spans.find(s => s.name === 'model_step');
       expect(llmSpan).toBeDefined();
       expect(llmSpan!.ended).toBe(true);
     });

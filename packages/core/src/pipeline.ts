@@ -11,6 +11,7 @@ import type {
   Tracer,
   TokenUsage,
 } from '@agentforge/sdk';
+import { SpanType } from '@agentforge/sdk';
 import { NoOpTracer } from '@agentforge/observability';
 import type { HookManager } from './hook-manager.js';
 import { extractTokenUsage } from './llm-invoker.js';
@@ -128,7 +129,7 @@ export class PipelineRunner {
   }
 
   async run(context: PipelineContext, stages: PipelineStage[], options?: { signal?: globalThis.AbortSignal }): Promise<RunResult> {
-    const rootSpan = this.tracer.startSpan('pipeline');
+    const rootSpan = this.tracer.startSpan(SpanType.AGENT_RUN);
     const signal = options?.signal;
     let ctx = context;
 
@@ -168,7 +169,7 @@ export class PipelineRunner {
   }
 
   async *stream(context: PipelineContext, stages: PipelineStage[], options?: { signal?: globalThis.AbortSignal }): AsyncGenerator<StreamEvent> {
-    const rootSpan = this.tracer.startSpan('pipeline');
+    const rootSpan = this.tracer.startSpan(SpanType.AGENT_RUN);
     const signal = options?.signal;
     let ctx = context;
 

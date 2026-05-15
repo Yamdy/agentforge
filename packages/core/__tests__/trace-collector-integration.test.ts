@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { PipelineRunner } from '../src/pipeline.js';
 import type { PipelineContext, Span } from '@agentforge/sdk';
 import { TraceCollector, formatTraceJson, formatTraceConsole } from '@agentforge/observability';
+import { SpanType } from '@agentforge/sdk';
 
 function makeContext(): PipelineContext {
   return {
@@ -28,7 +29,7 @@ describe('TraceCollector + PipelineRunner integration', () => {
 
     expect(trace.spans).toHaveLength(4);
     expect(trace.root).toBeDefined();
-    expect(trace.root!.span.name).toBe('pipeline');
+    expect(trace.root!.span.name).toBe(SpanType.AGENT_RUN);
     expect(trace.root!.children).toHaveLength(3);
     expect(trace.root!.children.map(c => c.span.name)).toEqual(['processInput', 'invokeLLM', 'processOutput']);
   });
@@ -79,7 +80,7 @@ describe('TraceCollector + PipelineRunner integration', () => {
 
     const output = formatTraceConsole(collector.getTrace());
 
-    expect(output).toContain('pipeline');
+    expect(output).toContain(SpanType.AGENT_RUN);
     expect(output).toContain('processInput');
     expect(output).toContain('invokeLLM');
     expect(output).toContain('ms');
@@ -98,7 +99,7 @@ describe('TraceCollector + PipelineRunner integration', () => {
     const parsed = JSON.parse(json);
 
     expect(parsed.traceId).toBeDefined();
-    expect(parsed.root.span.name).toBe('pipeline');
+    expect(parsed.root.span.name).toBe(SpanType.AGENT_RUN);
     expect(parsed.root.children).toHaveLength(1);
     expect(parsed.root.children[0].span.name).toBe('processInput');
     expect(typeof parsed.root.span.durationMs).toBe('number');

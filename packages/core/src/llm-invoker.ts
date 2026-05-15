@@ -1,6 +1,7 @@
 import { streamText } from 'ai';
 import type { LanguageModel } from 'ai';
 import type { TokenUsage, Tracer } from '@agentforge/sdk';
+import { SpanType } from '@agentforge/sdk';
 import { streamWithRetry, type RetryOptions } from './retry.js';
 
 export interface LLMInvokerOptions {
@@ -47,7 +48,7 @@ export class LLMInvoker {
   }
 
   async invoke(input: LLMInvokeInput): Promise<LLMInvokeResult> {
-    const span = this.options.tracer?.startSpan('llm.invoke');
+    const span = this.options.tracer?.startSpan(SpanType.MODEL_STEP);
     try {
       return await streamWithRetry(async () => {
         const streamOpts: Record<string, unknown> = {
@@ -101,7 +102,7 @@ export class LLMInvoker {
   }
 
   stream(input: LLMInvokeInput): LLMStreamHandle {
-    const span = this.options.tracer?.startSpan('llm.stream');
+    const span = this.options.tracer?.startSpan(SpanType.LLM_STREAM);
 
     const streamOpts: Record<string, unknown> = {
       model: this.options.model,

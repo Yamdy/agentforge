@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { PipelineRunner } from '../src/pipeline.js';
 import type { PipelineContext, Processor, Tracer, Span } from '@agentforge/sdk';
+import { SpanType } from '@agentforge/sdk';
 import { TestExporter } from '@agentforge/observability';
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
@@ -36,10 +37,10 @@ describe('PipelineRunner with Tracer', () => {
 
     const spans = exporter.getSpans();
     expect(spans).toHaveLength(4); // 1 root + 3 stages
-    const rootSpan = spans.find((s) => s.name === 'pipeline');
+    const rootSpan = spans.find((s) => s.name === SpanType.AGENT_RUN);
     expect(rootSpan).toBeDefined();
 
-    const stageSpans = spans.filter((s) => s.name !== 'pipeline');
+    const stageSpans = spans.filter((s) => s.name !== SpanType.AGENT_RUN);
     expect(stageSpans.map((s) => s.name)).toEqual(['processInput', 'invokeLLM', 'processOutput']);
   });
 
@@ -96,7 +97,7 @@ describe('PipelineRunner with Tracer', () => {
     expect(spans).toHaveLength(2); // root + processInput
     const processInputSpan = spans.find((s) => s.name === 'processInput');
     expect(processInputSpan!.ended).toBe(true);
-    const rootSpan = spans.find((s) => s.name === 'pipeline');
+    const rootSpan = spans.find((s) => s.name === SpanType.AGENT_RUN);
     expect(rootSpan!.ended).toBe(true);
   });
 
@@ -108,8 +109,8 @@ describe('PipelineRunner with Tracer', () => {
     await runner.run(makeContext(), ['processInput', 'invokeLLM', 'processOutput']);
 
     const spans = exporter.getSpans();
-    const rootSpan = spans.find((s) => s.name === 'pipeline')!;
-    const stageSpans = spans.filter((s) => s.name !== 'pipeline');
+    const rootSpan = spans.find((s) => s.name === SpanType.AGENT_RUN)!;
+    const stageSpans = spans.filter((s) => s.name !== SpanType.AGENT_RUN);
 
     for (const stage of stageSpans) {
       expect(stage.parentSpanId).toBe(rootSpan.spanId);

@@ -271,6 +271,18 @@ export const SpanType = {
   GOAL_ECHO: 'harness.goal-echo',
   FACT_INJECTION: 'harness.fact-injection',
   COMPRESSION: 'harness.compression',
+  // Phase 2 — subsystem coverage
+  SESSION_LIFECYCLE: 'session.lifecycle',
+  TOOL_REGISTER: 'tool.register',
+  TOOL_LOOKUP: 'tool.lookup',
+  EVENT_DISPATCH: 'event.dispatch',
+  GATEWAY_RESOLVE: 'gateway.resolve',
+  CONTEXT_BUILD: 'context.build',
+  LOOP_ITERATION: 'loop.iteration',
+  SUB_AGENT_RUN: 'subagent.run',
+  CHECKPOINT: 'checkpoint',
+  MCP_CONNECT: 'mcp.connect',
+  MCP_TOOL_CALL: 'mcp.tool_call',
 } as const;
 
 /** Standard span attribute keys for consistent observability across the framework. */
