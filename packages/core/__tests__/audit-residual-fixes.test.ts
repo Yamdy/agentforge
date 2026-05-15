@@ -6,6 +6,7 @@ import { HookManager } from '../src/hook-manager.js';
 import { EventBus } from '../src/event-bus.js';
 import { createExecuteToolsProcessor } from '../src/processors/execute-tools.js';
 import { createEvaluateIterationProcessor } from '../src/processors/evaluate-iteration.js';
+import { processStepOutputProcessor } from '../src/processors/process-step-output.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -164,5 +165,32 @@ describe('F-6: Required tools exhausted response', () => {
     expect(lastResult.iteration.response).toBeDefined();
     expect(lastResult.iteration.response).not.toBe('');
     expect(lastResult.iteration.response).toContain('exhausted');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F-7: processStepOutput user message detection unreliable with memory
+// ---------------------------------------------------------------------------
+
+describe('F-7: processStepOutput user message detection', () => {
+  it('adds user input even when history already has user messages from memory', async () => {
+    // Simulate: memory injection already prepended user messages to history
+    const memoryUserMsg: Message = { role: 'user', content: 'remembered fact' };
+    const ctx = makeCtx({
+      request: { input: 'actual user question', sessionId: 's-1' },
+      iteration: { step: 0, response: 'assistant reply' },
+      session: {
+        messageHistory: [memoryUserMsg],
+        custom: {},
+      },
+    });
+
+    const result = (await processStepOutputProcessor.execute(ctx)) as PipelineContext;
+    const history = result.session.messageHistory!;
+
+    // Both the memory user message AND the actual request input should be present
+    const userMessages = history.filter(m => m.role === 'user');
+    expect(userMessages.length).toBeGreaterThanOrEqual(2);
+    expect(userMessages.map(m => m.content)).toContain('actual user question');
   });
 });
