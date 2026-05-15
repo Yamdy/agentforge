@@ -3,6 +3,8 @@ import type { EventBus } from '../event-bus.js';
 
 export interface EvaluateIterationDeps {
   eventBus?: EventBus;
+  /** Maximum total tokens before stopping the loop. Defaults to 100_000. */
+  maxTotalTokens?: number;
 }
 
 function collectCalledToolNames(history: Message[], pendingToolCalls?: ToolCall[]): Set<string> {
@@ -26,6 +28,7 @@ const REQUIRED_TOOLS_MAX_RETRIES = 3;
 
 export function createEvaluateIterationProcessor(deps?: EvaluateIterationDeps): Processor {
   const eventBus = deps?.eventBus;
+  const maxTotalTokens = deps?.maxTotalTokens ?? 100_000;
   let warnedUnknownTools = false;
   const failCounts: Record<string, number> = {};
 
@@ -43,7 +46,7 @@ export function createEvaluateIterationProcessor(deps?: EvaluateIterationDeps): 
 
       const requiredTools = ctx.agent.config.requiredTools;
 
-      if (totalTokens > 100_000) {
+      if (totalTokens > maxTotalTokens) {
         ctx.iteration.span?.setAttribute('token.overflow', true);
         ctx.iteration.span?.setAttribute('token.total', totalTokens);
 

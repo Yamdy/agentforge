@@ -23,6 +23,7 @@ import {
   prepareStepExtensionPoint,
   createInvokeLLMProcessor,
   processStepOutputProcessor,
+  gateToolExtensionPoint,
   createExecuteToolsProcessor,
   createEvaluateIterationProcessor,
   processOutputProcessor,
@@ -39,6 +40,8 @@ export interface AgentDependencies {
   checkpointStore?: CheckpointStore<ReturnType<typeof serialize>>;
   /** When provided, creates a JsonlCheckpointStore for crash-safe checkpoint persistence */
   checkpointDir?: string;
+  /** When true, saves a checkpoint after each completed iteration */
+  autoCheckpoint?: boolean;
   contextBuilder?: ContextBuilder;
 }
 
@@ -54,6 +57,7 @@ export class Agent {
   private registry: ToolRegistry;
   private _pluginManager: PluginManager;
   private _tracer?: Tracer;
+  private _autoCheckpoint: boolean;
   private _model: import('ai').LanguageModel | null = null;
   private modelFactory: ModelFactory;
   private orchestrator: LoopOrchestrator;
@@ -75,6 +79,7 @@ export class Agent {
     const store = deps?.checkpointStore ?? (deps?.checkpointDir ? new JsonlCheckpointStore<ReturnType<typeof serialize>>(deps.checkpointDir) : undefined);
     this.orchestrator = new LoopOrchestrator(this.runner, this._pluginManager.hookManager, store, this._pluginManager.eventBus);
     this.sessionManager = deps?.sessionManager;
+    this._autoCheckpoint = deps?.autoCheckpoint ?? false;
     this.registerTools();
     this.registerBuiltinProcessors();
   }
@@ -135,6 +140,7 @@ export class Agent {
         signal,
         modelString: this.config.model,
         sessionId: context.request.sessionId,
+        autoCheckpoint: this._autoCheckpoint,
       });
 
       return {
@@ -160,6 +166,7 @@ export class Agent {
         signal,
         modelString: this.config.model,
         sessionId,
+        autoCheckpoint: this._autoCheckpoint,
       });
 
       return {
@@ -188,6 +195,7 @@ export class Agent {
         signal,
         modelString: this.config.model,
         sessionId: context.request.sessionId,
+        autoCheckpoint: this._autoCheckpoint,
       });
     } finally {
       try { await hm.invoke('agent.end', { sessionId: context.request.sessionId }, {}); } catch { /* hook error must not mask original */ }
@@ -209,6 +217,7 @@ export class Agent {
         signal,
         modelString: this.config.model,
         sessionId: context.request.sessionId,
+        autoCheckpoint: this._autoCheckpoint,
       });
     } finally {
       try { await hm.invoke('agent.end', { sessionId: context.request.sessionId }, {}); } catch { /* hook error must not mask original */ }
@@ -262,6 +271,7 @@ export class Agent {
       modelString: this.config.model,
     }));
     this.runner.register(processStepOutputProcessor);
+    this.runner.register(gateToolExtensionPoint);
     this.runner.register(createExecuteToolsProcessor(this.registry));
     this.runner.register(createEvaluateIterationProcessor({ eventBus: this._pluginManager.eventBus }));
     this.runner.register(processOutputProcessor);

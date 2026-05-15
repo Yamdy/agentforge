@@ -183,11 +183,13 @@ describe('G3: configurable token overflow threshold', () => {
     const { createEvaluateIterationProcessor } = await import('../src/processors/evaluate-iteration.js');
     const processor = createEvaluateIterationProcessor({});
 
+    // 90k < 100k default, has tool results → continue (not overflow stop)
     const ctx = makeCtx({
       iteration: {
         step: 0,
         tokenUsage: { input: 60_000, output: 30_000 },
         pendingToolCalls: [],
+        toolResults: [{ toolCallId: 'call_1', name: 'echo', output: 'hi' }],
       },
       session: {
         totalTokenUsage: { input: 0, output: 0 },
@@ -196,21 +198,22 @@ describe('G3: configurable token overflow threshold', () => {
     });
 
     const result = await processor.execute(ctx);
-    expect((result as PipelineContext).iteration.loopDirective?.action).not.toBe('stop');
+    expect((result as PipelineContext).iteration.loopDirective?.action).toBe('continue');
   });
 
-  it('evaluateIteration respects configurable maxTotalTokens from config', async () => {
+  it('evaluateIteration respects configurable maxTotalTokens — overflow triggers stop', async () => {
     const { createEvaluateIterationProcessor } = await import('../src/processors/evaluate-iteration.js');
-    const processor = createEvaluateIterationProcessor(
-      // @ts-expect-error — maxTotalTokens does not exist yet (RED for G3)
-      { maxTotalTokens: 50_000 },
-    );
+    const processor = createEvaluateIterationProcessor({
+      maxTotalTokens: 50_000,
+    });
 
+    // 90k > 50k threshold → overflow stop (overrides hasToolResults)
     const ctx = makeCtx({
       iteration: {
         step: 0,
         tokenUsage: { input: 60_000, output: 30_000 },
         pendingToolCalls: [],
+        toolResults: [{ toolCallId: 'call_1', name: 'echo', output: 'hi' }],
       },
       session: {
         totalTokenUsage: { input: 0, output: 0 },
@@ -222,18 +225,19 @@ describe('G3: configurable token overflow threshold', () => {
     expect((result as PipelineContext).iteration.loopDirective?.action).toBe('stop');
   });
 
-  it('evaluateIteration with high maxTotalTokens does not stop when under threshold', async () => {
+  it('evaluateIteration with high maxTotalTokens — no overflow, tool results → continue', async () => {
     const { createEvaluateIterationProcessor } = await import('../src/processors/evaluate-iteration.js');
-    const processor = createEvaluateIterationProcessor(
-      // @ts-expect-error — maxTotalTokens does not exist yet (RED for G3)
-      { maxTotalTokens: 200_000 },
-    );
+    const processor = createEvaluateIterationProcessor({
+      maxTotalTokens: 200_000,
+    });
 
+    // 90k < 200k threshold → no overflow, has tool results → continue
     const ctx = makeCtx({
       iteration: {
         step: 0,
         tokenUsage: { input: 60_000, output: 30_000 },
         pendingToolCalls: [],
+        toolResults: [{ toolCallId: 'call_1', name: 'echo', output: 'hi' }],
       },
       session: {
         totalTokenUsage: { input: 0, output: 0 },
@@ -242,7 +246,7 @@ describe('G3: configurable token overflow threshold', () => {
     });
 
     const result = await processor.execute(ctx);
-    expect((result as PipelineContext).iteration.loopDirective?.action).not.toBe('stop');
+    expect((result as PipelineContext).iteration.loopDirective?.action).toBe('continue');
   });
 });
 

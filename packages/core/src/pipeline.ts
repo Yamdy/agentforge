@@ -157,6 +157,11 @@ export class PipelineRunner {
             stageSpan.setAttribute('tokens.input', ctx.iteration.tokenUsage.input);
             stageSpan.setAttribute('tokens.output', ctx.iteration.tokenUsage.output);
           }
+        } catch (error) {
+          if (this.hookManager) {
+            try { await this.hookManager.invoke('error', { error, stage }, {}); } catch { /* hook error must not mask original */ }
+          }
+          throw error;
         } finally {
           stageSpan.end();
         }
