@@ -94,6 +94,7 @@ export function createEvaluateIterationProcessor(deps?: EvaluateIterationDeps): 
           ctx.iteration.span?.setAttribute('required_tools.uncalled', uncalled.join(','));
 
           if (exhausted.length > 0) {
+            const exhaustedMsg = `Required tools exhausted after ${REQUIRED_TOOLS_MAX_RETRIES} retries: ${exhausted.join(', ')}. Halting loop.`;
             eventBus?.emit('required_tools:exhausted', {
               exhausted,
               failCounts: { ...failCounts },
@@ -108,12 +109,13 @@ export function createEvaluateIterationProcessor(deps?: EvaluateIterationDeps): 
                 ...ctx.agent,
                 promptFragments: [
                   ...ctx.agent.promptFragments,
-                  `[system] Required tools exhausted after ${REQUIRED_TOOLS_MAX_RETRIES} retries: ${exhausted.join(', ')}. Halting loop.`,
+                  `[system] ${exhaustedMsg}`,
                 ],
               },
               iteration: {
                 ...ctx.iteration,
                 loopDirective: { action: 'stop' } as LoopDirective,
+                response: exhaustedMsg,
               },
               session: {
                 ...ctx.session,

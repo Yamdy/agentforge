@@ -5,6 +5,7 @@ import { ToolRegistry } from '../src/tool-registry.js';
 import { HookManager } from '../src/hook-manager.js';
 import { EventBus } from '../src/event-bus.js';
 import { createExecuteToolsProcessor } from '../src/processors/execute-tools.js';
+import { createEvaluateIterationProcessor } from '../src/processors/evaluate-iteration.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -128,5 +129,40 @@ describe('R-1/R-4: outputSchema validation + flag propagation', () => {
     const toolMsg = findToolMessage(output.session.messageHistory);
     expect(toolMsg).toBeDefined();
     expect((toolMsg as any).truncated).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F-6: Required tools exhausted should set iteration.response, not empty
+// ---------------------------------------------------------------------------
+
+describe('F-6: Required tools exhausted response', () => {
+  it('exhausted branch sets iteration.response with error message', async () => {
+    const processor = createEvaluateIterationProcessor();
+    const toolDecl = { name: 'requiredTool', description: 'must be called', inputSchema: {} };
+
+    // Simulate REQUIRED_TOOLS_MAX_RETRIES (3) iterations where the tool is never called
+    let lastResult: PipelineContext = makeCtx({
+      agent: {
+        config: { model: 'mock/test', requiredTools: ['requiredTool'] },
+        promptFragments: [],
+        toolDeclarations: [toolDecl],
+      },
+      iteration: { step: 0 },
+    });
+
+    for (let step = 0; step < 3; step++) {
+      lastResult = (await processor.execute({
+        ...lastResult,
+        iteration: { step },
+      })) as PipelineContext;
+    }
+
+    // After 3 retries, the exhausted branch should trigger
+    expect(lastResult.iteration.loopDirective?.action).toBe('stop');
+    // The response must NOT be empty — it should contain an error indicator
+    expect(lastResult.iteration.response).toBeDefined();
+    expect(lastResult.iteration.response).not.toBe('');
+    expect(lastResult.iteration.response).toContain('exhausted');
   });
 });
