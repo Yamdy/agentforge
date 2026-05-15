@@ -138,6 +138,9 @@ importers:
       '@agentforge/core':
         specifier: workspace:*
         version: link:../core
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.29.0
+        version: 1.29.0(zod@4.4.3)
       better-sqlite3:
         specifier: ^12.9.0
         version: 12.9.0

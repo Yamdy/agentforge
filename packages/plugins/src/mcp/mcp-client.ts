@@ -179,12 +179,125 @@ function createStdioClient(config: McpServerConfig): McpClient {
 }
 
 // ---------------------------------------------------------------------------
+// SSE Client (via @modelcontextprotocol/sdk)
+// ---------------------------------------------------------------------------
+
+function createSseClient(config: McpServerConfig): McpClient {
+  let clientPromise: Promise<any> | null = null;
+
+  const mcpClient: McpClient = {
+    connected: false,
+    onToolsChanged: undefined,
+
+    async connect(): Promise<void> {
+      const [{ Client }, { SSEClientTransport }] = await Promise.all([
+        import('@modelcontextprotocol/sdk/client/index.js'),
+        import('@modelcontextprotocol/sdk/client/sse.js'),
+      ]);
+
+      const transport = new SSEClientTransport(new URL(config.url!));
+      const client = new Client({ name: `agentforge-${config.name}`, version: '0.0.1' });
+
+      client.fallbackHandler = async (notification: any) => {
+        if (notification.method === 'notifications/tools/list_changed') {
+          mcpClient.onToolsChanged?.();
+        }
+      };
+
+      await client.connect(transport);
+      clientPromise = Promise.resolve(client);
+      this.connected = true;
+    },
+
+    async discoverTools(): Promise<McpToolDefinition[]> {
+      const client = await clientPromise!;
+      const result = await client.listTools();
+      return (result?.tools ?? []) as McpToolDefinition[];
+    },
+
+    async callTool(name: string, args: unknown): Promise<unknown> {
+      if (!this.connected) throw new Error(`MCP server "${config.name}" is disconnected`);
+      const client = await clientPromise!;
+      const result = await client.callTool({ name, arguments: args });
+      return result;
+    },
+
+    async close(): Promise<void> {
+      if (clientPromise) {
+        const client = await clientPromise;
+        await client.close?.();
+        clientPromise = null;
+      }
+      this.connected = false;
+    },
+  };
+
+  return mcpClient;
+}
+
+// ---------------------------------------------------------------------------
+// HTTP Client (Streamable HTTP via @modelcontextprotocol/sdk)
+// ---------------------------------------------------------------------------
+
+function createHttpClient(config: McpServerConfig): McpClient {
+  let clientPromise: Promise<any> | null = null;
+
+  const mcpClient: McpClient = {
+    connected: false,
+    onToolsChanged: undefined,
+
+    async connect(): Promise<void> {
+      const [{ Client }, { StreamableHTTPClientTransport }] = await Promise.all([
+        import('@modelcontextprotocol/sdk/client/index.js'),
+        import('@modelcontextprotocol/sdk/client/streamableHttp.js'),
+      ]);
+
+      const transport = new StreamableHTTPClientTransport(new URL(config.url!));
+      const client = new Client({ name: `agentforge-${config.name}`, version: '0.0.1' });
+
+      client.fallbackHandler = async (notification: any) => {
+        if (notification.method === 'notifications/tools/list_changed') {
+          mcpClient.onToolsChanged?.();
+        }
+      };
+
+      await client.connect(transport);
+      clientPromise = Promise.resolve(client);
+      this.connected = true;
+    },
+
+    async discoverTools(): Promise<McpToolDefinition[]> {
+      const client = await clientPromise!;
+      const result = await client.listTools();
+      return (result?.tools ?? []) as McpToolDefinition[];
+    },
+
+    async callTool(name: string, args: unknown): Promise<unknown> {
+      if (!this.connected) throw new Error(`MCP server "${config.name}" is disconnected`);
+      const client = await clientPromise!;
+      const result = await client.callTool({ name, arguments: args });
+      return result;
+    },
+
+    async close(): Promise<void> {
+      if (clientPromise) {
+        const client = await clientPromise;
+        await client.close?.();
+        clientPromise = null;
+      }
+      this.connected = false;
+    },
+  };
+
+  return mcpClient;
+}
+
+// ---------------------------------------------------------------------------
 // Client Factory
 // ---------------------------------------------------------------------------
 
 /**
  * Creates an MCP client based on the transport specified in the config.
- * Currently only stdio transport is implemented.
  */
 export function createMcpClient(config: McpServerConfig): McpClient {
   const transport = config.transport ?? 'stdio';
@@ -193,9 +306,9 @@ export function createMcpClient(config: McpServerConfig): McpClient {
     case 'stdio':
       return createStdioClient(config);
     case 'sse':
-      throw new Error('SSE transport not implemented');
+      return createSseClient(config);
     case 'http':
-      throw new Error('HTTP transport not implemented');
+      return createHttpClient(config);
     default:
       throw new Error(`Unknown transport: ${transport}`);
   }

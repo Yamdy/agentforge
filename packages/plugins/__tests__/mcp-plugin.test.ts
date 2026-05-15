@@ -137,24 +137,28 @@ describe('createMcpClient', () => {
     expect(client).toBeDefined();
   });
 
-  it('throws for sse transport (not yet implemented)', () => {
+  it('creates client for sse transport', () => {
     const config: McpServerConfig = {
       name: 'test-server',
       transport: 'sse',
       url: 'http://localhost:3000/sse',
     };
 
-    expect(() => createMcpClient(config)).toThrow('not implemented');
+    const client = createMcpClient(config);
+    expect(client).toBeDefined();
+    expect(typeof client.connect).toBe('function');
   });
 
-  it('throws for http transport (not yet implemented)', () => {
+  it('creates client for http transport', () => {
     const config: McpServerConfig = {
       name: 'test-server',
       transport: 'http',
       url: 'http://localhost:3000/mcp',
     };
 
-    expect(() => createMcpClient(config)).toThrow('not implemented');
+    const client = createMcpClient(config);
+    expect(client).toBeDefined();
+    expect(typeof client.connect).toBe('function');
   });
 
   it('stdio client has correct interface', () => {
