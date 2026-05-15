@@ -703,3 +703,16 @@ export interface EvictedResult {
   reference: string;
   evicted: true;
 }
+
+// ---------------------------------------------------------------------------
+// Authentication
+// ---------------------------------------------------------------------------
+
+export interface AuthResult {
+  authenticated: boolean;
+  error?: string;
+}
+
+export interface AuthAdapter {
+  authenticate(request: { header(name: string): string | undefined }): Promise<AuthResult>;
+}

@@ -5,7 +5,8 @@ import { agentRoutes } from './routes/agents.js';
 import { sessionRoutes } from './routes/sessions.js';
 import { authMiddleware } from './middleware/auth.js';
 import { requestLogger } from './middleware/logger.js';
-import type { SessionStorage } from '@agentforge/sdk';
+import type { SessionStorage, AuthAdapter } from '@agentforge/sdk';
+import { StaticKeyAuthAdapter } from './middleware/static-key-auth.js';
 
 export interface ServerHandle {
   port: number;
@@ -15,6 +16,7 @@ export interface ServerHandle {
 export interface ServerOptions {
   port?: number;
   apiKey?: string;
+  authAdapter?: AuthAdapter;
   sessionStorage?: SessionStorage;
 }
 
@@ -30,8 +32,11 @@ export class AgentForgeServer {
     this._sessionStorage = options?.sessionStorage;
     this.app = new Hono();
 
-    if (options?.apiKey) {
-      this.app.use('*', authMiddleware(options.apiKey));
+    const resolvedAdapter = options?.authAdapter
+      ?? (options?.apiKey ? new StaticKeyAuthAdapter(options.apiKey) : undefined);
+
+    if (resolvedAdapter) {
+      this.app.use('*', authMiddleware(resolvedAdapter));
     }
 
     this.app.use('*', requestLogger);

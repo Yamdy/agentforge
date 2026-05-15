@@ -1,6 +1,7 @@
 export { AgentForgeServer } from './server.js';
 export { AgentRegistry } from './registry.js';
 export { AgentForgeClient } from './client.js';
+export { StaticKeyAuthAdapter } from './middleware/static-key-auth.js';
 export { serializeSSE, parseSSE } from './sse.js';
 
 // A2A Protocol
