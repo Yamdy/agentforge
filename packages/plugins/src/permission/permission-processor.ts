@@ -1,4 +1,4 @@
-import type { Processor, PipelineContext, ProcessorResult, AbortSignal, HarnessAPI, PluginRegistration } from '@agentforge/sdk';
+import type { Processor, PipelineContext, ProcessorResult, AbortSignal, SuspensionSignal, HarnessAPI, PluginRegistration } from '@agentforge/sdk';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -163,7 +163,12 @@ export function createPermissionProcessor(config: PermissionConfig): Processor {
             }
             // In interactive mode, 'ask' suspends awaiting human approval
             emit({ decision: 'ask', toolName: toolCall.name, rule: matched.rule.tool, mode: config.mode });
-            return { type: 'suspend', suspensionId: `perm-${toolCall.name}-${Date.now()}`, reason: `Tool '${toolCall.name}' requires approval (ask rule)` };
+            return {
+              type: 'suspend',
+              suspensionId: `perm-${toolCall.name}-${Date.now()}`,
+              reason: `Tool '${toolCall.name}' requires approval (ask rule)`,
+              checkpoint: { context: ctx, nextStages: ['executeTools', 'evaluateIteration'], iteration: ctx.iteration.step },
+            } satisfies SuspensionSignal;
         }
       }
 

@@ -16,6 +16,10 @@ function isAbort(result: PipelineContext | { type: 'abort'; reason: string }): r
   return 'type' in result && result.type === 'abort';
 }
 
+function isSuspend(result: PipelineContext | { type: string; reason: string }): result is { type: 'suspend'; suspensionId: string; reason: string } {
+  return 'type' in result && result.type === 'suspend';
+}
+
 describe('PermissionProcessor', () => {
   describe('full-auto mode', () => {
     it('allows all tool calls to pass through', async () => {
@@ -204,11 +208,12 @@ describe('PermissionProcessor', () => {
 
       const result = await processor.execute(ctx);
 
-      // In interactive mode with 'ask', the processor should return an abort
+      // In interactive mode with 'ask', the processor should return a suspend
       // signal indicating that human approval is required
-      expect(isAbort(result)).toBe(true);
-      if (isAbort(result)) {
+      expect(isSuspend(result)).toBe(true);
+      if (isSuspend(result)) {
         expect(result.reason).toContain('requires approval');
+        expect(result.suspensionId).toBeDefined();
       }
     });
 
