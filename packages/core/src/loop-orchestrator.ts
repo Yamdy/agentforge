@@ -26,6 +26,8 @@ export interface LoopOptions {
   modelString: string;
   sessionId: string;
   maxCompatRetries?: number;
+  /** When true, saves a checkpoint after each completed iteration */
+  autoCheckpoint?: boolean;
 }
 
 export class LoopOrchestrator {
@@ -105,6 +107,10 @@ export class LoopOrchestrator {
         loopCtx = result as PipelineContext;
 
         await this.hookManager.invoke('iteration.end', { step: loopCtx.iteration.step, sessionId }, {});
+
+        if (options.autoCheckpoint) {
+          await this.saveCheckpoint(sessionId, loopCtx);
+        }
 
         if (loopCtx.iteration.loopDirective?.action === 'stop') break;
       }
@@ -209,6 +215,10 @@ export class LoopOrchestrator {
 
         await this.hookManager.invoke('iteration.end', { step: loopCtx.iteration.step, sessionId }, {});
 
+        if (options.autoCheckpoint) {
+          await this.saveCheckpoint(sessionId, loopCtx);
+        }
+
         if (loopCtx.iteration.loopDirective?.action === 'stop') break;
       }
 
@@ -301,6 +311,10 @@ export class LoopOrchestrator {
         if (loopBreak) continue;
 
         await this.hookManager.invoke('iteration.end', { step: loopCtx.iteration.step, sessionId }, {});
+
+        if (options.autoCheckpoint) {
+          await this.saveCheckpoint(sessionId, loopCtx);
+        }
 
         if (loopCtx.iteration.loopDirective?.action === 'stop') break;
       }

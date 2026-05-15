@@ -5,6 +5,11 @@ import { tmpdir } from 'node:os';
 import { Agent, type AgentDependencies } from '../src/agent.js';
 import { JsonlCheckpointStore } from '../src/checkpoint-store.js';
 import { InMemoryCheckpointStore } from '../src/checkpoint-store.js';
+import { LoopOrchestrator, type LoopOptions } from '../src/loop-orchestrator.js';
+import { PipelineRunner } from '../src/pipeline.js';
+import { HookManager } from '../src/hook-manager.js';
+import { EventBus } from '../src/event-bus.js';
+import type { PipelineContext } from '@agentforge/sdk';
 
 describe('Checkpoint persistence (P0)', () => {
   let dir: string;
@@ -49,5 +54,133 @@ describe('Checkpoint persistence (P0)', () => {
 
     const store = (agent as any).orchestrator.checkpointStore;
     expect(store).toBe(explicit);
+  });
+});
+
+describe('Auto checkpoint per iteration (P0)', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'auto-checkpoint-test-'));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('autoCheckpoint=true saves checkpoint after each iteration', async () => {
+    const store = new JsonlCheckpointStore<ReturnType<typeof import('../src/serialize.js').serialize>>(dir);
+    const runner = new PipelineRunner({});
+    const eventBus = new EventBus();
+    const hm = new HookManager(eventBus);
+    const orchestrator = new LoopOrchestrator(runner, hm, store);
+
+    // Register a processor that completes in 1 step
+    runner.register({
+      stage: 'processInput',
+      execute: async (ctx) => ctx,
+    });
+    runner.register({
+      stage: 'buildContext',
+      execute: async (ctx) => ctx,
+    });
+    runner.register({
+      stage: 'prepareStep',
+      execute: async (ctx) => ctx,
+    });
+    runner.register({
+      stage: 'invokeLLM',
+      execute: async (ctx: PipelineContext) => ({
+        ...ctx,
+        iteration: { ...ctx.iteration, response: 'done' },
+      }),
+    });
+    runner.register({
+      stage: 'processStepOutput',
+      execute: async (ctx) => ctx,
+    });
+    runner.register({
+      stage: 'executeTools',
+      execute: async (ctx) => ctx,
+    });
+    runner.register({
+      stage: 'evaluateIteration',
+      execute: async (ctx: PipelineContext) => ({
+        ...ctx,
+        iteration: { ...ctx.iteration, loopDirective: { action: 'stop' } },
+      }),
+    });
+    runner.register({
+      stage: 'processOutput',
+      execute: async (ctx) => ctx,
+    });
+
+    const ctx: PipelineContext = {
+      request: { input: 'test', sessionId: 'auto-cp-1' },
+      agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
+      iteration: { step: 0 },
+      session: { custom: {} },
+    };
+
+    const options: LoopOptions = {
+      maxIterations: 5,
+      modelString: 'mock/test',
+      sessionId: 'auto-cp-1',
+      autoCheckpoint: true,
+    };
+
+    await orchestrator.runLoop(ctx, options);
+
+    // After loop completes, a checkpoint should exist for the session
+    const checkpoint = await store.load('auto-cp-1');
+    expect(checkpoint).toBeDefined();
+  });
+
+  it('autoCheckpoint=false (default) does not save checkpoint', async () => {
+    const saveSpy = [] as string[];
+    const store: import('@agentforge/sdk').CheckpointStore<unknown> = {
+      save: async (id) => { saveSpy.push(id); },
+      load: async () => undefined,
+      delete: async () => {},
+      list: async () => [],
+    };
+
+    const runner = new PipelineRunner({});
+    const eventBus = new EventBus();
+    const hm = new HookManager(eventBus);
+    const orchestrator = new LoopOrchestrator(runner, hm, store as any);
+
+    runner.register({ stage: 'processInput', execute: async (ctx) => ctx });
+    runner.register({ stage: 'buildContext', execute: async (ctx) => ctx });
+    runner.register({ stage: 'prepareStep', execute: async (ctx) => ctx });
+    runner.register({
+      stage: 'invokeLLM',
+      execute: async (ctx: PipelineContext) => ({ ...ctx, iteration: { ...ctx.iteration, response: 'done' } }),
+    });
+    runner.register({ stage: 'processStepOutput', execute: async (ctx) => ctx });
+    runner.register({ stage: 'executeTools', execute: async (ctx) => ctx });
+    runner.register({
+      stage: 'evaluateIteration',
+      execute: async (ctx: PipelineContext) => ({ ...ctx, iteration: { ...ctx.iteration, loopDirective: { action: 'stop' } } }),
+    });
+    runner.register({ stage: 'processOutput', execute: async (ctx) => ctx });
+
+    const ctx: PipelineContext = {
+      request: { input: 'test', sessionId: 'no-auto-cp' },
+      agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
+      iteration: { step: 0 },
+      session: { custom: {} },
+    };
+
+    // Default: autoCheckpoint is false
+    const options: LoopOptions = {
+      maxIterations: 5,
+      modelString: 'mock/test',
+      sessionId: 'no-auto-cp',
+    };
+
+    await orchestrator.runLoop(ctx, options);
+
+    expect(saveSpy).toHaveLength(0);
   });
 });
