@@ -73,7 +73,9 @@ export function createSubAgentTool(
           name: config.name,
           error: errorSummary,
         });
-        throw new Error(errorSummary);
+        const wrapper = new Error(errorSummary);
+        wrapper.cause = err;
+        throw wrapper;
       }
     },
   };

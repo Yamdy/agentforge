@@ -7,6 +7,7 @@ import { EventBus } from '../src/event-bus.js';
 import { createExecuteToolsProcessor } from '../src/processors/execute-tools.js';
 import { createEvaluateIterationProcessor } from '../src/processors/evaluate-iteration.js';
 import { processStepOutputProcessor } from '../src/processors/process-step-output.js';
+import { createSubAgentTool } from '../src/sub-agent.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -192,5 +193,37 @@ describe('F-7: processStepOutput user message detection', () => {
     const userMessages = history.filter(m => m.role === 'user');
     expect(userMessages.length).toBeGreaterThanOrEqual(2);
     expect(userMessages.map(m => m.content)).toContain('actual user question');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F-9: Sub-agent error should preserve original error, not wrap as new Error
+// ---------------------------------------------------------------------------
+
+describe('F-9: Sub-agent error propagation', () => {
+  it('sub-agent error preserves original cause chain', async () => {
+    const events: { type: string; data: unknown }[] = [];
+    const fakeEventBus = {
+      emit: (type: string, data: unknown) => { events.push({ type, data }); },
+    };
+
+    const toolDef = createSubAgentTool(
+      { name: 'failing-agent', model: 'nonexistent/model', contextPolicy: 'isolated' },
+      { model: 'test/model', tools: [], eventBus: fakeEventBus },
+    );
+
+    // Directly call execute to check the thrown error's cause chain
+    const tool = toolDef as any;
+    let caught: Error | undefined;
+    try {
+      await tool.execute({ task: 'do something' }, {});
+    } catch (err) {
+      caught = err as Error;
+    }
+
+    expect(caught).toBeDefined();
+    expect(caught!.message).toContain('failing-agent');
+    // The original error should be preserved as cause
+    expect((caught as any).cause).toBeDefined();
   });
 });
