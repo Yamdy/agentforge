@@ -103,8 +103,11 @@ export class PluginManager {
       const instance = this.resourceInstances.get(resource.id);
       try {
         await resource.stop(instance);
-      } catch {
-        // Best-effort shutdown
+      } catch (err) {
+        this.errors.push({
+          source: `resource:${resource.id}`,
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
       }
     }
     this.resourceInstances.clear();

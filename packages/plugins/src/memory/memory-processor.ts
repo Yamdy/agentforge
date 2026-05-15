@@ -1,5 +1,5 @@
 import type { Processor, PipelineContext, ProcessorResult } from '@agentforge/sdk';
-import type { MemoryBackend } from './backend.js';
+import type { MemoryBackend, MemoryEntry } from './backend.js';
 
 export type MemoryTriggerMode =
   | { type: 'automatic'; onLoad: 'always' | 'on-session-start' }
@@ -13,6 +13,8 @@ export interface MemoryAdmissionPolicy {
   maxEntryLength?: number;
   correctionEnabled?: boolean;
 }
+
+const CORRECTION_SIGNALS = /\b(actually|no\s*,?\s*wait|correction|sorry|I\s+meant|that's?\s+wrong|I\s+was\s+wrong)\b/i;
 
 export interface MemoryConfig {
   backend: MemoryBackend;
@@ -69,6 +71,7 @@ export function createMemoryProcessor(config: MemoryConfig): Processor {
 export function createMemoryOutputProcessor(config: MemoryConfig): Processor {
   const { backend, triggerMode } = config;
   const dedup = config.admissionPolicy?.dedup ?? true;
+  const correctionEnabled = config.admissionPolicy?.correctionEnabled ?? false;
   const maxEntryLength = config.admissionPolicy?.maxEntryLength;
   let lastAssistantContent: string | undefined;
 
@@ -90,11 +93,17 @@ export function createMemoryOutputProcessor(config: MemoryConfig): Processor {
       const userInput = ctx.request.input?.trim();
       if (!userInput) return ctx;
 
+      const isCorrection = correctionEnabled && CORRECTION_SIGNALS.test(userInput);
+      if (isCorrection) {
+        await backend.deleteEntries(ctx.request.sessionId, (e) => e.role === 'assistant');
+      }
+
       const now = new Date().toISOString();
       await backend.store(ctx.request.sessionId, {
         role: 'user',
         content: trim(ctx.request.input),
         timestamp: now,
+        ...(isCorrection ? { metadata: { corrected: true } } : {}),
       });
 
       if (dedup && response === lastAssistantContent) {

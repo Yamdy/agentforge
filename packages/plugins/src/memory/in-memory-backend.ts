@@ -34,4 +34,13 @@ export class InMemoryBackend implements MemoryBackend {
     const results = all.filter((e) => e.content.toLowerCase().includes(query.toLowerCase()));
     return options?.limit ? results.slice(-options.limit) : results;
   }
+
+  async deleteEntries(sessionId: string, predicate: (entry: MemoryEntry) => boolean): Promise<number> {
+    const list = this.entries.get(sessionId);
+    if (!list) return 0;
+    const before = list.length;
+    const remaining = list.filter((e) => !predicate(e));
+    this.entries.set(sessionId, remaining);
+    return before - remaining.length;
+  }
 }

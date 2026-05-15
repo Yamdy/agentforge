@@ -94,6 +94,21 @@ export class SQLiteBackend implements MemoryBackend {
     }));
   }
 
+  async deleteEntries(sessionId: string, predicate: (entry: MemoryEntry) => boolean): Promise<number> {
+    const rows = await this.retrieve(sessionId);
+    const toDelete = rows.filter(predicate);
+    if (toDelete.length === 0) return 0;
+    const stmt = this.db.prepare(
+      'DELETE FROM memory_entries WHERE session_id = ? AND timestamp = ? AND role = ? AND content = ?'
+    );
+    let deleted = 0;
+    for (const entry of toDelete) {
+      const result = stmt.run(sessionId, entry.timestamp, entry.role, entry.content);
+      deleted += result.changes;
+    }
+    return deleted;
+  }
+
   close(): Promise<void> {
     this.db.close();
     return Promise.resolve();

@@ -20,8 +20,10 @@ export class SessionPersistence {
   private unsubs: Array<() => void> = [];
   private seqCounters = new Map<string, number>();
   private writeQueues = new Map<string, Promise<void>>();
+  private bus: EventBus;
 
   constructor(bus: EventBus, private storage: SessionStorage) {
+    this.bus = bus;
     for (const eventType of SUBSCRIBED_EVENTS) {
       const unsub = bus.subscribe(eventType, (data) => {
         this.onEvent(eventType, data);
@@ -56,9 +58,11 @@ export class SessionPersistence {
     };
 
     const prev = this.writeQueues.get(sessionId) ?? Promise.resolve();
-    this.writeQueues.set(sessionId, prev.then(
-      () => this.storage.append(sessionId, event),
-      () => { /* previous write failed, continue */ },
-    ));
+    const write = prev
+      .then(() => this.storage.append(sessionId, event))
+      .catch((err) => {
+        this.bus.emit('session:write_failed', { sessionId, error: err instanceof Error ? err.message : String(err) });
+      });
+    this.writeQueues.set(sessionId, write);
   }
 }

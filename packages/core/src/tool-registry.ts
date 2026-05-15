@@ -118,15 +118,6 @@ export class ToolRegistry {
       return { toolCallId, name: tool.name, output: undefined, error: toolError };
     }
 
-    if (tool.outputSchema && isZodSchema(tool.outputSchema)) {
-      const parsed = (tool.outputSchema as { safeParse: (args: unknown) => SafeParseResult }).safeParse(toolOutput);
-      if (!parsed.success) {
-        const issues = parsed.error?.issues?.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') ?? parsed.error?.message ?? 'Unknown validation error';
-        validationError = `Output validation failed: ${issues}`;
-        this.eventBus?.emit('tool:output_invalid', { toolName: tool.name, error: validationError });
-      }
-    }
-
     let mutated = false;
     if (this.hookManager) {
       const hookOutput: Record<string, unknown> = { result: toolOutput };
@@ -139,6 +130,16 @@ export class ToolRegistry {
         } else {
           this.eventBus?.emit('tool:output_blocked', { toolName: tool.name, original: toolOutput, attempted: hookOutput.result });
         }
+      }
+    }
+
+    // Validate AFTER hook mutation so mutations are also checked
+    if (tool.outputSchema && isZodSchema(tool.outputSchema)) {
+      const parsed = (tool.outputSchema as { safeParse: (args: unknown) => SafeParseResult }).safeParse(toolOutput);
+      if (!parsed.success) {
+        const issues = parsed.error?.issues?.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') ?? parsed.error?.message ?? 'Unknown validation error';
+        validationError = `Output validation failed: ${issues}`;
+        this.eventBus?.emit('tool:output_invalid', { toolName: tool.name, error: validationError });
       }
     }
 

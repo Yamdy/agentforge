@@ -8,6 +8,7 @@ export interface LLMInvokerOptions {
   system?: string;
   retryOptions?: RetryOptions;
   tracer?: Tracer;
+  eventBus?: { emit: (type: string, data: unknown) => void };
 }
 
 export interface LLMInvokeInput {
@@ -84,7 +85,9 @@ export class LLMInvoker {
         }
 
         if (!usage) {
-          try { usage = await result.usage; } catch { /* usage unavailable */ }
+          try { usage = await result.usage; } catch (err) {
+            this.options.eventBus?.emit('llm:usage_unavailable', { error: err instanceof Error ? err.message : String(err) });
+          }
         }
 
         return {
@@ -146,7 +149,11 @@ export class LLMInvoker {
       fullStream: result!.fullStream,
       usage: Promise.resolve(result!.usage)
         .then((u) => { endSpan(); return extractTokenUsage(u); })
-        .catch((err) => { endSpan(); return { input: 0, output: 0 }; }),
+        .catch((err) => {
+          endSpan();
+          this.options.eventBus?.emit('llm:usage_unavailable', { error: err instanceof Error ? err.message : String(err) });
+          return { input: 0, output: 0 };
+        }),
       reasoning: Promise.resolve(result!.reasoningText).catch(() => undefined),
     };
   }

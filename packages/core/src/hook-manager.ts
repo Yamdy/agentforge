@@ -64,7 +64,8 @@ export class HookManager {
 
       try {
         await hook.handler(input, output);
-      } catch {
+      } catch (err) {
+        this.eventBus.emit('hook:error', { point, hookName: hook.name, error: err instanceof Error ? err.message : String(err) });
         if (this.profile === 'strict') break; // circuit-break
         // standard: isolate error, continue
       }

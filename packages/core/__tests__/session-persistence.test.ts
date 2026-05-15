@@ -78,7 +78,8 @@ describe('SessionPersistence', () => {
 
     const flakyPersistence = new SessionPersistence(isolatedBus, flakyStorage);
 
-    // First event fails silently, second is dropped by queue recovery, third succeeds
+    // First event fails (caught and emitted as session:write_failed),
+    // second succeeds (queue recovered), third also succeeds
     isolatedBus.emit('agent:start', { sessionId: 's1', input: 'first' });
     isolatedBus.emit('agent:start', { sessionId: 's1', input: 'second' });
     await flushAsync();
@@ -91,9 +92,10 @@ describe('SessionPersistence', () => {
       events.push(e);
     }
 
-    // Only the third event made it through
-    expect(events).toHaveLength(1);
-    expect(events[0].type).toBe('agent:end');
+    // Second and third events made it through (first failed)
+    expect(events).toHaveLength(2);
+    expect(events[0].type).toBe('agent:start');
+    expect(events[1].type).toBe('agent:end');
 
     await flakyPersistence.stop();
   });
