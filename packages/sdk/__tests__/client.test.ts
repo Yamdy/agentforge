@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AgentForgeClient } from '../src/client.js';
+import { AgentForgeClient, AgentForgeClientError, isRetryableError } from '../src/client.js';
 
 describe('AgentForgeClient', () => {
   beforeEach(() => {
@@ -19,6 +19,8 @@ describe('AgentForgeClient', () => {
   it('run() POSTs to correct endpoint and returns result', async () => {
     const mockResult = { response: 'hello', tokenUsage: { input: 10, output: 5 }, sessionId: 's1' };
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
       json: () => Promise.resolve(mockResult),
     } as Response);
 
@@ -35,6 +37,8 @@ describe('AgentForgeClient', () => {
   it('getSession() GETs correct endpoint', async () => {
     const mockSession = { sessionId: 's1', status: 'completed' };
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
       json: () => Promise.resolve(mockSession),
     } as Response);
 
@@ -51,6 +55,8 @@ describe('AgentForgeClient', () => {
   it('resume() POSTs to correct endpoint', async () => {
     const mockResult = { response: 'resumed', tokenUsage: { input: 5, output: 3 }, sessionId: 's1' };
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
       json: () => Promise.resolve(mockResult),
     } as Response);
 
@@ -62,6 +68,147 @@ describe('AgentForgeClient', () => {
       expect.objectContaining({ method: 'POST', body: JSON.stringify({ sessionId: 's1' }) }),
     );
     expect(result).toEqual(mockResult);
+  });
+
+  // -------------------------------------------------------------------------
+  // NEW: Error handling tests
+  // -------------------------------------------------------------------------
+
+  describe('error handling', () => {
+    it('throws AgentForgeClientError on non-2xx response', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+        status: 404,
+        statusText: 'Not Found',
+        json: () => Promise.resolve({ error: 'Agent not found' }),
+      } as Response);
+
+      const client = new AgentForgeClient({ url: 'http://localhost:3000' });
+      await expect(client.run('missing', 'test')).rejects.toThrow(AgentForgeClientError);
+    });
+
+    it('includes status code and message in error', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+        status: 401,
+        statusText: 'Unauthorized',
+        json: () => Promise.resolve({ error: 'Invalid API key' }),
+      } as Response);
+
+      const client = new AgentForgeClient({ url: 'http://localhost:3000' });
+      try {
+        await client.run('agent', 'test');
+        expect.fail('Should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(AgentForgeClientError);
+        const e = err as AgentForgeClientError;
+        expect(e.status).toBe(401);
+        expect(e.message).toContain('Invalid API key');
+      }
+    });
+
+    it('throws on network failure', async () => {
+      vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('fetch failed'));
+
+      const client = new AgentForgeClient({ url: 'http://localhost:3000' });
+      await expect(client.run('agent', 'test')).rejects.toThrow();
+    });
+
+    it('throws on 500 server error', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+        status: 500,
+        statusText: 'Internal Server Error',
+        json: () => Promise.resolve({ error: 'Internal error' }),
+      } as Response);
+
+      const client = new AgentForgeClient({ url: 'http://localhost:3000' });
+      try {
+        await client.run('agent', 'test');
+        expect.fail('Should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(AgentForgeClientError);
+        expect((err as AgentForgeClientError).status).toBe(500);
+      }
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // NEW: Retry logic tests
+  // -------------------------------------------------------------------------
+
+  describe('retry logic', () => {
+    it('retries on 429 rate limit and succeeds', async () => {
+      const mockResult = { response: 'ok', tokenUsage: { input: 1, output: 1 }, sessionId: 's1' };
+      let callCount = 0;
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+        callCount++;
+        if (callCount === 1) {
+          return { ok: false, status: 429, statusText: 'Too Many Requests', json: () => Promise.resolve({ error: 'rate limited' }) } as Response;
+        }
+        return { ok: true, status: 200, json: () => Promise.resolve(mockResult) } as Response;
+      });
+
+      const client = new AgentForgeClient({ url: 'http://localhost:3000', retries: 3, retryDelay: 1 });
+      const result = await client.run('agent', 'test');
+
+      expect(callCount).toBe(2);
+      expect(result).toEqual(mockResult);
+    });
+
+    it('retries on 503 service unavailable', async () => {
+      const mockResult = { response: 'ok', tokenUsage: { input: 1, output: 1 }, sessionId: 's1' };
+      let callCount = 0;
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+        callCount++;
+        if (callCount <= 2) {
+          return { ok: false, status: 503, statusText: 'Service Unavailable', json: () => Promise.resolve({ error: 'overloaded' }) } as Response;
+        }
+        return { ok: true, status: 200, json: () => Promise.resolve(mockResult) } as Response;
+      });
+
+      const client = new AgentForgeClient({ url: 'http://localhost:3000', retries: 3, retryDelay: 1 });
+      const result = await client.run('agent', 'test');
+
+      expect(callCount).toBe(3);
+      expect(result).toEqual(mockResult);
+    });
+
+    it('does not retry on 404', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+        status: 404,
+        statusText: 'Not Found',
+        json: () => Promise.resolve({ error: 'Not found' }),
+      } as Response);
+
+      const client = new AgentForgeClient({ url: 'http://localhost:3000', retries: 3 });
+      await expect(client.run('agent', 'test')).rejects.toThrow(AgentForgeClientError);
+
+      expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not retry on 401', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+        status: 401,
+        statusText: 'Unauthorized',
+        json: () => Promise.resolve({ error: 'Unauthorized' }),
+      } as Response);
+
+      const client = new AgentForgeClient({ url: 'http://localhost:3000', retries: 3 });
+      await expect(client.run('agent', 'test')).rejects.toThrow(AgentForgeClientError);
+
+      expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('exhausts retries and throws', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+        status: 503,
+        statusText: 'Service Unavailable',
+        json: () => Promise.resolve({ error: 'overloaded' }),
+      } as Response);
+
+      const client = new AgentForgeClient({ url: 'http://localhost:3000', retries: 2 });
+      await expect(client.run('agent', 'test')).rejects.toThrow(AgentForgeClientError);
+
+      expect(fetch).toHaveBeenCalledTimes(3); // 1 initial + 2 retries
+    });
   });
 });
 

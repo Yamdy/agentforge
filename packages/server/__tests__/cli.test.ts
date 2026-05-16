@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseCommand, runSingleShot } from '../src/cli.js';
+import { parseCommand, runSingleShot, formatHelp, getVersion } from '../src/cli.js';
 import { AgentRegistry } from '../src/registry.js';
 
 describe('parseCommand', () => {
@@ -41,6 +41,50 @@ describe('parseCommand', () => {
   it('returns null for empty args', () => {
     const cmd = parseCommand([]);
     expect(cmd).toEqual({ command: null });
+  });
+
+  // -------------------------------------------------------------------------
+  // NEW: --help, --version, --verbose, --quiet
+  // -------------------------------------------------------------------------
+
+  it('parses --help as a help command', () => {
+    const cmd = parseCommand(['--help']);
+    expect(cmd).toEqual({ command: 'help' });
+  });
+
+  it('parses -h as a help command', () => {
+    const cmd = parseCommand(['-h']);
+    expect(cmd).toEqual({ command: 'help' });
+  });
+
+  it('parses --version as a version command', () => {
+    const cmd = parseCommand(['--version']);
+    expect(cmd).toEqual({ command: 'version' });
+  });
+
+  it('parses -v as a version command', () => {
+    const cmd = parseCommand(['-v']);
+    expect(cmd).toEqual({ command: 'version' });
+  });
+
+  it('parses serve with --verbose flag', () => {
+    const cmd = parseCommand(['serve', '--verbose']);
+    expect(cmd).toEqual({ command: 'serve', verbose: true });
+  });
+
+  it('parses serve with --quiet flag', () => {
+    const cmd = parseCommand(['serve', '--quiet']);
+    expect(cmd).toEqual({ command: 'serve', quiet: true });
+  });
+
+  it('parses serve with --verbose and other options', () => {
+    const cmd = parseCommand(['serve', '--verbose', '--port', '4000']);
+    expect(cmd).toEqual({ command: 'serve', verbose: true, port: 4000 });
+  });
+
+  it('parses dev with --verbose', () => {
+    const cmd = parseCommand(['dev', '--verbose']);
+    expect(cmd).toEqual({ command: 'dev', verbose: true });
   });
 });
 

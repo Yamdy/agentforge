@@ -5,24 +5,83 @@ import { resolve } from 'node:path';
 import { AgentRegistry } from './registry.js';
 
 // ---------------------------------------------------------------------------
+// Version
+// ---------------------------------------------------------------------------
+
+export function getVersion(): string {
+  return '0.0.1';
+}
+
+// ---------------------------------------------------------------------------
+// Help text
+// ---------------------------------------------------------------------------
+
+export function formatHelp(): string {
+  return `AgentForge CLI v${getVersion()}
+
+Usage:
+  agentforge <command> [options]
+
+Commands:
+  serve    Start the AgentForge HTTP server
+  run      Run a single agent invocation
+  dev      Start server with file watching and auto-reload
+
+Global Options:
+  --help, -h        Show this help message
+  --version, -v     Show version number
+
+Serve Options:
+  --port <number>     Server port (default: 3000)
+  --api-key <string>  API key for authentication
+  --config <path>     Config file path (default: .agentforge/config.jsonc)
+  --verbose           Enable verbose logging
+  --quiet             Suppress all output except errors
+
+Run Options:
+  --agent <id>        Agent ID to run (required)
+  --input <text>      Input text for the agent (required)
+  --config <path>     Config file path
+
+Dev Options:
+  --port <number>     Server port
+  --api-key <string>  API key for authentication
+  --config <path>     Config file path
+  --verbose           Enable verbose logging
+  --quiet             Suppress all output except errors
+`;
+}
+
+// ---------------------------------------------------------------------------
 // Command parsing
 // ---------------------------------------------------------------------------
 
 type CliCommand =
-  | { command: 'serve'; port?: number; apiKey?: string; config?: string }
-  | { command: 'run'; agent: string; input: string; config?: string }
-  | { command: 'dev'; config?: string; apiKey?: string; port?: number }
+  | { command: 'serve'; port?: number; apiKey?: string; config?: string; verbose?: boolean; quiet?: boolean }
+  | { command: 'run'; agent: string; input: string; config?: string; verbose?: boolean; quiet?: boolean }
+  | { command: 'dev'; config?: string; apiKey?: string; port?: number; verbose?: boolean; quiet?: boolean }
+  | { command: 'help' }
+  | { command: 'version' }
   | { command: null };
 
 export function parseCommand(args: string[]): CliCommand {
+  // Handle global flags first
+  if (args.length === 0) return { command: null };
+  if (args[0] === '--help' || args[0] === '-h') return { command: 'help' };
+  if (args[0] === '--version' || args[0] === '-v') return { command: 'version' };
+
   const first = args[0];
   if (first !== 'serve' && first !== 'run' && first !== 'dev') {
     return { command: null };
   }
 
-  const flags: Record<string, string | undefined> = {};
+  const flags: Record<string, string | boolean | undefined> = {};
   for (let i = 1; i < args.length; i++) {
-    if (args[i].startsWith('--') && args[i + 1]) {
+    if (args[i] === '--verbose') {
+      flags.verbose = true;
+    } else if (args[i] === '--quiet') {
+      flags.quiet = true;
+    } else if (args[i].startsWith('--') && args[i + 1]) {
       flags[args[i].slice(2)] = args[++i];
     }
   }
@@ -31,23 +90,29 @@ export function parseCommand(args: string[]): CliCommand {
     case 'serve':
       return {
         command: 'serve',
-        port: flags.port ? parseInt(flags.port, 10) : undefined,
-        apiKey: flags['api-key'],
-        config: flags.config,
+        port: flags.port ? parseInt(flags.port as string, 10) : undefined,
+        apiKey: flags['api-key'] as string | undefined,
+        config: flags.config as string | undefined,
+        verbose: flags.verbose as boolean | undefined,
+        quiet: flags.quiet as boolean | undefined,
       };
     case 'run':
       return {
         command: 'run',
-        agent: flags.agent ?? '',
-        input: flags.input ?? '',
-        config: flags.config,
+        agent: (flags.agent as string) ?? '',
+        input: (flags.input as string) ?? '',
+        config: flags.config as string | undefined,
+        verbose: flags.verbose as boolean | undefined,
+        quiet: flags.quiet as boolean | undefined,
       };
     case 'dev':
       return {
         command: 'dev',
-        config: flags.config,
-        apiKey: flags['api-key'],
-        port: flags.port ? parseInt(flags.port, 10) : undefined,
+        config: flags.config as string | undefined,
+        apiKey: flags['api-key'] as string | undefined,
+        port: flags.port ? parseInt(flags.port as string, 10) : undefined,
+        verbose: flags.verbose as boolean | undefined,
+        quiet: flags.quiet as boolean | undefined,
       };
   }
 }
