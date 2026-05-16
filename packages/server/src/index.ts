@@ -6,10 +6,11 @@ export { serializeSSE, parseSSE } from './sse.js';
 
 // A2A Protocol
 export { InMemoryTaskStore } from './a2a/task-store.js';
+export { JsonlTaskStore } from './a2a/jsonl-task-store.js';
 export { buildAgentCard, type AgentCardOptions } from './a2a/agent-card.js';
 export { A2ARequestHandler, type A2ARequestHandlerOptions } from './a2a/server.js';
 export { A2AClient, type A2AClientOptions } from './a2a/client.js';
-export { a2aRoutes, type A2ARoutesOptions } from './a2a/routes.js';
+export { a2aRoutes, type A2ARoutesOptions, a2aMultiAgentRoutes, type A2AMultiAgentRoutesOptions } from './a2a/routes.js';
 export type {
   A2ATask, A2ATaskState, A2AMessage, A2APart, A2AArtifact,
   A2AAgentCard, AgentSkill, AgentCapabilities,

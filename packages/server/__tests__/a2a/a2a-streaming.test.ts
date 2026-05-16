@@ -175,7 +175,7 @@ describe('a2aStreamRoute', () => {
     const app = new Hono();
     app.route('/', a2aStreamRoute({ agent, taskStore: store }));
 
-    // Create a task first via SendMessage
+    // Create a task first via SendMessage (async — returns working immediately)
     const handler = new A2ARequestHandler({ agent, taskStore: store });
     const sendResponse = await handler.handle(jsonRpcRequest('SendMessage', {
       message: {
@@ -187,7 +187,10 @@ describe('a2aStreamRoute', () => {
     }));
     const taskId = (sendResponse.result as { task: { id: string } }).task.id;
 
-    // Now stream it — but since it's already completed, we should get the final events
+    // Wait for background execution to complete
+    await new Promise((r) => setTimeout(r, 100));
+
+    // Now stream it — since it's completed, we should get the final events
     const res = await app.request(`/tasks/${taskId}/stream`);
     expect(res.status).toBe(200);
     // content-type may be set by the streaming helper

@@ -111,4 +111,77 @@ describe('JsonlTaskStore', () => {
 
     await expect(store.updateStatus(task.id, 'working')).rejects.toThrow(/Invalid transition/);
   });
+
+  // --- Path safety ---
+
+  it('rejects taskId with path traversal ../ in get()', async () => {
+    const store = new JsonlTaskStore(dir);
+    await expect(store.get('../../etc/passwd')).rejects.toThrow(/invalid/i);
+  });
+
+  it('rejects taskId with path traversal ..\\ in updateStatus()', async () => {
+    const store = new JsonlTaskStore(dir);
+    await expect(store.updateStatus('..\\etc\\passwd', 'working')).rejects.toThrow(/invalid/i);
+  });
+
+  it('rejects taskId with special characters in cancel()', async () => {
+    const store = new JsonlTaskStore(dir);
+    await expect(store.cancel('task|evil')).rejects.toThrow(/invalid/i);
+  });
+
+  it('rejects taskId with null bytes in addArtifact()', async () => {
+    const store = new JsonlTaskStore(dir);
+    await expect(
+      store.addArtifact('task\x00evil', { artifactId: 'a', parts: [] }),
+    ).rejects.toThrow(/invalid/i);
+  });
+
+  // --- Atomic write verification ---
+
+  it('uses atomic write (no .tmp files left after operations)', async () => {
+    const store = new JsonlTaskStore(dir);
+    const task = await store.create('ctx-1');
+    await store.updateStatus(task.id, 'working');
+
+    const { readdirSync } = await import('node:fs');
+    const files = readdirSync(dir);
+    const tmpFiles = files.filter((f) => f.endsWith('.tmp'));
+    expect(tmpFiles).toHaveLength(0);
+  });
+
+  // --- addMessage persistence ---
+
+  it('addMessage() persists message across restore', async () => {
+    const store1 = new JsonlTaskStore(dir);
+    const task = await store1.create('ctx-1');
+    await store1.updateStatus(task.id, 'working');
+    await store1.addMessage(task.id, {
+      kind: 'message',
+      messageId: 'msg-1',
+      role: 'user',
+      parts: [{ kind: 'text', text: 'hello' }],
+    });
+
+    const store2 = new JsonlTaskStore(dir);
+    await store2.restore();
+
+    const loaded = await store2.get(task.id);
+    expect(loaded!.history).toHaveLength(1);
+    expect(loaded!.history![0].messageId).toBe('msg-1');
+  });
+
+  // --- cancel persistence ---
+
+  it('cancel() persists across restore', async () => {
+    const store1 = new JsonlTaskStore(dir);
+    const task = await store1.create('ctx-1');
+    await store1.updateStatus(task.id, 'working');
+    await store1.cancel(task.id);
+
+    const store2 = new JsonlTaskStore(dir);
+    await store2.restore();
+
+    const loaded = await store2.get(task.id);
+    expect(loaded!.status.state).toBe('canceled');
+  });
 });

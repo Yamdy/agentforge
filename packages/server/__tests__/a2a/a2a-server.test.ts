@@ -18,8 +18,13 @@ function jsonRpcRequest(method: string, params: unknown, id = 1): JsonRpcRequest
   return { jsonrpc: '2.0', method, params, id };
 }
 
+/** Wait for the background agent execution to complete (flush microtask queue) */
+function waitForBackground(ms = 50): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
 describe('A2ARequestHandler', () => {
-  it('handles SendMessage — returns task with completed state', async () => {
+  it('handles SendMessage — returns task in working state immediately', async () => {
     const store = new InMemoryTaskStore();
     const agent = mockAgent('Hello from agent');
     const handler = new A2ARequestHandler({ agent, taskStore: store });
@@ -42,7 +47,7 @@ describe('A2ARequestHandler', () => {
 
     const result = response.result as { task: { id: string; status: { state: string } } };
     expect(result.task).toBeDefined();
-    expect(result.task.status.state).toBe('completed');
+    expect(result.task.status.state).toBe('working');
   });
 
   it('passes user message text to agent.run()', async () => {
@@ -57,10 +62,12 @@ describe('A2ARequestHandler', () => {
       },
     }));
 
+    await waitForBackground();
+
     expect(agent.run).toHaveBeenCalledWith('What is 2+2?');
   });
 
-  it('returns task artifact with agent response', async () => {
+  it('returns task artifact with agent response after background completes', async () => {
     const store = new InMemoryTaskStore();
     const agent = mockAgent('42');
     const handler = new A2ARequestHandler({ agent, taskStore: store });
@@ -72,11 +79,14 @@ describe('A2ARequestHandler', () => {
       },
     }));
 
-    const result = response.result as {
-      task: { artifacts: Array<{ parts: Array<{ kind: string; text: string }> }> }
-    };
-    expect(result.task.artifacts).toHaveLength(1);
-    expect(result.task.artifacts[0].parts[0]).toEqual({ kind: 'text', text: '42' });
+    const taskId = (response.result as { task: { id: string } }).task.id;
+
+    // Wait for background execution to finish
+    await waitForBackground();
+
+    const task = await store.get(taskId);
+    expect(task!.artifacts).toHaveLength(1);
+    expect(task!.artifacts![0].parts[0]).toEqual({ kind: 'text', text: '42' });
   });
 
   it('handles GetTask — returns existing task', async () => {
@@ -91,6 +101,9 @@ describe('A2ARequestHandler', () => {
       },
     }));
     const taskId = (sendResponse.result as { task: { id: string } }).task.id;
+
+    // Wait for background execution to complete
+    await waitForBackground();
 
     const getResponse = await handler.handle(jsonRpcRequest('GetTask', { id: taskId }));
 
@@ -167,8 +180,16 @@ describe('A2ARequestHandler', () => {
       },
     }));
 
-    const result = response.result as { task: { status: { state: string } } };
-    expect(result.task.status.state).toBe('failed');
+    // Immediate response should be working
+    const result = response.result as { task: { id: string; status: { state: string } } };
+    expect(result.task.status.state).toBe('working');
+
+    // Wait for background failure
+    await waitForBackground();
+
+    const taskId = result.task.id;
+    const task = await store.get(taskId);
+    expect(task!.status.state).toBe('failed');
   });
 
   it('preserves contextId from message in task', async () => {

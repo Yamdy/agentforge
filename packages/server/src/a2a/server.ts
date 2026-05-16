@@ -86,21 +86,31 @@ export class A2ARequestHandler {
 
     await this.taskStore.updateStatus(task.id, 'working');
 
-    try {
-      const result = await this.agent.run(inputText);
-      await this.taskStore.addArtifact(task.id, {
-        artifactId: `artifact-${task.id}`,
-        parts: [{ kind: 'text', text: result.response }],
-      });
-      await this.taskStore.updateStatus(task.id, 'completed');
-    } catch {
-      await this.taskStore.updateStatus(task.id, 'failed');
-    }
+    // Fire-and-forget: execute agent in background
+    this.executeInBackground(task.id, inputText);
 
-    await this.notify(task.id);
+    const currentTask = await this.taskStore.get(task.id);
+    return this.result(request.id, { task: currentTask });
+  }
 
-    const finalTask = await this.taskStore.get(task.id);
-    return this.result(request.id, { task: finalTask });
+  private executeInBackground(taskId: string, inputText: string): void {
+    Promise.resolve().then(async () => {
+      try {
+        const result = await this.agent.run(inputText);
+        await this.taskStore.addArtifact(taskId, {
+          artifactId: `artifact-${taskId}`,
+          parts: [{ kind: 'text', text: result.response }],
+        });
+        await this.taskStore.updateStatus(taskId, 'completed');
+      } catch {
+        try {
+          await this.taskStore.updateStatus(taskId, 'failed');
+        } catch {
+          // Task may have been canceled while agent was running
+        }
+      }
+      await this.notify(taskId);
+    });
   }
 
   private async handleGetTask(request: JsonRpcRequest): Promise<JsonRpcResponse> {

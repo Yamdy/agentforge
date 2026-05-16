@@ -20,6 +20,22 @@ function hasCode(err: unknown): err is { code: string } {
   return typeof err === 'object' && err !== null && 'code' in err;
 }
 
+/**
+ * Validate a taskId is safe for use as a filename component.
+ * Rejects path traversal, special characters, and null bytes.
+ */
+function validateTaskId(taskId: string): void {
+  if (taskId.includes('..')) {
+    throw new Error(`Invalid taskId: path traversal not allowed`);
+  }
+  if (taskId.includes('\0')) {
+    throw new Error(`Invalid taskId: null bytes not allowed`);
+  }
+  if (/[<>:"|?*\\/]/.test(taskId)) {
+    throw new Error(`Invalid taskId: special characters not allowed`);
+  }
+}
+
 export class JsonlTaskStore extends InMemoryTaskStore {
   private dir: string;
 
@@ -52,6 +68,11 @@ export class JsonlTaskStore extends InMemoryTaskStore {
     }
   }
 
+  async get(id: string): Promise<A2ATask | undefined> {
+    validateTaskId(id);
+    return super.get(id);
+  }
+
   async create(contextId: string): Promise<A2ATask> {
     const task = await super.create(contextId);
     await this.append(task.id, { op: 'create', task: { ...task } });
@@ -59,22 +80,26 @@ export class JsonlTaskStore extends InMemoryTaskStore {
   }
 
   async updateStatus(id: string, state: A2ATaskState): Promise<A2ATask> {
+    validateTaskId(id);
     const task = await super.updateStatus(id, state);
     await this.append(id, { op: 'updateStatus', state, timestamp: task.status.timestamp });
     return task;
   }
 
   async addMessage(id: string, message: A2AMessage): Promise<void> {
+    validateTaskId(id);
     await super.addMessage(id, message);
     await this.append(id, { op: 'addMessage', message });
   }
 
   async addArtifact(id: string, artifact: A2AArtifact): Promise<void> {
+    validateTaskId(id);
     await super.addArtifact(id, artifact);
     await this.append(id, { op: 'addArtifact', artifact });
   }
 
   async cancel(id: string): Promise<A2ATask> {
+    validateTaskId(id);
     const task = await super.cancel(id);
     await this.append(id, { op: 'cancel', timestamp: task.status.timestamp });
     return task;
