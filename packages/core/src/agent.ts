@@ -153,6 +153,9 @@ export class Agent {
         sessionId: context.request.sessionId,
         compatRetries,
       };
+    } catch (error) {
+      this.autoInvalidateModel(error);
+      throw error;
     } finally {
       // agent.end hook — always fires, even on error; suppress hook errors to preserve original
       try { await hm.invoke('agent.end', { sessionId: context.request.sessionId }, {}); } catch { /* hook error must not mask original */ }
@@ -180,6 +183,9 @@ export class Agent {
         sessionId,
         compatRetries,
       };
+    } catch (error) {
+      this.autoInvalidateModel(error);
+      throw error;
     } finally {
       try { await hm.invoke('agent.end', { sessionId }, {}); } catch { /* hook error must not mask original */ }
     }
@@ -235,6 +241,13 @@ export class Agent {
     this._model = null;
   }
 
+  /** Auto-invalidate cached model when the error indicates auth failure or model-not-found. */
+  private autoInvalidateModel(error: unknown): void {
+    if (isAuthOrNotFoundError(error)) {
+      this._model = null;
+    }
+  }
+
   private async getLLM(systemPrompt?: string): Promise<LLMInvoker> {
     if (!this._model) {
       this._model = await this.modelFactory.resolve(this.config.model);
@@ -287,4 +300,11 @@ export class Agent {
     this.runner.register(createEvaluateIterationProcessor({ eventBus: this._pluginManager.eventBus }));
     this.runner.register(processOutputProcessor);
   }
+}
+
+function isAuthOrNotFoundError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const err = error as Error & { statusCode?: number; status?: number };
+  const code = err.statusCode ?? err.status;
+  return code === 401 || code === 403 || code === 404;
 }
