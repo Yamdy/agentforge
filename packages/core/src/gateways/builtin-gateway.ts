@@ -24,26 +24,25 @@ const PROVIDER_MAP: Record<string, () => Promise<SdkInstance>> = {
   }),
 };
 
-const customProviders = new Map<string, ProviderFactory>();
-const sdkCache = new Map<string, SdkInstance>();
-
-/** Register a custom provider factory. Backward-compatible with old registerProvider(). */
-export function registerProvider(name: string, factory: ProviderFactory): void {
-  customProviders.set(name, factory);
-}
-
 export class BuiltInGateway implements ModelGateway {
   name = 'builtin';
 
+  private customProviders = new Map<string, ProviderFactory>();
+  private sdkCache = new Map<string, SdkInstance>();
+
+  registerProvider(name: string, factory: ProviderFactory): void {
+    this.customProviders.set(name, factory);
+  }
+
   canResolve(modelString: string): boolean {
     const { provider } = parseModel(modelString);
-    return provider in PROVIDER_MAP || customProviders.has(provider);
+    return provider in PROVIDER_MAP || this.customProviders.has(provider);
   }
 
   async resolve(modelString: string): Promise<unknown> {
     const { provider, modelId } = parseModel(modelString);
 
-    const custom = customProviders.get(provider);
+    const custom = this.customProviders.get(provider);
     if (custom) return custom(modelId);
 
     const loader = PROVIDER_MAP[provider];
@@ -53,12 +52,25 @@ export class BuiltInGateway implements ModelGateway {
       );
     }
 
-    let instance = sdkCache.get(provider);
+    let instance = this.sdkCache.get(provider);
     if (!instance) {
       instance = await loader();
-      sdkCache.set(provider, instance);
+      this.sdkCache.set(provider, instance);
     }
 
     return instance.languageModel(modelId);
   }
+}
+
+// Singleton instance for backward-compatible module-level registerProvider()
+const defaultInstance = new BuiltInGateway();
+
+/** Register a custom provider factory on the default gateway instance. */
+export function registerProvider(name: string, factory: ProviderFactory): void {
+  defaultInstance.registerProvider(name, factory);
+}
+
+/** @internal Access the default singleton instance. */
+export function getDefaultBuiltInGateway(): BuiltInGateway {
+  return defaultInstance;
 }

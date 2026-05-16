@@ -14,7 +14,7 @@ import { ToolRegistry } from './tool-registry.js';
 import { PluginManager, type PluginFactory } from './plugin-manager.js';
 import { LLMInvoker } from './llm-invoker.js';
 import { ModelFactory } from './model-factory.js';
-import { BuiltInGateway } from './gateways/builtin-gateway.js';
+import { BuiltInGateway, getDefaultBuiltInGateway } from './gateways/builtin-gateway.js';
 import { LoopOrchestrator } from './loop-orchestrator.js';
 import { JsonlCheckpointStore } from './checkpoint-store.js';
 import { echoTool } from '@agentforge/tools';
@@ -71,7 +71,7 @@ export class Agent {
   constructor(config: AgentConfig, deps?: AgentDependencies) {
     this.config = config;
     this.modelFactory = deps?.modelFactory ?? new ModelFactory();
-    this.modelFactory.registerGateway(new BuiltInGateway());
+    this.modelFactory.registerGateway(getDefaultBuiltInGateway());
     this._tracer = deps?.tracer;
     this.runner = deps?.runner ?? new PipelineRunner({ tracer: deps?.tracer });
     this.registry = deps?.registry ?? new ToolRegistry();

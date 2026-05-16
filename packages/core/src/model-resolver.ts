@@ -1,16 +1,16 @@
 import type { LanguageModel } from 'ai';
 import type { GatewayConfig } from '@agentforge/sdk';
 import { GatewayChain } from './gateways/gateway-chain.js';
-import { BuiltInGateway } from './gateways/builtin-gateway.js';
+import { BuiltInGateway, getDefaultBuiltInGateway } from './gateways/builtin-gateway.js';
 import { OpenAICompatibleGateway } from './gateways/openai-compatible-gateway.js';
 
 export { registerProvider } from './gateways/builtin-gateway.js';
 export { GatewayChain, BuiltInGateway, OpenAICompatibleGateway };
 export { parseModel, type ParsedModel } from './parse-model.js';
 
-// Global default chain: BuiltInGateway is always last.
+// Global default chain: uses the singleton BuiltInGateway so registerProvider() works.
 const defaultChain = new GatewayChain();
-defaultChain.register(new BuiltInGateway());
+defaultChain.register(getDefaultBuiltInGateway());
 
 /**
  * Resolve a model string to a LanguageModel using the default gateway chain.
@@ -28,6 +28,6 @@ export function createChain(configs?: GatewayConfig[]): GatewayChain {
       chain.register(new OpenAICompatibleGateway(cfg));
     }
   }
-  chain.register(new BuiltInGateway());
+  chain.register(getDefaultBuiltInGateway());
   return chain;
 }

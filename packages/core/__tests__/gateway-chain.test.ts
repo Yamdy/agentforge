@@ -85,6 +85,25 @@ describe('BuiltInGateway', () => {
   it('has name "builtin"', () => {
     expect(new BuiltInGateway().name).toBe('builtin');
   });
+
+  it('instances have isolated custom providers', () => {
+    const gw1 = new BuiltInGateway();
+    const gw2 = new BuiltInGateway();
+
+    const mockModel = {
+      modelId: 'test',
+      specificationVersion: 'v2' as const,
+      provider: 'isolated',
+      supportedUrls: {},
+      doGenerate: async () => ({ text: 'ok' }),
+      doStream: async () => ({ stream: new ReadableStream() }),
+    };
+
+    gw1.registerProvider('isolated-test', () => mockModel as any);
+
+    expect(gw1.canResolve('isolated-test/model')).toBe(true);
+    expect(gw2.canResolve('isolated-test/model')).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
