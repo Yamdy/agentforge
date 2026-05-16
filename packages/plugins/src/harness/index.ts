@@ -2,4 +2,5 @@ export { createFactInjectionProcessor, type FactInjectionConfig } from './fact-i
 export { createGoalEchoProcessor, type GoalEchoConfig } from './goal-echo-processor.js';
 export { createTokenBudgetProcessor, type TokenBudgetConfig } from './token-budget-processor.js';
 export { createCostCapProcessor, type CostCapConfig } from './cost-cap-processor.js';
+export { createRateLimitProcessor, type RateLimitConfig } from './rate-limit-processor.js';
 export { setGateDecision, setCostAttributes, setBudgetAttributes } from './span-attributes.js';

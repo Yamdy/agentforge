@@ -24,7 +24,9 @@ export {
 export {
   evictionPlugin,
   InMemoryEvictionStorage,
+  FilesystemEvictionStorage,
   type EvictionPluginOptions,
+  type FilesystemEvictionStorageOptions,
 } from './eviction/index.js';
 
 export {
@@ -70,6 +72,7 @@ export {
   createGoalEchoProcessor,
   createTokenBudgetProcessor,
   createCostCapProcessor,
+  createRateLimitProcessor,
   setGateDecision,
   setCostAttributes,
   setBudgetAttributes,
@@ -77,4 +80,11 @@ export {
   type GoalEchoConfig,
   type TokenBudgetConfig,
   type CostCapConfig,
+  type RateLimitConfig,
 } from './harness/index.js';
+
+export {
+  createOutputValidationProcessor,
+  type OutputValidationConfig,
+  type ValidationStrategy,
+} from './validation/index.js';

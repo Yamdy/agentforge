@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   createRateLimitProcessor,
   type RateLimitConfig,
@@ -166,14 +166,14 @@ describe('createRateLimitProcessor', () => {
         strategy: 'block',
       });
 
-      // Make 3 requests at time 0
+      // Make 3 requests at time 0, 3s, 6s
       await processor.execute(makeContext());
       vi.advanceTimersByTime(3_000);
       await processor.execute(makeContext());
       vi.advanceTimersByTime(3_000);
       await processor.execute(makeContext());
 
-      // At time 6s, the window covers [0, 10000]. All 3 are within.
+      // At time 6s, all 3 are within the 10s window.
       // 4th should be blocked
       const result = await processor.execute(makeContext());
       expect(result).toEqual({
@@ -181,11 +181,10 @@ describe('createRateLimitProcessor', () => {
         reason: expect.stringContaining('Rate limit exceeded'),
       });
 
-      // At time 10s, the first request (at time 0) expires
-      vi.advanceTimersByTime(4_000); // now at time 10s
+      // Advance past the first request's window (time 0 + 10001ms)
+      vi.advanceTimersByTime(4_001); // now at time 10001ms
 
-      // The window now covers [0, 20000] but the request at time 0
-      // is older than windowMs from now, so it's expired.
+      // The first request (timestamp 0) now falls outside the window.
       // Only 2 requests remain in the window -> 3rd one should pass
       const result2 = await processor.execute(makeContext());
       expect(result2).toEqual(makeContext());
