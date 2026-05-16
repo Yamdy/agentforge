@@ -57,7 +57,7 @@ Compression, tool output truncation, progressive disclosure — preventing model
 - **Observability backend**: Self-built lightweight abstraction (Span/Tracer/Metrics) + OTel Bridge
 - **Sub-agents**: Dual-mode — sync (tool-like, blocking) + async (background task, event notification)
 - **Tool execution**: AgentForge-controlled agentic loop — `invokeLLM` does single-step `streamText()` (no `maxSteps`, no execute on tools); `PipelineRunner` consumes `fullStream` extracting text/tool-calls/reasoning; `executeTools` processor executes pending tool calls via `ToolRegistry.executeTool()`; `evaluateIteration` loops on tool results. AI SDK provides schemas only via `toAiSdkToolSchemas()`.
-- **Package structure**: 5-package monorepo — core, observability, plugins, tools, sdk
+- **Package structure**: 6-package monorepo — core, observability, plugins, tools, sdk, server
 - **LLM Provider**: Pluggable GatewayChain + dedicated providers — `resolveModel()` delegates to `GatewayChain` (custom gateways → `BuiltInGateway`); native `@ai-sdk/deepseek` provider handles reasoning_content; `LLMInvoker` wraps single-step `streamText()` owning retry + token + reasoning extraction
 - **Memory**: Processor plugin (not core) — official MemoryProcessor in plugins package, storage backends injectable
 - **Compression**: Hybrid two-phase — micro-compression (truncate tool output) first, then LLM summarization if needed
@@ -77,6 +77,13 @@ Compression, tool output truncation, progressive disclosure — preventing model
 - **Tool management**: Dynamic tool group activation/deactivation; tool result eviction for large outputs
 - **Processor modularity**: 8 built-in processors extracted from Agent into `core/processors/` — each stage is a standalone module; factory functions for dependency-injected processors (`invokeLLM`, `buildContext`, `prepareStep`), const exports for pure/no-op processors; Agent is pure orchestration
 - **Provider compatibility**: `ProviderCapabilities` detection per model string + `CompatRule` engine with preemptive (message rewrite before LLM call) and reactive (history fix on API error) rules; `providerOptions` passthrough from `AgentConfig` to `streamText()`; dedicated `@ai-sdk/deepseek` provider for native reasoning_content handling
+- **Error hierarchy**: `AgentForgeError` domain error base with `RecoverableError`/`FatalError` branches — `ToolExecutionError` (recoverable), `AuthError`/`ModelNotFoundError` (fatal); enables typed catch blocks
+- **Model resolution**: `ModelFactory` as single canonical path (instantiated, injectable); `resolveModel()` `@deprecated`; `GatewayChain` internal-only (not barrel-exported)
+- **Agent lifecycle**: `StateMachine` manages `pending`→`running`→`completed`/`paused`/`cancelled`/`error`; terminal states resettable for multiple `run()` calls
+- **Checkpoint**: `InMemoryCheckpointStore` + `JsonlCheckpointStore` implement `CheckpointStore` interface; `serialize()`/`deserialize()` for suspend/resume
+- **Context assembly**: Dedicated `ContextBuilder` module assembling PipelineContext from config, input, sessionId
+- **Server**: `@agentforge/server` package — Hono HTTP server, CLI binary, A2A protocol; routes: health, agents (list/status/run/stream/resume), sessions (list/get)
+- **Stage mutation**: Runtime pipeline stage mutation API for plugins — add/remove stages dynamically without reconstruction
 
 ## Pipeline Architecture
 

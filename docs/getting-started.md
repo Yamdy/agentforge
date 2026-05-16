@@ -50,7 +50,7 @@ const agent = new Agent({
 });
 
 // 3. 运行
-const response = await agent.run('你好，请帮我回显一下"Hello AgentForge"');
+const { response } = await agent.run('你好，请帮我回显一下"Hello AgentForge"');
 console.log(response);
 ```
 
@@ -156,17 +156,20 @@ AgentForge 使用 `"provider/modelId"` 格式指定模型：
 通过 `OpenAICompatibleGateway` 连接任意 OpenAI 兼容端点：
 
 ```ts
-import { GatewayChain, BuiltInGateway } from '@agentforge/core';
-import { OpenAICompatibleGateway } from '@agentforge/core';
+import { OpenAICompatibleGateway, ModelFactory } from '@agentforge/core';
 
 // 注册自定义网关
-const chain = new GatewayChain();
-chain.register(new OpenAICompatibleGateway({
+const factory = new ModelFactory();
+factory.registerGateway(new OpenAICompatibleGateway({
   name: 'local-llama',
   url: 'http://localhost:11434/v1',
 }));
-chain.register(new BuiltInGateway());
+
+// 使用 ModelFactory 解析模型
+const model = await factory.resolve('local-llama/llama3');
 ```
+
+> **注意**: `GatewayChain` 和 `BuiltInGateway` 未从 `@agentforge/core` barrel 导出。推荐使用 `ModelFactory` 作为模型解析的规范入口。
 
 ### Dynamic 配置
 
@@ -272,3 +275,24 @@ MCP 工具会自动以 `serverName__toolName` 格式注册到 Agent。
 - [API 参考](api-reference.md) — 完整的类型和方法文档
 - [迁移指南](migration-guide.md) — 从早期版本迁移
 - [架构决策记录](adr/) — 设计决策的上下文和理由
+
+## 脚本参考
+
+<!-- AUTO-GENERATED -->
+根命令（在仓库根目录运行）：
+
+| 命令 | 说明 |
+|------|------|
+| `pnpm build` | 构建所有包（遵循 turbo 依赖顺序） |
+| `pnpm test` | 运行所有测试（先构建） |
+| `pnpm lint` | ESLint 检查所有包 |
+| `pnpm check-types` | TypeScript 类型检查所有包 |
+
+单包命令：
+
+| 命令 | 说明 |
+|------|------|
+| `pnpm --filter @agentforge/core test` | 仅运行 core 包测试 |
+| `pnpm --filter @agentforge/core vitest run __tests__/pipeline.test.ts` | 运行单个测试文件 |
+| `cd examples && npx tsx unified-demo.ts` | 运行示例（需要 .env） |
+<!-- /AUTO-GENERATED -->
