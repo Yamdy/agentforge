@@ -99,7 +99,7 @@ const sanitizeToolCallIds: CompatRule = {
       });
       return changed ? { ...m, toolCalls } : msg;
     });
-    return changed ? next : null;
+    return changed ? next as import('@agentforge/sdk').Message[] : null;
   },
 };
 
@@ -117,7 +117,7 @@ const deepseekReasoningRequired: CompatRule = {
       changed = true;
       return { ...m, reasoningContent: '' };
     });
-    return changed ? next : null;
+    return changed ? next as import('@agentforge/sdk').Message[] : null;
   },
 };
 
@@ -171,9 +171,9 @@ export function applyReactiveRules(
         const original = (history as unknown[])[i];
         if (msg !== original) {
           diff.push({ index: i, ruleName: rule.name, description: `modified by ${rule.name}` });
-          return { ...(msg as MessageShape), _compatFixed: true } as import('@agentforge/sdk').Message;
         }
-        return msg as import('@agentforge/sdk').Message;
+        const { _compatFixed, ...clean } = msg as MessageShape & { _compatFixed?: boolean };
+        return clean as import('@agentforge/sdk').Message;
       });
       return { history: patched, diff };
     }

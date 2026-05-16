@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { TokenUsage } from '@agentforge/sdk';
 
 // Mock the ai module before importing LLMInvoker
 vi.mock('ai', () => ({
@@ -7,6 +6,7 @@ vi.mock('ai', () => ({
 }));
 
 import { streamText } from 'ai';
+import type { LanguageModel } from 'ai';
 import { LLMInvoker } from '../src/llm-invoker.js';
 
 describe('F-8: Stream reasoning error observability', () => {
@@ -42,8 +42,8 @@ describe('F-8: Stream reasoning error observability', () => {
     });
 
     const invoker = new LLMInvoker({
-      model: { modelId: 'test/model', specificationVersion: 'v3', provider: 'test', supportedUrls: {} } as any,
-      eventBus: fakeEventBus as any,
+      model: { modelId: 'test/model', specificationVersion: 'v3', provider: 'test', supportedUrls: {} } as unknown as LanguageModel,
+      eventBus: fakeEventBus as unknown as { emit: (type: string, data: unknown) => void },
     });
 
     const handle = invoker.stream({ messages: [{ role: 'user', content: 'test' }] });
@@ -55,6 +55,6 @@ describe('F-8: Stream reasoning error observability', () => {
     // The key assertion: event must have been emitted
     expect(emitted.some(e => e.type === 'llm:reasoning_error')).toBe(true);
     const evt = emitted.find(e => e.type === 'llm:reasoning_error')!;
-    expect((evt.data as any).error).toContain('reasoning pipeline crashed');
+    expect((evt.data as { error: string }).error).toContain('reasoning pipeline crashed');
   });
 });

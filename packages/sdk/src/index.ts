@@ -454,6 +454,11 @@ export interface AgentConfig {
   providerOptions?: Record<string, Record<string, unknown>>;
   /** Tool names that must be called at least once before the loop can stop. */
   requiredTools?: string[];
+  /** Policy for handling required tools that the LLM fails to call after retries.
+   *  - 'advise' (default): adds prompt fragments asking the LLM to call them; stops loop when exhausted.
+   *  - 'enforce': when exhausted, injects synthetic tool calls and continues the loop.
+   */
+  requiredToolPolicy?: 'advise' | 'enforce';
 }
 
 // ---------------------------------------------------------------------------

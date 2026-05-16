@@ -8,7 +8,7 @@ import { PipelineRunner } from '../src/pipeline.js';
 import { HookManager } from '../src/hook-manager.js';
 import { EventBus } from '../src/event-bus.js';
 import { JsonlCheckpointStore } from '../src/checkpoint-store.js';
-import type { PipelineContext, Processor, PipelineStage } from '@agentforge/sdk';
+import type { PipelineContext, Processor, PipelineStage, ErrorHookInput } from '@agentforge/sdk';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -127,7 +127,7 @@ describe('G1: autoCheckpoint enabled via AgentDependencies', () => {
       { autoCheckpoint: true, checkpointDir: dir } as AgentDependencies,
     );
 
-    const store = (agent as any).orchestrator.checkpointStore;
+    const store = (agent as unknown as { orchestrator: { checkpointStore: JsonlCheckpointStore<unknown> } }).orchestrator.checkpointStore;
     expect(store).toBeInstanceOf(JsonlCheckpointStore);
 
     await agent.pluginManager.shutdown();
@@ -141,7 +141,7 @@ describe('G1: autoCheckpoint enabled via AgentDependencies', () => {
 describe('G2: default gateTool processor', () => {
   it('pipeline has a gateTool stage processor registered by default', () => {
     const agent = new Agent({ model: 'mock/test' });
-    const processors: Processor[] = (agent.pipelineRunner as any).processors;
+    const processors = (agent.pipelineRunner as unknown as { processors: Processor[] }).processors;
 
     const gateToolProcessors = processors.filter((p: Processor) => p.stage === 'gateTool');
     expect(gateToolProcessors.length).toBeGreaterThanOrEqual(1);
@@ -149,7 +149,7 @@ describe('G2: default gateTool processor', () => {
 
   it('default gateTool processor allows tool calls to pass through', async () => {
     const agent = new Agent({ model: 'mock/test' });
-    const processors: Processor[] = (agent.pipelineRunner as any).processors;
+    const processors = (agent.pipelineRunner as unknown as { processors: Processor[] }).processors;
 
     const gateToolProcessor = processors.find((p: Processor) => p.stage === 'gateTool');
     expect(gateToolProcessor).toBeDefined();
@@ -160,12 +160,12 @@ describe('G2: default gateTool processor', () => {
 
     const result = await gateToolProcessor!.execute(ctx);
     expect(result).toEqual(ctx);
-    expect('type' in (result as any)).toBe(false);
+    expect('type' in (result as unknown as Record<string, unknown>)).toBe(false);
   });
 
   it('gateTool processor with no pending tool calls passes through', async () => {
     const agent = new Agent({ model: 'mock/test' });
-    const processors: Processor[] = (agent.pipelineRunner as any).processors;
+    const processors = (agent.pipelineRunner as unknown as { processors: Processor[] }).processors;
     const gateToolProcessor = processors.find((p: Processor) => p.stage === 'gateTool');
 
     const ctx = makeCtx({ iteration: { step: 0 } });
@@ -261,8 +261,8 @@ describe('G4: PipelineRunner fires error hook on stage failure', () => {
     const hm = new HookManager(eventBus);
     runner.setHookManager(hm);
 
-    const errorHookCalls: any[] = [];
-    hm.register({ point: 'error', handler: (input) => { errorHookCalls.push(input); } });
+    const errorHookCalls: ErrorHookInput[] = [];
+    hm.register({ point: 'error', handler: (input: unknown) => { errorHookCalls.push(input as ErrorHookInput); } });
 
     runner.register({
       stage: 'processInput',
@@ -274,7 +274,7 @@ describe('G4: PipelineRunner fires error hook on stage failure', () => {
     await expect(runner.run(ctx, ['processInput'])).rejects.toThrow('processor explosion');
 
     expect(errorHookCalls.length).toBe(1);
-    expect(errorHookCalls[0].error.message).toBe('processor explosion');
+    expect((errorHookCalls[0].error as Error).message).toBe('processor explosion');
     expect(errorHookCalls[0].stage).toBe('processInput');
   });
 
@@ -284,8 +284,8 @@ describe('G4: PipelineRunner fires error hook on stage failure', () => {
     const hm = new HookManager(eventBus);
     runner.setHookManager(hm);
 
-    const errorHookCalls: any[] = [];
-    hm.register({ point: 'error', handler: (input) => { errorHookCalls.push(input); } });
+    const errorHookCalls: ErrorHookInput[] = [];
+    hm.register({ point: 'error', handler: (input: unknown) => { errorHookCalls.push(input as ErrorHookInput); } });
 
     runner.register({ stage: 'processInput', execute: async (ctx) => ctx });
     runner.register({
@@ -318,5 +318,80 @@ describe('G4: PipelineRunner fires error hook on stage failure', () => {
     const ctx = makeCtx();
     await expect(runner.run(ctx, ['invokeLLM'])).rejects.toThrow();
     expect(hookCalled).toBe(true);
+  });
+});
+
+// ===========================================================================
+// A-1: runLoop / streamEvents equivalence
+// ===========================================================================
+
+describe('A-1: runLoop and streamEvents produce equivalent results', () => {
+  function createOrchestrator() {
+    const runner = new PipelineRunner({});
+    const eventBus = new EventBus();
+    const hm = new HookManager(eventBus);
+    registerCompletingProcessors(runner);
+    return new LoopOrchestrator(runner, hm, undefined, eventBus);
+  }
+
+  const baseOptions: LoopOptions = {
+    maxIterations: 3,
+    modelString: 'mock/test',
+    sessionId: 'a1-session',
+  };
+
+  it('runLoop returns same context shape as streamEvents complete event', async () => {
+    const ctx = makeCtx({ request: { input: 'a1-test', sessionId: 'a1-session' } });
+
+    // runLoop path
+    const runResult = await createOrchestrator().runLoop(ctx, baseOptions);
+
+    // streamEvents path
+    const events: import('@agentforge/sdk').StreamEvent[] = [];
+    for await (const event of createOrchestrator().streamEvents(ctx, baseOptions)) {
+      events.push(event);
+    }
+    const completeEvent = [...events].reverse().find((e: import('@agentforge/sdk').StreamEvent) => e.type === 'complete');
+
+    expect(completeEvent).toBeDefined();
+    const streamCtx = (completeEvent as { context: PipelineContext }).context;
+
+    // Same response
+    expect(runResult.context.iteration.response).toBe(streamCtx.iteration.response);
+    // Same final step
+    expect(runResult.context.iteration.step).toBe(streamCtx.iteration.step);
+    // compatRetries exposed
+    expect(typeof runResult.compatRetries).toBe('number');
+  });
+
+  it('runLoop and streamEvents both end in completed state', async () => {
+    const ctx = makeCtx({ request: { input: 'a1-state', sessionId: 'a1-state' } });
+
+    const orch1 = createOrchestrator();
+    await orch1.runLoop(ctx, baseOptions);
+    expect(orch1.state).toBe('completed');
+
+    const orch2 = createOrchestrator();
+    for await (const _ of orch2.streamEvents(ctx, baseOptions)) { /* drain */ }
+    expect(orch2.state).toBe('completed');
+  });
+
+  it('runLoop delegates via streamCore — does not call runner.run() directly', async () => {
+    const runner = new PipelineRunner({});
+    const eventBus = new EventBus();
+    const hm = new HookManager(eventBus);
+    registerCompletingProcessors(runner);
+
+    const runSpy = vi.spyOn(runner, 'run');
+    const streamSpy = vi.spyOn(runner, 'stream');
+
+    const orch = new LoopOrchestrator(runner, hm, undefined, eventBus);
+    const ctx = makeCtx({ request: { input: 'a1-delegate', sessionId: 'a1-delegate' } });
+
+    await orch.runLoop(ctx, baseOptions);
+
+    // After A-1 fix: runLoop should NOT call runner.run(), only runner.stream()
+    expect(runSpy).not.toHaveBeenCalled();
+    expect(streamSpy).toHaveBeenCalled();
   });
 });

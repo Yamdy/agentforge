@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { Agent } from '../src/agent.js';
 import { createMockLanguageModel, registerMockProvider, createMockModelWithToolCalls } from './helpers.js';
-import type { AgentConfig, Tool } from '@agentforge/sdk';
+import type { PipelineContext, PipelineStage, Tool, AgentConfig } from '@agentforge/sdk';
+import type { PipelineRunner } from '../src/pipeline.js';
+import type { HookManager } from '../src/hook-manager.js';
 
 // Helper: create a mock tool
 function mockTool(name: string): Tool {
@@ -136,10 +138,10 @@ describe('Agent edge cases', () => {
   describe('reactive compat retry', () => {
     it('catches pipeline errors and re-throws when unfixable', async () => {
       const alwaysCrash = createMockLanguageModel({ text: 'nope' });
-      (alwaysCrash as any).doStream = async () => {
+      (alwaysCrash as unknown as { doStream: (...args: unknown[]) => Promise<never> }).doStream = async () => {
         throw new Error('completely unknown API error that no rule can fix');
       };
-      (alwaysCrash as any).doGenerate = async () => {
+      (alwaysCrash as unknown as { doGenerate: (...args: unknown[]) => Promise<never> }).doGenerate = async () => {
         throw new Error('completely unknown API error that no rule can fix');
       };
       registerMockProvider('unfixable', () => alwaysCrash);
@@ -150,10 +152,10 @@ describe('Agent edge cases', () => {
 
     it('throws when reactive rules cannot fix the error', async () => {
       const alwaysCrash = createMockLanguageModel({ text: 'nope' });
-      (alwaysCrash as any).doStream = async () => {
+      (alwaysCrash as unknown as { doStream: (...args: unknown[]) => Promise<never> }).doStream = async () => {
         throw new Error('completely unknown API error that no rule can fix');
       };
-      (alwaysCrash as any).doGenerate = async () => {
+      (alwaysCrash as unknown as { doGenerate: (...args: unknown[]) => Promise<never> }).doGenerate = async () => {
         throw new Error('completely unknown API error that no rule can fix');
       };
       registerMockProvider('unfixable', () => alwaysCrash);
@@ -184,10 +186,12 @@ describe('Agent edge cases', () => {
 
       let loopCallCount = 0;
       const mockRunner = {
-        run: async (ctx: any, stages: any) => {
+        run: async () => { throw new Error('should not be called'); },
+        async *stream(ctx: PipelineContext, stages: PipelineStage[]): AsyncGenerator<import('@agentforge/sdk').StreamEvent> {
           // Pre-loop stages (processInput, buildContext)
           if (stages[0] === 'processInput') {
-            return { ...ctx, session: { ...ctx.session, messageHistory: historyWithBadToolCall } };
+            yield { type: 'complete', context: { ...ctx, session: { ...ctx.session, messageHistory: historyWithBadToolCall } } };
+            return;
           }
           // Loop stages
           if (stages.includes('evaluateIteration')) {
@@ -195,21 +199,21 @@ describe('Agent edge cases', () => {
             if (loopCallCount === 1) {
               throw new Error('tool call id invalid format');
             }
-            return { ...ctx, iteration: { ...ctx.iteration, loopDirective: { action: 'stop' } } };
+            yield { type: 'complete', context: { ...ctx, iteration: { ...ctx.iteration, loopDirective: { action: 'stop' } } } };
+            return;
           }
           // Post-loop stages
-          return ctx;
+          yield { type: 'complete', context: ctx };
         },
-        stream: async function* () {},
         setHookManager() {},
       };
 
       const mockHookManager = { invoke: async () => {} };
-      const orchestrator = new LoopOrchestrator(mockRunner as any, mockHookManager as any, undefined, eventBus);
+      const orchestrator = new LoopOrchestrator(mockRunner as unknown as PipelineRunner, mockHookManager as unknown as HookManager, undefined, eventBus);
 
       const ctx = {
         request: { input: 'test', sessionId: 'test-session' },
-        agent: { config: {} as any, toolDeclarations: [], promptFragments: [] },
+        agent: { config: { model: 'test' } as AgentConfig, toolDeclarations: [], promptFragments: [] },
         iteration: { step: 0 },
         session: { messageHistory: [], custom: {} },
       };

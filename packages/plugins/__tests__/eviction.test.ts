@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { InMemoryEvictionStorage } from '../src/eviction/eviction-storage.js';
 import { evictionPlugin } from '../src/eviction/eviction-plugin.js';
-import type { HarnessAPI, PluginRegistration, Processor, PipelineContext } from '@agentforge/sdk';
+import type { HarnessAPI, Processor, PipelineContext } from '@agentforge/sdk';
 
 describe('InMemoryEvictionStorage', () => {
   let storage: InMemoryEvictionStorage;

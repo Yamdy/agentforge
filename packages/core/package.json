@@ -13,7 +13,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "test": "tsc --noEmit && vitest run",
-    "check-types": "tsc --noEmit"
+    "check-types": "tsc --noEmit",
+    "lint": "eslint src __tests__"
   },
   "dependencies": {
     "@agentforge/observability": "workspace:*",

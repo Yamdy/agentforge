@@ -23,13 +23,13 @@ describe('validateLlmHookOutput', () => {
 
   it('returns original messages when hook sets messages to non-array', () => {
     const original = [{ role: 'user', content: 'hello' }];
-    const result = validateLlmHookOutput('not an array' as any, original);
+    const result = validateLlmHookOutput('not an array' as unknown as unknown[], original);
     expect(result).toBe(original);
   });
 
   it('returns original messages when hook sets messages to null', () => {
     const original = [{ role: 'user', content: 'hello' }];
-    const result = validateLlmHookOutput(null as any, original);
+    const result = validateLlmHookOutput(null as unknown as unknown[], original);
     expect(result).toBe(original);
   });
 });

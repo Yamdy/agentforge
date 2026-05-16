@@ -38,7 +38,7 @@ describe('deepMerge', () => {
   });
 
   it('handles undefined/null sources gracefully', () => {
-    const result = deepMerge({ a: 1 }, undefined as any, null as any, { b: 2 });
+    const result = deepMerge({ a: 1 }, undefined as unknown as Record<string, unknown>, null as unknown as Record<string, unknown>, { b: 2 });
     expect(result).toEqual({ a: 1, b: 2 });
   });
 

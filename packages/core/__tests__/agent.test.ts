@@ -24,7 +24,7 @@ describe('Agent', () => {
   });
 
   it('passes user input through to the model', async () => {
-    registerMockProvider('capture', (modelId) =>
+    registerMockProvider('capture', (_modelId) =>
       createMockLanguageModel({ text: 'response' }),
     );
 
@@ -123,7 +123,7 @@ describe('Agent', () => {
               content: [{ type: 'text' as const, text: 'step' }],
               finishReason: { unified: 'stop' as const, raw: 'stop' },
               usage: { inputTokens: { total: 10, noCache: 10 }, outputTokens: { total: 5, text: 5 } },
-            } as any;
+            };
           },
           async doStream() {
             const stream = new ReadableStream({
@@ -140,9 +140,9 @@ describe('Agent', () => {
                 controller.close();
               },
             });
-            return { stream } as any;
+            return { stream };
           },
-        };
+        } as unknown as import('ai').LanguageModel;
       });
 
       const agent = new Agent({ model: 'slow-cancel/test', maxIterations: 100 });
@@ -176,8 +176,8 @@ describe('Agent', () => {
       const agent = new Agent({ model: 'mock/test' });
       const events: string[] = [];
 
-      agent.eventBus.subscribe('stage:before', (data: any) => events.push(`before:${data.stage}`));
-      agent.eventBus.subscribe('stage:after', (data: any) => events.push(`after:${data.stage}`));
+      agent.eventBus.subscribe('stage:before', (data) => events.push(`before:${(data as { stage: string }).stage}`));
+      agent.eventBus.subscribe('stage:after', (data) => events.push(`after:${(data as { stage: string }).stage}`));
 
       await agent.run('hello');
 
@@ -200,15 +200,13 @@ describe('Agent', () => {
     });
 
     it('iteration:end event fires after each loop iteration', async () => {
-      let callCount = 0;
       registerMockProvider('iter-track', () => {
-        callCount++;
         return createMockLanguageModel({ text: 'response' });
       });
 
       const agent = new Agent({ model: 'iter-track/test', maxIterations: 2 });
       const iterationEnds: number[] = [];
-      agent.eventBus.subscribe('iteration:end', (data: any) => iterationEnds.push(data.step));
+      agent.eventBus.subscribe('iteration:end', (data) => iterationEnds.push((data as { step: number }).step));
 
       await agent.run('test');
 
@@ -267,6 +265,37 @@ describe('Agent', () => {
 
       const eventBus = agent.pluginManager.eventBus;
       expect(eventBus).toBeDefined();
+    });
+  });
+
+  describe('invalidateModel()', () => {
+    it('clears cached model so next run re-resolves from factory', async () => {
+      let resolveCount = 0;
+      registerMockProvider('cache-test', () => {
+        resolveCount++;
+        return createMockLanguageModel({ text: `resolve-${resolveCount}` });
+      });
+
+      const agent = new Agent({ model: 'cache-test/model' });
+
+      // First run — model is resolved and cached
+      const result1 = await agent.run('first');
+      expect(result1.response).toBe('resolve-1');
+      expect(resolveCount).toBe(1);
+
+      // Second run without invalidation — should reuse cached model
+      const result2 = await agent.run('second');
+      expect(result2.response).toBe('resolve-1'); // same cached model
+      expect(resolveCount).toBe(1); // no additional resolve
+
+      // Invalidate the cache
+      expect(typeof agent.invalidateModel).toBe('function');
+      agent.invalidateModel();
+
+      // Third run after invalidation — should re-resolve
+      const result3 = await agent.run('third');
+      expect(result3.response).toBe('resolve-2');
+      expect(resolveCount).toBe(2);
     });
   });
 

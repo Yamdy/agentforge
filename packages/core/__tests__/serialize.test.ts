@@ -40,7 +40,7 @@ describe('serialize', () => {
         fullStream: (async function* () { yield 'x'; })(),
         usagePromise: Promise.resolve({ input: 1, output: 1 }),
         reasoningPromise: Promise.resolve('reason'),
-        span: { name: 'test', end: () => {}, setAttribute: () => ({} as any), startChild: () => ({} as any), addEvent: () => ({} as any), spanContext: () => ({ spanId: '', traceId: '' }) },
+        span: { name: 'test', end: () => {}, setAttribute: () => ({} as unknown as import('@agentforge/sdk').Span), startChild: () => ({} as unknown as import('@agentforge/sdk').Span), addEvent: () => ({} as unknown as import('@agentforge/sdk').Span), spanContext: () => ({ spanId: '', traceId: '' }) },
       },
     });
 

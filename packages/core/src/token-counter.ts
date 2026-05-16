@@ -62,7 +62,7 @@ export class TiktokenCounter implements TokenCounter {
     let total = 0;
     for (const msg of messages) {
       total += PER_MSG_OVERHEAD;
-      total += (msg as any).name ? NAME_OVERHEAD : 0;
+      total += (msg as unknown as { name?: string }).name ? NAME_OVERHEAD : 0;
       total += enc.encode(msg.content).length;
       if (msg.role === 'assistant' && 'toolCalls' in msg && msg.toolCalls) {
         for (const tc of msg.toolCalls) {

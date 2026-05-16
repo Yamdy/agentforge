@@ -12,7 +12,7 @@ function makeContext(step = 0, custom?: Record<string, unknown>): PipelineContex
 }
 
 function isAbort(r: ProcessorResult): r is { type: 'abort'; reason: string } {
-  return 'type' in r && (r as any).type === 'abort';
+  return 'type' in r && r.type === 'abort';
 }
 
 function isContext(r: ProcessorResult): r is PipelineContext {
@@ -64,12 +64,12 @@ describe('CostCapProcessor', () => {
 
     const r0 = await processor.execute(makeContext(0));
     expect(isContext(r0)).toBe(true);
-    const state0 = (r0 as PipelineContext).session.custom.costCap as any;
+    const state0 = (r0 as PipelineContext).session.custom.costCap as { cumulativeCost: number };
     expect(state0.cumulativeCost).toBeGreaterThan(0);
 
     const r1 = await processor.execute(makeContext(1, { costCap: state0 }));
     expect(isContext(r1)).toBe(true);
-    const state1 = (r1 as PipelineContext).session.custom.costCap as any;
+    const state1 = (r1 as PipelineContext).session.custom.costCap as { cumulativeCost: number };
     expect(state1.cumulativeCost).toBeGreaterThan(state0.cumulativeCost);
   });
 
@@ -93,7 +93,7 @@ describe('CostCapProcessor', () => {
     });
     const result = await processor.execute(makeContext(0));
     expect(isContext(result)).toBe(true);
-    const state = (result as PipelineContext).session.custom.costCap as any;
+    const state = (result as PipelineContext).session.custom.costCap as { iterations: Array<{ step: number; cost: number }> };
     expect(state.iterations).toHaveLength(1);
     expect(state.iterations[0].step).toBe(0);
     expect(state.iterations[0].cost).toBeGreaterThan(0);

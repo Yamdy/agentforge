@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { LLMInvoker } from '../src/llm-invoker.js';
 import { createMockLanguageModel } from './helpers.js';
 import type { TokenUsage, Tracer, Span } from '@agentforge/sdk';
@@ -24,12 +24,12 @@ describe('LLMInvoker', () => {
   it('invoke retries on transient errors (429)', async () => {
     let attempts = 0;
     const model = createMockLanguageModel({ text: 'recovered' });
-    const originalDoStream = (model as any).doStream.bind(model);
-    (model as any).doStream = async () => {
+    const originalDoStream = (model as unknown as { doStream: () => Promise<unknown> }).doStream.bind(model);
+    (model as unknown as { doStream: () => Promise<unknown> }).doStream = async () => {
       attempts++;
       if (attempts < 2) {
         const error = new Error('Rate limited');
-        (error as any).statusCode = 429;
+        (error as unknown as { statusCode: number }).statusCode = 429;
         throw error;
       }
       return originalDoStream();
@@ -44,9 +44,9 @@ describe('LLMInvoker', () => {
 
   it('invoke does not retry on auth errors (401)', async () => {
     const model = createMockLanguageModel({ text: 'nope' });
-    (model as any).doStream = async () => {
+    (model as unknown as { doStream: () => Promise<never> }).doStream = async () => {
       const error = new Error('Unauthorized');
-      (error as any).statusCode = 401;
+      (error as unknown as { statusCode: number }).statusCode = 401;
       throw error;
     };
 
@@ -61,8 +61,8 @@ describe('LLMInvoker', () => {
       const handle = invoker.stream({ messages: [{ role: 'user', content: 'hi' }] });
 
       const texts: string[] = [];
-      for await (const event of handle.fullStream as AsyncIterable<any>) {
-        if (event.type === 'text-delta') texts.push(event.text);
+      for await (const event of handle.fullStream as AsyncIterable<Record<string, unknown>>) {
+        if (event.type === 'text-delta') texts.push(event.text as string);
       }
 
       expect(texts).toContain('Hello world');
@@ -73,7 +73,7 @@ describe('LLMInvoker', () => {
       const invoker = new LLMInvoker({ model });
       const handle = invoker.stream({ messages: [{ role: 'user', content: 'hi' }] });
 
-      for await (const _ of handle.fullStream) { /* drain */ }
+      for await (const _evt of handle.fullStream) { void _evt; }
 
       const usage = await handle.usage;
       expect(usage).toEqual({ input: 15, output: 3 } as TokenUsage);
@@ -128,7 +128,7 @@ describe('LLMInvoker', () => {
     it('invoke ends span even on error', async () => {
       const { tracer, spans } = createMockTracer();
       const model = createMockLanguageModel({ text: 'nope' });
-      (model as any).doStream = async () => { throw new Error('LLM failed'); };
+      (model as unknown as { doStream: () => Promise<unknown> }).doStream = async () => { throw new Error('LLM failed'); };
 
       const invoker = new LLMInvoker({ model, tracer, retryOptions: { maxRetries: 0, baseDelay: 1 } });
 

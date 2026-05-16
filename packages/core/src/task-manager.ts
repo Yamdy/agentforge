@@ -117,7 +117,7 @@ export class TaskManagerImpl implements ITaskManager {
       config,
       abortController,
       completionHandlers: [],
-      parentSessionId: (config as any).parentSessionId,
+      parentSessionId: (config as unknown as { parentSessionId?: string }).parentSessionId,
     };
 
     const handle = new InternalAsyncTaskHandle(state);
@@ -181,10 +181,10 @@ export class TaskManagerImpl implements ITaskManager {
       if (signal.aborted) return;
 
       const agentConfig: AgentConfig = {
-        model: (config as any).model ?? 'default',
+        model: (config as unknown as { model?: string }).model ?? 'default',
         systemPrompt: config.systemPrompt,
         tools: config.tools,
-        maxIterations: (config as any).maxIterations,
+        maxIterations: (config as unknown as { maxIterations?: number }).maxIterations,
       };
 
       const result = await this.runAgentFn(agentConfig, prompt, signal);

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { AuthAdapter, AuthResult } from '@agentforge/sdk';
+import type { AuthAdapter } from '@agentforge/sdk';
 import { StaticKeyAuthAdapter } from '../src/middleware/static-key-auth.js';
 import { AgentForgeServer } from '../src/server.js';
 

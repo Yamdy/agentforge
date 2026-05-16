@@ -51,6 +51,8 @@ export interface AgentRunResult {
   response: string;
   tokenUsage: import('@agentforge/sdk').TokenUsage;
   sessionId: string;
+  /** Number of compat retries that occurred during the agentic loop. */
+  compatRetries: number;
 }
 
 export class Agent {
@@ -137,7 +139,7 @@ export class Agent {
 
     const maxIter = typeof this.config.maxIterations === 'number' ? this.config.maxIterations : 10;
     try {
-      const finalCtx = await this.orchestrator.runLoop(context, {
+      const { context: finalCtx, compatRetries } = await this.orchestrator.runLoop(context, {
         maxIterations: maxIter,
         signal,
         modelString: this.config.model,
@@ -149,6 +151,7 @@ export class Agent {
         response: finalCtx.iteration.response as string ?? '',
         tokenUsage: finalCtx.session.totalTokenUsage ?? { input: 0, output: 0 },
         sessionId: context.request.sessionId,
+        compatRetries,
       };
     } finally {
       // agent.end hook — always fires, even on error; suppress hook errors to preserve original
@@ -163,7 +166,7 @@ export class Agent {
     const maxIter = typeof this.config.maxIterations === 'number' ? this.config.maxIterations : 10;
 
     try {
-      const finalCtx = await this.orchestrator.resumeLoop(sessionId, {
+      const { context: finalCtx, compatRetries } = await this.orchestrator.resumeLoop(sessionId, {
         maxIterations: maxIter,
         signal,
         modelString: this.config.model,
@@ -175,6 +178,7 @@ export class Agent {
         response: finalCtx.iteration.response as string ?? '',
         tokenUsage: finalCtx.session.totalTokenUsage ?? { input: 0, output: 0 },
         sessionId,
+        compatRetries,
       };
     } finally {
       try { await hm.invoke('agent.end', { sessionId }, {}); } catch { /* hook error must not mask original */ }
@@ -224,6 +228,11 @@ export class Agent {
     } finally {
       try { await hm.invoke('agent.end', { sessionId: context.request.sessionId }, {}); } catch { /* hook error must not mask original */ }
     }
+  }
+
+  /** Clear the cached model so the next run re-resolves from the factory. */
+  invalidateModel(): void {
+    this._model = null;
   }
 
   private async getLLM(systemPrompt?: string): Promise<LLMInvoker> {

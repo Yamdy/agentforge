@@ -41,13 +41,13 @@ describe('F-9/F-11: system prompt assembly', () => {
           usage: Promise.resolve({ input: 1, output: 1 }),
           reasoning: Promise.resolve(undefined),
         }),
-      } as any;
+      } as unknown as LLMInvoker;
     };
 
     const processor = createInvokeLLMProcessor({
       getLLM: mockGetLLM,
-      registry: { toAiSdkToolSchemas: () => ({}), setToolExecutionContext: () => {} } as any as ToolRegistry,
-      hookManager: { invoke: async () => {} } as any as HookManager,
+      registry: { toAiSdkToolSchemas: () => ({}), setToolExecutionContext: () => {} } as unknown as ToolRegistry,
+      hookManager: { invoke: async () => {} } as unknown as HookManager,
       modelString: 'mock/test',
     });
 
@@ -61,7 +61,7 @@ describe('F-9/F-11: system prompt assembly', () => {
         promptFragments: ['injected fragment from plugin'],
         toolDeclarations: [],
         _assembledFragmentCount: 1,
-      } as any,
+      } as unknown as PipelineContext['agent'],
     });
 
     await processor.execute(ctx);
@@ -85,13 +85,13 @@ describe('F-9/F-11: system prompt assembly', () => {
           usage: Promise.resolve({ input: 1, output: 1 }),
           reasoning: Promise.resolve(undefined),
         }),
-      } as any;
+      } as unknown as LLMInvoker;
     };
 
     const processor = createInvokeLLMProcessor({
       getLLM: mockGetLLM,
-      registry: { toAiSdkToolSchemas: () => ({}), setToolExecutionContext: () => {} } as any as ToolRegistry,
-      hookManager: { invoke: async () => {} } as any as HookManager,
+      registry: { toAiSdkToolSchemas: () => ({}), setToolExecutionContext: () => {} } as unknown as ToolRegistry,
+      hookManager: { invoke: async () => {} } as unknown as HookManager,
       modelString: 'mock/test',
     });
 
@@ -117,13 +117,13 @@ describe('F-9/F-11: system prompt assembly', () => {
           usage: Promise.resolve({ input: 1, output: 1 }),
           reasoning: Promise.resolve(undefined),
         }),
-      } as any;
+      } as unknown as LLMInvoker;
     };
 
     const processor = createInvokeLLMProcessor({
       getLLM: mockGetLLM,
-      registry: { toAiSdkToolSchemas: () => ({}), setToolExecutionContext: () => {} } as any as ToolRegistry,
-      hookManager: { invoke: async () => {} } as any as HookManager,
+      registry: { toAiSdkToolSchemas: () => ({}), setToolExecutionContext: () => {} } as unknown as ToolRegistry,
+      hookManager: { invoke: async () => {} } as unknown as HookManager,
       modelString: 'mock/test',
     });
 
@@ -141,7 +141,7 @@ describe('F-9/F-11: system prompt assembly', () => {
         ],
         toolDeclarations: [],
         _assembledFragmentCount: 1,
-      } as any,
+      } as unknown as PipelineContext['agent'],
     });
 
     await processor.execute(ctx);

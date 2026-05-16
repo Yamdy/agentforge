@@ -51,10 +51,8 @@ export class ConcurrencyController {
     }
 
     let timer: ReturnType<typeof setTimeout>;
-    let timedOut = false;
     const timeoutPromise = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
-        timedOut = true;
         // Remove our waiter from the queue so it doesn't leak
         if (waiterRef) {
           const idx = slot.waiters.indexOf(waiterRef);

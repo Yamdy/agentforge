@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 const SENSITIVE_PATTERNS = [
   { pattern: /\bsk-[a-zA-Z0-9]{10,}\b/g, replacement: '[REDACTED_KEY]' },
-  { pattern: /\bkey-[a-zA-Z0-9\-]{8,}\b/g, replacement: '[REDACTED_KEY]' },
+  { pattern: /\bkey-[a-zA-Z0-9-]{8,}\b/g, replacement: '[REDACTED_KEY]' },
   { pattern: /\bBearer\s+[a-zA-Z0-9\-._~+/]+=*/g, replacement: 'Bearer [REDACTED_TOKEN]' },
   { pattern: /https?:\/\/[^\s]+/g, replacement: '[REDACTED_URL]' },
   { pattern: /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?\b/g, replacement: '[REDACTED_ADDRESS]' },
@@ -25,7 +25,7 @@ const KNOWN_ERROR_MESSAGES = [
   { pattern: /overloaded|503|server.*error/i, message: 'The AI provider is temporarily unavailable. Please try again.' },
 ];
 
-export function sanitizeError(err) {
+export function sanitizeError(err: unknown) {
   const correlationId = randomUUID();
   if (!(err instanceof Error)) {
     return { message: 'An unexpected error occurred.', correlationId };

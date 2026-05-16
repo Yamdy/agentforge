@@ -29,14 +29,17 @@ export interface LLMStreamHandle {
   reasoning: Promise<string | undefined>;
 }
 
-export function extractTokenUsage(usage: any): TokenUsage {
+type UsageShape = { inputTokens?: number | { total?: number }; outputTokens?: number | { total?: number } } | null | undefined;
+
+export function extractTokenUsage(usage: unknown): TokenUsage {
+  const u = usage as UsageShape;
   return {
-    input: typeof usage?.inputTokens === 'number'
-      ? usage.inputTokens
-      : (usage?.inputTokens as any)?.total ?? 0,
-    output: typeof usage?.outputTokens === 'number'
-      ? usage.outputTokens
-      : (usage?.outputTokens as any)?.total ?? 0,
+    input: typeof u?.inputTokens === 'number'
+      ? u.inputTokens
+      : u?.inputTokens?.total ?? 0,
+    output: typeof u?.outputTokens === 'number'
+      ? u.outputTokens
+      : u?.outputTokens?.total ?? 0,
   };
 }
 
@@ -65,12 +68,12 @@ export class LLMInvoker {
           streamOpts.providerOptions = input.providerOptions;
         }
 
-        span?.setAttribute('llm.model', (this.options.model as any).modelId ?? 'unknown');
+        span?.setAttribute('llm.model', (this.options.model as unknown as { modelId: string }).modelId ?? 'unknown');
 
-        const result = streamText(streamOpts as any);
+        const result = streamText(streamOpts as unknown as Parameters<typeof streamText>[0]);
 
         const chunks: string[] = [];
-        let usage: any = null;
+        let usage: unknown = null;
 
         for await (const event of result.fullStream) {
           switch (event.type) {
@@ -118,7 +121,7 @@ export class LLMInvoker {
       streamOpts.providerOptions = input.providerOptions;
     }
 
-    span?.setAttribute('llm.model', (this.options.model as any).modelId ?? 'unknown');
+    span?.setAttribute('llm.model', (this.options.model as unknown as { modelId: string }).modelId ?? 'unknown');
 
     // Retry only the initial streamText() call (connection phase).
     // Subsequent stream iteration errors are not retried here.
@@ -127,7 +130,7 @@ export class LLMInvoker {
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        result = streamText(streamOpts as any);
+        result = streamText(streamOpts as unknown as Parameters<typeof streamText>[0]);
         break;
       } catch (error) {
         if (attempt >= maxRetries) {

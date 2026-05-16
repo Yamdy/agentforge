@@ -22,6 +22,12 @@ const LOOP_STAGES: PipelineStage[] = [
 ];
 const POST_LOOP_STAGES: PipelineStage[] = ['processOutput'];
 
+/** Result of runLoop / resumeLoop, carrying both the final context and retry statistics. */
+export interface LoopResult {
+  context: PipelineContext;
+  compatRetries: number;
+}
+
 export interface LoopOptions {
   maxIterations: number;
   signal?: globalThis.AbortSignal;
@@ -30,6 +36,11 @@ export interface LoopOptions {
   maxCompatRetries?: number;
   /** When true, saves a checkpoint after each completed iteration */
   autoCheckpoint?: boolean;
+}
+
+/** Mutable state shared between loop methods for retry statistics. */
+interface LoopRunState {
+  compatRetries: number;
 }
 
 export class LoopOrchestrator {
@@ -60,89 +71,24 @@ export class LoopOrchestrator {
     return this.stateMachine.current;
   }
 
-  async runLoop(ctx: PipelineContext, options: LoopOptions): Promise<PipelineContext> {
-    const { signal, maxIterations, modelString, sessionId } = options;
-    const maxCompatRetries = options.maxCompatRetries ?? 3;
+  // ---------------------------------------------------------------------------
+  // Public: run (non-streaming) — delegates to streamCore
+  // ---------------------------------------------------------------------------
 
-    this.resetToRunning();
+  async runLoop(ctx: PipelineContext, options: LoopOptions): Promise<LoopResult> {
+    const runState: LoopRunState = { compatRetries: 0 };
+    let finalCtx = ctx;
 
-    try {
-      // Pre-loop stages
-      let result = await this.runner.run(ctx, this.preLoopStages, { signal });
-      this.checkAbort(result, signal);
-      await this.checkSuspendAndCheckpoint(result, ctx, sessionId);
-
-      // Agentic loop
-      let loopCtx = result as PipelineContext;
-      let compatRetryCount = 0;
-      for (let i = 0; i < maxIterations; i++) {
-        if (signal?.aborted) throw new DOMException('Agent run aborted', 'AbortError');
-
-        const { ctx: stepCtx, stages } = this.computeLoopStages(loopCtx, i);
-        loopCtx = stepCtx;
-
-        try {
-          result = await this.runner.run(loopCtx, stages, { signal });
-        } catch (error) {
-          await this.hookManager.invoke('error', { error, stage: 'invokeLLM' as PipelineStage, sessionId }, {});
-          const compatResult = applyReactiveRules(
-            loopCtx.session.messageHistory ?? [],
-            modelString,
-            error,
-          );
-          if (compatResult) {
-            compatRetryCount++;
-            this.eventBus?.emit('compat:retry', { step: i, sessionId, retryCount: compatRetryCount, maxRetries: maxCompatRetries });
-            this.eventBus?.emit('compat:diff', { step: i, sessionId, diff: compatResult.diff });
-            if (compatRetryCount > maxCompatRetries) {
-              this.eventBus?.emit('compat:retry_exhausted', { step: i, sessionId, retryCount: compatRetryCount, maxRetries: maxCompatRetries });
-              throw error;
-            }
-            loopCtx = { ...loopCtx, session: { ...loopCtx.session, messageHistory: compatResult.history } };
-            continue;
-          }
-          throw error;
-        }
-        if (this.isAbort(result)) {
-          const abort = result as AbortSignalType;
-          if (abort.retryFrom) {
-            loopCtx = { ...loopCtx, iteration: { ...loopCtx.iteration, loopDirective: { action: 'retry', retryFrom: abort.retryFrom } } };
-            continue;
-          }
-          throw new Error(`Agent aborted: ${abort.reason}`);
-        }
-        if (this.isSuspend(result)) {
-          await this.saveCheckpoint(sessionId, loopCtx);
-          this.stateMachine.transition('paused');
-          throw new Error(`Agent suspended: ${(result as SuspensionSignal).reason}`);
-        }
-        loopCtx = result as PipelineContext;
-
-        await this.hookManager.invoke('iteration.end', { step: loopCtx.iteration.step, sessionId }, {});
-
-        if (options.autoCheckpoint) {
-          await this.saveCheckpoint(sessionId, loopCtx);
-        }
-
-        if (loopCtx.iteration.loopDirective?.action === 'stop') break;
+    for await (const event of this.streamCore(ctx, options, runState)) {
+      if (event.type === 'complete') {
+        finalCtx = (event as { context: PipelineContext }).context;
       }
-
-      if (signal?.aborted) throw new DOMException('Agent run aborted', 'AbortError');
-
-      // Post-loop stage
-      result = await this.runner.run(loopCtx, this.postLoopStages, { signal });
-      this.checkAbort(result, signal);
-      await this.checkSuspendAndCheckpoint(result, loopCtx, sessionId);
-
-      this.stateMachine.transition('completed');
-      return result as PipelineContext;
-    } catch (e) {
-      this.finalizeState(e);
-      throw e;
     }
+
+    return { context: finalCtx, compatRetries: runState.compatRetries };
   }
 
-  async resumeLoop(sessionId: string, options: LoopOptions): Promise<PipelineContext> {
+  async resumeLoop(sessionId: string, options: LoopOptions): Promise<LoopResult> {
     const checkpoint = await this.checkpointStore.load(sessionId);
     if (!checkpoint) throw new Error(`No checkpoint found for session: ${sessionId}`);
     const ctx = deserialize(checkpoint);
@@ -151,113 +97,43 @@ export class LoopOrchestrator {
     return result;
   }
 
+  // ---------------------------------------------------------------------------
+  // Public: streamLoop (yields text deltas)
+  // ---------------------------------------------------------------------------
+
   async *streamLoop(ctx: PipelineContext, options: LoopOptions): AsyncGenerator<string> {
-    const { signal, maxIterations, modelString, sessionId } = options;
-    const maxCompatRetries = options.maxCompatRetries ?? 3;
-
-    this.resetToRunning();
-
-    let loopCtx = ctx;
-    let compatRetryCount = 0;
-    try {
-      for await (const event of this.runner.stream(loopCtx, this.preLoopStages, { signal })) {
-        if (signal?.aborted) throw new DOMException('Agent stream aborted', 'AbortError');
-        if (event.type === 'abort') throw new Error(`Agent aborted: ${(event as AbortSignalType).reason}`);
-        if (event.type === 'suspended') {
-          await this.saveCheckpoint(sessionId, loopCtx);
-          this.stateMachine.transition('paused');
-          yield ` [suspended: ${(event as { reason: string }).reason}]`;
-          return;
-        }
-        if (event.type === 'text_delta') yield event.text;
-        if (event.type === 'complete') loopCtx = (event as { context: PipelineContext }).context;
-      }
-
-      for (let i = 0; i < maxIterations; i++) {
-        if (signal?.aborted) throw new DOMException('Agent stream aborted', 'AbortError');
-
-        const { ctx: stepCtx, stages } = this.computeLoopStages(loopCtx, i);
-        loopCtx = stepCtx;
-
-        let loopBreak = false;
-        let compatRetry = false;
-        try {
-          for await (const event of this.runner.stream(loopCtx, stages, { signal })) {
-            if (signal?.aborted) throw new DOMException('Agent stream aborted', 'AbortError');
-            if (event.type === 'abort') {
-              const abortEvent = event as { type: 'abort'; reason: string; retryFrom?: PipelineStage };
-              if (abortEvent.retryFrom) {
-                loopCtx = { ...loopCtx, iteration: { ...loopCtx.iteration, loopDirective: { action: 'retry', retryFrom: abortEvent.retryFrom } } };
-                loopBreak = true;
-                break;
-              }
-              throw new Error(`Agent aborted: ${abortEvent.reason}`);
-            }
-            if (event.type === 'suspended') {
-              await this.saveCheckpoint(sessionId, loopCtx);
-              this.stateMachine.transition('paused');
-              yield ` [suspended: ${(event as { reason: string }).reason}]`;
-              return;
-            }
-            if (event.type === 'text_delta') yield event.text;
-            if (event.type === 'complete') loopCtx = (event as { context: PipelineContext }).context;
-          }
-        } catch (error) {
-          await this.hookManager.invoke('error', { error, stage: 'invokeLLM' as PipelineStage, sessionId }, {});
-          const compatResult = applyReactiveRules(
-            loopCtx.session.messageHistory ?? [],
-            modelString,
-            error,
-          );
-          if (compatResult) {
-            compatRetryCount++;
-            this.eventBus?.emit('compat:retry', { step: i, sessionId, retryCount: compatRetryCount, maxRetries: maxCompatRetries });
-            this.eventBus?.emit('compat:diff', { step: i, sessionId, diff: compatResult.diff });
-            if (compatRetryCount > maxCompatRetries) {
-              this.eventBus?.emit('compat:retry_exhausted', { step: i, sessionId, retryCount: compatRetryCount, maxRetries: maxCompatRetries });
-              throw error;
-            }
-            loopCtx = { ...loopCtx, session: { ...loopCtx.session, messageHistory: compatResult.history } };
-            compatRetry = true;
-          } else {
-            throw error;
-          }
-        }
-        if (compatRetry) continue;
-        if (loopBreak) continue;
-
-        await this.hookManager.invoke('iteration.end', { step: loopCtx.iteration.step, sessionId }, {});
-
-        if (options.autoCheckpoint) {
-          await this.saveCheckpoint(sessionId, loopCtx);
-        }
-
-        if (loopCtx.iteration.loopDirective?.action === 'stop') break;
-      }
-
-      if (signal?.aborted) throw new DOMException('Agent stream aborted', 'AbortError');
-
-      for await (const event of this.runner.stream(loopCtx, this.postLoopStages, { signal })) {
-        if (event.type === 'abort') throw new Error(`Agent aborted: ${(event as AbortSignalType).reason}`);
-        if (event.type === 'text_delta') yield event.text;
-      }
-
-      this.stateMachine.transition('completed');
-    } catch (e) {
-      this.finalizeState(e);
-      throw e;
+    for await (const event of this.streamCore(ctx, options)) {
+      if (event.type === 'text_delta') yield event.text;
+      if (event.type === 'suspended') yield ` [suspended: ${(event as { reason: string }).reason}]`;
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Public: streamEvents (yields StreamEvents)
+  // ---------------------------------------------------------------------------
+
   async *streamEvents(ctx: PipelineContext, options: LoopOptions): AsyncGenerator<StreamEvent> {
+    yield* this.streamCore(ctx, options);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Core streaming loop — single source of truth for streamLoop + streamEvents
+  // ---------------------------------------------------------------------------
+
+  private async *streamCore(
+    ctx: PipelineContext,
+    options: LoopOptions,
+    sharedRunState?: LoopRunState,
+  ): AsyncGenerator<StreamEvent> {
     const { signal, maxIterations, modelString, sessionId } = options;
     const maxCompatRetries = options.maxCompatRetries ?? 3;
+    const runState = sharedRunState ?? { compatRetries: 0 };
 
     this.resetToRunning();
 
     let loopCtx = ctx;
-    let compatRetryCount = 0;
     try {
+      // Pre-loop stages
       for await (const event of this.runner.stream(loopCtx, this.preLoopStages, { signal })) {
         if (signal?.aborted) throw new DOMException('Agent stream aborted', 'AbortError');
         if (event.type === 'abort') throw new Error(`Agent aborted: ${(event as AbortSignalType).reason}`);
@@ -271,6 +147,7 @@ export class LoopOrchestrator {
         yield event;
       }
 
+      // Agentic loop
       for (let i = 0; i < maxIterations; i++) {
         if (signal?.aborted) throw new DOMException('Agent stream aborted', 'AbortError');
 
@@ -301,40 +178,19 @@ export class LoopOrchestrator {
             yield event;
           }
         } catch (error) {
-          await this.hookManager.invoke('error', { error, stage: 'invokeLLM' as PipelineStage, sessionId }, {});
-          const compatResult = applyReactiveRules(
-            loopCtx.session.messageHistory ?? [],
-            modelString,
-            error,
-          );
-          if (compatResult) {
-            compatRetryCount++;
-            this.eventBus?.emit('compat:retry', { step: i, sessionId, retryCount: compatRetryCount, maxRetries: maxCompatRetries });
-            this.eventBus?.emit('compat:diff', { step: i, sessionId, diff: compatResult.diff });
-            if (compatRetryCount > maxCompatRetries) {
-              this.eventBus?.emit('compat:retry_exhausted', { step: i, sessionId, retryCount: compatRetryCount, maxRetries: maxCompatRetries });
-              throw error;
-            }
-            loopCtx = { ...loopCtx, session: { ...loopCtx.session, messageHistory: compatResult.history } };
-            compatRetry = true;
-          } else {
-            throw error;
-          }
+          loopCtx = await this.handleLoopError(error, loopCtx, i, sessionId, modelString, maxCompatRetries, runState);
+          compatRetry = true;
         }
         if (compatRetry) continue;
         if (loopBreak) continue;
 
-        await this.hookManager.invoke('iteration.end', { step: loopCtx.iteration.step, sessionId }, {});
-
-        if (options.autoCheckpoint) {
-          await this.saveCheckpoint(sessionId, loopCtx);
-        }
-
+        await this.afterIteration(loopCtx, sessionId, options.autoCheckpoint);
         if (loopCtx.iteration.loopDirective?.action === 'stop') break;
       }
 
       if (signal?.aborted) throw new DOMException('Agent stream aborted', 'AbortError');
 
+      // Post-loop stages
       for await (const event of this.runner.stream(loopCtx, this.postLoopStages, { signal })) {
         if (event.type === 'abort') throw new Error(`Agent aborted: ${(event as AbortSignalType).reason}`);
         yield event;
@@ -346,6 +202,10 @@ export class LoopOrchestrator {
       throw e;
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // Shared helpers
+  // ---------------------------------------------------------------------------
 
   private resetToRunning(): void {
     if (this.stateMachine.current !== 'pending') {
@@ -369,24 +229,42 @@ export class LoopOrchestrator {
     return { ctx: newCtx, stages };
   }
 
-  private checkAbort(result: PipelineContext | AbortSignalType | SuspensionSignal, signal?: globalThis.AbortSignal): void {
-    if (this.isAbort(result)) {
-      throw new Error(`Agent aborted: ${(result as AbortSignalType).reason}`);
+  /** Handle compat retry logic. Returns updated loopCtx on retry, throws on unrecoverable error. */
+  private async handleLoopError(
+    error: unknown,
+    loopCtx: PipelineContext,
+    step: number,
+    sessionId: string,
+    modelString: string,
+    maxCompatRetries: number,
+    runState: LoopRunState,
+  ): Promise<PipelineContext> {
+    await this.hookManager.invoke('error', { error, stage: 'invokeLLM' as PipelineStage, sessionId }, {});
+    const compatResult = applyReactiveRules(
+      loopCtx.session.messageHistory ?? [],
+      modelString,
+      error,
+    );
+    if (!compatResult) throw error;
+
+    runState.compatRetries++;
+    this.eventBus?.emit('compat:retry', { step, sessionId, retryCount: runState.compatRetries, maxRetries: maxCompatRetries });
+    this.eventBus?.emit('compat:diff', { step, sessionId, diff: compatResult.diff });
+    if (runState.compatRetries > maxCompatRetries) {
+      this.eventBus?.emit('compat:retry_exhausted', { step, sessionId, retryCount: runState.compatRetries, maxRetries: maxCompatRetries });
+      throw error;
     }
-    if (signal?.aborted) {
-      throw new DOMException('Agent run aborted', 'AbortError');
-    }
+    return { ...loopCtx, session: { ...loopCtx.session, messageHistory: compatResult.history } };
   }
 
-  private async checkSuspendAndCheckpoint(
-    result: PipelineContext | AbortSignalType | SuspensionSignal,
-    ctx: PipelineContext,
+  private async afterIteration(
+    loopCtx: PipelineContext,
     sessionId: string,
+    autoCheckpoint?: boolean,
   ): Promise<void> {
-    if (this.isSuspend(result)) {
-      await this.saveCheckpoint(sessionId, ctx);
-      this.stateMachine.transition('paused');
-      throw new Error(`Agent suspended: ${(result as SuspensionSignal).reason}`);
+    await this.hookManager.invoke('iteration.end', { step: loopCtx.iteration.step, sessionId }, {});
+    if (autoCheckpoint) {
+      await this.saveCheckpoint(sessionId, loopCtx);
     }
   }
 
@@ -397,13 +275,5 @@ export class LoopOrchestrator {
     } else {
       this.stateMachine.transition('error');
     }
-  }
-
-  private isAbort(result: PipelineContext | AbortSignalType | SuspensionSignal): result is AbortSignalType {
-    return 'type' in result && result.type === 'abort';
-  }
-
-  private isSuspend(result: PipelineContext | AbortSignalType | SuspensionSignal): result is SuspensionSignal {
-    return 'type' in result && result.type === 'suspend';
   }
 }

@@ -66,7 +66,7 @@ describe('PluginManager', () => {
 
   it('allows plugin to register commands', async () => {
     const plugin = (api: HarnessAPI): PluginRegistration => {
-      api.registerCommand('hello', async (args) => {});
+      api.registerCommand('hello', async (_args) => {});
       return {};
     };
 

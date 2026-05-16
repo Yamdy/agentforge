@@ -1,13 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { Agent } from '../src/agent.js';
-import { PipelineRunner } from '../src/pipeline.js';
 import { ToolRegistry } from '../src/tool-registry.js';
 import { TracerImpl, type SpanData } from '@agentforge/observability';
 import { HookManager } from '../src/hook-manager.js';
 import { EventBus } from '../src/event-bus.js';
 import { LLMInvoker } from '../src/llm-invoker.js';
 import { createMockLanguageModel, registerMockProvider } from './helpers.js';
-import type { AgentConfig, Tracer, Span } from '@agentforge/sdk';
+import type { Tool } from '@agentforge/sdk';
 import { z } from 'zod';
 
 /**
@@ -38,8 +37,8 @@ describe('Observability fixes — RED phase', () => {
       );
 
       const events: string[] = [];
-      agent.eventBus.subscribe('stage:after', (data: any) => {
-        events.push(data.stage);
+      agent.eventBus.subscribe('stage:after', (data) => {
+        events.push((data as Record<string, unknown>).stage as string);
       });
 
       await agent.run('hello again');
@@ -52,7 +51,7 @@ describe('Observability fixes — RED phase', () => {
       const invoker = new LLMInvoker({ model, tracer });
 
       const handle = invoker.stream({ messages: [{ role: 'user', content: 'test' }] });
-      for await (const _ of handle.fullStream) { /* drain */ }
+      for await (const _evt of handle.fullStream) { void _evt; }
       await handle.usage;
 
       const span = tracer.startSpan('test');
@@ -128,7 +127,7 @@ describe('Observability fixes — RED phase', () => {
 
       registerMockProvider('crash', () => {
         const model = createMockLanguageModel({ text: 'nope' });
-        (model as any).doStream = async () => { throw new Error('LLM crash'); };
+        (model as unknown as { doStream: () => Promise<unknown> }).doStream = async () => { throw new Error('LLM crash'); };
         return model;
       });
 
@@ -149,7 +148,7 @@ describe('Observability fixes — RED phase', () => {
 
       registerMockProvider('err-event', () => {
         const model = createMockLanguageModel({ text: 'nope' });
-        (model as any).doStream = async () => { throw new Error('Stream error'); };
+        (model as unknown as { doStream: () => Promise<unknown> }).doStream = async () => { throw new Error('Stream error'); };
         return model;
       });
 
@@ -182,7 +181,7 @@ describe('Observability fixes — RED phase', () => {
       const eventBus = new EventBus();
       const hookManager = new HookManager(eventBus);
       registry.setHookManager(hookManager);
-      registry.register(myTool as any);
+      registry.register(myTool as unknown as Tool);
 
       hookManager.register({
         point: 'tool.after',
@@ -217,7 +216,7 @@ describe('Observability fixes — RED phase', () => {
       const eventBus = new EventBus();
       const hookManager = new HookManager(eventBus);
       registry.setHookManager(hookManager);
-      registry.register(failTool as any);
+      registry.register(failTool as unknown as Tool);
 
       hookManager.register({
         point: 'tool.after',

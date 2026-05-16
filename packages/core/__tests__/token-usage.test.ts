@@ -25,8 +25,8 @@ describe('Token usage extraction', () => {
             ...ctx.iteration,
             response: chunks.join(''),
             tokenUsage: {
-              input: typeof usage?.inputTokens === 'number' ? usage.inputTokens : (usage?.inputTokens as any)?.total ?? 0,
-              output: typeof usage?.outputTokens === 'number' ? usage.outputTokens : (usage?.outputTokens as any)?.total ?? 0,
+              input: typeof usage?.inputTokens === 'number' ? usage.inputTokens : (usage?.inputTokens as unknown as { total?: number })?.total ?? 0,
+              output: typeof usage?.outputTokens === 'number' ? usage.outputTokens : (usage?.outputTokens as unknown as { total?: number })?.total ?? 0,
             },
           },
         };

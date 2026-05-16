@@ -34,15 +34,15 @@ describe('PipelineRunner stream edge cases', () => {
       events.push(event);
     }
 
-    const toolCalls = events.filter(e => e.type === 'tool_call');
+    const toolCalls = events.filter((e): e is StreamEvent & { type: 'tool_call' } => e.type === 'tool_call');
     expect(toolCalls).toHaveLength(1);
-    expect((toolCalls[0] as any).name).toBe('echo');
-    expect((toolCalls[0] as any).args).toEqual({ input: 'hi' });
+    expect(toolCalls[0].name).toBe('echo');
+    expect(toolCalls[0].args).toEqual({ input: 'hi' });
 
-    const complete = events.find(e => e.type === 'complete') as any;
+    const complete = events.find(e => e.type === 'complete') as unknown as { type: 'complete'; context: PipelineContext };
     expect(complete).toBeDefined();
-    expect(complete.context.iteration.pendingToolCalls).toHaveLength(1);
-    expect(complete.context.iteration.pendingToolCalls[0].name).toBe('echo');
+    expect(complete.context.iteration.pendingToolCalls!).toHaveLength(1);
+    expect(complete.context.iteration.pendingToolCalls![0].name).toBe('echo');
   });
 
   it('captures reasoning events and sets reasoningContent', async () => {
@@ -67,7 +67,7 @@ describe('PipelineRunner stream edge cases', () => {
       events.push(event);
     }
 
-    const complete = events.find(e => e.type === 'complete') as any;
+    const complete = events.find(e => e.type === 'complete') as unknown as { type: 'complete'; context: PipelineContext };
     expect(complete).toBeDefined();
     expect(complete.context.iteration.reasoningContent).toBe('thinking...');
   });
@@ -94,7 +94,7 @@ describe('PipelineRunner stream edge cases', () => {
       events.push(event);
     }
 
-    const complete = events.find(e => e.type === 'complete') as any;
+    const complete = events.find(e => e.type === 'complete') as unknown as { type: 'complete'; context: PipelineContext };
     expect(complete.context.iteration.reasoningContent).toBe('deferred reasoning');
   });
 
@@ -119,7 +119,7 @@ describe('PipelineRunner stream edge cases', () => {
       events.push(event);
     }
 
-    const complete = events.find(e => e.type === 'complete') as any;
+    const complete = events.find(e => e.type === 'complete') as unknown as { type: 'complete'; context: PipelineContext };
     expect(complete.context.iteration.tokenUsage).toEqual({ input: 42, output: 7 });
   });
 
@@ -185,7 +185,7 @@ describe('PipelineRunner stream edge cases', () => {
       events.push(event);
     }
 
-    const complete = events.find(e => e.type === 'complete') as any;
+    const complete = events.find(e => e.type === 'complete') as unknown as { type: 'complete'; context: PipelineContext };
     expect(complete.context.iteration.response).toBe('final answer');
   });
 });

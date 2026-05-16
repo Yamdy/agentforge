@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createEvaluateIterationProcessor } from '../src/processors/evaluate-iteration.js';
 import { EventBus } from '../src/event-bus.js';
-import type { PipelineContext, Message, AgentConfig } from '@agentforge/sdk';
+import type { PipelineContext, Message, AgentConfig, ToolCall, ToolResult, Span } from '@agentforge/sdk';
 
 function makeContext(overrides?: {
   config?: Partial<AgentConfig>;
@@ -21,8 +21,8 @@ function makeContext(overrides?: {
     iteration: {
       step: 1,
       tokenUsage: overrides?.tokenUsage ?? { input: 100, output: 50 },
-      toolResults: overrides?.toolResults as any,
-      pendingToolCalls: overrides?.pendingToolCalls as any,
+      toolResults: overrides?.toolResults as unknown as ToolResult[] | undefined,
+      pendingToolCalls: overrides?.pendingToolCalls as unknown as ToolCall[] | undefined,
     },
     session: {
       custom: {},
@@ -122,8 +122,8 @@ describe('requiredTools gate', () => {
 
     await processor.execute(ctx);
     expect(emitted).toHaveLength(1);
-    expect((emitted[0] as any).uncalled).toEqual(['calculate']);
-    expect((emitted[0] as any).sessionId).toBe('s1');
+    expect((emitted[0] as { uncalled: string[] }).uncalled).toEqual(['calculate']);
+    expect((emitted[0] as { sessionId: string }).sessionId).toBe('s1');
   });
 
   it('does not emit event when all required tools are satisfied', async () => {
@@ -157,7 +157,7 @@ describe('requiredTools gate', () => {
       config: { requiredTools: ['search', 'calculate', 'fetch'] },
       history: [assistantWithToolCalls(['search'])],
     });
-    ctx.iteration.span = mockSpan as any;
+    ctx.iteration.span = mockSpan as unknown as Span;
 
     await processor.execute(ctx);
     expect(attributes['required_tools.incomplete']).toBe(true);
@@ -181,7 +181,7 @@ describe('requiredTools gate', () => {
       config: { requiredTools: ['search'] },
       history: [assistantWithToolCalls(['search'])],
     });
-    ctx.iteration.span = mockSpan as any;
+    ctx.iteration.span = mockSpan as unknown as Span;
 
     await processor.execute(ctx);
     expect(attributes['required_tools.incomplete']).toBeUndefined();
@@ -248,7 +248,7 @@ describe('requiredTools gate', () => {
 
     await processor.execute(ctx);
     expect(emitted).toHaveLength(1);
-    expect((emitted[0] as any).unknown).toEqual(['nonExistent']);
+    expect((emitted[0] as { unknown: string[] }).unknown).toEqual(['nonExistent']);
   });
 
   it('warns about unknown tools only once across evaluations', async () => {
@@ -266,5 +266,136 @@ describe('requiredTools gate', () => {
     await processor.execute(ctx);
     await processor.execute(ctx);
     expect(emitted).toHaveLength(1);
+  });
+
+  // ---- requiredToolPolicy: 'enforce' ----
+
+  it('with enforce policy, injects synthetic pendingToolCalls for exhausted tools instead of stopping', async () => {
+    // Simulate 3 retries exhausted by calling processor 3 times with no tool calls in history
+    const processor = createEvaluateIterationProcessor();
+    const baseCtx = makeContext({
+      config: { requiredTools: ['search', 'calculate'], requiredToolPolicy: 'enforce' },
+      history: [],
+    });
+
+    // First two calls: advisory continue (not exhausted yet)
+    let result = await processor.execute(baseCtx) as PipelineContext;
+    expect(result.iteration.loopDirective?.action).toBe('continue');
+
+    result = await processor.execute(baseCtx) as PipelineContext;
+    expect(result.iteration.loopDirective?.action).toBe('continue');
+
+    // Third call: exhausted — enforce mode should inject synthetic calls and continue
+    result = await processor.execute(baseCtx) as PipelineContext;
+    expect(result.iteration.loopDirective?.action).toBe('continue');
+    expect(result.iteration.pendingToolCalls).toBeDefined();
+    expect(result.iteration.pendingToolCalls!.length).toBe(2);
+
+    const callNames = result.iteration.pendingToolCalls!.map(tc => tc.name);
+    expect(callNames).toContain('search');
+    expect(callNames).toContain('calculate');
+
+    for (const tc of result.iteration.pendingToolCalls!) {
+      expect(tc.id).toMatch(/^required-/);
+      expect(tc.args).toEqual({});
+    }
+  });
+
+  it('with advise policy (default), stops loop when exhausted (current behavior preserved)', async () => {
+    const processor = createEvaluateIterationProcessor();
+    const baseCtx = makeContext({
+      config: { requiredTools: ['search'], requiredToolPolicy: 'advise' },
+      history: [],
+    });
+
+    // Exhaust retries
+    await processor.execute(baseCtx);
+    await processor.execute(baseCtx);
+    const result = await processor.execute(baseCtx) as PipelineContext;
+
+    expect(result.iteration.loopDirective?.action).toBe('stop');
+    expect(result.iteration.pendingToolCalls).toBeUndefined();
+    expect(result.agent.promptFragments.length).toBeGreaterThan(0);
+  });
+
+  it('with advise policy (implicit default when undefined), stops loop when exhausted', async () => {
+    const processor = createEvaluateIterationProcessor();
+    const baseCtx = makeContext({
+      config: { requiredTools: ['search'] },  // no requiredToolPolicy → defaults to 'advise'
+      history: [],
+    });
+
+    // Exhaust retries
+    await processor.execute(baseCtx);
+    await processor.execute(baseCtx);
+    const result = await processor.execute(baseCtx) as PipelineContext;
+
+    expect(result.iteration.loopDirective?.action).toBe('stop');
+    expect(result.iteration.pendingToolCalls).toBeUndefined();
+  });
+
+  it('with enforce policy, emits required_tools:enforced event when injecting synthetic calls', async () => {
+    const eventBus = new EventBus();
+    const emitted: unknown[] = [];
+    eventBus.subscribe('required_tools:enforced', (data) => emitted.push(data));
+
+    const processor = createEvaluateIterationProcessor({ eventBus });
+    const baseCtx = makeContext({
+      config: { requiredTools: ['search'], requiredToolPolicy: 'enforce' },
+      history: [],
+    });
+
+    // Exhaust retries
+    await processor.execute(baseCtx);
+    await processor.execute(baseCtx);
+    await processor.execute(baseCtx);
+
+    expect(emitted).toHaveLength(1);
+    expect((emitted[0] as { tools: string[] }).tools).toEqual(['search']);
+    expect((emitted[0] as { sessionId: string }).sessionId).toBe('s1');
+  });
+
+  it('enforce policy only injects uncalled tools, not already-called ones', async () => {
+    const processor = createEvaluateIterationProcessor();
+    const baseCtx = makeContext({
+      config: { requiredTools: ['search', 'calculate'], requiredToolPolicy: 'enforce' },
+      history: [assistantWithToolCalls(['search'])],
+    });
+
+    // Exhaust retries (calculate never called)
+    await processor.execute(baseCtx);
+    await processor.execute(baseCtx);
+    const result = await processor.execute(baseCtx) as PipelineContext;
+
+    expect(result.iteration.loopDirective?.action).toBe('continue');
+    expect(result.iteration.pendingToolCalls).toBeDefined();
+    expect(result.iteration.pendingToolCalls!.length).toBe(1);
+    expect(result.iteration.pendingToolCalls![0].name).toBe('calculate');
+  });
+
+  it('enforce policy sets span attributes for enforced tools', async () => {
+    const attributes: Record<string, unknown> = {};
+    const mockSpan = {
+      setAttribute: (key: string, value: unknown) => { attributes[key] = value; return mockSpan; },
+      addEvent: () => mockSpan,
+      end: () => {},
+      name: 'evaluateIteration',
+      startChild: () => mockSpan,
+      spanContext: () => ({ spanId: 's', traceId: 't' }),
+    };
+
+    const processor = createEvaluateIterationProcessor();
+    const baseCtx = makeContext({
+      config: { requiredTools: ['search'], requiredToolPolicy: 'enforce' },
+      history: [],
+    });
+    baseCtx.iteration.span = mockSpan as unknown as Span;
+
+    // Exhaust retries
+    await processor.execute(baseCtx);
+    await processor.execute(baseCtx);
+    await processor.execute(baseCtx);
+
+    expect(attributes['required_tools.enforced']).toBe('search');
   });
 });

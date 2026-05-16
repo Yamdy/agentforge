@@ -17,7 +17,7 @@ function makeContext(history?: Array<{ role: 'user'; content: string }>): Pipeli
 }
 
 function isAbort(r: ProcessorResult): r is { type: 'abort'; reason: string } {
-  return 'type' in r && (r as any).type === 'abort';
+  return 'type' in r && r.type === 'abort';
 }
 
 function isContext(r: ProcessorResult): r is PipelineContext {

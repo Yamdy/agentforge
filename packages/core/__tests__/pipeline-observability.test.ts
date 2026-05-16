@@ -1,8 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { PipelineRunner } from '../src/pipeline.js';
-import type { PipelineContext, Processor, Tracer, Span } from '@agentforge/sdk';
+import type { PipelineContext, PipelineStage, Span } from '@agentforge/sdk';
 import { SpanType } from '@agentforge/sdk';
 import { TestExporter } from '@agentforge/observability';
+import { LoopOrchestrator } from '../src/loop-orchestrator.js';
+import { EventBus } from '../src/event-bus.js';
+import type { HookManager } from '../src/hook-manager.js';
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
@@ -116,5 +119,103 @@ describe('PipelineRunner with Tracer', () => {
       expect(stage.parentSpanId).toBe(rootSpan.spanId);
       expect(stage.traceId).toBe(rootSpan.traceId);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A-3: LoopOrchestrator.runLoop returns compatRetries count
+// ---------------------------------------------------------------------------
+
+describe('LoopOrchestrator compatRetries exposure', () => {
+  it('returns compatRetries = 0 when no compat retry occurs', async () => {
+    const mockRunner = {
+      run: async () => { throw new Error('should not be called'); },
+      async *stream(ctx: PipelineContext, stages: PipelineStage[]): AsyncGenerator<import('@agentforge/sdk').StreamEvent> {
+        // Pre-loop stages
+        if (stages[0] === 'processInput') {
+          yield { type: 'complete', context: { ...ctx, session: { ...ctx.session, messageHistory: [] } } };
+          return;
+        }
+        // Loop stages — stop immediately
+        if (stages.includes('evaluateIteration')) {
+          yield { type: 'complete', context: { ...ctx, iteration: { ...ctx.iteration, loopDirective: { action: 'stop' } } } };
+          return;
+        }
+        // Post-loop stages
+        yield { type: 'complete', context: ctx };
+      },
+      setHookManager() {},
+    };
+    const mockHookManager = { invoke: async () => {} };
+
+    const orchestrator = new LoopOrchestrator(
+      mockRunner as unknown as PipelineRunner,
+      mockHookManager as unknown as HookManager,
+      undefined,
+    );
+
+    const ctx: PipelineContext = {
+      request: { input: 'test', sessionId: 's1' },
+      agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
+      iteration: { step: 0 },
+      session: { custom: {} },
+    };
+
+    const result = await orchestrator.runLoop(ctx, { maxIterations: 5, modelString: 'mock/test', sessionId: 's1' });
+
+    expect(result.compatRetries).toBe(0);
+  });
+
+  it('returns compatRetries > 0 when compat retry occurs', async () => {
+    const eventBus = new EventBus();
+
+    // History with a bad tool call ID that triggers sanitize-tool-call-ids rule
+    const historyWithBadToolCall = [
+      { role: 'user' as const, content: 'do something' },
+      { role: 'assistant' as const, content: '', toolCalls: [{ id: 'bad!id@chars', name: 'myTool', args: {} }] },
+    ];
+
+    let loopCallCount = 0;
+    const mockRunner = {
+      run: async () => { throw new Error('should not be called'); },
+      async *stream(ctx: PipelineContext, stages: PipelineStage[]): AsyncGenerator<import('@agentforge/sdk').StreamEvent> {
+        // Pre-loop stages
+        if (stages[0] === 'processInput') {
+          yield { type: 'complete', context: { ...ctx, session: { ...ctx.session, messageHistory: historyWithBadToolCall } } };
+          return;
+        }
+        // Loop stages
+        if (stages.includes('evaluateIteration')) {
+          loopCallCount++;
+          if (loopCallCount === 1) {
+            throw new Error('tool call id invalid format');
+          }
+          yield { type: 'complete', context: { ...ctx, iteration: { ...ctx.iteration, loopDirective: { action: 'stop' } } } };
+          return;
+        }
+        // Post-loop stages
+        yield { type: 'complete', context: ctx };
+      },
+      setHookManager() {},
+    };
+    const mockHookManager = { invoke: async () => {} };
+
+    const orchestrator = new LoopOrchestrator(
+      mockRunner as unknown as PipelineRunner,
+      mockHookManager as unknown as HookManager,
+      undefined,
+      eventBus,
+    );
+
+    const ctx: PipelineContext = {
+      request: { input: 'test', sessionId: 's1' },
+      agent: { config: { model: 'anthropic/test' }, promptFragments: [], toolDeclarations: [] },
+      iteration: { step: 0 },
+      session: { custom: {} },
+    };
+
+    const result = await orchestrator.runLoop(ctx, { maxIterations: 5, modelString: 'anthropic/test', sessionId: 's1' });
+
+    expect(result.compatRetries).toBe(1);
   });
 });

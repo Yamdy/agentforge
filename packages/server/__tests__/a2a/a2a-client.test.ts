@@ -48,7 +48,7 @@ describe('A2AClient', () => {
     expect(body.jsonrpc).toBe('2.0');
     expect(body.method).toBe('SendMessage');
     expect(body.params.message.parts[0].text).toBe('Hello');
-    expect(result.task.status.state).toBe('completed');
+    expect((result as any).task.status.state).toBe('completed');
   });
 
   it('extracts text from completed task artifact', async () => {
@@ -97,7 +97,7 @@ describe('A2AClient', () => {
       }),
     });
 
-    const result = await client.getTask('task-1');
+    const result = await client.getTask('task-1') as any;
     expect(result.task.id).toBe('task-1');
     const body = JSON.parse(mockFetch.mock.calls[0][1].body);
     expect(body.method).toBe('GetTask');
@@ -112,7 +112,7 @@ describe('A2AClient', () => {
       }),
     });
 
-    const result = await client.cancelTask('task-1');
+    const result = await client.cancelTask('task-1') as any;
     expect(result.task.status.state).toBe('canceled');
     const body = JSON.parse(mockFetch.mock.calls[0][1].body);
     expect(body.method).toBe('CancelTask');

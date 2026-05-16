@@ -123,7 +123,7 @@ describe('LLMInvoker span names', () => {
     const handle = invoker.stream({ messages: [{ role: 'user', content: 'hi' }] });
 
     // Consume the stream to trigger span end
-    for await (const _ of handle.fullStream) { /* consume */ }
+    for await (const _evt of handle.fullStream) { void _evt; }
     await handle.usage;
 
     const trace = collector.getTrace();

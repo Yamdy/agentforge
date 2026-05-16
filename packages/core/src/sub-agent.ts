@@ -1,6 +1,7 @@
 import type { PipelineContext, SessionRegion, SubAgentConfig, SubAgentResult, Tool, ToolDefinition, Tracer } from '@agentforge/sdk';
 import { Agent } from './agent.js';
-import type { AgentRunResult } from './agent.js';
+
+
 
 interface SubAgentParentContext {
   model: string;

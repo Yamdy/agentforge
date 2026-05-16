@@ -6,7 +6,7 @@ import { PluginManager } from '../src/plugin-manager.js';
 import { PipelineRunner } from '../src/pipeline.js';
 import { ToolRegistry } from '../src/tool-registry.js';
 import { SessionPersistence } from '../src/session-persistence.js';
-import type { SessionStorage, SessionEvent } from '@agentforge/sdk';
+import type { SessionStorage, SessionEvent, ResourceDeclaration } from '@agentforge/sdk';
 
 /**
  * F-D tests: Silent catch blocks in critical paths must emit
@@ -26,11 +26,11 @@ describe('F-D.1: LLMInvoker stream usage fallback is observable', () => {
 
     // Mock model where AI SDK's internal usage promise rejects.
     // We simulate this by making streamText return a result with rejecting usage.
-    const invoker = new LLMInvoker({ model: null as any, eventBus: bus });
+    new LLMInvoker({ model: null as unknown as import('ai').LanguageModel, eventBus: bus });
 
     // Directly test the usage catch path by calling stream with a hacked result
     // that makes result.usage reject.
-    const { streamText } = await import('ai');
+    await import('ai');
 
     // We'll use a simpler approach: mock only the parts that matter
     // Create a real-ish model via AI SDK mock
@@ -46,7 +46,7 @@ describe('F-D.1: LLMInvoker stream usage fallback is observable', () => {
 
     // The eventBus option is stored and used in catch blocks.
     // We verify it's wired correctly by checking the option is accepted.
-    expect((invokerWithBus as any).options.eventBus).toBe(bus);
+    expect((invokerWithBus as unknown as { options: { eventBus: EventBus } }).options.eventBus).toBe(bus);
 
     // For the actual behavior test, simulate the catch path manually:
     const emitted: { type: string; data: unknown }[] = [];
@@ -78,7 +78,7 @@ describe('F-D.2: HookManager standard profile emits error on hook failure', () =
     await hm.invoke('tool.before', { toolName: 'test' }, {});
 
     expect(events.length).toBe(1);
-    expect((events[0].data as any).error).toBe('hook boom');
+    expect((events[0].data as unknown as { error: string }).error).toBe('hook boom');
   });
 });
 
@@ -98,7 +98,7 @@ describe('F-D.3: PluginManager shutdown observes resource stop failure', () => {
     };
 
     pm.initializePlugin((api) => {
-      api.registerResource(failingResource as any);
+      api.registerResource(failingResource as unknown as ResourceDeclaration);
     });
 
     await pm.initializeAll();
@@ -129,7 +129,7 @@ describe('F-D.4: SessionPersistence write failure is observable', () => {
       async list() { return []; },
     };
 
-    const persistence = new SessionPersistence(bus, failingStorage);
+    new SessionPersistence(bus, failingStorage);
 
     // Trigger a write by emitting an event with sessionId
     bus.emit('agent:start', { sessionId: 'test-session' });
@@ -138,7 +138,7 @@ describe('F-D.4: SessionPersistence write failure is observable', () => {
     await new Promise((r) => setTimeout(r, 50));
 
     expect(events.length).toBeGreaterThanOrEqual(1);
-    expect((events[0].data as any).sessionId).toBe('test-session');
+    expect((events[0].data as unknown as { sessionId: string }).sessionId).toBe('test-session');
   });
 });
 
@@ -152,7 +152,7 @@ describe('F-D.5: LLMInvoker invoke usage fallback is observable', () => {
     const model = createMockLanguageModel({ text: 'hello' });
 
     const invoker = new LLMInvoker({ model, eventBus: bus });
-    expect((invoker as any).options.eventBus).toBe(bus);
+    expect((invoker as unknown as { options: { eventBus: EventBus } }).options.eventBus).toBe(bus);
 
     // Invoke path also uses eventBus in its usage catch
     const result = await invoker.invoke({ messages: [{ role: 'user', content: 'test' }] });

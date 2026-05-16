@@ -1,5 +1,5 @@
 import type { Span, Tracer } from '@agentforge/sdk';
-import { SpanImpl, type SpanData, type OnSpanEndCallback } from './tracer.js';
+import { SpanImpl, type SpanData } from './tracer.js';
 
 export interface TraceNode {
   span: SpanData;
@@ -151,7 +151,7 @@ function msToNano(ms: number): string {
   return String(BigInt(ms) * 1_000_000n);
 }
 
-function toOtlpAttributes(attrs: Record<string, unknown>): any[] {
+function toOtlpAttributes(attrs: Record<string, unknown>): Array<{ key: string; value: Record<string, unknown> }> {
   return Object.entries(attrs).map(([key, value]) => {
     if (typeof value === 'string') return { key, value: { stringValue: value } };
     if (typeof value === 'number') return { key, value: { intValue: String(value) } };

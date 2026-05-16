@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { TracerImpl } from '../src/tracer.js';
-import type { Span, SpanContext } from '@agentforge/sdk';
+
+
 
 describe('TracerImpl', () => {
   it('startSpan creates a span with unique spanId and traceId', () => {

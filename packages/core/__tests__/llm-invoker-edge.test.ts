@@ -10,9 +10,9 @@ describe('LLMInvoker edge cases', () => {
 
   it('throws after exhausting all retry attempts', async () => {
     const model = createMockLanguageModel({ text: 'never' });
-    (model as any).doStream = async () => {
+    (model as unknown as { doStream: () => Promise<unknown> }).doStream = async () => {
       const error = new Error('Server error');
-      (error as any).statusCode = 500;
+      (error as unknown as { statusCode: number }).statusCode = 500;
       throw error;
     };
 
@@ -24,12 +24,12 @@ describe('LLMInvoker edge cases', () => {
   it('retries on 503 service unavailable', async () => {
     let attempts = 0;
     const model = createMockLanguageModel({ text: 'recovered' });
-    const originalDoStream = (model as any).doStream.bind(model);
-    (model as any).doStream = async () => {
+    const originalDoStream = (model as unknown as { doStream: () => Promise<unknown> }).doStream.bind(model);
+    (model as unknown as { doStream: () => Promise<unknown> }).doStream = async () => {
       attempts++;
       if (attempts < 2) {
         const error = new Error('Service Unavailable');
-        (error as any).statusCode = 503;
+        (error as unknown as { statusCode: number }).statusCode = 503;
         throw error;
       }
       return originalDoStream();
@@ -93,8 +93,8 @@ describe('LLMInvoker edge cases', () => {
     });
 
     const texts: string[] = [];
-    for await (const event of handle.fullStream as AsyncIterable<any>) {
-      if (event.type === 'text-delta') texts.push(event.text);
+    for await (const event of handle.fullStream as AsyncIterable<Record<string, unknown>>) {
+      if (event.type === 'text-delta') texts.push(event.text as string);
     }
     expect(texts).toContain('stream tools');
   });
@@ -108,7 +108,7 @@ describe('LLMInvoker edge cases', () => {
       providerOptions: { openai: { store: true } },
     });
 
-    for await (const _ of handle.fullStream) { /* drain */ }
+    for await (const _unused of handle.fullStream) { void _unused; }
     const usage = await handle.usage;
     expect(usage).toBeDefined();
   });
@@ -122,7 +122,7 @@ describe('LLMInvoker edge cases', () => {
     const invoker = new LLMInvoker({ model });
 
     const handle = invoker.stream({ messages: [{ role: 'user', content: 'test' }] });
-    for await (const _ of handle.fullStream) { /* drain */ }
+    for await (const _unused of handle.fullStream) { void _unused; }
 
     const usage = await handle.usage;
     expect(typeof usage.input).toBe('number');
@@ -134,7 +134,7 @@ describe('LLMInvoker edge cases', () => {
     const invoker = new LLMInvoker({ model });
 
     const handle = invoker.stream({ messages: [{ role: 'user', content: 'test' }] });
-    for await (const _ of handle.fullStream) { /* drain */ }
+    for await (const _unused of handle.fullStream) { void _unused; }
 
     const reasoning = await handle.reasoning;
     expect(reasoning).toBeUndefined();
@@ -146,7 +146,7 @@ describe('LLMInvoker edge cases', () => {
 
   it('invoke handles model that throws non-Error object', async () => {
     const model = createMockLanguageModel({ text: 'nope' });
-    (model as any).doStream = async () => {
+    (model as unknown as { doStream: () => Promise<unknown> }).doStream = async () => {
       throw 'string error';
     };
 

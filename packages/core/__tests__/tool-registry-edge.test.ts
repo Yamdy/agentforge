@@ -51,7 +51,7 @@ describe('ToolRegistry edge cases', () => {
       expect(schemas.read_file).toBeDefined();
       expect(schemas.read_file.description).toBe('Read a file');
       expect(schemas.read_file.inputSchema).toBeDefined();
-      expect((schemas.read_file as any).execute).toBeUndefined();
+      expect((schemas.read_file as { execute?: unknown }).execute).toBeUndefined();
     });
 
     it('returns empty object when no tools registered', () => {
@@ -68,7 +68,7 @@ describe('ToolRegistry edge cases', () => {
           type: 'object',
           properties: { query: { type: 'string' } },
           required: ['query'],
-        } as any,
+        } as unknown,
         execute: async ({ query }) => `result: ${query}`,
       });
 

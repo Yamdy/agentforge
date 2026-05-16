@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createCompressionStrategy } from '../src/compression/compression-processor.js';
 import { TiktokenCounter } from '@agentforge/core';
-import type { CompressionStrategy, HarnessAPI, Message } from '@agentforge/sdk';
+import type { HarnessAPI, Message } from '@agentforge/sdk';
 
 function makeTokenCounter(): TiktokenCounter {
   return new TiktokenCounter();

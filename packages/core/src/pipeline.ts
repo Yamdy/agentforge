@@ -58,7 +58,7 @@ interface FullStreamResult {
 }
 
 async function parseFullStream(
-  fullStream: AsyncIterable<any>,
+  fullStream: AsyncIterable<{ type: string; [key: string]: unknown }>,
   callbacks?: FullStreamCallbacks,
 ): Promise<FullStreamResult> {
   const chunks: string[] = [];
@@ -68,18 +68,18 @@ async function parseFullStream(
 
   for await (const event of fullStream) {
     if (event.type === 'text-delta') {
-      chunks.push(event.text);
-      callbacks?.onTextDelta?.(event.text);
+      chunks.push(event.text as string);
+      callbacks?.onTextDelta?.(event.text as string);
     } else if (event.type === 'tool-call') {
       const tc: ToolCall = {
-        id: event.toolCallId ?? event.id ?? '',
-        name: event.toolName ?? event.name ?? '',
-        args: event.args ?? event.input ?? {},
+        id: (event.toolCallId ?? event.id ?? '') as string,
+        name: (event.toolName ?? event.name ?? '') as string,
+        args: (event.args ?? event.input ?? {}) as Record<string, unknown>,
       };
       toolCalls.push(tc);
       callbacks?.onToolCall?.(tc);
     } else if (event.type === 'reasoning') {
-      reasoningParts.push(event.textDelta ?? event.text ?? '');
+      reasoningParts.push((event.textDelta ?? event.text ?? '') as string);
     } else if (event.type === 'finish-step') {
       usage = extractTokenUsage(event.usage);
     } else if (event.type === 'error') {
@@ -148,8 +148,8 @@ export class PipelineRunner {
           ctx = await this.consumeStream(ctx);
 
           // Fire llm.after after stream is consumed (response is now available)
-          if (stage === 'invokeLLM' && this.hookManager && (ctx.iteration as any)._modelString) {
-            await this.hookManager.invoke('llm.after', { model: (ctx.iteration as any)._modelString }, { response: ctx.iteration.response });
+          if (stage === 'invokeLLM' && this.hookManager && (ctx.iteration as unknown as { _modelString?: string })._modelString) {
+            await this.hookManager.invoke('llm.after', { model: (ctx.iteration as unknown as { _modelString?: string })._modelString }, { response: ctx.iteration.response });
           }
 
           // Auto-enrich span with token usage after stream consumption
@@ -201,23 +201,25 @@ export class PipelineRunner {
 
           const fullStream = ctx.iteration.fullStream;
           if (fullStream) {
+            const chunks: string[] = [];
             const toolCalls: ToolCall[] = [];
             const reasoningParts: string[] = [];
             let usage: TokenUsage | undefined;
 
-            for await (const event of fullStream as AsyncIterable<any>) {
+            for await (const event of fullStream as AsyncIterable<{ type: string; [key: string]: unknown }>) {
               if (event.type === 'text-delta') {
-                yield { type: 'text_delta', text: event.text };
+                chunks.push(event.text as string);
+                yield { type: 'text_delta', text: event.text as string };
               } else if (event.type === 'tool-call') {
                 const tc: ToolCall = {
-                  id: event.toolCallId ?? event.id ?? '',
-                  name: event.toolName ?? event.name ?? '',
-                  args: event.args ?? event.input ?? {},
+                  id: (event.toolCallId ?? event.id ?? '') as string,
+                  name: (event.toolName ?? event.name ?? '') as string,
+                  args: (event.args ?? event.input ?? {}) as Record<string, unknown>,
                 };
                 toolCalls.push(tc);
                 yield { type: 'tool_call', name: tc.name, args: tc.args };
               } else if (event.type === 'reasoning') {
-                reasoningParts.push(event.textDelta ?? event.text ?? '');
+                reasoningParts.push((event.textDelta ?? event.text ?? '') as string);
               } else if (event.type === 'finish-step') {
                 usage = extractTokenUsage(event.usage);
               } else if (event.type === 'error') {
@@ -234,7 +236,7 @@ export class PipelineRunner {
               ...ctx,
               iteration: {
                 ...ctx.iteration,
-                response: ctx.iteration.response ?? '',
+                response: chunks.join('') || ctx.iteration.response || '',
                 pendingToolCalls: toolCalls.length > 0 ? toolCalls : undefined,
                 reasoningContent,
                 tokenUsage: usage ?? pendingUsage,
@@ -246,8 +248,8 @@ export class PipelineRunner {
           }
 
           // Fire llm.after after stream is consumed (response is now available)
-          if (stage === 'invokeLLM' && this.hookManager && (ctx.iteration as any)._modelString) {
-            await this.hookManager.invoke('llm.after', { model: (ctx.iteration as any)._modelString }, { response: ctx.iteration.response });
+          if (stage === 'invokeLLM' && this.hookManager && (ctx.iteration as unknown as { _modelString?: string })._modelString) {
+            await this.hookManager.invoke('llm.after', { model: (ctx.iteration as unknown as { _modelString?: string })._modelString }, { response: ctx.iteration.response });
           }
 
           // Auto-enrich span with token usage after stream consumption
@@ -273,6 +275,7 @@ export class PipelineRunner {
     stageSpan: Span,
   ): Promise<PipelineContext | AbortSignal | SuspensionSignal> {
     const stageProcessors = this.processors.filter((p) => p.stage === stage);
+    if (stageProcessors.length === 0) return ctx;
 
     // stage.before hook
     if (this.hookManager) {
@@ -312,7 +315,7 @@ export class PipelineRunner {
     const fullStream = ctx.iteration.fullStream;
     if (!fullStream) return ctx;
 
-    const result = await parseFullStream(fullStream);
+    const result = await parseFullStream(fullStream as AsyncIterable<{ type: string; [key: string]: unknown }>);
     const reasoningContent = await resolveReasoningContent(result.reasoningParts, ctx.iteration.reasoningPromise);
     const pendingUsage = ctx.iteration.usagePromise
       ? await ctx.iteration.usagePromise

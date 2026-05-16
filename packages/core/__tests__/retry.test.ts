@@ -8,7 +8,7 @@ describe('streamWithRetry', () => {
       attempts++;
       if (attempts < 3) {
         const error = new Error('Rate limited');
-        (error as any).statusCode = 429;
+        (error as Error & { statusCode: number }).statusCode = 429;
         throw error;
       }
       return 'success';
@@ -22,7 +22,7 @@ describe('streamWithRetry', () => {
   it('does NOT retry on auth errors (401)', async () => {
     const fn = vi.fn(async () => {
       const error = new Error('Unauthorized');
-      (error as any).statusCode = 401;
+      (error as Error & { statusCode: number }).statusCode = 401;
       throw error;
     });
 
@@ -33,7 +33,7 @@ describe('streamWithRetry', () => {
   it('does NOT retry on invalid request errors (400)', async () => {
     const fn = vi.fn(async () => {
       const error = new Error('Bad request');
-      (error as any).statusCode = 400;
+      (error as Error & { statusCode: number }).statusCode = 400;
       throw error;
     });
 
@@ -44,7 +44,7 @@ describe('streamWithRetry', () => {
   it('gives up after max retries', async () => {
     const fn = vi.fn(async () => {
       const error = new Error('Server error');
-      (error as any).statusCode = 500;
+      (error as Error & { statusCode: number }).statusCode = 500;
       throw error;
     });
 

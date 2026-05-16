@@ -1,10 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type {
   PipelineContext,
-  RequestRegion,
-  AgentRegion,
-  IterationRegion,
-  SessionRegion,
   LoopDirective,
   Message,
 } from '@agentforge/sdk';

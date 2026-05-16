@@ -11,7 +11,7 @@ type Serialized = ReturnType<typeof serialize>;
 function makeContext(overrides?: Partial<PipelineContext['iteration']>): PipelineContext {
   return {
     request: { input: 'hello', sessionId: 'test' },
-    agent: { config: {} as any, toolDeclarations: [], promptFragments: [] },
+    agent: { config: { model: 'test' }, toolDeclarations: [], promptFragments: [] },
     iteration: { step: 0, loopDirective: undefined, ...overrides },
     session: { messageHistory: [], custom: {} },
   };
@@ -169,7 +169,7 @@ describe('CheckpointStore integration — crash recovery', () => {
 
   it('rejects path traversal in sessionId', async () => {
     const store = new JsonlCheckpointStore('/tmp/safe-dir');
-    await expect(store.save('../etc/passwd', {} as any)).rejects.toThrow('Invalid sessionId');
+    await expect(store.save('../etc/passwd', {} as unknown as Serialized)).rejects.toThrow('Invalid sessionId');
     await expect(store.load('../../secret')).rejects.toThrow('Invalid sessionId');
     await expect(store.delete('foo/bar')).rejects.toThrow('Invalid sessionId');
   });

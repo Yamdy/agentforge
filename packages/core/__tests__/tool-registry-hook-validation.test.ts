@@ -33,7 +33,7 @@ describe('F-E: outputSchema validation after hook mutation', () => {
     registry.setEventBus(bus);
 
     const tool = makeToolWithOutputSchema(true);
-    registry.register(tool as any);
+    registry.register(tool as unknown as Tool);
 
     // Hook changes the output to violate the schema (string where number expected)
     hm.register({
@@ -67,7 +67,7 @@ describe('F-E: outputSchema validation after hook mutation', () => {
     registry.setHookManager(hm);
     registry.setEventBus(bus);
 
-    registry.register(makeToolWithOutputSchema(true) as any);
+    registry.register(makeToolWithOutputSchema(true) as unknown as Tool);
 
     const invalidEvents: unknown[] = [];
     bus.subscribe('tool:output_invalid', (data) => invalidEvents.push(data));
@@ -80,7 +80,7 @@ describe('F-E: outputSchema validation after hook mutation', () => {
       },
     });
 
-    const result = await registry.executeTool('validated_tool', { x: 5 });
+    await registry.executeTool('validated_tool', { x: 5 });
 
     // Should detect the schema violation from the mutated output
     expect(invalidEvents.length).toBeGreaterThan(0);
@@ -93,7 +93,7 @@ describe('F-E: outputSchema validation after hook mutation', () => {
     registry.setHookManager(hm);
     registry.setEventBus(bus);
 
-    registry.register(makeToolWithOutputSchema(false) as any);
+    registry.register(makeToolWithOutputSchema(false) as unknown as Tool);
 
     const invalidEvents: unknown[] = [];
     bus.subscribe('tool:output_invalid', (data) => invalidEvents.push(data));
@@ -111,6 +111,6 @@ describe('F-E: outputSchema validation after hook mutation', () => {
     // Original valid output preserved, no validation error
     expect(invalidEvents.length).toBe(0);
     expect(result.validationError).toBeUndefined();
-    expect((result.output as any).value).toBe(10);
+    expect((result.output as { value: number }).value).toBe(10);
   });
 });

@@ -1,19 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { WebSocketBridge, type WSSocket } from '../src/bridge/bridge.js';
+import { WebSocketBridge } from '../src/bridge/bridge.js';
 import type { AgentRegistry } from '../src/registry.js';
 import type { Agent } from '@agentforge/core';
-import type { StreamEvent } from '@agentforge/sdk';
 
 function createMockSocket() {
-  const sent = [];
-  const listeners = {};
+  const sent: string[] = [];
+  const listeners: Record<string, ((...a: unknown[]) => void)[]> = {};
   const socket = {
-    send: vi.fn((data) => { sent.push(data); }),
+    send: vi.fn((data: string) => { sent.push(data); }),
     close: vi.fn(),
-    on: vi.fn((event, handler) => {
+    on: vi.fn((event: string, handler: (...a: unknown[]) => void) => {
       (listeners[event] ??= []).push(handler);
     }),
-    emit(event, ...args) {
+    emit(event: string, ...args: unknown[]) {
       for (const handler of listeners[event] ?? []) handler(...args);
     },
     sentMessages() {
@@ -24,7 +23,7 @@ function createMockSocket() {
   return socket;
 }
 
-function createMockAgent() {
+function createMockAgent(): Agent {
   return {
     run: vi.fn().mockResolvedValue({
       response: 'mock response',
@@ -42,27 +41,27 @@ function createMockAgent() {
       sessionId: 'session-1',
     }),
     state: 'pending',
-  };
+  } as unknown as Agent;
 }
 
-function createMockRegistry(agent) {
+function createMockRegistry(agent: Agent): AgentRegistry {
   return {
     get: vi.fn().mockReturnValue(agent),
     register: vi.fn(),
     list: vi.fn().mockReturnValue([]),
     remove: vi.fn(),
-  };
+    agents: new Map(),
+    clear: vi.fn(),
+  } as unknown as AgentRegistry;
 }
 
 describe('Cross-connection stream abort isolation', () => {
-  let bridge;
-  let mockAgent;
-  let mockRegistry;
+  let bridge: WebSocketBridge;
+  let mockAgent: Agent;
 
   beforeEach(() => {
     mockAgent = createMockAgent();
-    mockRegistry = createMockRegistry(mockAgent);
-    bridge = new WebSocketBridge(mockRegistry);
+    bridge = new WebSocketBridge(createMockRegistry(mockAgent));
   });
 
   it('disconnecting connection A does NOT abort connection B active streams', async () => {
@@ -71,8 +70,8 @@ describe('Cross-connection stream abort isolation', () => {
     let streamBAborted = false;
     let callCount = 0;
 
-    mockAgent.streamEvents.mockImplementation(
-      async function* (_input, signal) {
+    (mockAgent as any).streamEvents.mockImplementation(
+      async function* (_input: string, signal?: AbortSignal) {
         callCount++;
         if (callCount === 1) {
           yield { type: 'text_delta', text: 'A' };
@@ -82,7 +81,7 @@ describe('Cross-connection stream abort isolation', () => {
           signal?.addEventListener('abort', () => {
             streamBAborted = true;
           });
-          await new Promise((r) => { resolveStreamB = r; });
+          await new Promise<void>((r) => { resolveStreamB = r; });
           yield { type: 'complete' };
         }
       }
@@ -112,7 +111,7 @@ describe('Cross-connection stream abort isolation', () => {
     await vi.waitFor(() => expect(streamBStarted).toBe(true));
 
     socketA.emit('close');
-    await new Promise((r) => setTimeout(r, 50));
+    await new Promise<void>((r) => setTimeout(r, 50));
 
     expect(streamBAborted).toBe(false);
 
@@ -125,8 +124,8 @@ describe('Cross-connection stream abort isolation', () => {
     let streamBAborted = false;
     let resolveStreamB = () => {};
 
-    mockAgent.streamEvents.mockImplementation(
-      async function* (_input, signal) {
+    (mockAgent as any).streamEvents.mockImplementation(
+      async function* (_input: string, signal?: AbortSignal) {
         callCount++;
         if (callCount === 1) {
           yield { type: 'complete' };
@@ -134,7 +133,7 @@ describe('Cross-connection stream abort isolation', () => {
           signal?.addEventListener('abort', () => {
             streamBAborted = true;
           });
-          await new Promise((r) => { resolveStreamB = r; });
+          await new Promise<void>((r) => { resolveStreamB = r; });
           yield { type: 'complete' };
         }
       }
@@ -164,7 +163,7 @@ describe('Cross-connection stream abort isolation', () => {
     await vi.waitFor(() => expect(callCount).toBeGreaterThanOrEqual(2));
 
     socketA.emit('close');
-    await new Promise((r) => setTimeout(r, 50));
+    await new Promise<void>((r) => setTimeout(r, 50));
 
     expect(streamBAborted).toBe(false);
 
@@ -179,11 +178,9 @@ describe('Cross-connection stream abort isolation', () => {
     let callCount = 0;
     let stream1Aborted = false;
     let stream2Aborted = false;
-    let resolve1 = () => {};
-    let resolve2 = () => {};
 
-    mockAgent.streamEvents.mockImplementation(
-      async function* (_input, signal) {
+    (mockAgent as any).streamEvents.mockImplementation(
+      async function* (_input: string, signal?: AbortSignal) {
         callCount++;
         const idx = callCount;
         signal?.addEventListener('abort', () => {
@@ -191,9 +188,9 @@ describe('Cross-connection stream abort isolation', () => {
           if (idx === 2) stream2Aborted = true;
         });
         if (idx === 1) {
-          await new Promise((r) => { resolve1 = r; });
+          await new Promise<void>(() => {});
         } else {
-          await new Promise((r) => { resolve2 = r; });
+          await new Promise<void>(() => {});
         }
         yield { type: 'complete' };
       }

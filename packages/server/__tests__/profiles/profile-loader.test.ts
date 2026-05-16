@@ -3,6 +3,7 @@ import { ProfileLoader, mergeProfiles } from '../../src/profiles/profile-loader.
 import { applyProfile } from '../../src/profiles/apply-profile.js';
 import { builtinProfiles } from '../../src/profiles/index.js';
 import type { AgentProfile } from '@agentforge/sdk';
+import type { Agent } from '@agentforge/core';
 
 describe('ProfileLoader', () => {
   it('loads a registered profile by name', () => {
@@ -94,14 +95,14 @@ describe('applyProfile', () => {
   it('calls agent.use for each plugin factory', () => {
     const used: number[] = [];
     const mockAgent = {
-      use: (fn: () => unknown) => { used.push(1); return mockAgent; },
+      use: (_fn: () => unknown) => { used.push(1); return mockAgent; },
       toolRegistry: { register: () => {} },
     };
     const profile: AgentProfile = {
       name: 'test',
       plugins: [() => ({ processors: [] }), () => ({ processors: [] })],
     };
-    applyProfile(mockAgent as any, profile);
+    applyProfile(mockAgent as unknown as Agent, profile);
     expect(used).toHaveLength(2);
   });
 });

@@ -142,7 +142,7 @@ export class ContextBuilder {
         systemPrompt,
         promptFragments,
         _assembledFragmentCount: promptFragments.length,
-      } as unknown as PipelineContext,
+      } as typeof ctx.agent & { _assembledFragmentCount: number },
     };
   }
 

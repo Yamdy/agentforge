@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { InMemoryTaskStore } from '../../src/a2a/task-store.js';
 
 describe('InMemoryTaskStore eviction and TTL', () => {

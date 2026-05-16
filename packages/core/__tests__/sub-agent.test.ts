@@ -9,6 +9,7 @@ import {
 } from './helpers.js';
 import { TestExporter } from '@agentforge/observability';
 import { z } from 'zod';
+import type { PipelineContext } from '@agentforge/sdk';
 
 describe('SubAgent', () => {
   beforeEach(() => {
@@ -74,7 +75,7 @@ describe('SubAgent', () => {
         model: 'iso-parent/mock',
         tools: [],
         eventBus,
-        getSessionState: getSessionState as any,
+        getSessionState: getSessionState as unknown as () => Record<string, unknown>,
       },
     );
 
@@ -99,8 +100,6 @@ describe('SubAgent', () => {
       { role: 'assistant' as const, content: 'previous answer' },
     ];
 
-    // Track what the child agent actually receives as session state
-    let capturedSession: Record<string, unknown> | undefined;
     registerMockProvider('inh-child', () => {
       return createMockLanguageModel({ text: 'Child analyzed' });
     });
@@ -120,7 +119,7 @@ describe('SubAgent', () => {
         model: 'inh-parent/mock',
         tools: [],
         eventBus,
-        getSessionState: getSessionState as any,
+        getSessionState: getSessionState as unknown as () => Record<string, unknown>,
       },
     );
 
@@ -165,7 +164,7 @@ describe('SubAgent', () => {
         model: 'sum-parent/mock',
         tools: [],
         eventBus,
-        getSessionState: getSessionState as any,
+        getSessionState: getSessionState as unknown as () => Record<string, unknown>,
       },
     );
 
@@ -181,13 +180,13 @@ describe('SubAgent', () => {
 
   it('inherit policy: child accumulated history is not overwritten by parent state', async () => {
     // Capture the processor registered via childAgent.use()
-    const capturedProcessors: Array<{ stage: string; execute: (ctx: any) => Promise<any> }> = [];
+    const capturedProcessors: Array<{ stage: string; execute: (ctx: PipelineContext) => Promise<PipelineContext> }> = [];
     const originalUse = Agent.prototype.use;
     Agent.prototype.use = function (processor: any) {
       if (processor.stage === 'prepareStep') {
         capturedProcessors.push(processor);
       }
-      return originalUse.call(this, processor);
+      return originalUse.call(this, processor as any);
     };
 
     try {
@@ -220,7 +219,7 @@ describe('SubAgent', () => {
           model: 'merge-parent/mock',
           tools: [],
           eventBus,
-          getSessionState: getSessionState as any,
+          getSessionState: getSessionState as unknown as () => Record<string, unknown>,
         },
       );
 
@@ -251,7 +250,7 @@ describe('SubAgent', () => {
       },
     };
 
-    const result = await processor.execute(ctxWithChildHistory as any);
+    const result = await processor.execute(ctxWithChildHistory as unknown as PipelineContext);
 
     // The child's own messages must be preserved, not overwritten by parent
     const history = result.session.messageHistory;
@@ -301,7 +300,7 @@ describe('SubAgent', () => {
     expect(events[0].type).toBe('task:start');
     expect(events[0].data).toEqual({ name: 'worker', input: { task: 'job' } });
     expect(events[1].type).toBe('task:end');
-    const endData = events[1].data as any;
+    const endData = events[1].data as { name: string; result: { response: string; tokenUsage: unknown; sessionId: string } };
     expect(endData.name).toBe('worker');
     expect(endData.result.response).toBe('Child result');
     expect(endData.result.tokenUsage).toBeDefined();
@@ -350,7 +349,7 @@ describe('SubAgent', () => {
     expect(result.response).toBe('Parent handled error');
 
     // task:end should contain error summary
-    const endData = events[0].data as any;
+    const endData = events[0].data as { error: string };
     expect(endData.error).toContain('failworker');
     expect(endData.error).toContain('failed');
   });

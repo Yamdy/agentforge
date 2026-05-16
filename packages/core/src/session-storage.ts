@@ -6,7 +6,7 @@ export class FilesystemSessionStorage implements SessionStorage {
   constructor(private basePath: string) {}
 
   private validateSessionId(sessionId: string): void {
-    if (/[\/\\]|\.\./.test(sessionId)) {
+    if (new RegExp('[/\\\\]|\\.\\.').test(sessionId)) {
       throw new Error(`Invalid sessionId: ${sessionId}`);
     }
   }

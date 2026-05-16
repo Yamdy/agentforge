@@ -1,4 +1,4 @@
-import type { Processor, PipelineContext, ProcessorResult, AbortSignal, SuspensionSignal, HarnessAPI, PluginRegistration } from '@agentforge/sdk';
+import type { Processor, PipelineContext, ProcessorResult, SuspensionSignal, HarnessAPI, PluginRegistration } from '@agentforge/sdk';
 
 // ---------------------------------------------------------------------------
 // Types

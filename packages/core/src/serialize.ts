@@ -11,6 +11,7 @@ interface SerializableContext {
 
 export function serialize(ctx: PipelineContext): SerializableContext {
   const { fullStream, usagePromise, reasoningPromise, span, ...serializableIteration } = ctx.iteration;
+  void fullStream; void usagePromise; void reasoningPromise; void span;
   return {
     request: { ...ctx.request },
     agent: { ...ctx.agent },

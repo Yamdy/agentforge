@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { NoOpTracer, NoOpSpan } from '../src/noop.js';
-import type { Span, SpanContext } from '@agentforge/sdk';
 
 describe('NoOpTracer', () => {
   it('returns a NoOpSpan from startSpan', () => {

@@ -125,6 +125,39 @@ export function createEvaluateIterationProcessor(deps?: EvaluateIterationDeps): 
             });
             ctx.iteration.span?.setAttribute('required_tools.exhausted', exhausted.join(','));
 
+            const policy = ctx.agent.config.requiredToolPolicy ?? 'advise';
+
+            if (policy === 'enforce') {
+              // Inject synthetic tool calls for exhausted uncalled tools and continue the loop
+              const syntheticCalls: ToolCall[] = exhausted.map((name, i) => ({
+                id: `required-${i}`,
+                name,
+                args: {},
+              }));
+
+              eventBus?.emit('required_tools:enforced', {
+                tools: exhausted,
+                syntheticCalls,
+                step: ctx.iteration.step,
+                sessionId: ctx.request.sessionId,
+              });
+              ctx.iteration.span?.setAttribute('required_tools.enforced', exhausted.join(','));
+
+              return {
+                ...ctx,
+                iteration: {
+                  ...ctx.iteration,
+                  loopDirective: { action: 'continue' } as LoopDirective,
+                  pendingToolCalls: syntheticCalls,
+                },
+                session: {
+                  ...ctx.session,
+                  totalTokenUsage,
+                },
+              };
+            }
+
+            // Default 'advise' behavior: stop with error message
             return {
               ...ctx,
               agent: {

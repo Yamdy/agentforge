@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { InMemoryTaskStore } from '../../src/a2a/task-store.js';
 import type {
-  A2ATask,
   A2AMessage,
   A2ATaskState,
   A2APart,

@@ -1,14 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { EventBus } from '../src/event-bus.js';
 import { createEvaluateIterationProcessor } from '../src/processors/evaluate-iteration.js';
-import type { PipelineContext } from '@agentforge/sdk';
+import type { PipelineContext, Span } from '@agentforge/sdk';
 
 function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
   return {
     request: { input: 'test', sessionId: 's1' },
     agent: {
       config: {},
-      prompt: '',
+      systemPrompt: '',
       promptFragments: [],
       toolDeclarations: [],
       ...overrides.agent,
@@ -17,7 +17,7 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
       step: 1,
       response: 'done',
       loopDirective: undefined,
-      span: { setAttribute: () => {} } as any,
+      span: { setAttribute: () => {} } as unknown as Span,
       ...overrides.iteration,
     },
     session: {
@@ -45,8 +45,8 @@ describe('F-I: requiredTools unsatisfied observability', () => {
 
     const ctx = makeCtx({
       agent: {
-        config: { requiredTools: ['search', 'calculate'] },
-        prompt: '',
+        config: { model: 'test-model', requiredTools: ['search', 'calculate'] },
+        systemPrompt: '',
         promptFragments: [],
         toolDeclarations: [
           { name: 'search', description: '' },
@@ -63,7 +63,7 @@ describe('F-I: requiredTools unsatisfied observability', () => {
         response: 'done',
         tokenUsage: { input: 0, output: 0 },
         loopDirective: undefined,
-        span: { setAttribute: () => {} } as any,
+        span: { setAttribute: () => {} } as unknown as Span,
       },
     });
 
@@ -87,8 +87,8 @@ describe('F-I: requiredTools unsatisfied observability', () => {
 
     const ctx = makeCtx({
       agent: {
-        config: { requiredTools: ['search'] },
-        prompt: '',
+        config: { model: 'test-model', requiredTools: ['search'] },
+        systemPrompt: '',
         promptFragments: [],
         toolDeclarations: [{ name: 'search', description: '' }],
       },
@@ -97,9 +97,9 @@ describe('F-I: requiredTools unsatisfied observability', () => {
           {
             role: 'assistant',
             content: '',
-            toolCalls: [{ name: 'search', args: { q: 'test' } }],
+            toolCalls: [{ id: 'tc1', name: 'search', args: { q: 'test' } }],
           },
-          { role: 'tool', content: 'results' },
+          { role: 'tool', content: 'results', toolCallId: 'tc1', toolName: 'search' },
         ],
         totalTokenUsage: { input: 50000, output: 60000 },
         custom: {},
@@ -109,7 +109,7 @@ describe('F-I: requiredTools unsatisfied observability', () => {
         response: 'done',
         tokenUsage: { input: 0, output: 0 },
         loopDirective: undefined,
-        span: { setAttribute: () => {} } as any,
+        span: { setAttribute: () => {} } as unknown as Span,
       },
     });
 
@@ -138,7 +138,7 @@ describe('F-I: requiredTools unsatisfied observability', () => {
         response: 'done',
         tokenUsage: { input: 0, output: 0 },
         loopDirective: undefined,
-        span: { setAttribute: () => {} } as any,
+        span: { setAttribute: () => {} } as unknown as Span,
       },
     });
 

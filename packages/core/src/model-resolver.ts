@@ -1,7 +1,7 @@
 import type { LanguageModel } from 'ai';
 import type { GatewayConfig } from '@agentforge/sdk';
 import { GatewayChain } from './gateways/gateway-chain.js';
-import { BuiltInGateway, registerProvider } from './gateways/builtin-gateway.js';
+import { BuiltInGateway } from './gateways/builtin-gateway.js';
 import { OpenAICompatibleGateway } from './gateways/openai-compatible-gateway.js';
 
 export { registerProvider } from './gateways/builtin-gateway.js';

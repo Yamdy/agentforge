@@ -10,7 +10,7 @@ import type { Tool } from '@agentforge/sdk';
 describe('F-13: tool output truncation event', () => {
   it('emits tool:output_truncated when string output is truncated', async () => {
     const eventBus = new EventBus();
-    const events: Array<{ type: string; data: any }> = [];
+    const events: Array<{ type: string; data: unknown }> = [];
     eventBus.subscribe('tool:output_truncated', (data) => {
       events.push({ type: 'tool:output_truncated', data });
     });
@@ -31,14 +31,14 @@ describe('F-13: tool output truncation event', () => {
     expect(result.truncated).toBe(true);
     expect(result.output).toBe('aaaaaaaaaa... [truncated]');
     expect(events).toHaveLength(1);
-    expect(events[0].data.toolName).toBe('long_output');
-    expect(events[0].data.originalSize).toBe(100);
-    expect(events[0].data.truncatedSize).toBeLessThan(100);
+    expect((events[0].data as Record<string, unknown>).toolName).toBe('long_output');
+    expect((events[0].data as Record<string, unknown>).originalSize).toBe(100);
+    expect((events[0].data as Record<string, unknown>).truncatedSize).toBeLessThan(100);
   });
 
   it('does not emit truncation event when output fits within limit', async () => {
     const eventBus = new EventBus();
-    const events: Array<{ type: string; data: any }> = [];
+    const events: Array<{ type: string; data: unknown }> = [];
     eventBus.subscribe('tool:output_truncated', (data) => {
       events.push({ type: 'tool:output_truncated', data });
     });
@@ -62,7 +62,7 @@ describe('F-13: tool output truncation event', () => {
 
   it('emits truncation event when JSON output exceeds limit', async () => {
     const eventBus = new EventBus();
-    const events: Array<{ type: string; data: any }> = [];
+    const events: Array<{ type: string; data: unknown }> = [];
     eventBus.subscribe('tool:output_truncated', (data) => {
       events.push({ type: 'tool:output_truncated', data });
     });
@@ -83,6 +83,6 @@ describe('F-13: tool output truncation event', () => {
 
     expect(result.truncated).toBe(true);
     expect(events).toHaveLength(1);
-    expect(events[0].data.toolName).toBe('json_output');
+    expect((events[0].data as Record<string, unknown>).toolName).toBe('json_output');
   });
 });

@@ -1,9 +1,16 @@
 import type { McpServerConfig } from '@agentforge/sdk';
-import { convertMcpTool, type McpToolDefinition } from './tool-converter.js';
+import type { McpToolDefinition } from './tool-converter.js';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+interface McpSdkClient {
+  connect(transport: unknown): Promise<unknown>;
+  listTools(): Promise<unknown>;
+  callTool(params: Record<string, unknown>): Promise<unknown>;
+  close?(): Promise<unknown>;
+}
 
 export interface McpClient {
   connect(): Promise<void>;
@@ -58,7 +65,7 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 function createStdioClient(config: McpServerConfig): McpClient {
   let nextId = 1;
   let childProcess: import('child_process').ChildProcess | null = null;
-  let pendingRequests = new Map<number, { resolve: (value: unknown) => void; reject: (err: Error) => void }>();
+  const pendingRequests = new Map<number, { resolve: (value: unknown) => void; reject: (err: Error) => void }>();
   let buffer = '';
   let isConnected = false;
 
@@ -183,7 +190,7 @@ function createStdioClient(config: McpServerConfig): McpClient {
 // ---------------------------------------------------------------------------
 
 function createSseClient(config: McpServerConfig): McpClient {
-  let clientPromise: Promise<any> | null = null;
+  let clientPromise: Promise<McpSdkClient> | null = null;
 
   const mcpClient: McpClient = {
     connected: false,
@@ -199,13 +206,13 @@ function createSseClient(config: McpServerConfig): McpClient {
       const client = new Client({ name: `agentforge-${config.name}`, version: '0.0.1' });
 
       await client.connect(transport);
-      clientPromise = Promise.resolve(client);
+      clientPromise = Promise.resolve(client as McpSdkClient);
       this.connected = true;
     },
 
     async discoverTools(): Promise<McpToolDefinition[]> {
       const client = await clientPromise!;
-      const result = await client.listTools();
+      const result = await client.listTools() as { tools?: unknown[] };
       return (result?.tools ?? []) as McpToolDefinition[];
     },
 
@@ -234,7 +241,7 @@ function createSseClient(config: McpServerConfig): McpClient {
 // ---------------------------------------------------------------------------
 
 function createHttpClient(config: McpServerConfig): McpClient {
-  let clientPromise: Promise<any> | null = null;
+  let clientPromise: Promise<McpSdkClient> | null = null;
 
   const mcpClient: McpClient = {
     connected: false,
@@ -250,13 +257,13 @@ function createHttpClient(config: McpServerConfig): McpClient {
       const client = new Client({ name: `agentforge-${config.name}`, version: '0.0.1' });
 
       await client.connect(transport);
-      clientPromise = Promise.resolve(client);
+      clientPromise = Promise.resolve(client as McpSdkClient);
       this.connected = true;
     },
 
     async discoverTools(): Promise<McpToolDefinition[]> {
       const client = await clientPromise!;
-      const result = await client.listTools();
+      const result = await client.listTools() as { tools?: unknown[] };
       return (result?.tools ?? []) as McpToolDefinition[];
     },
 

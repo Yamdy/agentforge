@@ -8,12 +8,12 @@ describe('AgentForgeClient', () => {
 
   it('constructor strips trailing slash from URL', () => {
     const client = new AgentForgeClient({ url: 'http://localhost:3000/' });
-    expect((client as any).baseUrl).toBe('http://localhost:3000');
+    expect((client as unknown as { baseUrl: string }).baseUrl).toBe('http://localhost:3000');
   });
 
   it('constructor sets Authorization header when apiKey provided', () => {
     const client = new AgentForgeClient({ url: 'http://localhost:3000', apiKey: 'secret' });
-    expect((client as any).headers['Authorization']).toBe('Bearer secret');
+    expect((client as unknown as { headers: Record<string, string> }).headers['Authorization']).toBe('Bearer secret');
   });
 
   it('run() POSTs to correct endpoint and returns result', async () => {

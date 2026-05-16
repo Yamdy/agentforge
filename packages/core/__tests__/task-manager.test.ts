@@ -1,9 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { TaskManagerImpl } from '../src/task-manager.js';
 import { EventBus } from '../src/event-bus.js';
 import { ConcurrencyController } from '../src/concurrency-controller.js';
 import type {
-  AsyncTaskHandle,
   SubAgentResult,
   AsyncTaskConfig,
 } from '@agentforge/sdk';
@@ -81,9 +80,9 @@ describe('TaskManager', () => {
     expect(events.map((e) => e.type)).toEqual(['task:start', 'task:end']);
 
     // Verify event data
-    expect((events[0].data as any).taskId).toBe(handle.taskId);
-    expect((events[1].data as any).taskId).toBe(handle.taskId);
-    expect((events[1].data as any).result.response).toBe(
+    expect((events[0].data as { taskId: string }).taskId).toBe(handle.taskId);
+    expect((events[1].data as { taskId: string; result: { response: string } }).taskId).toBe(handle.taskId);
+    expect((events[1].data as { result: { response: string } }).result.response).toBe(
       'Result for: do something',
     );
   });
@@ -281,8 +280,8 @@ describe('TaskManager', () => {
     });
 
     expect(events).toHaveLength(1);
-    expect((events[0].data as any).taskId).toBe(handle.taskId);
-    expect((events[0].data as any).error.message).toBe('boom');
+    expect((events[0].data as { taskId: string }).taskId).toBe(handle.taskId);
+    expect((events[0].data as { error: { message: string } }).error.message).toBe('boom');
   });
 
   it('concurrencySlot limits parallel execution', async () => {

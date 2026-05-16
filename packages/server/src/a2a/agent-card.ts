@@ -9,6 +9,7 @@ export interface AgentCardOptions {
   tools?: Array<{ name: string; description: string }>;
   provider?: { url: string; organization: string };
   streaming?: boolean;
+  pushNotifications?: boolean;
   documentationUrl?: string;
   iconUrl?: string;
 }
@@ -30,7 +31,7 @@ export function buildAgentCard(options: AgentCardOptions): A2AAgentCard {
     skills: [...explicitSkills, ...toolSkills],
     capabilities: {
       streaming: options.streaming ?? true,
-      pushNotifications: false,
+      pushNotifications: options.pushNotifications ?? false,
     },
     defaultInputModes: ['text/plain'],
     defaultOutputModes: ['text/plain'],

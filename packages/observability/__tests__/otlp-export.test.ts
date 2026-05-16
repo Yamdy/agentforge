@@ -26,9 +26,9 @@ describe('formatTraceOtlp', () => {
 
     const parsed = JSON.parse(formatTraceOtlp(collector.getTrace(), { serviceName: 'my-agent' }));
     const resourceAttrs = parsed.resourceSpans[0].resource.attributes;
-    const serviceAttr = resourceAttrs.find((a: any) => a.key === 'service.name');
+    const serviceAttr = resourceAttrs.find((a: { key: string; value: { stringValue: string } }) => a.key === 'service.name');
     expect(serviceAttr).toBeDefined();
-    expect(serviceAttr.value.stringValue).toBe('my-agent');
+    expect(serviceAttr!.value.stringValue).toBe('my-agent');
   });
 
   it('defaults service name to agentforge', () => {
@@ -38,8 +38,8 @@ describe('formatTraceOtlp', () => {
 
     const parsed = JSON.parse(formatTraceOtlp(collector.getTrace()));
     const resourceAttrs = parsed.resourceSpans[0].resource.attributes;
-    const serviceAttr = resourceAttrs.find((a: any) => a.key === 'service.name');
-    expect(serviceAttr.value.stringValue).toBe('agentforge');
+    const serviceAttr = resourceAttrs.find((a: { key: string; value: { stringValue: string } }) => a.key === 'service.name');
+    expect(serviceAttr!.value.stringValue).toBe('agentforge');
   });
 
   it('converts spans with correct OTLP structure', () => {
@@ -100,7 +100,7 @@ describe('formatTraceOtlp', () => {
 
     const parsed = JSON.parse(formatTraceOtlp(collector.getTrace()));
     const otlpSpans = parsed.resourceSpans[0].scopeSpans[0].spans;
-    const childSpan = otlpSpans.find((s: any) => s.name === 'invokeLLM');
+    const childSpan = otlpSpans.find((s: { name: string; parentSpanId: string }) => s.name === 'invokeLLM');
 
     expect(childSpan.parentSpanId).toMatch(/^[0-9a-f]{16}$/);
   });
@@ -117,14 +117,14 @@ describe('formatTraceOtlp', () => {
     const parsed = JSON.parse(formatTraceOtlp(collector.getTrace()));
     const attrs = parsed.resourceSpans[0].scopeSpans[0].spans[0].attributes;
 
-    const modelAttr = attrs.find((a: any) => a.key === 'model');
-    expect(modelAttr.value.stringValue).toBe('gpt-4');
+    const modelAttr = attrs.find((a: { key: string; value: { stringValue?: string; intValue?: string; boolValue?: boolean } }) => a.key === 'model');
+    expect(modelAttr!.value.stringValue).toBe('gpt-4');
 
-    const tokensAttr = attrs.find((a: any) => a.key === 'tokens');
-    expect(tokensAttr.value.intValue).toBe('150');
+    const tokensAttr = attrs.find((a: { key: string; value: { stringValue?: string; intValue?: string; boolValue?: boolean } }) => a.key === 'tokens');
+    expect(tokensAttr!.value.intValue).toBe('150');
 
-    const streamingAttr = attrs.find((a: any) => a.key === 'streaming');
-    expect(streamingAttr.value.boolValue).toBe(true);
+    const streamingAttr = attrs.find((a: { key: string; value: { stringValue?: string; intValue?: string; boolValue?: boolean } }) => a.key === 'streaming');
+    expect(streamingAttr!.value.boolValue).toBe(true);
   });
 
   it('converts events to OTLP span events', () => {

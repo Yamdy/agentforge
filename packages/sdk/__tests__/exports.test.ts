@@ -20,8 +20,6 @@ import type {
   StreamEvent,
   LoopDirective,
   Message,
-  RequestRegion,
-  AgentRegion,
   IterationRegion,
   SessionRegion,
 } from '../src/index.js';
@@ -135,7 +133,7 @@ describe('Span', () => {
     let ended = false;
     const span: Span = {
       name: 'test-span',
-      startChild(name: string): Span {
+      startChild(_name: string): Span {
         return {} as Span;
       },
       end(): void {
@@ -274,7 +272,7 @@ describe('AgentConfig', () => {
 describe('SuspensionSignal', () => {
   it('carries suspension id, reason, and checkpoint', () => {
     const checkpoint: PipelineCheckpoint = {
-      context: {} as any,
+      context: {} as unknown as PipelineContext,
       nextStages: ['executeTools'],
       iteration: 1,
     };

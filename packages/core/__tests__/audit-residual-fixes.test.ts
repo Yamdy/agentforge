@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
-import type { Tool, Message, PipelineContext } from '@agentforge/sdk';
+import type { Tool, Message, PipelineContext, TokenCounter } from '@agentforge/sdk';
 import { ToolRegistry } from '../src/tool-registry.js';
 import { HookManager } from '../src/hook-manager.js';
 import { EventBus } from '../src/event-bus.js';
@@ -85,7 +85,7 @@ describe('R-1/R-4: outputSchema validation + flag propagation', () => {
         (output as Record<string, unknown>).result = 'mutated!';
       },
     });
-    (registry as any).hookManager = hookMgr;
+    (registry as unknown as { hookManager: HookManager }).hookManager = hookMgr;
 
     const result = await registry.executeTool('mutateMe', {});
     expect(result.mutated).toBe(true);
@@ -104,7 +104,7 @@ describe('R-1/R-4: outputSchema validation + flag propagation', () => {
     expect(toolMsg).toBeDefined();
     expect(toolMsg!.content).toBe('mutated!');
     // The Message should carry the mutated flag
-    expect((toolMsg as any).mutated).toBe(true);
+    expect((toolMsg as { mutated: boolean }).mutated).toBe(true);
   });
 
   it('R-4: truncated flag propagates into tool Message', async () => {
@@ -131,7 +131,7 @@ describe('R-1/R-4: outputSchema validation + flag propagation', () => {
     const output = (await processor.execute(ctx)) as PipelineContext;
     const toolMsg = findToolMessage(output.session.messageHistory);
     expect(toolMsg).toBeDefined();
-    expect((toolMsg as any).truncated).toBe(true);
+    expect((toolMsg as { truncated: boolean }).truncated).toBe(true);
   });
 });
 
@@ -214,7 +214,7 @@ describe('F-9: Sub-agent error propagation', () => {
     );
 
     // Directly call execute to check the thrown error's cause chain
-    const tool = toolDef as any;
+    const tool = toolDef as unknown as { execute: (input: { task: string }, context?: Record<string, unknown>) => Promise<string> };
     let caught: Error | undefined;
     try {
       await tool.execute({ task: 'do something' }, {});
@@ -225,7 +225,7 @@ describe('F-9: Sub-agent error propagation', () => {
     expect(caught).toBeDefined();
     expect(caught!.message).toContain('failing-agent');
     // The original error should be preserved as cause
-    expect((caught as any).cause).toBeDefined();
+    expect((caught as { cause: unknown }).cause).toBeDefined();
   });
 });
 
@@ -239,7 +239,7 @@ describe('F-10: ContextBuilder post-compression budget check', () => {
     // A compression strategy that only removes 1 message per call,
     // so multiple passes are needed for large histories
     let callCount = 0;
-    const lazyStrategy = (_messages: Message[], _tc: any, _budget: number) => {
+    const lazyStrategy = (_messages: Message[], _tc: TokenCounter, _budget: number) => {
       callCount++;
       // Only trim 1 message per call — simulates conservative compression
       return Promise.resolve(_messages.slice(0, -1));
@@ -252,7 +252,7 @@ describe('F-10: ContextBuilder post-compression budget check', () => {
 
     const builder = new ContextBuilder({
       registry,
-      tokenCounter: tc as any,
+      tokenCounter: tc as unknown as TokenCounter,
       compressionStrategy: lazyStrategy,
       budget: { maxTokens: 20 },
     });

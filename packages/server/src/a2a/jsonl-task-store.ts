@@ -3,9 +3,21 @@ import { join } from 'node:path';
 import { InMemoryTaskStore } from './task-store.js';
 import type { A2ATask, A2ATaskState, A2AMessage, A2AArtifact } from './types.js';
 
-interface TaskEvent {
-  op: 'create' | 'updateStatus' | 'addArtifact' | 'addMessage' | 'cancel';
-  [key: string]: unknown;
+type TaskEvent =
+  | { op: 'create'; task: A2ATask }
+  | { op: 'updateStatus'; state: A2ATaskState; timestamp: string }
+  | { op: 'addArtifact'; artifact: A2AArtifact }
+  | { op: 'addMessage'; message: A2AMessage }
+  | { op: 'cancel'; timestamp: string };
+
+interface StoreInternals {
+  entries: Map<string, { task: A2ATask; createdAt: number }>;
+  insertionOrder: string[];
+  counter: number;
+}
+
+function hasCode(err: unknown): err is { code: string } {
+  return typeof err === 'object' && err !== null && 'code' in err;
 }
 
 export class JsonlTaskStore extends InMemoryTaskStore {
@@ -30,8 +42,8 @@ export class JsonlTaskStore extends InMemoryTaskStore {
       const existing = await readFile(target, 'utf-8');
       await writeFile(tmp, existing + line, 'utf-8');
       await rename(tmp, target);
-    } catch (err: any) {
-      if (err.code === 'ENOENT') {
+    } catch (err: unknown) {
+      if (hasCode(err) && err.code === 'ENOENT') {
         await writeFile(tmp, line, 'utf-8');
         await rename(tmp, target);
       } else {
@@ -72,10 +84,12 @@ export class JsonlTaskStore extends InMemoryTaskStore {
     let files: string[];
     try {
       files = await readdir(this.dir);
-    } catch (err: any) {
-      if (err.code === 'ENOENT') return;
+    } catch (err: unknown) {
+      if (hasCode(err) && err.code === 'ENOENT') return;
       throw err;
     }
+
+    const internals = this as unknown as StoreInternals;
 
     for (const file of files) {
       if (!file.endsWith('.jsonl')) continue;
@@ -87,35 +101,35 @@ export class JsonlTaskStore extends InMemoryTaskStore {
         if (!trimmed) continue;
         const event: TaskEvent = JSON.parse(trimmed);
 
-        let entry = (this as any).entries.get(taskId) as { task: A2ATask; createdAt: number } | undefined;
+        let entry = internals.entries.get(taskId);
 
         switch (event.op) {
           case 'create': {
-            const task = (event as any).task as A2ATask;
+            const task = event.task;
             entry = { task: { ...task, history: task.history ?? [], artifacts: task.artifacts ?? [] }, createdAt: Date.now() };
-            (this as any).entries.set(taskId, entry);
-            (this as any).insertionOrder.push(taskId);
-            const counter = (this as any).counter as number;
+            internals.entries.set(taskId, entry);
+            internals.insertionOrder.push(taskId);
+            const counter = internals.counter;
             const idNum = parseInt(taskId.replace('task-', ''), 10);
             if (!isNaN(idNum) && idNum > counter) {
-              (this as any).counter = idNum;
+              internals.counter = idNum;
             }
             break;
           }
           case 'updateStatus': {
-            if (entry) entry.task.status = { ...entry.task.status, state: event.state, timestamp: (event as any).timestamp };
+            if (entry) entry.task.status = { ...entry.task.status, state: event.state, timestamp: event.timestamp };
             break;
           }
           case 'addArtifact': {
-            if (entry) { if (!entry.task.artifacts) entry.task.artifacts = []; entry.task.artifacts.push((event as any).artifact); }
+            if (entry) { if (!entry.task.artifacts) entry.task.artifacts = []; entry.task.artifacts.push(event.artifact); }
             break;
           }
           case 'addMessage': {
-            if (entry) { if (!entry.task.history) entry.task.history = []; entry.task.history.push((event as any).message); }
+            if (entry) { if (!entry.task.history) entry.task.history = []; entry.task.history.push(event.message); }
             break;
           }
           case 'cancel': {
-            if (entry) entry.task.status = { ...entry.task.status, state: 'canceled', timestamp: (event as any).timestamp };
+            if (entry) entry.task.status = { ...entry.task.status, state: 'canceled', timestamp: event.timestamp };
             break;
           }
         }

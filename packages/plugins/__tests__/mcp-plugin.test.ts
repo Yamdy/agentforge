@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { HarnessAPI, PluginRegistration, ResourceDeclaration, ToolDefinition, McpServerConfig } from '@agentforge/sdk';
+import type { HarnessAPI, ResourceDeclaration, ToolDefinition, McpServerConfig } from '@agentforge/sdk';
 import { convertMcpTool, type McpToolDefinition } from '../src/mcp/tool-converter.js';
 import { createMcpClient, createMockMcpClient } from '../src/mcp/mcp-client.js';
 import { mcpPlugin, type McpPluginOptions } from '../src/mcp/index.js';
@@ -96,7 +96,7 @@ describe('createMockMcpClient', () => {
     const mockTools: McpToolDefinition[] = [
       { name: 'search', description: 'Search files', inputSchema: { type: 'object' } },
     ];
-    const mockCallTool = vi.fn(async (name: string, args: unknown) => ({ result: 'mock result' }));
+    const mockCallTool = vi.fn(async (_name: string, _args: unknown) => ({ result: 'mock result' }));
     const client = createMockMcpClient(mockTools, mockCallTool);
 
     await client.connect();
@@ -270,7 +270,7 @@ describe('mcpPlugin', () => {
       { name: 'search', description: 'Search files', inputSchema: { type: 'object', properties: { query: { type: 'string' } } } },
       { name: 'read', description: 'Read a file', inputSchema: { type: 'object', properties: { path: { type: 'string' } } } },
     ];
-    const mockCallTool = vi.fn(async (name: string, args: unknown) => ({ result: 'mock' }));
+    const mockCallTool = vi.fn(async (_name: string, _args: unknown) => ({ result: 'mock' }));
     const mockClient = createMockMcpClient(mockTools, mockCallTool);
 
     const options: McpPluginOptions = {
@@ -325,7 +325,7 @@ describe('mcpPlugin', () => {
     const mockTools: McpToolDefinition[] = [
       { name: 'search', description: 'Search files', inputSchema: { type: 'object', properties: { query: { type: 'string' } } } },
     ];
-    const mockCallTool = vi.fn(async (name: string, args: unknown) => ({ results: ['found.txt'] }));
+    const mockCallTool = vi.fn(async (_name: string, _args: unknown) => ({ results: ['found.txt'] }));
     const mockClient = createMockMcpClient(mockTools, mockCallTool);
 
     const options: McpPluginOptions = {

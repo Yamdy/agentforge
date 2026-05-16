@@ -1,9 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { memoryPlugin } from '../src/memory/index.js';
 import { InMemoryBackend } from '../src/memory/in-memory-backend.js';
-import { PipelineRunner } from '@agentforge/core';
-import { ToolRegistry } from '@agentforge/core';
-import type { HarnessAPI, PluginRegistration, PipelineContext } from '@agentforge/sdk';
+import type { HarnessAPI, PipelineContext } from '@agentforge/sdk';
 
 function createHarnessAPI(): { api: HarnessAPI; processors: Map<string, unknown>; tools: Map<string, unknown> } {
   const processors = new Map<string, unknown>();

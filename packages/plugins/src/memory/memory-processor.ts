@@ -1,5 +1,5 @@
 import type { Processor, PipelineContext, ProcessorResult } from '@agentforge/sdk';
-import type { MemoryBackend, MemoryEntry } from './backend.js';
+import type { MemoryBackend } from './backend.js';
 
 export type MemoryTriggerMode =
   | { type: 'automatic'; onLoad: 'always' | 'on-session-start' }

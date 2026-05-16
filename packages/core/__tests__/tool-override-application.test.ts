@@ -29,7 +29,7 @@ describe('F-10: tool override application', () => {
     let capturedTools: Record<string, unknown> | undefined;
 
     const mockGetLLM = async (): Promise<LLMInvoker> => ({
-      stream: (input: any) => {
+      stream: (input: { tools?: Record<string, unknown> }) => {
         capturedTools = input.tools as Record<string, unknown> | undefined;
         return {
           fullStream: (async function* () {
@@ -40,7 +40,7 @@ describe('F-10: tool override application', () => {
           reasoning: Promise.resolve(undefined),
         };
       },
-    } as any);
+    } as unknown as LLMInvoker);
 
     // Registry has 3 tools: search, calculate, echo
     const registrySchemas = {
@@ -59,8 +59,8 @@ describe('F-10: tool override application', () => {
           calculate: { name: 'calculate', description: 'Do math', inputSchema: {} },
           echo: { name: 'echo', description: 'Echo input', inputSchema: {} },
         }[name]),
-      } as any as ToolRegistry,
-      hookManager: { invoke: async () => {} } as any as HookManager,
+      } as unknown as ToolRegistry,
+      hookManager: { invoke: async () => {} } as unknown as HookManager,
       modelString: 'mock/test',
     });
 
@@ -87,14 +87,14 @@ describe('F-10: tool override application', () => {
     expect(toolNames).toContain('search');
     expect(toolNames).toContain('calculate');
     // Description should be overridden
-    expect((capturedTools!.search as any).description).toBe('Search the web (enhanced)');
+    expect((capturedTools!.search as { description: string }).description).toBe('Search the web (enhanced)');
   });
 
   it('falls back to registry schemas when no toolDeclarations in context', async () => {
     let capturedTools: Record<string, unknown> | undefined;
 
     const mockGetLLM = async (): Promise<LLMInvoker> => ({
-      stream: (input: any) => {
+      stream: (input: { tools?: Record<string, unknown> }) => {
         capturedTools = input.tools as Record<string, unknown> | undefined;
         return {
           fullStream: (async function* () {
@@ -105,7 +105,7 @@ describe('F-10: tool override application', () => {
           reasoning: Promise.resolve(undefined),
         };
       },
-    } as any);
+    } as unknown as LLMInvoker);
 
     const registrySchemas = {
       search: { description: 'Search the web', inputSchema: {} },
@@ -113,8 +113,8 @@ describe('F-10: tool override application', () => {
 
     const processor = createInvokeLLMProcessor({
       getLLM: mockGetLLM,
-      registry: { toAiSdkToolSchemas: () => registrySchemas, setToolExecutionContext: () => {} } as any as ToolRegistry,
-      hookManager: { invoke: async () => {} } as any as HookManager,
+      registry: { toAiSdkToolSchemas: () => registrySchemas, setToolExecutionContext: () => {} } as unknown as ToolRegistry,
+      hookManager: { invoke: async () => {} } as unknown as HookManager,
       modelString: 'mock/test',
     });
 

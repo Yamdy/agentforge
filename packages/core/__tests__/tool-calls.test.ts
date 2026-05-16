@@ -12,7 +12,7 @@ function createMockModelWithToolCall(): LanguageModel {
     provider: 'mock',
     supportedUrls: {},
     async doGenerate() {
-      return { text: '', toolCalls: [{ type: 'tool-call', toolCallId: 'call_1', toolName: 'read_file', args: { path: '/etc/hosts' } }] } as any;
+      return { text: '', toolCalls: [{ type: 'tool-call', toolCallId: 'call_1', toolName: 'read_file', args: { path: '/etc/hosts' } }] } as unknown;
     },
     async doStream() {
       const stream = new ReadableStream({
@@ -35,9 +35,9 @@ function createMockModelWithToolCall(): LanguageModel {
           controller.close();
         },
       });
-      return { stream } as any;
+      return { stream } as unknown;
     },
-  };
+  } as unknown as LanguageModel;
 }
 
 describe('Tool call parsing', () => {
@@ -55,7 +55,7 @@ describe('Tool call parsing', () => {
             read_file: tool({
               description: 'Read a file',
               inputSchema: z.object({ path: z.string() }),
-              execute: async ({ path }) => 'file content',
+              execute: async ({ path: _path }) => 'file content',
             }),
           },
           prompt: ctx.request.input,

@@ -29,7 +29,7 @@ export function createMockLanguageModel(opts: MockModelOptions = {}): LanguageMo
         content: [{ type: 'text' as const, text }],
         finishReason: { unified: 'stop' as const, raw: 'stop' },
         usage,
-      } as any;
+      } as unknown as Record<string, unknown>;
     },
     async doStream() {
       const stream = new ReadableStream({
@@ -45,9 +45,9 @@ export function createMockLanguageModel(opts: MockModelOptions = {}): LanguageMo
           controller.close();
         },
       });
-      return { stream } as any;
+      return { stream } as unknown as Record<string, unknown>;
     },
-  };
+  } as unknown as LanguageModel;
 }
 
 export interface MockToolCallModelOptions {
@@ -80,13 +80,13 @@ export function createMockModelWithToolCalls(
           }],
           finishReason: { unified: 'tool-calls' as const, raw: 'tool-calls' },
           usage: defaultUsage,
-        } as any;
+        } as unknown as Record<string, unknown>;
       }
       return {
         content: [{ type: 'text' as const, text: finalText }],
         finishReason: { unified: 'stop' as const, raw: 'stop' },
         usage: defaultUsage,
-      } as any;
+      } as unknown as Record<string, unknown>;
     },
     async doStream() {
       const idx = callCount++;
@@ -118,9 +118,9 @@ export function createMockModelWithToolCalls(
           controller.close();
         },
       });
-      return { stream } as any;
+      return { stream } as unknown as Record<string, unknown>;
     },
-  };
+  } as unknown as LanguageModel;
 }
 
 export function registerMockProvider(

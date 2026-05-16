@@ -36,7 +36,7 @@ describe('MCP transport factory', () => {
   it('still throws for unknown transport', () => {
     const config = {
       name: 'test-bad',
-      transport: 'unknown' as any,
+      transport: 'unknown',
       url: 'http://localhost:3001',
     };
 

@@ -23,7 +23,7 @@ export function createExecuteToolsProcessor(registry: ToolRegistry): Processor {
           });
           const outputSize = typeof result.output === 'string'
             ? result.output.length
-            : JSON.stringify(result.output).length;
+            : JSON.stringify(result.output ?? '').length;
           toolSpan?.setAttribute(SpanAttributeKeys.TOOL_RESULT_SIZE, outputSize);
           toolResults.push({ ...result, toolCallId: tc.id });
         } finally {
@@ -44,9 +44,10 @@ export function createExecuteToolsProcessor(registry: ToolRegistry): Processor {
           result: tr.output,
           error: tr.error,
         };
-        if (tr.mutated) (msg as any).mutated = true;
-        if (tr.truncated) (msg as any).truncated = true;
-        if (tr.validationError) (msg as any).validationError = tr.validationError;
+        const ext = msg as unknown as { mutated?: boolean; truncated?: boolean; validationError?: unknown };
+        if (tr.mutated) ext.mutated = true;
+        if (tr.truncated) ext.truncated = true;
+        if (tr.validationError) ext.validationError = tr.validationError;
         return msg;
       });
 

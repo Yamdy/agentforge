@@ -8,6 +8,7 @@ import {
   registerMockProvider,
 } from './helpers.js';
 import { z } from 'zod';
+import type { PipelineContext } from '@agentforge/sdk';
 
 describe('Sub-agent mergeSessionState stale closure fix', () => {
   beforeEach(() => {
@@ -16,11 +17,11 @@ describe('Sub-agent mergeSessionState stale closure fix', () => {
     );
   });
   it('step 0: parent state is merged into child session', async () => {
-    const capturedProcessors: Array<{stage: string; execute: (ctx: any) => Promise<any>}> = [];
+    const capturedProcessors: Array<{stage: string; execute: (ctx: PipelineContext) => Promise<PipelineContext>}> = [];
     const originalUse = Agent.prototype.use;
     Agent.prototype.use = function (processor: any) {
       if (processor.stage === 'prepareStep') capturedProcessors.push(processor);
-      return originalUse.call(this, processor);
+      return originalUse.call(this, processor as any);
     };
     try {
       const parentModel = createMockModelWithToolCalls([{ toolName: 'w1', args: { task: 't' } }], 'Done');
@@ -43,18 +44,18 @@ describe('Sub-agent mergeSessionState stale closure fix', () => {
     expect(capturedProcessors.length).toBeGreaterThanOrEqual(1);
     const processor = capturedProcessors[0];
     const ctxStep0 = { iteration: { step: 0 }, session: { messageHistory: [], custom: {} } };
-    const result = await processor.execute(ctxStep0 as any);
+    const result = await processor.execute(ctxStep0 as unknown as PipelineContext);
     expect(result.session.messageHistory).toHaveLength(2);
     expect(result.session.messageHistory).toContainEqual({ role: 'user', content: 'parent q' });
     expect(result.session.messageHistory).toContainEqual({ role: 'assistant', content: 'parent a' });
   });
 
   it('step 1+: parent state is NOT re-merged; child accumulates its own state', async () => {
-    const capturedProcessors: Array<{stage: string; execute: (ctx: any) => Promise<any>}> = [];
+    const capturedProcessors: Array<{stage: string; execute: (ctx: PipelineContext) => Promise<PipelineContext>}> = [];
     const originalUse = Agent.prototype.use;
     Agent.prototype.use = function (processor: any) {
       if (processor.stage === 'prepareStep') capturedProcessors.push(processor);
-      return originalUse.call(this, processor);
+      return originalUse.call(this, processor as any);
     };
     try {
       const parentModel = createMockModelWithToolCalls([{ toolName: 'w2', args: { task: 't' } }], 'Done');
@@ -79,18 +80,18 @@ describe('Sub-agent mergeSessionState stale closure fix', () => {
       { role: 'user', content: 'child input' },
       { role: 'assistant', content: 'child response' },
     ], custom: {} } };
-    const result = await processor.execute(ctxStep1 as any);
+    const result = await processor.execute(ctxStep1 as unknown as PipelineContext);
     expect(result.session.messageHistory).toHaveLength(4);
     expect(result.session.messageHistory).toContainEqual({ role: 'user', content: 'child input' });
     expect(result.session.messageHistory).toContainEqual({ role: 'assistant', content: 'child response' });
   });
 
   it('child totalTokenUsage is preserved across iterations', async () => {
-    const capturedProcessors: Array<{stage: string; execute: (ctx: any) => Promise<any>}> = [];
+    const capturedProcessors: Array<{stage: string; execute: (ctx: PipelineContext) => Promise<PipelineContext>}> = [];
     const originalUse = Agent.prototype.use;
     Agent.prototype.use = function (processor: any) {
       if (processor.stage === 'prepareStep') capturedProcessors.push(processor);
-      return originalUse.call(this, processor);
+      return originalUse.call(this, processor as any);
     };
     try {
       const parentModel = createMockModelWithToolCalls([{ toolName: 'w3', args: { task: 't' } }], 'Done');
@@ -109,16 +110,16 @@ describe('Sub-agent mergeSessionState stale closure fix', () => {
       { role: 'user', content: 'p' },
       { role: 'user', content: 'child msg' },
     ], totalTokenUsage: { input: 200, output: 150 }, custom: {} } };
-    const result = await processor.execute(ctxStep1 as any);
+    const result = await processor.execute(ctxStep1 as unknown as PipelineContext);
     expect(result.session.totalTokenUsage).toEqual({ input: 200, output: 150 });
   });
 
   it('parent array keys (messageHistory) are correctly concatenated on step 0', async () => {
-    const capturedProcessors: Array<{stage: string; execute: (ctx: any) => Promise<any>}> = [];
+    const capturedProcessors: Array<{stage: string; execute: (ctx: PipelineContext) => Promise<PipelineContext>}> = [];
     const originalUse = Agent.prototype.use;
     Agent.prototype.use = function (processor: any) {
       if (processor.stage === 'prepareStep') capturedProcessors.push(processor);
-      return originalUse.call(this, processor);
+      return originalUse.call(this, processor as any);
     };
     try {
       const parentModel = createMockModelWithToolCalls([{ toolName: 'w4', args: { task: 't' } }], 'Done');
@@ -138,18 +139,18 @@ describe('Sub-agent mergeSessionState stale closure fix', () => {
     expect(capturedProcessors.length).toBeGreaterThanOrEqual(1);
     const processor = capturedProcessors[0];
     const ctxStep0 = { iteration: { step: 0 }, session: { messageHistory: [{ role: 'user' as const, content: 'child-own' }], custom: {} } };
-    const result = await processor.execute(ctxStep0 as any);
-    const history = result.session.messageHistory;
+    const result = await processor.execute(ctxStep0 as unknown as PipelineContext);
+    const history = result.session.messageHistory!;
     expect(history).toBeDefined();
     expect(history.length).toBeGreaterThanOrEqual(2);
   });
 
   it('scalar keys from parent do NOT overwrite child values on step 1+', async () => {
-    const capturedProcessors: Array<{stage: string; execute: (ctx: any) => Promise<any>}> = [];
+    const capturedProcessors: Array<{stage: string; execute: (ctx: PipelineContext) => Promise<PipelineContext>}> = [];
     const originalUse = Agent.prototype.use;
     Agent.prototype.use = function (processor: any) {
       if (processor.stage === 'prepareStep') capturedProcessors.push(processor);
-      return originalUse.call(this, processor);
+      return originalUse.call(this, processor as any);
     };
     try {
       const parentModel = createMockModelWithToolCalls([{ toolName: 'w5', args: { task: 't' } }], 'Done');
@@ -172,7 +173,7 @@ describe('Sub-agent mergeSessionState stale closure fix', () => {
       { role: 'user', content: 'c1' },
       { role: 'user', content: 'c2' },
     ], totalTokenUsage: { input: 500, output: 300 }, custom: { childKey: 'childVal', parentKey: 'overwritten-by-child' } } };
-    const result = await processor.execute(ctxStep2 as any);
+    const result = await processor.execute(ctxStep2 as unknown as PipelineContext);
     expect(result.session.totalTokenUsage).toEqual({ input: 500, output: 300 });
     expect(result.session.messageHistory).toHaveLength(3);
     expect(result.session.custom.childKey).toBe('childVal');
@@ -180,11 +181,11 @@ describe('Sub-agent mergeSessionState stale closure fix', () => {
   });
 
   it('isolated policy: no merge happens at all', async () => {
-    const capturedProcessors: Array<{stage: string; execute: (ctx: any) => Promise<any>}> = [];
+    const capturedProcessors: Array<{stage: string; execute: (ctx: PipelineContext) => Promise<PipelineContext>}> = [];
     const originalUse = Agent.prototype.use;
     Agent.prototype.use = function (processor: any) {
       if (processor.stage === 'prepareStep') capturedProcessors.push(processor);
-      return originalUse.call(this, processor);
+      return originalUse.call(this, processor as any);
     };
     try {
       const parentModel = createMockModelWithToolCalls([{ toolName: 'w6', args: { task: 't' } }], 'Done');

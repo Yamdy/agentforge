@@ -27,7 +27,7 @@ export interface InvokeLLMDeps {
   modelString: string;
 }
 
-function toAiSdkMessages(history: Message[], input: string, step: number): unknown[] {
+function toAiSdkMessages(history: Message[], input: string, _step: number): unknown[] {
   const messages: unknown[] = [];
 
   const hasUserMessage = history.some(m => m.role === 'user');
@@ -66,13 +66,14 @@ function toAiSdkMessages(history: Message[], input: string, step: number): unkno
 }
 
 function resolveSystemPrompt(ctx: PipelineContext): string | undefined {
-  const assembled = (ctx.agent as any).systemPrompt as string | undefined;
+  const agentExt = ctx.agent as unknown as { systemPrompt?: string; _assembledFragmentCount?: number };
+  const assembled = agentExt.systemPrompt;
   const base = assembled
     ?? (typeof ctx.agent.config.systemPrompt === 'string' ? ctx.agent.config.systemPrompt : undefined);
 
   // Context builder records how many promptFragments were baked into the assembled prompt.
   // Any fragments beyond that count were added during the loop (e.g., by evaluateIteration).
-  const assembledCount = (ctx.agent as any)._assembledFragmentCount as number | undefined ?? 0;
+  const assembledCount = agentExt._assembledFragmentCount ?? 0;
   const currentFragments = ctx.agent.promptFragments ?? [];
   const newFragments = currentFragments.slice(assembledCount);
 

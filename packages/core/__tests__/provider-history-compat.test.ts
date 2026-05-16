@@ -336,7 +336,7 @@ describe('custom rule list', () => {
     const history = [{ role: 'assistant' as const, content: 'text' }];
     const result = applyReactiveRules(history, 'openai/gpt-4o', new Error('custom error'), [customRule]);
     expect(result).not.toBeNull();
-    expect((result!.history[0] as { patched: boolean }).patched).toBe(true);
+    expect((result!.history[0] as unknown as { patched: boolean }).patched).toBe(true);
     expect(result!.diff.length).toBeGreaterThan(0);
   });
 });
@@ -368,10 +368,8 @@ describe('BUILTIN_COMPAT_RULES', () => {
 // R-2: Reactive compat marks modified history entries
 // ---------------------------------------------------------------------------
 
-describe('R-2: reactive compat marks modified entries', () => {
-  type CompatFixedMessage = Message & { _compatFixed?: boolean };
-
-  it('sanitizeToolCallIds marks modified messages with _compatFixed', () => {
+describe('A-6: reactive compat does NOT leak _compatFixed into history', () => {
+  it('sanitizeToolCallIds strips _compatFixed from returned history', () => {
     const history = [
       { role: 'assistant' as const, content: 'ok', toolCalls: [{ id: 'tc!bad@id', name: 'foo', args: {} }] },
       { role: 'tool' as const, content: 'result', toolCallId: 'tc!bad@id', toolName: 'foo' },
@@ -379,20 +377,15 @@ describe('R-2: reactive compat marks modified entries', () => {
     const result = applyReactiveRules(history, 'anthropic/claude', new Error('tool id invalid format'));
     expect(result).not.toBeNull();
 
-    // The modified assistant message should be marked
-    const assistantMsg = result!.history.find((m): m is CompatFixedMessage => m.role === 'assistant') as unknown as CompatFixedMessage;
-    expect(assistantMsg._compatFixed).toBe(true);
+    for (const msg of result!.history) {
+      expect('_compatFixed' in (msg as Record<string, unknown>)).toBe(false);
+    }
 
-    // The unmodified tool message should NOT be marked
-    const toolMsg = result!.history.find((m): m is CompatFixedMessage => m.role === 'tool') as unknown as CompatFixedMessage;
-    expect(toolMsg._compatFixed).toBeUndefined();
-
-    // Diff should describe the modification
     expect(result!.diff.length).toBeGreaterThan(0);
     expect(result!.diff[0].ruleName).toBe('sanitize-tool-call-ids');
   });
 
-  it('deepseekReasoningRequired marks modified messages with _compatFixed', () => {
+  it('deepseekReasoningRequired strips _compatFixed from returned history', () => {
     const history = [
       { role: 'user' as const, content: 'hello' },
       { role: 'assistant' as const, content: 'hi' },
@@ -400,15 +393,10 @@ describe('R-2: reactive compat marks modified entries', () => {
     const result = applyReactiveRules(history, 'deepseek/chat', new Error('reasoning_content must be passed back'));
     expect(result).not.toBeNull();
 
-    // The modified last assistant message should be marked
-    const lastAssistant = result!.history.filter((m): m is CompatFixedMessage => m.role === 'assistant').pop() as unknown as CompatFixedMessage;
-    expect(lastAssistant._compatFixed).toBe(true);
+    for (const msg of result!.history) {
+      expect('_compatFixed' in (msg as Record<string, unknown>)).toBe(false);
+    }
 
-    // The user message should NOT be marked
-    const userMsg = result!.history.find((m): m is CompatFixedMessage => m.role === 'user') as unknown as CompatFixedMessage;
-    expect(userMsg._compatFixed).toBeUndefined();
-
-    // Diff should describe the modification
     expect(result!.diff.length).toBeGreaterThan(0);
     expect(result!.diff[0].ruleName).toBe('deepseek-reasoning-required');
   });

@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { FilesystemSessionStorage } from '../src/session-storage.js';
-import type { SessionEvent, SessionRecord } from '@agentforge/sdk';
+import type { SessionEvent } from '@agentforge/sdk';
 
 describe('FilesystemSessionStorage', () => {
   let basePath: string;

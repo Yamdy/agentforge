@@ -1,18 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { WebSocketBridge, type WSSocket } from '../src/bridge/bridge.js';
+import { WebSocketBridge } from '../src/bridge/bridge.js';
 import type { AgentRegistry } from '../src/registry.js';
 import type { Agent } from '@agentforge/core';
 
 function createMockSocket() {
-  const sent = [];
-  const listeners = {};
+  const sent: string[] = [];
+  const listeners: Record<string, ((...a: unknown[]) => void)[]> = {};
   const socket = {
-    send: vi.fn((data) => { sent.push(data); }),
+    send: vi.fn((data: string) => { sent.push(data); }),
     close: vi.fn(),
-    on: vi.fn((event, handler) => {
+    on: vi.fn((event: string, handler: (...a: unknown[]) => void) => {
       (listeners[event] ??= []).push(handler);
     }),
-    emit(event, ...args) {
+    emit(event: string, ...args: unknown[]) {
       for (const handler of listeners[event] ?? []) handler(...args);
     },
     sentMessages() {
@@ -23,7 +23,7 @@ function createMockSocket() {
   return socket;
 }
 
-function createMockAgent() {
+function createMockAgent(): Agent {
   return {
     run: vi.fn().mockResolvedValue({
       response: 'mock response',
@@ -40,31 +40,31 @@ function createMockAgent() {
       sessionId: 'session-1',
     }),
     state: 'pending',
-  };
+  } as unknown as Agent;
 }
 
-function createMockRegistry(agent) {
+function createMockRegistry(agent: Agent): AgentRegistry {
   return {
     get: vi.fn().mockReturnValue(agent),
     register: vi.fn(),
     list: vi.fn().mockReturnValue([]),
     remove: vi.fn(),
-  };
+    agents: new Map(),
+    clear: vi.fn(),
+  } as unknown as AgentRegistry;
 }
 
 describe('Error message sanitization', () => {
-  let bridge;
-  let mockAgent;
-  let mockRegistry;
+  let bridge: WebSocketBridge;
+  let mockAgent: Agent;
 
   beforeEach(() => {
     mockAgent = createMockAgent();
-    mockRegistry = createMockRegistry(mockAgent);
-    bridge = new WebSocketBridge(mockRegistry);
+    bridge = new WebSocketBridge(createMockRegistry(mockAgent));
   });
 
   it('scrubs API key patterns from error messages sent to client (run)', async () => {
-    mockAgent.run.mockRejectedValueOnce(
+    (mockAgent as any).run.mockRejectedValueOnce(
       new Error('OpenAI API error: Invalid API key sk-abc123def456ghi789')
     );
     const socket = createMockSocket();
@@ -78,22 +78,21 @@ describe('Error message sanitization', () => {
     }));
 
     await vi.waitFor(() => {
-      const errs = socket.sentMessages().filter((m) => m.type === 'error');
+      const errs = socket.sentMessages().filter((m: any) => m.type === 'error');
       expect(errs).toHaveLength(1);
     });
 
-    const err = socket.sentMessages().find((m) => m.type === 'error');
+    const err = socket.sentMessages().find((m: any) => m.type === 'error');
     expect(err.message).not.toContain('sk-abc123');
     expect(err.message).not.toContain('sk-');
     expect(err.message).toBeTruthy();
-    // Should have a correlation ID for debugging
     expect(err.correlationId).toBeDefined();
     expect(typeof err.correlationId).toBe('string');
     expect(err.correlationId.length).toBeGreaterThan(0);
   });
 
   it('scrubs internal URLs from error messages (resume)', async () => {
-    mockAgent.resume.mockRejectedValueOnce(
+    (mockAgent as any).resume.mockRejectedValueOnce(
       new Error('Connection refused to http://internal-db.corp.local:5432/session')
     );
     const socket = createMockSocket();
@@ -107,11 +106,11 @@ describe('Error message sanitization', () => {
     }));
 
     await vi.waitFor(() => {
-      const errs = socket.sentMessages().filter((m) => m.type === 'error');
+      const errs = socket.sentMessages().filter((m: any) => m.type === 'error');
       expect(errs).toHaveLength(1);
     });
 
-    const err = socket.sentMessages().find((m) => m.type === 'error');
+    const err = socket.sentMessages().find((m: any) => m.type === 'error');
     expect(err.message).not.toContain('http://internal-db');
     expect(err.message).not.toContain('corp.local');
     expect(err.message).toBeTruthy();
@@ -119,8 +118,9 @@ describe('Error message sanitization', () => {
   });
 
   it('scrubs API key patterns from stream errors', async () => {
-    mockAgent.streamEvents.mockImplementationOnce(async function* () {
+    (mockAgent as any).streamEvents.mockImplementationOnce(async function* () {
       throw new Error('Rate limited for key key-azure-openai-abc123xyz');
+      yield undefined as never;
     });
     const socket = createMockSocket();
     bridge.handleUpgrade(socket);
@@ -133,11 +133,11 @@ describe('Error message sanitization', () => {
     }));
 
     await vi.waitFor(() => {
-      const errs = socket.sentMessages().filter((m) => m.type === 'error');
+      const errs = socket.sentMessages().filter((m: any) => m.type === 'error');
       expect(errs).toHaveLength(1);
     });
 
-    const err = socket.sentMessages().find((m) => m.type === 'error');
+    const err = socket.sentMessages().find((m: any) => m.type === 'error');
     expect(err.message).not.toContain('key-azure');
     expect(err.message).not.toContain('abc123xyz');
     expect(err.message).toBeTruthy();
@@ -145,7 +145,7 @@ describe('Error message sanitization', () => {
   });
 
   it('returns generic user-safe messages without leaking internals', async () => {
-    mockAgent.run.mockRejectedValueOnce(
+    (mockAgent as any).run.mockRejectedValueOnce(
       new Error('ECONNREFUSED 10.0.1.50:6379 at TCPConnectWrap.afterConnect')
     );
     const socket = createMockSocket();
@@ -159,25 +159,23 @@ describe('Error message sanitization', () => {
     }));
 
     await vi.waitFor(() => {
-      const errs = socket.sentMessages().filter((m) => m.type === 'error');
+      const errs = socket.sentMessages().filter((m: any) => m.type === 'error');
       expect(errs).toHaveLength(1);
     });
 
-    const err = socket.sentMessages().find((m) => m.type === 'error');
-    // Internal IP and port must not be exposed
+    const err = socket.sentMessages().find((m: any) => m.type === 'error');
     expect(err.message).not.toContain('10.0.1.50');
     expect(err.message).not.toContain('6379');
     expect(err.message).not.toContain('TCPConnectWrap');
-    // Message should be generic
     expect(err.message).toBeTruthy();
     expect(err.correlationId).toBeDefined();
   });
 
   it('correlation IDs are unique across different errors', async () => {
-    const correlationIds = new Set();
+    const correlationIds = new Set<string>();
 
     for (let i = 0; i < 3; i++) {
-      mockAgent.run.mockRejectedValueOnce(new Error('fail ' + i));
+      (mockAgent as any).run.mockRejectedValueOnce(new Error('fail ' + i));
       const socket = createMockSocket();
       bridge.handleUpgrade(socket);
 
@@ -189,15 +187,14 @@ describe('Error message sanitization', () => {
       }));
 
       await vi.waitFor(() => {
-        const errs = socket.sentMessages().filter((m) => m.type === 'error');
+        const errs = socket.sentMessages().filter((m: any) => m.type === 'error');
         expect(errs).toHaveLength(1);
       });
 
-      const err = socket.sentMessages().find((m) => m.type === 'error');
+      const err = socket.sentMessages().find((m: any) => m.type === 'error');
       correlationIds.add(err.correlationId);
     }
 
-    // All 3 correlation IDs should be unique
     expect(correlationIds.size).toBe(3);
   });
 });

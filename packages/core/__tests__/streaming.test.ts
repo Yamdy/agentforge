@@ -53,7 +53,8 @@ describe('Agent streaming through pipeline', () => {
     });
 
     const iterate = async () => {
-      for await (const _chunk of agent.stream('Do something bad')) {
+      for await (const _evt of agent.stream('Do something bad')) {
+        void _evt;
         // drain the generator
       }
     };

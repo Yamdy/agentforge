@@ -2,6 +2,10 @@ import type { CheckpointStore } from '@agentforge/sdk';
 import { readFile, writeFile, mkdir, rm, readdir, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 
+function hasCode(err: unknown): err is { code: string } {
+  return typeof err === 'object' && err !== null && 'code' in err;
+}
+
 export class InMemoryCheckpointStore<T = unknown> implements CheckpointStore<T> {
   private store = new Map<string, T>();
 
@@ -51,8 +55,8 @@ export class JsonlCheckpointStore<T = unknown> implements CheckpointStore<T> {
       const line = content.trim();
       if (!line) return undefined;
       return JSON.parse(line) as T;
-    } catch (err: any) {
-      if (err.code === 'ENOENT') return undefined;
+    } catch (err: unknown) {
+      if (hasCode(err) && err.code === 'ENOENT') return undefined;
       throw err;
     }
   }
@@ -61,8 +65,8 @@ export class JsonlCheckpointStore<T = unknown> implements CheckpointStore<T> {
     this.validateSessionId(sessionId);
     try {
       await rm(this.path(sessionId));
-    } catch (err: any) {
-      if (err.code !== 'ENOENT') throw err;
+    } catch (err: unknown) {
+      if (!hasCode(err) || err.code !== 'ENOENT') throw err;
     }
   }
 
@@ -70,8 +74,8 @@ export class JsonlCheckpointStore<T = unknown> implements CheckpointStore<T> {
     try {
       const files = await readdir(this.dir);
       return files.filter(f => f.endsWith('.jsonl')).map(f => f.slice(0, -6));
-    } catch (err: any) {
-      if (err.code === 'ENOENT') return [];
+    } catch (err: unknown) {
+      if (hasCode(err) && err.code === 'ENOENT') return [];
       throw err;
     }
   }

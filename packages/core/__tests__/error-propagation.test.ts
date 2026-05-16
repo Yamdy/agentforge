@@ -1,13 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { EventBus } from '../src/event-bus.js';
 import { createSubAgentTool } from '../src/sub-agent.js';
-import {
-  createMockLanguageModel,
-  createMockModelWithToolCalls,
-  registerMockProvider,
-} from './helpers.js';
+import { registerMockProvider } from './helpers.js';
 import { z } from 'zod';
-import { Agent } from '../src/agent.js';
 
 // ─── F-A [CRITICAL] SubAgent error returns error via throw, not raw string ─
 
@@ -19,8 +14,8 @@ describe('SubAgent error propagation', () => {
     });
 
     const eventBus = new EventBus();
-    const events: any[] = [];
-    eventBus.subscribe('task:end', (data) => events.push(data));
+    const events: Array<{ name?: string; error?: string }> = [];
+    eventBus.subscribe('task:end', (data) => events.push(data as { name?: string; error?: string }));
 
     const subAgentTool = createSubAgentTool(
       {
@@ -39,7 +34,7 @@ describe('SubAgent error propagation', () => {
 
     // Call execute directly — it should throw (not return error string)
     await expect(
-      (subAgentTool as any).execute({ task: 'fail' }),
+      (subAgentTool as unknown as { execute: (input: { task: string }) => Promise<string> }).execute({ task: 'fail' }),
     ).rejects.toThrow('failed');
 
     // task:end event should still carry error info
@@ -72,7 +67,7 @@ describe('SubAgent error propagation', () => {
 
     // execute should throw — ToolRegistry will catch and create ToolResult with error
     await expect(
-      (subAgentTool as any).execute({ task: 'x' }),
+      (subAgentTool as unknown as { execute: (input: { task: string }) => Promise<string> }).execute({ task: 'x' }),
     ).rejects.toThrow('Hook test crash');
   });
 });
