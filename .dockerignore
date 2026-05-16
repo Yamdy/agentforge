@@ -1,0 +1,13 @@
+node_modules
+dist
+.tmp
+.claude
+.omc
+.git
+*.md
+!packages/*/README.md
+examples
+.env
+*.tgz
+coverage
+scratch

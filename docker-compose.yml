@@ -1,0 +1,15 @@
+services:
+  agentforge:
+    build: .
+    ports:
+      - "${AGENTFORGE_PORT:-3000}:3000"
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - ./config:/app/.agentforge
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health/live"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
