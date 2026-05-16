@@ -32,3 +32,12 @@ export { HarnessAPIImpl, type HarnessDeps } from './harness.js';
 export { TiktokenCounter } from './token-counter.js';
 export type { StreamEvent } from '@agentforge/sdk';
 export { OpenAICompatibleGateway } from './gateways/openai-compatible-gateway.js';
+export {
+  AgentForgeError,
+  RecoverableError,
+  FatalError,
+  AuthError,
+  ModelNotFoundError,
+  ToolExecutionError,
+  type AgentErrorOptions,
+} from './errors.js';

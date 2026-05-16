@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { StateMachine } from '../src/state-machine.js';
+import { RecoverableError, FatalError } from '../src/errors.js';
 
 describe('StateMachine', () => {
   it('starts in pending state', () => {
@@ -45,23 +46,23 @@ describe('StateMachine', () => {
   it('transitions running -> error (recoverable)', () => {
     const sm = new StateMachine();
     sm.transition('running');
-    sm.transition('error', Object.assign(new Error('timeout'), { recoverable: true, retryCount: 0, maxRetries: 3 }));
+    sm.transition('error', new RecoverableError('timeout', { code: 'TIMEOUT', retryCount: 0, maxRetries: 3 }));
     expect(sm.current).toBe('error');
-    sm.transition('running', Object.assign(new Error('retry'), { recoverable: true, retryCount: 1, maxRetries: 3 }));
+    sm.transition('running', new RecoverableError('retry', { code: 'TIMEOUT', retryCount: 1, maxRetries: 3 }));
     expect(sm.current).toBe('running');
   });
 
   it('rejects error -> running when not recoverable', () => {
     const sm = new StateMachine();
     sm.transition('running');
-    sm.transition('error', Object.assign(new Error('config error'), { recoverable: false }));
+    sm.transition('error', new FatalError('config error', { code: 'CONFIG' }));
     expect(() => sm.transition('running')).toThrow();
   });
 
   it('rejects error -> running when max retries exceeded', () => {
     const sm = new StateMachine();
     sm.transition('running');
-    sm.transition('error', Object.assign(new Error('timeout'), { recoverable: true, retryCount: 3, maxRetries: 3 }));
+    sm.transition('error', new RecoverableError('timeout', { code: 'TIMEOUT', retryCount: 3, maxRetries: 3 }));
     expect(() => sm.transition('running')).toThrow();
   });
 

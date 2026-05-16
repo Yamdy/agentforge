@@ -15,6 +15,7 @@ import { PluginManager, type PluginFactory } from './plugin-manager.js';
 import { LLMInvoker } from './llm-invoker.js';
 import { ModelFactory } from './model-factory.js';
 import { BuiltInGateway, getDefaultBuiltInGateway } from './gateways/builtin-gateway.js';
+import { AuthError, ModelNotFoundError } from './errors.js';
 import { LoopOrchestrator } from './loop-orchestrator.js';
 import { JsonlCheckpointStore } from './checkpoint-store.js';
 import { echoTool } from '@agentforge/tools';
@@ -305,6 +306,7 @@ export class Agent {
 }
 
 function isAuthOrNotFoundError(error: unknown): boolean {
+  if (error instanceof AuthError || error instanceof ModelNotFoundError) return true;
   if (!(error instanceof Error)) return false;
   const err = error as Error & { statusCode?: number; status?: number };
   const code = err.statusCode ?? err.status;

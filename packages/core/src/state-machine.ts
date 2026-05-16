@@ -1,10 +1,6 @@
-export type AgentState = 'pending' | 'running' | 'paused' | 'completed' | 'cancelled' | 'error';
+import type { AgentForgeError } from './errors.js';
 
-interface AgentError extends Error {
-  recoverable: boolean;
-  retryCount?: number;
-  maxRetries?: number;
-}
+export type AgentState = 'pending' | 'running' | 'paused' | 'completed' | 'cancelled' | 'error';
 
 const VALID_TRANSITIONS: Record<AgentState, AgentState[]> = {
   pending: ['running'],
@@ -17,21 +13,21 @@ const VALID_TRANSITIONS: Record<AgentState, AgentState[]> = {
 
 export class StateMachine {
   private _current: AgentState = 'pending';
-  private _lastError?: AgentError;
+  private _lastError?: AgentForgeError;
   private listeners: Array<(from: AgentState, to: AgentState) => void> = [];
 
   get current(): AgentState {
     return this._current;
   }
 
-  canTransition(to: AgentState, error?: AgentError): boolean {
+  canTransition(to: AgentState, error?: AgentForgeError): boolean {
     if (to === 'running' && this._current === 'error') {
       return this.isRecoverable(error ?? this._lastError);
     }
     return VALID_TRANSITIONS[this._current]?.includes(to) ?? false;
   }
 
-  transition(to: AgentState, error?: AgentError): void {
+  transition(to: AgentState, error?: AgentForgeError): void {
     if (!this.canTransition(to, error)) {
       throw new Error(`Invalid state transition: ${this._current} -> ${to}`);
     }
@@ -49,7 +45,7 @@ export class StateMachine {
     };
   }
 
-  private isRecoverable(error?: AgentError): boolean {
+  private isRecoverable(error?: AgentForgeError): boolean {
     if (!error || !error.recoverable) return false;
     const retryCount = error.retryCount ?? 0;
     const maxRetries = error.maxRetries ?? 3;
