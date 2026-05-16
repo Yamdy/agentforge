@@ -12,9 +12,10 @@ export interface MemoryAdmissionPolicy {
   dedup?: boolean;
   maxEntryLength?: number;
   correctionEnabled?: boolean;
+  crossSessionCorrection?: boolean;
 }
 
-const CORRECTION_SIGNALS = /\b(actually|no\s*,?\s*wait|correction|sorry|I\s+meant|that's?\s+wrong|I\s+was\s+wrong)\b/i;
+const CORRECTION_SIGNALS = /\b(actually|no\s*,?\s*wait|correction|sorry|I\s+meant|that's?\s+wrong|I\s+was\s+wrong)\b|不对|不是|错了|纠正|等等|違います|違う|訂正/i;
 
 export interface MemoryConfig {
   backend: MemoryBackend;
@@ -72,6 +73,7 @@ export function createMemoryOutputProcessor(config: MemoryConfig): Processor {
   const { backend, triggerMode } = config;
   const dedup = config.admissionPolicy?.dedup ?? true;
   const correctionEnabled = config.admissionPolicy?.correctionEnabled ?? false;
+  const crossSessionCorrection = config.admissionPolicy?.crossSessionCorrection ?? false;
   const maxEntryLength = config.admissionPolicy?.maxEntryLength;
   let lastAssistantContent: string | undefined;
 
@@ -95,7 +97,11 @@ export function createMemoryOutputProcessor(config: MemoryConfig): Processor {
 
       const isCorrection = correctionEnabled && CORRECTION_SIGNALS.test(userInput);
       if (isCorrection) {
-        await backend.deleteEntries(ctx.request.sessionId, (e) => e.role === 'assistant');
+        if (crossSessionCorrection && backend.deleteEntriesGlobally) {
+          await backend.deleteEntriesGlobally((e) => e.role === 'assistant');
+        } else {
+          await backend.deleteEntries(ctx.request.sessionId, (e) => e.role === 'assistant');
+        }
       }
 
       const now = new Date().toISOString();

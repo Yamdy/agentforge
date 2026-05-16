@@ -1,4 +1,4 @@
-import type { SessionStorage, SessionRecord, SessionManager, PipelineContext, SessionEvent } from '@agentforge/sdk';
+import type { SessionStorage, SessionRecord, SessionManager, PipelineContext, SessionEvent, Message } from '@agentforge/sdk';
 import type { EventBus } from './event-bus.js';
 
 export class SessionManagerImpl implements SessionManager {
@@ -38,13 +38,14 @@ export class SessionManagerImpl implements SessionManager {
 
     let input = '';
     let lastStep = 0;
-    const messageHistory: Array<Record<string, unknown>> = [];
+    const messageHistory: Message[] = [];
     let agentConfig: Record<string, unknown> = {};
     let promptFragments: string[] = [];
     let toolDeclarations: Array<{ name: string; description: string }> = [];
     let totalTokenUsage: { input: number; output: number } | undefined;
     let lastResponse: string | undefined;
     const custom: Record<string, unknown> = {};
+    let toolCallIdx = 0;
 
     for (const event of events) {
       const payload = event.payload as Record<string, unknown> | undefined;
@@ -63,7 +64,8 @@ export class SessionManagerImpl implements SessionManager {
           lastStep = (payload.step as number) + 1;
           if (payload.response) {
             lastResponse = payload.response as string;
-            messageHistory.push({ step: payload.step, response: payload.response });
+            const msg: Message = { role: 'assistant', content: payload.response as string };
+            messageHistory.push(msg);
           }
           if (payload.tokenUsage) {
             totalTokenUsage = payload.tokenUsage as { input: number; output: number };
@@ -72,12 +74,26 @@ export class SessionManagerImpl implements SessionManager {
         }
         case 'tool:before':
         case 'tool.before': {
-          messageHistory.push({ type: 'tool_call', name: payload.toolName, args: payload.args });
+          // tool.before is a pre-execution hook event; skip — tool:after carries the result
           break;
         }
         case 'tool:after':
         case 'tool.after': {
-          messageHistory.push({ type: 'tool_result', name: payload.toolName, result: payload.result, error: payload.error });
+          const toolName = payload.toolName as string;
+          const content = payload.error
+            ? String(payload.error)
+            : typeof payload.result === 'string'
+              ? payload.result
+              : JSON.stringify(payload.result ?? '');
+          const msg: Message = {
+            role: 'tool',
+            content,
+            toolCallId: `restored_${toolName}_${toolCallIdx++}`,
+            toolName,
+          };
+          if (payload.error) (msg as Message & { error?: string }).error = String(payload.error);
+          if (payload.result !== undefined) (msg as Message & { result?: unknown }).result = payload.result;
+          messageHistory.push(msg);
           break;
         }
         case 'llm:after':
@@ -91,7 +107,7 @@ export class SessionManagerImpl implements SessionManager {
           break;
         }
         case 'error': {
-          messageHistory.push({ type: 'error', error: String(payload.error) });
+          messageHistory.push({ role: 'assistant', content: `[Error] ${String(payload.error)}` });
           break;
         }
         case 'session:suspended': {
@@ -110,7 +126,7 @@ export class SessionManagerImpl implements SessionManager {
       request: { input, sessionId },
       agent: { config: agentConfig as unknown as PipelineContext['agent']['config'], promptFragments, toolDeclarations },
       iteration: { step: lastStep, response: lastResponse },
-      session: { messageHistory: messageHistory as PipelineContext['session']['messageHistory'], totalTokenUsage, custom },
+      session: { messageHistory, totalTokenUsage, custom },
     };
   }
 

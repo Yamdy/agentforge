@@ -43,4 +43,15 @@ export class InMemoryBackend implements MemoryBackend {
     this.entries.set(sessionId, remaining);
     return before - remaining.length;
   }
+
+  async deleteEntriesGlobally(predicate: (entry: MemoryEntry) => boolean): Promise<number> {
+    let total = 0;
+    for (const [sessionId, list] of this.entries) {
+      const before = list.length;
+      const remaining = list.filter((e) => !predicate(e));
+      this.entries.set(sessionId, remaining);
+      total += before - remaining.length;
+    }
+    return total;
+  }
 }

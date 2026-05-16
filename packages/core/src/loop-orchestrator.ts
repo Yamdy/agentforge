@@ -38,6 +38,8 @@ export interface LoopOptions {
   maxCompatRetries?: number;
   /** When true, saves a checkpoint after each completed iteration */
   autoCheckpoint?: boolean;
+  /** Max times a processor can retryFrom the same stage per loop (default: 3) */
+  maxProcessorRetries?: number;
 }
 
 /** Mutable state shared between loop methods for retry statistics. */
@@ -161,7 +163,9 @@ export class LoopOrchestrator {
   ): AsyncGenerator<StreamEvent> {
     const { signal, maxIterations, modelString, sessionId } = options;
     const maxCompatRetries = options.maxCompatRetries ?? 3;
+    const maxProcessorRetries = options.maxProcessorRetries ?? 3;
     const runState = sharedRunState ?? { compatRetries: 0 };
+    const processorRetryCounts = new Map<PipelineStage, number>();
 
     this.resetToRunning();
 
@@ -196,6 +200,12 @@ export class LoopOrchestrator {
             if (event.type === 'abort') {
               const abortEvent = event as { type: 'abort'; reason: string; retryFrom?: PipelineStage };
               if (abortEvent.retryFrom) {
+                const count = (processorRetryCounts.get(abortEvent.retryFrom) ?? 0) + 1;
+                if (count > maxProcessorRetries) {
+                  this.eventBus?.emit('processor:retry_exhausted', { stage: abortEvent.retryFrom, retries: count - 1, max: maxProcessorRetries });
+                  throw new Error(`Processor retry budget exhausted for ${abortEvent.retryFrom}: ${abortEvent.reason}`);
+                }
+                processorRetryCounts.set(abortEvent.retryFrom, count);
                 loopCtx = { ...loopCtx, iteration: { ...loopCtx.iteration, loopDirective: { action: 'retry', retryFrom: abortEvent.retryFrom } } };
                 loopBreak = true;
                 break;

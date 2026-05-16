@@ -10,4 +10,6 @@ export interface MemoryBackend {
   retrieve(sessionId: string, query?: { limit?: number; since?: string }): Promise<MemoryEntry[]>;
   search(query: string, options?: { limit?: number }): Promise<MemoryEntry[]>;
   deleteEntries(sessionId: string, predicate: (entry: MemoryEntry) => boolean): Promise<number>;
+  /** Delete entries matching predicate across all sessions. */
+  deleteEntriesGlobally?(predicate: (entry: MemoryEntry) => boolean): Promise<number>;
 }
