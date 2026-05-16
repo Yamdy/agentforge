@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { HarnessAPI, PluginRegistration, McpServerConfig } from '@agentforge/sdk';
 import { convertMcpTool } from './tool-converter.js';
 import { createMcpClient, type McpClient } from './mcp-client.js';
@@ -25,7 +26,20 @@ export interface McpPluginOptions {
  *
  * Uses closure capture to access HarnessAPI inside ResourceDeclaration.start().
  */
+const McpPluginOptionsSchema = z.object({
+  servers: z.array(z.object({
+    name: z.string().min(1),
+    transport: z.enum(['stdio', 'sse', 'http']).optional(),
+    command: z.string().optional(),
+    args: z.array(z.string()).optional(),
+    env: z.record(z.string(), z.string()).optional(),
+    url: z.string().optional(),
+  })).min(1),
+  clientFactory: z.unknown().optional(),
+});
+
 export function mcpPlugin(options: McpPluginOptions): (api: HarnessAPI) => PluginRegistration {
+  McpPluginOptionsSchema.parse(options);
   return (api: HarnessAPI): PluginRegistration => {
     const clientFactory = options.clientFactory ?? createMcpClient;
 

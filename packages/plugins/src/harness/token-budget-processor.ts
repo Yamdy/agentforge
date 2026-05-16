@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { Processor, PipelineContext, ProcessorResult, TokenCounter, Message } from '@agentforge/sdk';
 import { SpanAttributeKeys, SpanType } from '@agentforge/sdk';
 
@@ -38,10 +39,17 @@ function truncateHistory(
   return result;
 }
 
+const TokenBudgetConfigSchema = z.object({
+  maxContextTokens: z.number().int().positive(),
+  reservedOutputTokens: z.number().int().nonnegative(),
+  strategy: z.enum(['compress', 'truncate', 'block']),
+});
+
 export function createTokenBudgetProcessor(
   config: TokenBudgetConfig,
   tokenCounter?: TokenCounter,
 ): Processor {
+  TokenBudgetConfigSchema.parse(config);
   return {
     stage: 'gateLLM',
     execute: async (ctx: PipelineContext): Promise<ProcessorResult> => {

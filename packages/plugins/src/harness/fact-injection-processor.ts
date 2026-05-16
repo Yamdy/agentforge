@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { Processor, PipelineContext, ProcessorResult } from '@agentforge/sdk';
 import { SpanAttributeKeys, SpanType } from '@agentforge/sdk';
 
@@ -5,7 +6,12 @@ export interface FactInjectionConfig {
   facts: string[] | ((ctx: PipelineContext) => string[] | Promise<string[]>);
 }
 
+const FactInjectionConfigSchema = z.object({
+  facts: z.union([z.array(z.string()), z.unknown()]),
+});
+
 export function createFactInjectionProcessor(config: FactInjectionConfig): Processor {
+  FactInjectionConfigSchema.parse(config);
   return {
     stage: 'buildContext',
     execute: async (ctx: PipelineContext): Promise<ProcessorResult> => {

@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { Processor, PipelineContext, ProcessorResult } from '@agentforge/sdk';
 import { SpanAttributeKeys, SpanType } from '@agentforge/sdk';
 
@@ -75,7 +76,16 @@ function redactMatches(text: string, matches: PiiMatch[], redaction: string): st
  * - `warn`   — log a warning and continue (original text preserved)
  * - `block`  — abort with an error message
  */
+const PiiDetectorConfigSchema = z.object({
+  enabled: z.boolean(),
+  strategy: z.enum(['redact', 'warn', 'block']),
+  piiTypes: z.array(z.string().min(1)).min(1),
+  customPatterns: z.record(z.string(), z.unknown()).optional(),
+  redactionText: z.string().optional(),
+});
+
 export function createPiiDetectorProcessor(config: PiiDetectorConfig): Processor {
+  PiiDetectorConfigSchema.parse(config);
   return {
     stage: 'processInput',
     execute: async (ctx: PipelineContext): Promise<ProcessorResult> => {

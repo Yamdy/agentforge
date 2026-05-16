@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { HarnessAPI, PluginRegistration, EvictionStorage, Processor, PipelineContext, ProcessorResult } from '@agentforge/sdk';
 
 export interface EvictionPluginOptions {
@@ -6,7 +7,14 @@ export interface EvictionPluginOptions {
   previewLength?: number;
 }
 
+const EvictionPluginOptionsSchema = z.object({
+  maxSize: z.number().int().positive(),
+  storage: z.unknown(),
+  previewLength: z.number().int().positive().optional(),
+});
+
 export function evictionPlugin(options: EvictionPluginOptions): (api: HarnessAPI) => PluginRegistration {
+  EvictionPluginOptionsSchema.parse(options);
   const { maxSize, storage, previewLength = 500 } = options;
 
   const processor: Processor = {

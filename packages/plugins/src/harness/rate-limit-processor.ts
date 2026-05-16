@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { Processor, PipelineContext, ProcessorResult } from '@agentforge/sdk';
 
 export interface RateLimitConfig {
@@ -23,7 +24,15 @@ interface WindowEntry {
  * If the number of timestamps within the window exceeds `maxRequests`,
  * the configured strategy is applied.
  */
+const RateLimitConfigSchema = z.object({
+  maxRequests: z.number().int().positive(),
+  windowMs: z.number().int().positive(),
+  strategy: z.enum(['block', 'queue']),
+  perModel: z.boolean().optional(),
+});
+
 export function createRateLimitProcessor(config: RateLimitConfig): Processor {
+  RateLimitConfigSchema.parse(config);
   // Keyed by model name when perModel is true, otherwise single key "*"
   const windows = new Map<string, WindowEntry[]>();
 

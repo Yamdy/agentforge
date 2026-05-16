@@ -196,7 +196,18 @@ export function createReadSkillTool(skills: SkillDefinition[]): ToolDefinition {
  * Skills can also declare resources (e.g., MCP servers) and custom tools,
  * which are registered via HarnessAPI.
  */
+const SkillPluginOptionsSchema = z.object({
+  skills: z.array(z.object({
+    name: z.string().min(1),
+    description: z.string(),
+    content: z.string().min(1),
+    resources: z.array(z.unknown()).optional(),
+    tools: z.array(z.unknown()).optional(),
+  })).optional(),
+});
+
 export function skillPlugin(options: SkillPluginOptions): (api: HarnessAPI) => PluginRegistration {
+  SkillPluginOptionsSchema.parse(options);
   const { skills: preDiscoveredSkills } = options;
 
   return (api: HarnessAPI): PluginRegistration => {

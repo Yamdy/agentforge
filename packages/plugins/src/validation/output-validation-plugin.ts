@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { Processor, PipelineContext, ProcessorResult } from '@agentforge/sdk';
 
 /**
@@ -99,7 +100,14 @@ function attemptFix(value: unknown, schema: Record<string, unknown>): unknown {
   return value;
 }
 
+const OutputValidationConfigSchema = z.object({
+  type: z.enum(['json-schema', 'zod']),
+  schema: z.unknown(),
+  strategy: z.enum(['block', 'warn', 'fix']).optional(),
+});
+
 export function createOutputValidationProcessor(config: OutputValidationConfig): Processor {
+  OutputValidationConfigSchema.parse(config);
   const strategy = config.strategy ?? 'block';
 
   return {

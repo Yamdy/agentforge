@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { Processor, PipelineContext, ProcessorResult } from '@agentforge/sdk';
 import { SpanAttributeKeys, SpanType } from '@agentforge/sdk';
 
@@ -82,7 +83,16 @@ const REDACTION = '[REDACTED]';
  * - `warn`  — log a warning and continue (original text preserved)
  * - `redact` — replace matched content with [REDACTED]
  */
+const ModerationConfigSchema = z.object({
+  enabled: z.boolean(),
+  strategy: z.enum(['block', 'warn', 'redact']),
+  categories: z.array(z.string().min(1)).min(1),
+  checker: z.unknown().optional(),
+  blockMessage: z.string().optional(),
+});
+
 export function createModerationProcessor(config: ModerationConfig): Processor {
+  ModerationConfigSchema.parse(config);
   return {
     stage: 'processInput',
     execute: async (ctx: PipelineContext): Promise<ProcessorResult> => {

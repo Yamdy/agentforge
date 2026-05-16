@@ -14,7 +14,18 @@ export interface MemoryPluginOptions {
   windowLimit?: number;
 }
 
+const MemoryPluginOptionsSchema = z.object({
+  backend: z.unknown(),
+  triggerMode: z.union([
+    z.object({ type: z.literal('automatic'), onLoad: z.enum(['always', 'on-session-start']) }),
+    z.object({ type: z.literal('agent-controlled') }),
+    z.object({ type: z.literal('both') }),
+  ]),
+  windowLimit: z.number().int().positive().optional(),
+});
+
 export function memoryPlugin(options: MemoryPluginOptions): (api: HarnessAPI) => PluginRegistration {
+  MemoryPluginOptionsSchema.parse(options);
   const config: MemoryConfig = {
     backend: options.backend,
     triggerMode: options.triggerMode,

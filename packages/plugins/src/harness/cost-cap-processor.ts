@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { Processor, PipelineContext, ProcessorResult } from '@agentforge/sdk';
 import { SpanAttributeKeys, SpanType } from '@agentforge/sdk';
 
@@ -25,7 +26,14 @@ function findPricing(model: string, pricing: Record<string, { input: number; out
   return DEFAULT_PRICING;
 }
 
+const CostCapConfigSchema = z.object({
+  maxCost: z.number().positive(),
+  strategy: z.enum(['block', 'warn']),
+  modelPricing: z.record(z.string(), z.object({ input: z.number(), output: z.number() })).optional(),
+});
+
 export function createCostCapProcessor(config: CostCapConfig): Processor {
+  CostCapConfigSchema.parse(config);
   return {
     stage: 'gateLLM',
     execute: async (ctx: PipelineContext): Promise<ProcessorResult> => {

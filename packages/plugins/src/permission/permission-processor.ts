@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { Processor, PipelineContext, ProcessorResult, SuspensionSignal, HarnessAPI, PluginRegistration } from '@agentforge/sdk';
 
 // ---------------------------------------------------------------------------
@@ -204,7 +205,17 @@ export interface PermissionPluginOptions {
  * Each permission decision is emitted through the `onDecision` callback,
  * which the plugin wires to the EventBus via HarnessAPI.subscribe.
  */
+const PermissionPluginOptionsSchema = z.object({
+  mode: z.enum(['interactive', 'plan-only', 'full-auto']),
+  rules: z.array(z.object({
+    tool: z.string().min(1),
+    action: z.enum(['allow', 'deny', 'ask']),
+    pattern: z.string().optional(),
+  })),
+});
+
 export function permissionPlugin(options: PermissionPluginOptions): (api: HarnessAPI) => PluginRegistration {
+  PermissionPluginOptionsSchema.parse(options);
   return (api: HarnessAPI): PluginRegistration => {
     const processor = createPermissionProcessor({
       mode: options.mode,

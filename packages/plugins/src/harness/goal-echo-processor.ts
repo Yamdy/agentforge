@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { Processor, PipelineContext, ProcessorResult } from '@agentforge/sdk';
 import { SpanAttributeKeys, SpanType } from '@agentforge/sdk';
 
@@ -14,7 +15,14 @@ export interface GoalEchoConfig {
   progressTracking: boolean;
 }
 
+const GoalEchoConfigSchema = z.object({
+  enabled: z.boolean(),
+  echoFrequency: z.number().int().positive(),
+  progressTracking: z.boolean(),
+});
+
 export function createGoalEchoProcessor(config: GoalEchoConfig): Processor {
+  GoalEchoConfigSchema.parse(config);
   return {
     stage: 'evaluateIteration',
     execute: async (ctx: PipelineContext): Promise<ProcessorResult> => {
