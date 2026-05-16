@@ -3,9 +3,10 @@ import { resolve } from 'node:path';
 import { ConfigLoader, OpenAICompatibleGateway, ModelFactory } from '@agentforge/core';
 import type { AgentRegistry } from './registry.js';
 import type { GatewayConfig, AgentConfig } from '@agentforge/sdk';
+import { ProfileLoader, builtinProfiles, applyProfile } from './profiles/index.js';
 
 export interface ServerConfig {
-  agents?: Record<string, Partial<AgentConfig> & { model: string }>;
+  agents?: Record<string, Partial<AgentConfig> & { model: string; profile?: string }>;
   modelGateways?: GatewayConfig[];
 }
 
@@ -67,6 +68,7 @@ export function validateConfig(raw: unknown): ServerConfig {
 export async function loadAndRegister(
   configPath: string,
   registry: AgentRegistry,
+  defaultProfile?: string,
 ): Promise<{ agentIds: string[] }> {
   const content = await readFile(resolve(configPath), 'utf-8');
   const loader = new ConfigLoader();
@@ -83,10 +85,23 @@ export async function loadAndRegister(
     }));
   }
 
-  // Register agents
+  // Build profile loader with built-in profiles
+  const profileLoader = new ProfileLoader();
+  for (const profile of builtinProfiles()) {
+    profileLoader.register(profile);
+  }
+
+  // Register agents and apply profiles
   const agentIds: string[] = [];
   for (const [id, agentConfig] of Object.entries(config.agents ?? {})) {
-    registry.register(id, agentConfig as AgentConfig, { modelFactory });
+    const agent = registry.register(id, agentConfig as AgentConfig, { modelFactory });
+
+    const profileName = agentConfig.profile ?? defaultProfile;
+    if (profileName) {
+      const profile = profileLoader.load(profileName);
+      applyProfile(agent, profile);
+    }
+
     agentIds.push(id);
   }
 

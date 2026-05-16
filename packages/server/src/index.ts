@@ -4,6 +4,10 @@ export { AgentForgeClient } from './client.js';
 export { StaticKeyAuthAdapter } from './middleware/static-key-auth.js';
 export { serializeSSE, parseSSE } from './sse.js';
 
+// Profiles
+export { ProfileLoader, mergeProfiles, applyProfile, builtinProfiles } from './profiles/index.js';
+export { codingAgentProfile, businessAgentProfile, personalAgentProfile, dataAgentProfile } from './profiles/index.js';
+
 // A2A Protocol
 export { InMemoryTaskStore } from './a2a/task-store.js';
 export { JsonlTaskStore } from './a2a/jsonl-task-store.js';

@@ -35,6 +35,7 @@ Serve Options:
   --port <number>     Server port (default: 3000)
   --api-key <string>  API key for authentication
   --config <path>     Config file path (default: .agentforge/config.jsonc)
+  --profile <name>    Apply built-in profile to all agents
   --verbose           Enable verbose logging
   --quiet             Suppress all output except errors
 
@@ -42,11 +43,13 @@ Run Options:
   --agent <id>        Agent ID to run (required)
   --input <text>      Input text for the agent (required)
   --config <path>     Config file path
+  --profile <name>    Apply built-in profile to all agents
 
 Dev Options:
   --port <number>     Server port
   --api-key <string>  API key for authentication
   --config <path>     Config file path
+  --profile <name>    Apply built-in profile to all agents
   --verbose           Enable verbose logging
   --quiet             Suppress all output except errors
 `;
@@ -57,9 +60,9 @@ Dev Options:
 // ---------------------------------------------------------------------------
 
 type CliCommand =
-  | { command: 'serve'; port?: number; apiKey?: string; config?: string; verbose?: boolean; quiet?: boolean }
-  | { command: 'run'; agent: string; input: string; config?: string; verbose?: boolean; quiet?: boolean }
-  | { command: 'dev'; config?: string; apiKey?: string; port?: number; verbose?: boolean; quiet?: boolean }
+  | { command: 'serve'; port?: number; apiKey?: string; config?: string; profile?: string; verbose?: boolean; quiet?: boolean }
+  | { command: 'run'; agent: string; input: string; config?: string; profile?: string; verbose?: boolean; quiet?: boolean }
+  | { command: 'dev'; config?: string; apiKey?: string; port?: number; profile?: string; verbose?: boolean; quiet?: boolean }
   | { command: 'help' }
   | { command: 'version' }
   | { command: null };
@@ -93,6 +96,7 @@ export function parseCommand(args: string[]): CliCommand {
         port: flags.port ? parseInt(flags.port as string, 10) : undefined,
         apiKey: flags['api-key'] as string | undefined,
         config: flags.config as string | undefined,
+        profile: flags.profile as string | undefined,
         verbose: flags.verbose as boolean | undefined,
         quiet: flags.quiet as boolean | undefined,
       };
@@ -102,6 +106,7 @@ export function parseCommand(args: string[]): CliCommand {
         agent: (flags.agent as string) ?? '',
         input: (flags.input as string) ?? '',
         config: flags.config as string | undefined,
+        profile: flags.profile as string | undefined,
         verbose: flags.verbose as boolean | undefined,
         quiet: flags.quiet as boolean | undefined,
       };
@@ -111,6 +116,7 @@ export function parseCommand(args: string[]): CliCommand {
         config: flags.config as string | undefined,
         apiKey: flags['api-key'] as string | undefined,
         port: flags.port ? parseInt(flags.port as string, 10) : undefined,
+        profile: flags.profile as string | undefined,
         verbose: flags.verbose as boolean | undefined,
         quiet: flags.quiet as boolean | undefined,
       };
@@ -136,7 +142,7 @@ export async function handleServe(opts: Extract<CliCommand, { command: 'serve' }
   const server = new AgentForgeServer({ port: opts.port, apiKey: opts.apiKey });
 
   if (existsSync(resolve(configPath))) {
-    const { agentIds } = await loadAndRegister(configPath, server.registry);
+    const { agentIds } = await loadAndRegister(configPath, server.registry, opts.profile);
     console.log(`Loaded ${agentIds.length} agent(s): ${agentIds.join(', ')}`);
   } else {
     console.warn(`Config not found at ${configPath}, starting with empty registry`);
@@ -162,7 +168,7 @@ export async function handleRun(opts: Extract<CliCommand, { command: 'run' }>) {
     throw new Error(`Config not found at ${configPath}`);
   }
 
-  await loadAndRegister(configPath, registry);
+  await loadAndRegister(configPath, registry, opts.profile);
   const result = await runSingleShot(registry, opts.agent, opts.input);
   console.log(JSON.stringify(result, null, 2));
 }
@@ -174,7 +180,7 @@ export async function handleDev(opts: Extract<CliCommand, { command: 'dev' }>) {
   const loadConfig = async () => {
     server.registry.clear();
     if (existsSync(configPath)) {
-      const { agentIds } = await loadAndRegister(configPath, server.registry);
+      const { agentIds } = await loadAndRegister(configPath, server.registry, opts.profile);
       console.log(`[dev] Loaded ${agentIds.length} agent(s): ${agentIds.join(', ')}`);
     } else {
       console.warn(`[dev] Config not found at ${configPath}`);
