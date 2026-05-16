@@ -228,14 +228,17 @@ describe('MemoryProcessor', () => {
       });
 
       // Two turns with identical assistant response
-      await processor.execute(makeContext({
+      // Since dedup state lives in session.custom (not a closure),
+      // we must thread the returned session.custom into the next call.
+      const result1 = await processor.execute(makeContext({
         request: { input: 'question 1', sessionId: 'session-dedup' },
         iteration: { step: 0, response: 'same answer' },
-      }));
+      })) as PipelineContext;
 
       await processor.execute(makeContext({
         request: { input: 'question 2', sessionId: 'session-dedup' },
         iteration: { step: 0, response: 'same answer' },
+        session: { custom: result1.session.custom },
       }));
 
       const stored = await backend.retrieve('session-dedup');
