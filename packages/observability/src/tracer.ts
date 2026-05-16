@@ -122,7 +122,7 @@ export class TracerImpl implements Tracer {
 }
 
 export class NoOpMetrics implements Metrics {
-  increment(_name: string): void {}
-  gauge(_name: string, _value: number): void {}
-  histogram(_name: string, _value: number): void {}
+  increment(_name: string, _delta?: number, _labels?: Record<string, string>): void {}
+  gauge(_name: string, _value: number, _labels?: Record<string, string>): void {}
+  histogram(_name: string, _value: number, _labels?: Record<string, string>): void {}
 }

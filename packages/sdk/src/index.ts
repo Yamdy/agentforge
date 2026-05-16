@@ -258,9 +258,9 @@ export interface Tracer {
 }
 
 export interface Metrics {
-  increment(name: string): void;
-  gauge(name: string, value: number): void;
-  histogram(name: string, value: number): void;
+  increment(name: string, delta?: number, labels?: Record<string, string>): void;
+  gauge(name: string, value: number, labels?: Record<string, string>): void;
+  histogram(name: string, value: number, labels?: Record<string, string>): void;
 }
 
 // ---------------------------------------------------------------------------
