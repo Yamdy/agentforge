@@ -565,4 +565,55 @@ describe('PipelineRunner', () => {
       expect(order).toEqual(['gateLLM', 'invokeLLM']);
     });
   });
+
+  describe('no-op extension point optimization', () => {
+    it('skips hooks when only no-op processors are registered for a stage', async () => {
+      const eventBus = new EventBus();
+      const hookManager = new HookManager(eventBus);
+      const hookEvents: string[] = [];
+      eventBus.subscribe('stage:before', (data: unknown) => hookEvents.push(`before:${(data as StageHookInput).stage}`));
+      eventBus.subscribe('stage:after', (data: unknown) => hookEvents.push(`after:${(data as StageHookInput).stage}`));
+
+      const runner = new PipelineRunner({ hookManager });
+      runner.register({
+        stage: 'processInput',
+        execute: async (ctx) => ctx,
+      });
+      // Register no-op gateTool extension point (same as gateToolExtensionPoint)
+      runner.register({
+        stage: 'gateTool',
+        execute: async (ctx) => ctx,
+        isNoOp: true,
+      } as Processor & { isNoOp: boolean });
+
+      await runner.run(makeContext(), ['processInput', 'gateTool']);
+
+      // processInput hooks fire (real processor), gateTool hooks are skipped (no-op)
+      expect(hookEvents).toEqual(['before:processInput', 'after:processInput']);
+    });
+
+    it('fires hooks when a real processor is registered alongside a no-op', async () => {
+      const eventBus = new EventBus();
+      const hookManager = new HookManager(eventBus);
+      const hookEvents: string[] = [];
+      eventBus.subscribe('stage:before', (data: unknown) => hookEvents.push(`before:${(data as StageHookInput).stage}`));
+      eventBus.subscribe('stage:after', (data: unknown) => hookEvents.push(`after:${(data as StageHookInput).stage}`));
+
+      const runner = new PipelineRunner({ hookManager });
+      runner.register({
+        stage: 'gateLLM',
+        execute: async (ctx) => ctx,
+        isNoOp: true,
+      } as Processor & { isNoOp: boolean });
+      // Plugin registers a real gate processor alongside the no-op
+      runner.register({
+        stage: 'gateLLM',
+        execute: async (ctx) => ctx,
+      });
+
+      await runner.run(makeContext(), ['gateLLM']);
+
+      expect(hookEvents).toEqual(['before:gateLLM', 'after:gateLLM']);
+    });
+  });
 });

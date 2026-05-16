@@ -196,6 +196,9 @@ export type ProcessorResult = PipelineContext | AbortSignal | SuspensionSignal;
 export interface Processor {
   stage: PipelineStage;
   execute(context: PipelineContext): Promise<ProcessorResult>;
+  /** When true, this processor is an extension point placeholder that just returns ctx unchanged.
+   *  PipelineRunner skips hooks for stages where all processors are no-ops. */
+  isNoOp?: boolean;
 }
 
 // ---------------------------------------------------------------------------

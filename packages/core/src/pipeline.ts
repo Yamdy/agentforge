@@ -276,6 +276,7 @@ export class PipelineRunner {
   ): Promise<PipelineContext | AbortSignal | SuspensionSignal> {
     const stageProcessors = this.processors.filter((p) => p.stage === stage);
     if (stageProcessors.length === 0) return ctx;
+    if (stageProcessors.every((p) => p.isNoOp)) return ctx;
 
     // stage.before hook
     if (this.hookManager) {
