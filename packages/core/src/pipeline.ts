@@ -5,6 +5,7 @@ import type {
   Processor,
   ProcessorResult,
   Span,
+  StageName,
   StreamEvent,
   SuspensionSignal,
   ToolCall,
@@ -115,11 +116,11 @@ export class PipelineRunner {
     this.processors.push(processor);
   }
 
-  unregister(stage: PipelineStage): void {
+  unregister(stage: StageName): void {
     this.processors = this.processors.filter((p) => p.stage !== stage);
   }
 
-  replace(stage: PipelineStage, processor: Processor): void {
+  replace(stage: StageName, processor: Processor): void {
     this.processors = this.processors.filter((p) => p.stage !== stage);
     this.processors.push(processor);
   }
@@ -128,7 +129,7 @@ export class PipelineRunner {
     this.hookManager = hookManager;
   }
 
-  async run(context: PipelineContext, stages: PipelineStage[], options?: { signal?: globalThis.AbortSignal }): Promise<RunResult> {
+  async run(context: PipelineContext, stages: StageName[], options?: { signal?: globalThis.AbortSignal }): Promise<RunResult> {
     const rootSpan = this.tracer.startSpan(SpanType.AGENT_RUN);
     const signal = options?.signal;
     let ctx = context;
@@ -173,7 +174,7 @@ export class PipelineRunner {
     return ctx;
   }
 
-  async *stream(context: PipelineContext, stages: PipelineStage[], options?: { signal?: globalThis.AbortSignal }): AsyncGenerator<StreamEvent> {
+  async *stream(context: PipelineContext, stages: StageName[], options?: { signal?: globalThis.AbortSignal }): AsyncGenerator<StreamEvent> {
     const rootSpan = this.tracer.startSpan(SpanType.AGENT_RUN);
     const signal = options?.signal;
     let ctx = context;
@@ -271,7 +272,7 @@ export class PipelineRunner {
 
   private async executeStage(
     ctx: PipelineContext,
-    stage: PipelineStage,
+    stage: StageName,
     stageSpan: Span,
   ): Promise<PipelineContext | AbortSignal | SuspensionSignal> {
     const stageProcessors = this.processors.filter((p) => p.stage === stage);

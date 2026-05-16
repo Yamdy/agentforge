@@ -2,9 +2,10 @@ import type {
   CompressionStrategy,
   HarnessAPI,
   Hook,
-  PipelineStage,
   Processor,
   ResourceDeclaration,
+  StageMutation,
+  StageName,
   ToolDefinition,
 } from '@agentforge/sdk';
 import type { PipelineRunner } from './pipeline.js';
@@ -23,16 +24,20 @@ export interface HarnessDeps {
   contextBuilder?: ContextBuilder;
   emitEvent: (eventType: string, data?: unknown) => void;
   registerProvider: (name: string, factory: unknown) => void;
+  mutateStages?: (mutation: StageMutation) => void;
 }
 
 export class HarnessAPIImpl implements HarnessAPI {
   private commands = new Map<string, (args: string) => Promise<void>>();
   private resources: ResourceDeclaration[] = [];
   private unsubFns: Array<() => void> = [];
+  private frozen = false;
 
   constructor(private deps: HarnessDeps) {}
 
-  registerProcessor(stage: PipelineStage, processor: Processor): void {
+  freeze(): void { this.frozen = true; }
+
+  registerProcessor(stage: StageName, processor: Processor): void {
     this.deps.runner.register(processor);
   }
 
@@ -74,6 +79,21 @@ export class HarnessAPIImpl implements HarnessAPI {
 
   emit(eventType: string, data?: unknown): void {
     this.deps.emitEvent(eventType, data);
+  }
+
+  insertStage(phase: 'preLoop' | 'loop' | 'postLoop', after: StageName, newStage: StageName): void {
+    if (this.frozen) throw new Error('Cannot mutate stages after agent has started running');
+    this.deps.mutateStages?.({ type: 'insert', phase, after, stage: newStage });
+  }
+
+  removeStage(phase: 'preLoop' | 'loop' | 'postLoop', stage: StageName): void {
+    if (this.frozen) throw new Error('Cannot mutate stages after agent has started running');
+    this.deps.mutateStages?.({ type: 'remove', phase, stage });
+  }
+
+  replaceStages(phase: 'preLoop' | 'loop' | 'postLoop', stages: StageName[]): void {
+    if (this.frozen) throw new Error('Cannot mutate stages after agent has started running');
+    this.deps.mutateStages?.({ type: 'replace', phase, stages });
   }
 
   getCommands(): Map<string, (args: string) => Promise<void>> {

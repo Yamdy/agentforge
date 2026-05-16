@@ -86,6 +86,7 @@ export class Agent {
     this._autoCheckpoint = deps?.autoCheckpoint ?? false;
     this.registerTools();
     this.registerBuiltinProcessors();
+    this._pluginManager.setStageMutator((m) => this.orchestrator.applyMutation(m));
   }
 
   use(factory: Processor | PluginFactory): void {
@@ -130,6 +131,7 @@ export class Agent {
 
   async run(input: string, signal?: globalThis.AbortSignal): Promise<AgentRunResult> {
     if (signal?.aborted) throw new DOMException('Agent run aborted', 'AbortError');
+    this._pluginManager.freezeHarnessInstances();
 
     const context = await this.createContext(input);
     const hm = this._pluginManager.hookManager;

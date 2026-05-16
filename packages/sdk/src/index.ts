@@ -20,11 +20,20 @@ export type PipelineStage =
   | 'execute'
   | 'afterTool';
 
+/** Stage name that accepts built-in stages AND arbitrary plugin-defined strings. */
+export type StageName = PipelineStage | (string & {});
+
+/** A mutation operation applied to a pipeline phase's stage list. */
+export type StageMutation =
+  | { type: 'insert'; phase: 'preLoop' | 'loop' | 'postLoop'; after: StageName; stage: StageName }
+  | { type: 'remove'; phase: 'preLoop' | 'loop' | 'postLoop'; stage: StageName }
+  | { type: 'replace'; phase: 'preLoop' | 'loop' | 'postLoop'; stages: StageName[] };
+
 /** Configurable pipeline stage sequence. Overrides default stage order when provided. */
 export interface PipelineStageConfig {
-  preLoop?: PipelineStage[];
-  loop?: PipelineStage[];
-  postLoop?: PipelineStage[];
+  preLoop?: StageName[];
+  loop?: StageName[];
+  postLoop?: StageName[];
 }
 
 // ---------------------------------------------------------------------------
@@ -99,7 +108,7 @@ export interface SlidingWindowOptions {
 export type LoopDirective =
   | { action: 'continue' }
   | { action: 'stop' }
-  | { action: 'retry'; retryFrom: PipelineStage };
+  | { action: 'retry'; retryFrom: StageName };
 
 // ---------------------------------------------------------------------------
 // Pipeline Context — Four Regions (ADR-0007)
@@ -174,12 +183,12 @@ export interface PromptFragment {
 export interface AbortSignal {
   type: 'abort';
   reason: string;
-  retryFrom?: PipelineStage;
+  retryFrom?: StageName;
 }
 
 export interface PipelineCheckpoint {
   context: PipelineContext;
-  nextStages: PipelineStage[];
+  nextStages: StageName[];
   iteration: number;
 }
 
@@ -194,7 +203,7 @@ export interface SuspensionSignal {
 export type ProcessorResult = PipelineContext | AbortSignal | SuspensionSignal;
 
 export interface Processor {
-  stage: PipelineStage;
+  stage: StageName;
   execute(context: PipelineContext): Promise<ProcessorResult>;
   /** When true, this processor is an extension point placeholder that just returns ctx unchanged.
    *  PipelineRunner skips hooks for stages where all processors are no-ops. */
@@ -332,12 +341,12 @@ export type SpanType = (typeof SpanType)[keyof typeof SpanType];
 
 export type StreamEvent =
   | { type: 'text_delta'; text: string }
-  | { type: 'stage_start'; stage: PipelineStage }
-  | { type: 'stage_complete'; stage: PipelineStage }
+  | { type: 'stage_start'; stage: StageName }
+  | { type: 'stage_complete'; stage: StageName }
   | { type: 'tool_call'; name: string; args: unknown }
   | { type: 'tool_result'; name: string; result: unknown }
   | { type: 'complete'; context: PipelineContext }
-  | { type: 'abort'; reason: string; retryFrom?: PipelineStage }
+  | { type: 'abort'; reason: string; retryFrom?: StageName }
   | { type: 'suspended'; suspensionId: string; reason: string; checkpoint: PipelineCheckpoint };
 
 // ---------------------------------------------------------------------------
@@ -374,7 +383,7 @@ export interface AgentHookInput {
 }
 
 export interface StageHookInput {
-  stage: PipelineStage;
+  stage: StageName;
   context: PipelineContext;
 }
 
@@ -393,7 +402,7 @@ export interface ToolHookInput {
 
 export interface ErrorHookInput {
   error: unknown;
-  stage: PipelineStage;
+  stage: StageName;
   sessionId: string;
 }
 
@@ -406,7 +415,7 @@ export interface ResourceDeclaration {
 }
 
 export interface HarnessAPI {
-  registerProcessor(stage: PipelineStage, processor: Processor): void;
+  registerProcessor(stage: StageName, processor: Processor): void;
   registerTool(tool: ToolDefinition): void;
   unregisterTool(name: string): boolean;
   registerCommand(name: string, handler: (args: string) => Promise<void>): void;
@@ -416,6 +425,9 @@ export interface HarnessAPI {
   registerProvider(name: string, factory: unknown): void;
   registerCompressionStrategy(strategy: CompressionStrategy): void;
   emit(eventType: string, data?: unknown): void;
+  insertStage(phase: 'preLoop' | 'loop' | 'postLoop', after: StageName, newStage: StageName): void;
+  removeStage(phase: 'preLoop' | 'loop' | 'postLoop', stage: StageName): void;
+  replaceStages(phase: 'preLoop' | 'loop' | 'postLoop', stages: StageName[]): void;
 }
 
 export interface PluginRegistration {

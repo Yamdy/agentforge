@@ -2,6 +2,7 @@ import type {
   EventType,
   HarnessAPI,
   PluginRegistration,
+  StageMutation,
 } from '@agentforge/sdk';
 import type { PipelineRunner } from './pipeline.js';
 import type { ToolRegistry } from './tool-registry.js';
@@ -36,6 +37,7 @@ export class PluginManager {
   private _harnessInstances: HarnessAPIImpl[] = [];
   private resourceInstances = new Map<string, unknown>();
   private errors: Array<{ source: string; error: Error }> = [];
+  private stageMutator?: (mutation: StageMutation) => void;
 
   get eventBus(): EventBus {
     return this._eventSystem.bus;
@@ -98,6 +100,14 @@ export class PluginManager {
     return this.errors;
   }
 
+  setStageMutator(mutator: (mutation: StageMutation) => void): void {
+    this.stageMutator = mutator;
+  }
+
+  freezeHarnessInstances(): void {
+    for (const h of this._harnessInstances) h.freeze();
+  }
+
   emitEvent(eventType: EventType, ...args: unknown[]): void {
     this.eventBus.emit(eventType, args[0]);
   }
@@ -153,6 +163,7 @@ export class PluginManager {
       contextBuilder: this.contextBuilder,
       emitEvent: (eventType, data) => this.emitEvent(eventType, data),
       registerProvider: (_name, _factory) => {},
+      mutateStages: (mutation) => this.stageMutator?.(mutation),
     });
     this._harnessInstances.push(impl);
     return impl;

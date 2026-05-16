@@ -4,6 +4,8 @@ import type {
   PipelineContext,
   PipelineStage,
   PipelineStageConfig,
+  StageMutation,
+  StageName,
   StreamEvent,
   SuspensionSignal,
 } from '@agentforge/sdk';
@@ -47,9 +49,9 @@ export class LoopOrchestrator {
   readonly stateMachine = new StateMachine();
   private checkpointStore: CheckpointStore<ReturnType<typeof serialize>>;
   private eventBus?: EventBus;
-  private readonly preLoopStages: PipelineStage[];
-  private readonly loopStages: PipelineStage[];
-  private readonly postLoopStages: PipelineStage[];
+  private preLoopStages: StageName[];
+  private loopStages: StageName[];
+  private postLoopStages: StageName[];
 
   constructor(
     private runner: PipelineRunner,
@@ -69,6 +71,38 @@ export class LoopOrchestrator {
 
   get state(): AgentState {
     return this.stateMachine.current;
+  }
+
+  applyMutation(mutation: StageMutation): void {
+    if (this.stateMachine.current !== 'pending') {
+      throw new Error(`Stage mutations only allowed before first run (current: ${this.stateMachine.current})`);
+    }
+    const arr = mutation.phase === 'preLoop' ? this.preLoopStages
+      : mutation.phase === 'loop' ? this.loopStages
+      : this.postLoopStages;
+
+    switch (mutation.type) {
+      case 'insert': {
+        const idx = arr.indexOf(mutation.after);
+        if (idx === -1) throw new Error(`Stage "${mutation.after}" not found in ${mutation.phase}`);
+        arr.splice(idx + 1, 0, mutation.stage);
+        break;
+      }
+      case 'remove': {
+        const idx = arr.indexOf(mutation.stage);
+        if (idx === -1) throw new Error(`Stage "${mutation.stage}" not found in ${mutation.phase}`);
+        arr.splice(idx, 1);
+        break;
+      }
+      case 'replace': {
+        if (mutation.phase === 'loop' && !mutation.stages.includes('invokeLLM')) {
+          throw new Error('Cannot replace loop stages: required stage "invokeLLM" is missing');
+        }
+        arr.length = 0;
+        arr.push(...mutation.stages);
+        break;
+      }
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -221,7 +255,7 @@ export class LoopOrchestrator {
   private computeLoopStages(
     ctx: PipelineContext,
     step: number,
-  ): { ctx: PipelineContext; stages: PipelineStage[] } {
+  ): { ctx: PipelineContext; stages: StageName[] } {
     const prevDirective = ctx.iteration.loopDirective;
     const newCtx = { ...ctx, iteration: { ...ctx.iteration, step, loopDirective: undefined } };
     const retryFrom = prevDirective?.action === 'retry' ? prevDirective.retryFrom : undefined;
