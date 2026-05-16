@@ -43,7 +43,7 @@ describe('SessionManager restore — message format compliance', () => {
 
     const ctx = await manager.restore(sessionId);
 
-    const history = ctx.session.messageHistory;
+    const history = ctx.session.messageHistory!;
     expect(history).toHaveLength(2);
     // Every entry must be a valid Message (role-based)
     for (const msg of history) {
@@ -72,7 +72,7 @@ describe('SessionManager restore — message format compliance', () => {
 
     const ctx = await manager.restore(sessionId);
 
-    const history = ctx.session.messageHistory;
+    const history = ctx.session.messageHistory!;
     // assistant message + tool message
     expect(history).toHaveLength(2);
 
@@ -102,7 +102,7 @@ describe('SessionManager restore — message format compliance', () => {
 
     const ctx = await manager.restore(sessionId);
 
-    const toolMsg = ctx.session.messageHistory[1] as Message;
+    const toolMsg = ctx.session.messageHistory![1] as Message;
     expect(toolMsg.role).toBe('tool');
     expect((toolMsg as { toolName: string }).toolName).toBe('fail');
     expect((toolMsg as { error: string }).error).toBe('timeout');
@@ -123,7 +123,7 @@ describe('SessionManager restore — message format compliance', () => {
 
     const ctx = await manager.restore(sessionId);
 
-    const history = ctx.session.messageHistory;
+    const history = ctx.session.messageHistory!;
     expect(history).toHaveLength(2);
 
     // error should be an assistant message with error content
@@ -150,7 +150,7 @@ describe('SessionManager restore — message format compliance', () => {
     }
 
     const ctx = await manager.restore(sessionId);
-    const history = ctx.session.messageHistory as Message[];
+    const history = ctx.session.messageHistory! as Message[];
 
     // No raw shapes like { step, response }, { type: 'tool_call' }, { type: 'error' }
     for (const msg of history) {

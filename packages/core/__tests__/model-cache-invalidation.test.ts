@@ -61,6 +61,7 @@ describe('A-5: Model cache auto-invalidation', () => {
     const factory = new ModelFactory();
 
     factory.registerGateway({
+      name: 'test',
       canResolve: () => true,
       resolve: async () => {
         resolveCount++;
@@ -86,6 +87,7 @@ describe('A-5: Model cache auto-invalidation', () => {
     const { ModelFactory } = await import('../src/model-factory.js');
     const factory = new ModelFactory();
     factory.registerGateway({
+      name: 'test',
       canResolve: () => true,
       resolve: async () => {
         resolveCount++;
@@ -111,6 +113,7 @@ describe('A-5: Model cache auto-invalidation', () => {
     const { ModelFactory } = await import('../src/model-factory.js');
     const factory = new ModelFactory();
     factory.registerGateway({
+      name: 'test',
       canResolve: () => true,
       resolve: async () => {
         resolveCount++;
@@ -135,6 +138,7 @@ describe('A-5: Model cache auto-invalidation', () => {
     const { ModelFactory } = await import('../src/model-factory.js');
     const factory = new ModelFactory();
     factory.registerGateway({
+      name: 'test',
       canResolve: () => true,
       resolve: async () => {
         resolveCount++;
@@ -165,6 +169,7 @@ describe('A-5: Model cache auto-invalidation', () => {
     const { ModelFactory } = await import('../src/model-factory.js');
     const factory = new ModelFactory();
     factory.registerGateway({
+      name: 'test',
       canResolve: () => true,
       resolve: async () => {
         resolveCount++;
@@ -189,6 +194,7 @@ describe('A-5: Model cache auto-invalidation', () => {
     const { ModelFactory } = await import('../src/model-factory.js');
     const factory = new ModelFactory();
     factory.registerGateway({
+      name: 'test',
       canResolve: () => true,
       resolve: async () => {
         resolveCount++;

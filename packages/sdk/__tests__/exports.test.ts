@@ -232,6 +232,9 @@ describe('HarnessAPI', () => {
       emit(_eventType, _data?) {
         registered.push('emit');
       },
+      insertStage(_phase, _after, _newStage) {},
+      removeStage(_phase, _stage) {},
+      replaceStages(_phase, _stages) {},
     };
     api.registerProcessor('processInput', {} as Processor);
     api.registerTool({} as ToolDefinition);

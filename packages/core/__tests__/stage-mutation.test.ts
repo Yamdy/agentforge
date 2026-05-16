@@ -3,10 +3,19 @@ import { LoopOrchestrator } from '../src/loop-orchestrator.js';
 import type { StageMutation, StageName } from '@agentforge/sdk';
 
 function makeOrchestrator(): LoopOrchestrator {
-  // @ts-expect-error — minimal mock for unit testing applyMutation
+  const mockRunner = {
+    register() {},
+    unregister() {},
+    replace() {},
+    setHookManager() {},
+    processors: [],
+    tracer: { startSpan: () => ({ startChild: () => ({ end() {}, setAttribute() { return this; }, addEvent() { return this; }, spanContext: () => ({}) }), end() {}, setAttribute() { return this; }, addEvent() { return this; }, spanContext: () => ({}) }), getCurrentSpan: () => undefined },
+    run: async () => ({} as any),
+    stream: async function*() {},
+  } as any;
   return new LoopOrchestrator(
-    { register: () => {}, stream: async function*() {} },
-    { register: () => {}, execute: async () => {}, getHookPointDisableIds: () => new Set() },
+    mockRunner,
+    { register: () => {}, invoke: async () => {}, disablePoint() {}, setProfile() {} } as any,
   );
 }
 
