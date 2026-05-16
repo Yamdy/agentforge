@@ -75,7 +75,8 @@ export function createMemoryOutputProcessor(config: MemoryConfig): Processor {
   const correctionEnabled = config.admissionPolicy?.correctionEnabled ?? false;
   const crossSessionCorrection = config.admissionPolicy?.crossSessionCorrection ?? false;
   const maxEntryLength = config.admissionPolicy?.maxEntryLength;
-  let lastAssistantContent: string | undefined;
+
+  const CUSTOM_KEY = '_memoryLastAssistant';
 
   const trim = (content: string): string => {
     if (maxEntryLength && content.length > maxEntryLength) {
@@ -112,10 +113,15 @@ export function createMemoryOutputProcessor(config: MemoryConfig): Processor {
         ...(isCorrection ? { metadata: { corrected: true } } : {}),
       });
 
+      // Read lastAssistantContent from session.custom (serialization-safe)
+      const lastAssistantContent = ctx.session.custom?.[CUSTOM_KEY] as string | undefined;
+
       if (dedup && response === lastAssistantContent) {
         return ctx;
       }
-      lastAssistantContent = response;
+
+      // Persist to session.custom for suspend/resume survival
+      const updatedCustom = { ...ctx.session.custom, [CUSTOM_KEY]: response };
 
       await backend.store(ctx.request.sessionId, {
         role: 'assistant',
@@ -123,7 +129,10 @@ export function createMemoryOutputProcessor(config: MemoryConfig): Processor {
         timestamp: new Date(Date.now() + 1).toISOString(),
       });
 
-      return ctx;
+      return {
+        ...ctx,
+        session: { ...ctx.session, custom: updatedCustom },
+      };
     },
   };
 }
