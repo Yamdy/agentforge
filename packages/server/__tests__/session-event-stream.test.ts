@@ -91,18 +91,18 @@ describe('SessionEventStream', () => {
     });
   });
 
-  describe('fromAgentContinue', () => {
+  describe('fromAgentStream', () => {
     it('returns a ReadableStream', () => {
       const { registry } = createRegistryWithMockAgent('agent-1', 'sess-1');
       const ses = new SessionEventStream(registry);
 
-      // Mock continueStream to yield nothing
+      // Mock streamEvents to yield nothing
       const agent = registry.getAgentBySession('sess-1')!;
-      agent.continueStream = vi.fn().mockImplementation(async function* () {
+      agent.streamEvents = vi.fn().mockImplementation(async function* () {
         // yield nothing
       });
 
-      const stream = ses.fromAgentContinue('sess-1', 'hello');
+      const stream = ses.fromAgentStream('sess-1', 'hello');
       expect(stream).toBeInstanceOf(ReadableStream);
       stream.cancel();
     });
@@ -112,11 +112,11 @@ describe('SessionEventStream', () => {
       const ses = new SessionEventStream(registry);
 
       const agent = registry.getAgentBySession('sess-1')!;
-      agent.continueStream = vi.fn().mockImplementation(async function* () {
+      agent.streamEvents = vi.fn().mockImplementation(async function* () {
         yield { type: 'text_delta', text: 'world' } as unknown;
       });
 
-      const stream = ses.fromAgentContinue('sess-1', 'hello');
+      const stream = ses.fromAgentStream('sess-1', 'hello');
       const raw = await consumeStream(stream, 500);
       const messages = Array.from(parseSSE(raw));
 
@@ -126,17 +126,17 @@ describe('SessionEventStream', () => {
       expect(types).toContain('text_delta');
     });
 
-    it('forwards text_delta events from continueStream', async () => {
+    it('forwards text_delta events from streamEvents', async () => {
       const { registry } = createRegistryWithMockAgent('agent-1', 'sess-1');
       const ses = new SessionEventStream(registry);
 
       const agent = registry.getAgentBySession('sess-1')!;
-      agent.continueStream = vi.fn().mockImplementation(async function* () {
+      agent.streamEvents = vi.fn().mockImplementation(async function* () {
         yield { type: 'text_delta', text: 'hello' } as unknown;
         yield { type: 'text_delta', text: ' world' } as unknown;
       });
 
-      const stream = ses.fromAgentContinue('sess-1', 'test');
+      const stream = ses.fromAgentStream('sess-1', 'test');
       const raw = await consumeStream(stream, 500);
       const messages = Array.from(parseSSE(raw));
 
@@ -151,9 +151,9 @@ describe('SessionEventStream', () => {
       const ses = new SessionEventStream(registry);
 
       const agent = registry.getAgentBySession('sess-1')!;
-      agent.continueStream = vi.fn().mockImplementation(async function* () {});
+      agent.streamEvents = vi.fn().mockImplementation(async function* () {});
 
-      const stream = ses.fromAgentContinue('sess-1', 'hello');
+      const stream = ses.fromAgentStream('sess-1', 'hello');
       const raw = await consumeStream(stream, 500);
       const messages = Array.from(parseSSE(raw));
 
@@ -166,7 +166,7 @@ describe('SessionEventStream', () => {
       const registry = new AgentRegistry();
       const ses = new SessionEventStream(registry);
 
-      const stream = ses.fromAgentContinue('unknown', 'hello');
+      const stream = ses.fromAgentStream('unknown', 'hello');
       const raw = await consumeStream(stream, 500);
       const messages = Array.from(parseSSE(raw));
 

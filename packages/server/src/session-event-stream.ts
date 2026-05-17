@@ -70,10 +70,10 @@ export class SessionEventStream {
   }
 
   /**
-   * Stream agent execution for a prompt (combines continueStream + SSE).
+   * Stream agent execution for a prompt (combines streamEvents + SSE).
    * Wraps the stream with session.started / session.completed events.
    */
-  fromAgentContinue(sessionId: string, message: string): ReadableStream<Uint8Array> {
+  fromAgentStream(sessionId: string, message: string): ReadableStream<Uint8Array> {
     const agent = this.registry.getAgentBySession(sessionId);
 
     if (!agent) {
@@ -99,7 +99,7 @@ export class SessionEventStream {
         } as unknown as import('./sse.js').SSEMessage)));
 
         try {
-          for await (const event of agent.continueStream(sessionId, message, abortController.signal)) {
+          for await (const event of agent.streamEvents(message, abortController.signal)) {
             const sse = serializeSSE(event as unknown as import('./sse.js').SSEMessage);
             controller.enqueue(encoder.encode(sse));
           }

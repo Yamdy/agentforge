@@ -69,6 +69,7 @@ export class Agent {
   private sessionManager?: SessionManager;
   private contextBuilder: ContextBuilder;
   private activeAbortController: AbortController | null = null;
+  private lastContext?: PipelineContext;
 
   constructor(config: AgentConfig, deps?: AgentDependencies) {
     this.config = config;
@@ -135,7 +136,7 @@ export class Agent {
     if (signal?.aborted) throw new DOMException('Agent run aborted', 'AbortError');
     this._pluginManager.freezeHarnessInstances();
 
-    const context = await this.createContext(input);
+    const context = await this.buildContext(input);
     const hm = this._pluginManager.hookManager;
 
     // agent.start hook
@@ -155,6 +156,8 @@ export class Agent {
         sessionId: context.request.sessionId,
         autoCheckpoint: this._autoCheckpoint,
       });
+
+      this.lastContext = finalCtx;
 
       return {
         response: finalCtx.iteration.response as string ?? '',
@@ -204,7 +207,7 @@ export class Agent {
   async *stream(input: string, signal?: globalThis.AbortSignal): AsyncGenerator<string> {
     if (signal?.aborted) throw new DOMException('Agent stream aborted', 'AbortError');
 
-    const context = await this.createContext(input);
+    const context = await this.buildContext(input);
     const hm = this._pluginManager.hookManager;
 
     // agent.start hook
@@ -217,13 +220,19 @@ export class Agent {
       signal.addEventListener('abort', () => controller.abort(), { once: true });
     }
     try {
-      yield* this.orchestrator.streamLoop(context, {
+      let finalCtx: PipelineContext | undefined;
+      for await (const event of this.orchestrator.streamEvents(context, {
         maxIterations: maxIter,
         signal: controller.signal,
         modelString: this.config.model,
         sessionId: context.request.sessionId,
         autoCheckpoint: this._autoCheckpoint,
-      });
+      })) {
+        if (event.type === 'text_delta') yield event.text;
+        if (event.type === 'suspended') yield ` [suspended: ${(event as { reason: string }).reason}]`;
+        if (event.type === 'complete') finalCtx = (event as { context: PipelineContext }).context;
+      }
+      this.lastContext = finalCtx;
     } finally {
       this.activeAbortController = null;
       try { await hm.invoke('agent.end', { sessionId: context.request.sessionId }, {}); } catch { /* hook error must not mask original */ }
@@ -233,7 +242,7 @@ export class Agent {
   async *streamEvents(input: string, signal?: globalThis.AbortSignal): AsyncGenerator<import('@primo-ai/sdk').StreamEvent> {
     if (signal?.aborted) throw new DOMException('Agent stream aborted', 'AbortError');
 
-    const context = await this.createContext(input);
+    const context = await this.buildContext(input);
     const hm = this._pluginManager.hookManager;
 
     await hm.invoke('agent.start', { sessionId: context.request.sessionId, request: context.request, agentConfig: this.config }, {});
@@ -245,13 +254,18 @@ export class Agent {
       signal.addEventListener('abort', () => controller.abort(), { once: true });
     }
     try {
-      yield* this.orchestrator.streamEvents(context, {
+      let finalCtx: PipelineContext | undefined;
+      for await (const event of this.orchestrator.streamEvents(context, {
         maxIterations: maxIter,
         signal: controller.signal,
         modelString: this.config.model,
         sessionId: context.request.sessionId,
         autoCheckpoint: this._autoCheckpoint,
-      });
+      })) {
+        if (event.type === 'complete') finalCtx = (event as { context: PipelineContext }).context;
+        yield event;
+      }
+      this.lastContext = finalCtx;
     } finally {
       this.activeAbortController = null;
       try { await hm.invoke('agent.end', { sessionId: context.request.sessionId }, {}); } catch { /* hook error must not mask original */ }
@@ -266,100 +280,9 @@ export class Agent {
     this.activeAbortController = null;
   }
 
-  /**
-   * Continue an existing session by restoring its context and running the pipeline
-   * with a new user message.
-   */
-  async continue(sessionId: string, message: string, signal?: globalThis.AbortSignal): Promise<AgentRunResult> {
-    if (signal?.aborted) throw new DOMException('Agent continue aborted', 'AbortError');
-    if (!this.sessionManager) throw new Error('Session manager is required for continue()');
-
-    const context = await this.sessionManager.restore(sessionId);
-    context.request.input = message;
-    if (context.session.messageHistory) {
-      context.session.messageHistory.push({ role: 'user', content: message });
-    } else {
-      context.session.messageHistory = [{ role: 'user', content: message }];
-    }
-    context.iteration = { step: 0 };
-
-    this._pluginManager.freezeHarnessInstances();
-
-    const hm = this._pluginManager.hookManager;
-    await hm.invoke('agent.start', { sessionId: context.request.sessionId, request: context.request, agentConfig: this.config }, {});
-
-    const maxIter = typeof this.config.maxIterations === 'number' ? this.config.maxIterations : 10;
-    const controller = new AbortController();
-    this.activeAbortController = controller;
-    if (signal) {
-      signal.addEventListener('abort', () => controller.abort(), { once: true });
-    }
-
-    try {
-      const { context: finalCtx, compatRetries } = await this.orchestrator.runLoop(context, {
-        maxIterations: maxIter,
-        signal: controller.signal,
-        modelString: this.config.model,
-        sessionId: context.request.sessionId,
-        autoCheckpoint: this._autoCheckpoint,
-      });
-
-      return {
-        response: finalCtx.iteration.response as string ?? '',
-        tokenUsage: finalCtx.session.totalTokenUsage ?? { input: 0, output: 0 },
-        sessionId: context.request.sessionId,
-        compatRetries,
-      };
-    } catch (error) {
-      this.autoInvalidateModel(error);
-      throw error;
-    } finally {
-      this.activeAbortController = null;
-      try { await hm.invoke('agent.end', { sessionId: context.request.sessionId }, {}); } catch { /* hook error must not mask original */ }
-    }
-  }
-
-  /**
-   * Continue an existing session with streaming. Yields StreamEvents for the
-   * continued conversation.
-   */
-  async *continueStream(sessionId: string, message: string, signal?: globalThis.AbortSignal): AsyncGenerator<import('@primo-ai/sdk').StreamEvent> {
-    if (signal?.aborted) throw new DOMException('Agent continue stream aborted', 'AbortError');
-    if (!this.sessionManager) throw new Error('Session manager is required for continueStream()');
-
-    const context = await this.sessionManager.restore(sessionId);
-    context.request.input = message;
-    if (context.session.messageHistory) {
-      context.session.messageHistory.push({ role: 'user', content: message });
-    } else {
-      context.session.messageHistory = [{ role: 'user', content: message }];
-    }
-    context.iteration = { step: 0 };
-
-    this._pluginManager.freezeHarnessInstances();
-
-    const hm = this._pluginManager.hookManager;
-    await hm.invoke('agent.start', { sessionId: context.request.sessionId, request: context.request, agentConfig: this.config }, {});
-
-    const maxIter = typeof this.config.maxIterations === 'number' ? this.config.maxIterations : 10;
-    const controller = new AbortController();
-    this.activeAbortController = controller;
-    if (signal) {
-      signal.addEventListener('abort', () => controller.abort(), { once: true });
-    }
-
-    try {
-      yield* this.orchestrator.streamEvents(context, {
-        maxIterations: maxIter,
-        signal: controller.signal,
-        modelString: this.config.model,
-        sessionId: context.request.sessionId,
-        autoCheckpoint: this._autoCheckpoint,
-      });
-    } finally {
-      this.activeAbortController = null;
-      try { await hm.invoke('agent.end', { sessionId: context.request.sessionId }, {}); } catch { /* hook error must not mask original */ }
-    }
+  /** Clear conversation state so the next run/stream starts a fresh session. */
+  reset(): void {
+    this.lastContext = undefined;
   }
 
   /** Clear the cached model so the next run re-resolves from the factory. */
@@ -384,6 +307,25 @@ export class Agent {
       retryOptions: { maxRetries: 3, baseDelay: 1000 },
       tracer: this._tracer,
     });
+  }
+
+  private async buildContext(input: string): Promise<PipelineContext> {
+    if (this.lastContext) {
+      return {
+        request: { input, sessionId: this.lastContext.request.sessionId },
+        agent: { config: { ...this.config }, promptFragments: [], toolDeclarations: [] },
+        iteration: { step: 0 },
+        session: {
+          messageHistory: [
+            ...(this.lastContext.session.messageHistory ?? []),
+            { role: 'user', content: input },
+          ],
+          totalTokenUsage: this.lastContext.session.totalTokenUsage,
+          custom: { ...this.lastContext.session.custom },
+        },
+      };
+    }
+    return this.createContext(input);
   }
 
   private async createContext(input: string): Promise<PipelineContext> {

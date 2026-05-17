@@ -129,7 +129,7 @@ export function sessionRoutes(
       return c.json({ error: 'Missing or invalid field: message (must be a string)' }, 400);
     }
 
-    const result = await agent.continue(sessionId, obj.message);
+    const result = await agent.run(obj.message);
     return c.json(result);
   });
 
@@ -160,7 +160,7 @@ export function sessionRoutes(
       return c.json({ error: 'Missing or invalid field: message (must be a string)' }, 400);
     }
 
-    const stream = eventStream.fromAgentContinue(sessionId, obj.message);
+    const stream = eventStream.fromAgentStream(sessionId, obj.message);
     return new Response(stream, {
       headers: {
         'Content-Type': 'text/event-stream',

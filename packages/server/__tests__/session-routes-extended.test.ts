@@ -243,7 +243,7 @@ describe('Extended session routes', () => {
         sessionId: 's1',
         compatRetries: 0,
       };
-      agent.continue = vi.fn().mockResolvedValue(mockResult);
+      agent.run = vi.fn().mockResolvedValue(mockResult);
       registry.registerSession('s1', 'agent-1');
 
       const res = await app.request('/s1/prompt', {
@@ -254,7 +254,7 @@ describe('Extended session routes', () => {
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body).toEqual(mockResult);
-      expect(agent.continue).toHaveBeenCalledWith('s1', 'hello');
+      expect(agent.run).toHaveBeenCalledWith('hello');
     });
 
     it('returns 400 when message is missing', async () => {
@@ -315,7 +315,7 @@ describe('Extended session routes', () => {
       const { registry, app } = setupApp(sessions);
 
       const agent = registry.register('agent-1', { model: 'm', tools: [] });
-      agent.continueStream = vi.fn().mockImplementation(async function* () {
+      agent.streamEvents = vi.fn().mockImplementation(async function* () {
         yield { type: 'text_delta', text: 'Hello ' };
         yield { type: 'text_delta', text: 'world' };
       });
@@ -335,7 +335,7 @@ describe('Extended session routes', () => {
       const { registry, app } = setupApp(sessions);
 
       const agent = registry.register('agent-1', { model: 'm', tools: [] });
-      agent.continueStream = vi.fn().mockImplementation(async function* () {
+      agent.streamEvents = vi.fn().mockImplementation(async function* () {
         yield { type: 'text_delta', text: 'response' };
       });
       registry.registerSession('s1', 'agent-1');
