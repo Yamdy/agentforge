@@ -127,6 +127,25 @@ const server = new AgentForgeServer({
 
 ## Configuration
 
+### Studio UI
+
+The embedded Studio UI is built as part of the Docker image. To enable it, add the `--studio` flag:
+
+```dockerfile
+# Dockerfile entrypoint
+ENTRYPOINT ["node", "packages/server/dist/bin.js", "serve", "--studio"]
+```
+
+Or override in docker-compose:
+
+```yaml
+services:
+  agentforge:
+    command: serve --studio --port 3000
+```
+
+The Studio SPA is served at `/studio/` with API endpoints at `/api/studio/*`.
+
 ### Config File
 
 Mount or copy your config to `/app/.agentforge/config.jsonc`:

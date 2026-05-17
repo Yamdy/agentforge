@@ -160,3 +160,33 @@ The `ResolveContext` passed to dynamic functions contains:
 | `AGENTFORGE_PORT` | Server port (default: 3000) |
 
 Custom gateway API keys follow the pattern: `{NAME}_API_KEY` where `NAME` is the gateway name in uppercase.
+
+## CLI Flags
+
+| Flag | 说明 |
+|------|------|
+| `--port <number>` | 服务器端口（默认 3000，也可用 `AGENTFORGE_PORT` 环境变量） |
+| `--api-key <string>` | API 密钥（启用 Bearer Token 认证，也可用 `AGENTFORGE_API_KEY`） |
+| `--config <path>` | 配置文件路径（默认 `.agentforge/config.jsonc`） |
+| `--studio` | 启用嵌入式可观测性 UI（`/studio/`）和 Studio API（`/api/studio/*`） |
+
+### Studio 标志
+
+```bash
+agentforge serve --studio --port 3000
+```
+
+启用后：
+- `/api/studio/traces` — Trace 查询 API
+- `/api/studio/metrics` — Metrics 快照 API
+- `/api/studio/sessions` — Session 查询 API
+- `/api/studio/agents` — Agent 列表 API
+- `/studio/` — 嵌入式 Vue 3 SPA（Dashboard / Traces / Sessions）
+
+需要先构建前端资源：
+
+```bash
+cd packages/studio-ui && pnpm build
+```
+
+未构建时访问 `/studio/` 会返回提示信息。

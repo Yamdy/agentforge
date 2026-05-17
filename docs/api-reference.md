@@ -1032,6 +1032,9 @@ import {
   SessionEventStream,
   StaticKeyAuthAdapter, serializeSSE, parseSSE,
   InMemoryTaskStore, buildAgentCard, A2ARequestHandler, A2AClient, a2aRoutes,
+  studioRoutes, studioStaticRoutes,
+  ProfileLoader, mergeProfiles, applyProfile, builtinProfiles,
+  codingAgentProfile, businessAgentProfile, personalAgentProfile, dataAgentProfile,
 } from '@primo-ai/server';
 ```
 
@@ -1161,6 +1164,88 @@ const readable2 = stream.fromAgentContinue('agent-1', 'session-1', '请继续');
 }
 ```
 
+### Studio Observability
+
+`StudioObservability` 是 server-level 的可观测性采集器，桥接 Agent EventBus 到 Trace/Metrics 收集器，为 Studio UI 提供数据源。
+
+```ts
+import { StudioObservability } from '@primo-ai/server';
+import type { StudioObservability as StudioObservabilityType } from '@primo-ai/server';
+
+const obs = new StudioObservability();
+
+// 订阅 Agent 事件 — 自动收集 trace 和 metrics
+obs.attachAgent(agent);
+
+// 查询
+const traces = obs.getTraces({ status: 'completed', agentName: 'assistant' });
+const trace = obs.getTrace('session-123');        // TraceDetail with span tree
+const metrics = obs.getMetricsSnapshot();          // MetricsSnapshot
+const kpi = obs.getKpi({ since: Date.now() - 3600000 }); // KpiData (last hour)
+```
+
+**方法：**
+
+| 方法 | 签名 | 说明 |
+|------|------|------|
+| `attachAgent` | `(agent: { eventBus; name? }) => () => void` | 订阅 Agent 事件，返回取消订阅函数 |
+| `getTraces` | `(filter?) => TraceSummary[]` | 列表查询，支持 agentName/status/since/until 过滤 |
+| `getTrace` | `(id: string) => TraceDetail \| undefined` | 获取单个 Trace（含 Span 树和扁平 spans 列表） |
+| `getMetricsSnapshot` | `() => MetricsSnapshot` | 获取当前指标快照 |
+| `getKpi` | `(period?) => KpiData` | 计算 KPI（totalRuns/avgLatency/totalTokens/estimatedCost） |
+
+**Studio 路由集成：**
+
+```ts
+// server.ts 中条件挂载
+if (options?.studio) {
+  app.route('/api/studio', studioRoutes({
+    observability: options.studio,
+    sessionStorage: sessionStorage,
+    registry: registry,
+  }));
+  app.route('/studio', studioStaticRoutes());
+}
+```
+
+### Studio API 端点
+
+当启用 `--studio` 标志时，以下端点可用：
+
+#### Traces
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/api/studio/traces` | 列出所有 Trace 摘要，支持 `?status, ?agent, ?limit, ?offset` |
+| `GET` | `/api/studio/traces/:id` | Trace 详情（含 rootSpan SpanNode 树和 spans 平面列表） |
+
+#### Metrics
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/api/studio/metrics` | 返回 `MetricsSnapshot`（counters, gauges, histograms） |
+| `GET` | `/api/studio/metrics/kpi` | KPI 数据，支持 `?since, ?until` 时间范围过滤 |
+
+#### Sessions (Studio)
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/api/studio/sessions` | 列出会话，支持 `?status, ?limit, ?offset` |
+| `GET` | `/api/studio/sessions/:id` | 会话详情 |
+| `GET` | `/api/studio/sessions/:id/events` | 会话事件流，支持 `?fromSeq, ?toSeq, ?types` |
+
+#### Agents (Studio)
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/api/studio/agents` | 列出已注册 Agent（含 model 信息） |
+
+#### 静态资源
+
+| 路径 | 说明 |
+|------|------|
+| `/studio/*` | 嵌入式 Studio SPA（Vue 3），提供 Dashboard / Traces / Sessions 可视化界面 |
+
 ### A2A Protocol
 
 Google Agent-to-Agent 协议支持。
@@ -1200,17 +1285,79 @@ import {
 ## @primo-ai/observability — 可观测性
 
 ```ts
-import { OTelBridge, TracerImpl, NoOpTracer, TestExporter } from '@primo-ai/observability';
+import {
+  OTelBridge, TracerImpl, NoOpTracer, NoOpMetrics, NoOpSpan,
+  SpanImpl, TestExporter,
+  InMemoryMetrics, TraceCollector,
+  formatTraceJson, formatTraceConsole, formatTraceOtlp,
+} from '@primo-ai/observability';
 ```
+
+### 核心类
 
 | 导出 | 类型 | 说明 |
 |------|------|------|
 | `NoOpTracer` | 类 | 零操作 Tracer，用于不追踪的场景 |
+| `NoOpSpan` | 类 | 零操作 Span |
+| `NoOpMetrics` | 类 | 零操作 Metrics |
 | `TracerImpl` | 类 | 具体 Tracer 实现 |
+| `SpanImpl` | 类 | 具体 Span 实现 |
 | `OTelBridge` | 类 | OpenTelemetry SDK 桥接 |
 | `TestExporter` | 类 | 测试用 Span 导出器 |
+| `InMemoryMetrics` | 类 | 内存 Metrics 实现（Counter/Gauge/Histogram） |
+| `TraceCollector` | 类 | Trace 收集器 — 创建 Tracer，flush 生成 Span 树 |
 
-**OTelBridge 用法：**
+### 类型
+
+| 导出 | 说明 |
+|------|------|
+| `SpanData` | Span 数据接口（name, spanId, durationMs, attributes, events） |
+| `OnSpanEndCallback` | Span 结束回调类型 |
+| `HistogramStats` | 直方图统计（count, sum, min, max, avg, p50, p95, p99） |
+| `MetricsSnapshot` | 指标快照（counters, gauges, histograms） |
+| `Trace` | Trace 记录 |
+| `TraceNode` | Trace 树节点 |
+| `OtlpOptions` | OTLP 格式化选项 |
+| `EventBusLike` | EventBus 兼容接口（用于 OTelBridge） |
+
+### InMemoryMetrics
+
+```ts
+const metrics = new InMemoryMetrics();
+
+metrics.increment('runs.completed');            // Counter +1
+metrics.increment('tokens.input', 1500);         // Counter +N
+metrics.gauge('agents.active', 3);               // Gauge 设置
+metrics.histogram('latency', 250);               // Histogram 记录
+
+const snap: MetricsSnapshot = metrics.snapshot();
+// { counters: { 'runs.completed': 5, ... }, gauges: { ... }, histograms: { ... } }
+```
+
+### TraceCollector
+
+```ts
+const collector = new TraceCollector();
+const tracer = collector.createTracer();
+
+// 创建 Span 树
+const root = tracer.startSpan('agent.run');
+const step = root.startChild('invokeLLM');
+step.setAttribute('model', 'deepseek/deepseek-v4-flash');
+step.end();
+root.end();
+
+// Flush 得到结构化的 Trace 数据
+const flushed = collector.flush();
+// { spans: SpanData[], root: SpanNode, durationMs: number }
+
+// 格式化输出
+console.log(formatTraceConsole(flushed));
+const json = formatTraceJson(flushed);
+const otlp = formatTraceOtlp(flushed);
+```
+
+### OTelBridge 用法
 
 ```ts
 import { OTelBridge } from '@primo-ai/observability';

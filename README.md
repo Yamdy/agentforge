@@ -31,6 +31,7 @@
 | 📡 **Pipeline = Observability Span** | Every stage is a traced Span — zero-config OpenTelemetry integration |
 | 🪝 **Pipeline = Hook** | Every stage is a hook target — intercept before/after with full context access |
 | 🤖 **A2A Protocol** | Native Agent-to-Agent JSON-RPC with streaming — multi-agent out of the box |
+| 📊 **Embedded Studio** | Built-in observability UI — traces, metrics, sessions dashboard with `--studio` flag |
 | 🛡️ **15+ Production Plugins** | memory, compression, permission, costCap, tokenBudget, rateLimit, PII, moderation... |
 | ⏸️ **Session Persistence** | Suspend/resume + checkpoint recovery + File/SQLite storage |
 
@@ -264,6 +265,7 @@ Multi-level JSONC config (highest priority first):
 
 ```bash
 npx agentforge serve --port 3000 --api-key secret   # Start server
+npx agentforge serve --studio                        # Start with observability UI at /studio
 npx agentforge run --agent assistant --input "Hello" # Single invocation
 npx agentforge dev --config .agentforge/config.jsonc # Dev mode with watch
 ```
@@ -287,6 +289,15 @@ POST /permissions/pending/:id/respond -- Approve/deny
 GET  /providers                -- List model gateways
 GET  /mcp                      -- List MCP servers
 POST /mcp                      -- Add MCP server
+GET  /api/studio/traces        -- List traces
+GET  /api/studio/traces/:id    -- Trace detail with span tree
+GET  /api/studio/metrics       -- Metrics snapshot
+GET  /api/studio/metrics/kpi   -- KPI data (runs, latency, tokens, cost)
+GET  /api/studio/agents        -- Registered agents with model info
+GET  /api/studio/sessions      -- List sessions with status/limit/offset
+GET  /api/studio/sessions/:id  -- Session detail
+GET  /api/studio/sessions/:id/events -- Session events with fromSeq/toSeq/types
+GET  /studio/*                 -- Embedded observability SPA
 ```
 
 ### Docker

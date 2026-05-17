@@ -338,6 +338,59 @@ agent.use(mcpPlugin({
 
 MCP 工具会自动以 `serverName__toolName` 格式注册到 Agent。
 
+## Studio — 嵌入式可观测性 UI
+
+AgentForge 内建了一个 Web 可观测性控制台，通过 `--studio` 标志启用：
+
+```bash
+agentforge serve --studio --port 3000
+```
+
+启动后访问 `http://localhost:3000/studio/` 即可看到：
+
+- **Dashboard** — KPI 卡片（运行次数、平均延迟、Token 用量、预估成本）
+- **Traces** — 每次 Agent 运行的完整 Span 时间线
+- **Sessions** — 会话列表与详情（消息历史、事件流）
+- **暗色/亮色主题** — 一键切换
+
+### 工作原理
+
+```
+Agent EventBus  ──→  StudioObservability  ──→  TraceCollector + InMemoryMetrics
+                         │
+                         ▼
+              /api/studio/* (Hono routes)
+                         │
+                         ▼
+              /studio/* (Vue 3 SPA)
+```
+
+- `StudioObservability` 通过 `attachAgent(agent)` 订阅 EventBus 的 `agent:start` / `agent:end` 事件
+- 自动创建 Trace（含 Span 树）、累计 Metrics、计算 KPI
+- 前端通过 `/api/studio/*` REST API 读取数据，`/studio/` 提供 SPA 静态资源
+
+### 编程式使用
+
+```ts
+import { AgentForgeServer } from '@primo-ai/server';
+import { StudioObservability } from '@primo-ai/server';
+
+const studio = new StudioObservability();
+const server = new AgentForgeServer({
+  port: 3000,
+  studio,
+  sessionStorage, // 可选 — 启用后可在 Studio 查看 session 历史
+});
+
+// 当通过 config-loader 注册 agent 时，自动 attach
+// 也可手动 attach:
+studio.attachAgent(agent);
+
+await server.start();
+```
+
+> **注意**: `StudioObservability` 当前仅从 `@primo-ai/server` 导出，底层 `TraceCollector` 和 `InMemoryMetrics` 从 `@primo-ai/observability` 导出，可在任意场景使用。
+
 ## 下一步
 
 - [API 参考](/api-reference) — 完整的类型和方法文档
