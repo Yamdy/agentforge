@@ -83,13 +83,14 @@ const agent = new Agent({ model: 'openai/gpt-4o', systemPrompt: 'You are a helpf
 
 ## Why AgentForge?
 
-| What you need | AgentForge | LangChain | Mastra | Vercel AI SDK |
+| | AgentForge | AgentScope | DeepAgents | Mastra |
 |---|---|---|---|---|
-| Every stage is extensible | ✅ Processor + Span + Hook | ⚠️ Callbacks only | ⚠️ Middleware only | ❌ Middleware only |
-| Built-in production guardrails | ✅ costCap, tokenBudget, rateLimit, PII, moderation | ❌ Roll your own | ⚠️ Partial | ❌ Roll your own |
-| Agent-to-Agent communication | ✅ Native A2A + streaming | ❌ Single-agent only | ⚠️ Manual | ❌ Not supported |
-| Suspend & resume sessions | ✅ Checkpoint + JSONL | ❌ Not supported | ⚠️ Basic | ❌ Not supported |
-| Plugin system | ✅ 15+ built-in, 1-line register | ⚠️ Manual integration | ⚠️ Limited | ⚠️ Middleware only |
+| Language | TypeScript | Python | Python | TypeScript |
+| Pipeline extensibility | ✅ Processor + Span + Hook | ⚠️ Pipeline only | ⚠️ LangGraph nodes | ⚠️ Middleware only |
+| Production guardrails | ✅ costCap, tokenBudget, rateLimit, PII, moderation | ❌ Not built-in | ❌ Not built-in | ⚠️ Partial |
+| A2A protocol | ✅ Native + streaming | ✅ Native | ❌ Third-party only | ⚠️ Manual |
+| Suspend & resume | ✅ Checkpoint + JSONL | ⚠️ SQLite session | ⚠️ LangGraph checkpoint | ⚠️ Basic |
+| Plugin system | ✅ 15+ built-in, 1-line register | ⚠️ Toolkit + MCP | ⚠️ Skills + MCP | ⚠️ Limited |
 
 ## Progressive Examples
 
