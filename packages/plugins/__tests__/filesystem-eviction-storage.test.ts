@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { FilesystemEvictionStorage } from '../src/eviction/filesystem-storage.js';
-import { mkdtempSync, rmSync, existsSync, readdirSync, statSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -18,147 +18,176 @@ describe('FilesystemEvictionStorage', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // store
+  // store + retrieve round-trip
   // ---------------------------------------------------------------------------
-  describe('store', () => {
-    it('stores content and returns a reference string', async () => {
-      const ref = await storage.store('session-1', 'tool:read_file', { path: '/etc/config', content: 'secret' });
+  describe('store + retrieve round-trip', () => {
+    it('stores string content and retrieves it', async () => {
+      const ref = await storage.store('session-1', 'tool:echo', 'hello world');
       expect(typeof ref).toBe('string');
       expect(ref.length).toBeGreaterThan(0);
-    });
 
-    it('persists content to the filesystem', async () => {
-      await storage.store('session-1', 'tool:read_file', 'hello world');
-      // Directory should contain at least one file
-      const files = readdirSync(tempDir);
-      expect(files.length).toBeGreaterThanOrEqual(1);
-    });
-
-    it('generates unique references for different stores', async () => {
-      const ref1 = await storage.store('session-1', 'tool:a', 'data-a');
-      const ref2 = await storage.store('session-1', 'tool:b', 'data-b');
-      expect(ref1).not.toBe(ref2);
-    });
-  });
-
-  // ---------------------------------------------------------------------------
-  // retrieve
-  // ---------------------------------------------------------------------------
-  describe('retrieve', () => {
-    it('retrieves stored string content by reference', async () => {
-      const original = 'hello world';
-      const ref = await storage.store('session-1', 'tool:echo', original);
       const retrieved = await storage.retrieve('session-1', ref);
-      expect(retrieved).toBe(original);
+      expect(retrieved).toBe('hello world');
     });
 
-    it('retrieves stored object content by reference', async () => {
+    it('stores object content and retrieves it', async () => {
       const original = { path: '/etc/config', content: 'secret', nested: { a: 1 } };
       const ref = await storage.store('session-1', 'tool:read_file', original);
       const retrieved = await storage.retrieve('session-1', ref);
       expect(retrieved).toEqual(original);
     });
 
-    it('retrieves stored array content by reference', async () => {
+    it('stores array content and retrieves it', async () => {
       const original = [1, 2, 3, 'four'];
       const ref = await storage.store('session-1', 'tool:list', original);
       const retrieved = await storage.retrieve('session-1', ref);
       expect(retrieved).toEqual(original);
     });
 
+    it('returns different references for different stores', async () => {
+      const ref1 = await storage.store('session-1', 'tool:a', 'data-a');
+      const ref2 = await storage.store('session-1', 'tool:b', 'data-b');
+      expect(ref1).not.toBe(ref2);
+      expect(await storage.retrieve('session-1', ref1)).toBe('data-a');
+      expect(await storage.retrieve('session-1', ref2)).toBe('data-b');
+    });
+
     it('returns undefined for non-existent reference', async () => {
       const retrieved = await storage.retrieve('session-1', 'nonexistent-ref');
       expect(retrieved).toBeUndefined();
     });
+  });
 
-    it('retrieves content stored with a different sessionId if the reference matches', async () => {
-      const original = 'cross-session data';
-      const ref = await storage.store('session-1', 'tool:x', original);
-      // The reference encodes the original sessionId, but retrieve should work
-      // as long as the file exists
-      const retrieved = await storage.retrieve('session-1', ref);
+  // ---------------------------------------------------------------------------
+  // cross-restart persistence
+  // ---------------------------------------------------------------------------
+  describe('cross-restart persistence', () => {
+    it('data survives re-instantiation (write file, new instance, read)', async () => {
+      const original = 'persistent data';
+      const ref = await storage.store('session-1', 'tool:write', original);
+
+      // Create a new instance pointing at the same directory
+      const newInstance = new FilesystemEvictionStorage(tempDir);
+      const retrieved = await newInstance.retrieve('session-1', ref);
       expect(retrieved).toBe(original);
     });
-  });
 
-  // ---------------------------------------------------------------------------
-  // delete
-  // ---------------------------------------------------------------------------
-  describe('delete', () => {
-    it('deletes stored content by reference', async () => {
-      const ref = await storage.store('session-1', 'tool:echo', 'to-delete');
-      const deleted = await storage.delete('session-1', ref);
-      expect(deleted).toBe(true);
-      const retrieved = await storage.retrieve('session-1', ref);
-      expect(retrieved).toBeUndefined();
-    });
+    it('multiple entries survive re-instantiation', async () => {
+      const refs: string[] = [];
+      for (let i = 0; i < 5; i++) {
+        const ref = await storage.store('session-1', `tool:${i}`, `data-${i}`);
+        refs.push(ref);
+      }
 
-    it('returns false when deleting non-existent reference', async () => {
-      const deleted = await storage.delete('session-1', 'nonexistent-ref');
-      expect(deleted).toBe(false);
-    });
-
-    it('removes the file from disk', async () => {
-      const ref = await storage.store('session-1', 'tool:echo', 'file-to-remove');
-      const filesBefore = readdirSync(tempDir).length;
-      await storage.delete('session-1', ref);
-      const filesAfter = readdirSync(tempDir).length;
-      expect(filesAfter).toBe(filesBefore - 1);
+      const newInstance = new FilesystemEvictionStorage(tempDir);
+      for (let i = 0; i < 5; i++) {
+        const retrieved = await newInstance.retrieve('session-1', refs[i]!);
+        expect(retrieved).toBe(`data-${i}`);
+      }
     });
   });
 
   // ---------------------------------------------------------------------------
-  // TTL expiration
+  // path traversal protection
   // ---------------------------------------------------------------------------
-  describe('TTL expiration', () => {
-    it('does not retrieve content after TTL has expired', async () => {
-      const ttlStorage = new FilesystemEvictionStorage(tempDir, { ttlMs: 50 });
-      const ref = await ttlStorage.store('session-1', 'tool:echo', 'expires-fast');
-
-      // Should be available immediately
-      const immediate = await ttlStorage.retrieve('session-1', ref);
-      expect(immediate).toBe('expires-fast');
-
-      // Wait for TTL to expire
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      const expired = await ttlStorage.retrieve('session-1', ref);
-      expect(expired).toBeUndefined();
+  describe('path traversal protection', () => {
+    it('rejects sessionId with ..', async () => {
+      await expect(storage.store('../etc', 'key', 'data')).rejects.toThrow(/path traversal/i);
     });
 
-    it('cleans up expired entries when cleanup is called', async () => {
-      const ttlStorage = new FilesystemEvictionStorage(tempDir, { ttlMs: 50 });
-      await ttlStorage.store('session-1', 'tool:a', 'data-a');
-      await ttlStorage.store('session-1', 'tool:b', 'data-b');
-
-      const filesBefore = readdirSync(tempDir).length;
-      expect(filesBefore).toBe(2);
-
-      // Wait for TTL to expire
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      const cleanedCount = await ttlStorage.cleanup();
-      expect(cleanedCount).toBe(2);
-
-      const filesAfter = readdirSync(tempDir).length;
-      expect(filesAfter).toBe(0);
+    it('rejects key with ..', async () => {
+      await expect(storage.store('session-1', '../../../etc/passwd', 'data')).rejects.toThrow(/path traversal/i);
     });
 
-    it('does not clean up non-expired entries', async () => {
-      const ttlStorage = new FilesystemEvictionStorage(tempDir, { ttlMs: 5000 });
-      await ttlStorage.store('session-1', 'tool:a', 'data-a');
+    it('rejects sessionId with null bytes', async () => {
+      await expect(storage.store('session\0evil', 'key', 'data')).rejects.toThrow();
+    });
 
-      // Don't wait — TTL is long
-      const cleanedCount = await ttlStorage.cleanup();
-      expect(cleanedCount).toBe(0);
+    it('rejects key with null bytes', async () => {
+      await expect(storage.store('session-1', 'key\0evil', 'data')).rejects.toThrow();
+    });
 
-      const filesAfter = readdirSync(tempDir).length;
-      expect(filesAfter).toBe(1);
+    it('rejects reference with path traversal during retrieve', async () => {
+      await expect(storage.retrieve('session-1', '../../etc/passwd')).rejects.toThrow(/path traversal/i);
+    });
+
+    it('allows legitimate sessionId and key values', async () => {
+      const ref = await storage.store('my-session-123', 'tool:read_file', 'ok');
+      const retrieved = await storage.retrieve('my-session-123', ref);
+      expect(retrieved).toBe('ok');
     });
   });
 
   // ---------------------------------------------------------------------------
-  // Compatibility with evictionPlugin
+  // delete(sessionId) — clear all data for a session
+  // ---------------------------------------------------------------------------
+  describe('delete(sessionId)', () => {
+    it('removes all entries for a given session', async () => {
+      await storage.store('session-1', 'tool:a', 'data-a');
+      await storage.store('session-1', 'tool:b', 'data-b');
+      await storage.store('session-2', 'tool:c', 'data-c');
+
+      await storage.delete('session-1');
+
+      // session-1 data should be gone
+      const files = readdirSync(tempDir);
+      // Only session-2's file should remain
+      for (const file of files) {
+        expect(file).not.toContain('session-1');
+      }
+    });
+
+    it('does not affect other sessions', async () => {
+      const ref2 = await storage.store('session-2', 'tool:c', 'data-c');
+      await storage.store('session-1', 'tool:a', 'data-a');
+
+      await storage.delete('session-1');
+
+      const retrieved = await storage.retrieve('session-2', ref2);
+      expect(retrieved).toBe('data-c');
+    });
+
+    it('works when session has no data', async () => {
+      // Should not throw
+      await storage.delete('nonexistent-session');
+    });
+
+    it('handles path traversal in sessionId for delete', async () => {
+      await expect(storage.delete('../etc')).rejects.toThrow(/path traversal/i);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // list() — enumerate all session IDs
+  // ---------------------------------------------------------------------------
+  describe('list()', () => {
+    it('returns empty array when no data stored', async () => {
+      const ids = await storage.list();
+      expect(ids).toEqual([]);
+    });
+
+    it('returns session IDs for stored data', async () => {
+      await storage.store('session-1', 'tool:a', 'data-a');
+      await storage.store('session-2', 'tool:b', 'data-b');
+      await storage.store('session-1', 'tool:c', 'data-c');
+
+      const ids = await storage.list();
+      expect(ids.sort()).toEqual(['session-1', 'session-2']);
+    });
+
+    it('updates list after delete', async () => {
+      await storage.store('session-1', 'tool:a', 'data-a');
+      await storage.store('session-2', 'tool:b', 'data-b');
+
+      await storage.delete('session-1');
+
+      const ids = await storage.list();
+      expect(ids).toEqual(['session-2']);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // compatibility with evictionPlugin
   // ---------------------------------------------------------------------------
   describe('compatibility with evictionPlugin', () => {
     it('implements the EvictionStorage interface (store + retrieve)', async () => {

@@ -73,6 +73,7 @@ export {
   createTokenBudgetProcessor,
   createCostCapProcessor,
   createRateLimitProcessor,
+  createRequiredToolsGate,
   setGateDecision,
   setCostAttributes,
   setBudgetAttributes,
