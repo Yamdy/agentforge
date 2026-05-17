@@ -13,14 +13,32 @@ AgentForge 快速入门指南。从零开始创建并运行你的第一个 Agent
 ## 安装
 
 ```bash
-# 克隆仓库
-git clone <repo-url> agentforge && cd agentforge
+npm install @primo-ai/core @primo-ai/sdk @primo-ai/tools
+```
 
-# 安装依赖（pnpm workspace + turbo）
-pnpm install
+根据需要安装额外包：
 
-# 构建所有包
-pnpm build
+| 包 | 用途 |
+|---|---|
+| `@primo-ai/sdk` | 类型定义（零依赖） |
+| `@primo-ai/core` | Agent、Pipeline、模型解析 |
+| `@primo-ai/tools` | 内置工具（echo 等） |
+| `@primo-ai/plugins` | 插件（memory、compression、MCP 等） |
+| `@primo-ai/observability` | OpenTelemetry 桥接 |
+
+> 想要参与开发？参见仓库 README 中的贡献指南。
+
+### Provider SDK
+
+AgentForge 基于 [AI SDK](https://sdk.vercel.ai)，需额外安装对应 provider：
+
+```bash
+# DeepSeek / OpenAI
+npm install @ai-sdk/openai
+# Anthropic
+npm install @ai-sdk/anthropic
+# Google
+npm install @ai-sdk/google
 ```
 
 ## 最小示例
