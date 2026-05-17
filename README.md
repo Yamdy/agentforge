@@ -1,33 +1,26 @@
 # AgentForge
 
-A TypeScript agent framework built around a **Processor Pipeline** model. Every stage of the agent lifecycle is simultaneously an extension point, an observability span, and a hook interception point.
+**TypeScript Agent framework where Pipeline is everything.**
 
-## Features
+Every pipeline stage is simultaneously an extension point, an observability span, and a hook interception point. 8 built-in stages, 15+ plugins, any LLM provider.
 
-- **Pipeline Architecture** -- 10-stage agent lifecycle with per-stage processors, hooks, and spans
-- **7 Core Modules** -- PipelineRunner, ContextBuilder, LLMInvoker, ToolRegistry, EventSystem, HookManager, CheckpointStore
-- **Plugin System** -- 14 built-in plugins (memory, compression, permission, skill, MCP, eviction, costCap, factInjection, goalEcho, moderation, pii, tokenBudget, rateLimit, outputValidation)
-- **Multi-Provider** -- OpenAI, Anthropic, Google, DeepSeek, and custom OpenAI-compatible endpoints
-- **A2A Protocol** -- Agent-to-Agent JSON-RPC protocol with streaming support
-- **Session Persistence** -- JSONL storage with suspend/resume and checkpoint recovery
-- **Streaming** -- Token-by-token streaming via async generators
+[![npm version](https://img.shields.io/npm/v/@agentforge/core?label=%40agentforge%2Fcore)](https://www.npmjs.com/package/@agentforge/core)
+[![MIT License](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+
+---
 
 ## Quick Start
 
-### Install
-
 ```bash
-pnpm install
-pnpm build
+npm install @agentforge/core
 ```
-
-### Minimal Example
 
 ```typescript
 import { Agent, registerProvider } from '@agentforge/core';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 
-// Register a provider
+// Register any OpenAI-compatible provider
 registerProvider('deepseek', (modelId) => {
   const sdk = createOpenAICompatible({
     baseURL: 'https://api.deepseek.com',
@@ -43,13 +36,102 @@ const agent = new Agent({
   maxIterations: 5,
 });
 
-const result = await agent.run('Hello, how are you?');
-console.log(result.response);
+const { response } = await agent.run('Hello!');
+console.log(response);
+```
+
+## Why AgentForge?
+
+| What you need | How AgentForge does it | Others |
+|---|---|---|
+| Observe & control every stage | Each stage = Processor + Span + Hook (three-in-one) | Middleware or callbacks only |
+| Production-grade guardrails | Built-in costCap, tokenBudget, rateLimit, permission plugins | Roll your own |
+| Agent-to-Agent communication | Native A2A protocol with streaming | Single-agent only |
+| Interrupt & resume sessions | suspend/resume + checkpoint + JSONL persistence | Not supported |
+| Composable plugins | 15+ built-in, one function to register | Manual integration |
+
+## Progressive Examples
+
+### Observe pipeline events
+
+Every stage emits events you can subscribe to -- no setup required.
+
+```typescript
+agent.events.subscribe('invokeLLM:after', (data) => {
+  console.log('LLM call complete', data);
+});
+```
+
+### Add plugins
+
+Swap in production plugins with one line each.
+
+```typescript
+import { memoryPlugin, compressionPlugin, permissionPlugin } from '@agentforge/plugins';
+
+const agent = new Agent({
+  model: 'deepseek/deepseek-v4-flash',
+  systemPrompt: 'You are a helpful assistant.',
+  maxIterations: 10,
+  plugins: [
+    memoryPlugin({ backend: 'sqlite' }),
+    compressionPlugin({ maxTokens: 8000 }),
+    permissionPlugin({ mode: 'interactive' }),
+  ],
+});
+```
+
+### Multi-agent via A2A
+
+Two agents talking to each other over the Agent-to-Agent protocol.
+
+```typescript
+import { AgentForgeServer, A2AClient, a2aRoutes } from '@agentforge/server';
+
+// Start a researcher agent on port 3001
+const server = new AgentForgeServer({ port: 3001 });
+server.registry.register('researcher', {
+  model: 'deepseek/deepseek-v4-flash',
+  systemPrompt: 'You are a research assistant.',
+  maxIterations: 2,
+});
+server.hono.route('/a2a', a2aRoutes({ registry: server.registry, agentId: 'researcher' }));
+await server.start();
+
+// Send a task from another agent
+const client = new A2AClient({ card: { name: 'researcher', url: 'http://localhost:3001/a2a' } });
+const result = await client.sendMessage('Summarize neural networks in 2 sentences.');
+```
+
+### Custom processor
+
+Write your own pipeline stage in 10 lines.
+
+```typescript
+import { createFactInjectionProcessor } from '@agentforge/plugins';
+
+const agent = new Agent({
+  model: 'deepseek/deepseek-v4-flash',
+  systemPrompt: 'You are a helpful assistant.',
+  plugins: [
+    {
+      name: 'inject-time',
+      processors: [
+        {
+          stage: 'buildContext',
+          processor: createFactInjectionProcessor({
+            facts: { currentTime: () => new Date().toISOString() },
+          }),
+        },
+      ],
+    },
+  ],
+});
 ```
 
 ## Architecture
 
-### Pipeline Stages
+### Pipeline stages
 
 ```
 processInput -> buildContext -> [Agentic Loop:
@@ -57,23 +139,9 @@ processInput -> buildContext -> [Agentic Loop:
 ] -> processOutput
 ```
 
-The agentic loop repeats until `iteration.loopDirective` is `stop`. Processors can return an `AbortSignal` to abort with optional `retryFrom` a specific stage.
+The loop repeats until `iteration.loopDirective` is `stop`. Any processor can return an `AbortSignal` to abort with optional `retryFrom` a specific stage.
 
-### Package Structure
-
-```
-packages/
-  sdk/             -- Pure type definitions (PipelineContext, Processor, Tool, Span, etc.)
-  tools/           -- Built-in tool implementations (echo, etc.)
-  observability/   -- Span, Tracer, Metrics abstractions + OpenTelemetry bridge
-  core/            -- Agent, PipelineRunner, LLMInvoker, ToolRegistry, SessionManager
-  plugins/         -- Processor plugins (memory, compression, permission, skill, MCP, eviction)
-  server/          -- Hono HTTP server, WebSocket bridge, A2A protocol, CLI
-```
-
-Dependency direction: `sdk` (zero deps) <-- `tools` / `observability` <-- `core` <-- `plugins` <-- `server`.
-
-### Pipeline Context
+### Pipeline context
 
 Every stage receives a `PipelineContext` with four regions:
 
@@ -84,18 +152,32 @@ Every stage receives a `PipelineContext` with four regions:
 | `iteration` | Per-step state | step number, response, loopDirective, span |
 | `session` | Cross-iteration state | messageHistory, tokenUsage, plugin custom data |
 
-## Configuration
+### Packages
 
-AgentForge uses multi-level JSONC configuration (highest priority first):
+```
+packages/
+  sdk/             -- Pure type definitions
+  tools/           -- Built-in tool implementations
+  observability/   -- Span, Tracer, Metrics + OpenTelemetry bridge
+  core/            -- Agent, PipelineRunner, LLMInvoker, ToolRegistry, SessionManager
+  plugins/         -- 15+ processor plugins
+  server/          -- Hono HTTP server, WebSocket, A2A protocol, CLI
+```
+
+Dependency flow: `sdk` <- `tools` / `observability` <- `core` <- `plugins` <- `server`.
+
+## Production
+
+### Configuration
+
+Multi-level JSONC config (highest priority first):
 
 1. **Session-level** -- runtime params passed to `agent.run()`
 2. **Project-level** -- `.agentforge/config.jsonc`
 3. **Global-level** -- `~/.agentforge/config.jsonc`
-4. **Environment** -- `AGENTFORGE_CONFIG` env var
-
-Example `.agentforge/config.jsonc`:
 
 ```jsonc
+// .agentforge/config.jsonc
 {
   "agents": {
     "assistant": {
@@ -103,45 +185,35 @@ Example `.agentforge/config.jsonc`:
       "systemPrompt": "You are a helpful assistant.",
       "maxIterations": 5
     }
-  },
-  "modelGateways": [
-    { "name": "my-llm", "url": "https://api.example.com/v1" }
-  ]
+  }
 }
 ```
 
-## CLI Usage
+### CLI
 
 ```bash
-# Start server
-npx agentforge serve --port 3000 --api-key secret
-
-# Run a single agent invocation
-npx agentforge run --agent assistant --input "Hello"
-
-# Dev mode with file watching
-npx agentforge dev --config .agentforge/config.jsonc
+npx agentforge serve --port 3000 --api-key secret   # Start server
+npx agentforge run --agent assistant --input "Hello" # Single invocation
+npx agentforge dev --config .agentforge/config.jsonc # Dev mode with watch
 ```
 
-## API Server
-
-AgentForge includes an HTTP server with agent endpoints, session management, and health checks:
+### API endpoints
 
 ```
-GET  /health/live          -- Liveness probe
-GET  /health/ready         -- Readiness probe
-POST /agents/:id/run       -- Run an agent
-GET  /agents/:id/stream    -- Stream agent output (SSE)
-GET  /sessions              -- List sessions
+GET  /health/live     -- Liveness probe
+GET  /health/ready    -- Readiness probe
+POST /agents/:id/run  -- Run an agent
+GET  /agents/:id/stream -- Stream agent output (SSE)
+GET  /sessions        -- List sessions
 ```
 
-## Docker
+### Docker
 
 ```bash
 docker compose up
 ```
 
-The container exposes port 3000 with health checks configured. Mount your config at `/app/.agentforge/`.
+Container exposes port 3000 with health checks. Mount your config at `/app/.agentforge/`.
 
 ## Contributing
 
