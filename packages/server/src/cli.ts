@@ -32,18 +32,24 @@ Global Options:
   --version, -v     Show version number
 
 Serve Options:
-  --port <number>     Server port (default: 3000)
-  --api-key <string>  API key for authentication
-  --config <path>     Config file path (default: .agentforge/config.jsonc)
-  --profile <name>    Apply built-in profile to all agents
-  --verbose           Enable verbose logging
-  --quiet             Suppress all output except errors
+  --port <number>                Server port (default: 3000)
+  --api-key <string>             API key for authentication
+  --config <path>                Config file path (default: .agentforge/config.jsonc)
+  --profile <name>               Apply built-in profile to all agents
+  --no-agents-convention         Disable .agents/ directory scanning
+  --no-agentforge-convention     Disable .agentforge/ directory scanning
+  --skill-dir <path>             Additional skill directory (repeatable)
+  --verbose                      Enable verbose logging
+  --quiet                        Suppress all output except errors
 
 Run Options:
-  --agent <id>        Agent ID to run (required)
-  --input <text>      Input text for the agent (required)
-  --config <path>     Config file path
-  --profile <name>    Apply built-in profile to all agents
+  --agent <id>                   Agent ID to run (required)
+  --input <text>                 Input text for the agent (required)
+  --config <path>                Config file path
+  --profile <name>               Apply built-in profile to all agents
+  --no-agents-convention         Disable .agents/ directory scanning
+  --no-agentforge-convention     Disable .agentforge/ directory scanning
+  --skill-dir <path>             Additional skill directory (repeatable)
 
 Dev Options:
   --port <number>     Server port
@@ -60,9 +66,9 @@ Dev Options:
 // ---------------------------------------------------------------------------
 
 type CliCommand =
-  | { command: 'serve'; port?: number; apiKey?: string; config?: string; profile?: string; verbose?: boolean; quiet?: boolean }
-  | { command: 'run'; agent: string; input: string; config?: string; profile?: string; verbose?: boolean; quiet?: boolean }
-  | { command: 'dev'; config?: string; apiKey?: string; port?: number; profile?: string; verbose?: boolean; quiet?: boolean }
+  | { command: 'serve'; port?: number; apiKey?: string; config?: string; profile?: string; verbose?: boolean; quiet?: boolean; agentsConvention?: false; agentforgeConvention?: false; skillDirs?: string[] }
+  | { command: 'run'; agent: string; input: string; config?: string; profile?: string; verbose?: boolean; quiet?: boolean; agentsConvention?: false; agentforgeConvention?: false; skillDirs?: string[] }
+  | { command: 'dev'; config?: string; apiKey?: string; port?: number; profile?: string; verbose?: boolean; quiet?: boolean; agentsConvention?: false; agentforgeConvention?: false; skillDirs?: string[] }
   | { command: 'help' }
   | { command: 'version' }
   | { command: null };
@@ -78,16 +84,24 @@ export function parseCommand(args: string[]): CliCommand {
     return { command: null };
   }
 
-  const flags: Record<string, string | boolean | undefined> = {};
+  const flags: Record<string, string | boolean | string[] | undefined> = {};
+  const skillDirs: string[] = [];
   for (let i = 1; i < args.length; i++) {
     if (args[i] === '--verbose') {
       flags.verbose = true;
     } else if (args[i] === '--quiet') {
       flags.quiet = true;
+    } else if (args[i] === '--no-agents-convention') {
+      flags.agentsConvention = false;
+    } else if (args[i] === '--no-agentforge-convention') {
+      flags.agentforgeConvention = false;
+    } else if (args[i] === '--skill-dir' && args[i + 1]) {
+      skillDirs.push(args[++i]);
     } else if (args[i].startsWith('--') && args[i + 1]) {
       flags[args[i].slice(2)] = args[++i];
     }
   }
+  if (skillDirs.length > 0) flags.skillDirs = skillDirs;
 
   switch (first) {
     case 'serve':
@@ -99,6 +113,9 @@ export function parseCommand(args: string[]): CliCommand {
         profile: flags.profile as string | undefined,
         verbose: flags.verbose as boolean | undefined,
         quiet: flags.quiet as boolean | undefined,
+        ...(flags.agentsConvention === false ? { agentsConvention: false } : {}),
+        ...(flags.agentforgeConvention === false ? { agentforgeConvention: false } : {}),
+        ...(flags.skillDirs ? { skillDirs: flags.skillDirs as string[] } : {}),
       };
     case 'run':
       return {
@@ -109,6 +126,9 @@ export function parseCommand(args: string[]): CliCommand {
         profile: flags.profile as string | undefined,
         verbose: flags.verbose as boolean | undefined,
         quiet: flags.quiet as boolean | undefined,
+        ...(flags.agentsConvention === false ? { agentsConvention: false } : {}),
+        ...(flags.agentforgeConvention === false ? { agentforgeConvention: false } : {}),
+        ...(flags.skillDirs ? { skillDirs: flags.skillDirs as string[] } : {}),
       };
     case 'dev':
       return {
@@ -119,6 +139,9 @@ export function parseCommand(args: string[]): CliCommand {
         profile: flags.profile as string | undefined,
         verbose: flags.verbose as boolean | undefined,
         quiet: flags.quiet as boolean | undefined,
+        ...(flags.agentsConvention === false ? { agentsConvention: false } : {}),
+        ...(flags.agentforgeConvention === false ? { agentforgeConvention: false } : {}),
+        ...(flags.skillDirs ? { skillDirs: flags.skillDirs as string[] } : {}),
       };
   }
 }

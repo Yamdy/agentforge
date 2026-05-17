@@ -86,6 +86,44 @@ describe('parseCommand', () => {
     const cmd = parseCommand(['dev', '--verbose']);
     expect(cmd).toEqual({ command: 'dev', verbose: true });
   });
+
+  // -------------------------------------------------------------------------
+  // Discovery flags
+  // -------------------------------------------------------------------------
+
+  it('parses serve with --no-agents-convention', () => {
+    const cmd = parseCommand(['serve', '--no-agents-convention']);
+    expect(cmd).toEqual({ command: 'serve', agentsConvention: false });
+  });
+
+  it('parses serve with --no-agentforge-convention', () => {
+    const cmd = parseCommand(['serve', '--no-agentforge-convention']);
+    expect(cmd).toEqual({ command: 'serve', agentforgeConvention: false });
+  });
+
+  it('parses serve with --skill-dir', () => {
+    const cmd = parseCommand(['serve', '--skill-dir', '/custom/skills']);
+    expect(cmd).toEqual({ command: 'serve', skillDirs: ['/custom/skills'] });
+  });
+
+  it('parses multiple --skill-dir flags', () => {
+    const cmd = parseCommand(['serve', '--skill-dir', '/a', '--skill-dir', '/b']);
+    expect(cmd).toEqual({ command: 'serve', skillDirs: ['/a', '/b'] });
+  });
+
+  it('parses run with discovery flags', () => {
+    const cmd = parseCommand([
+      'run', '--agent', 'a', '--input', 'hi',
+      '--no-agents-convention', '--skill-dir', '/x',
+    ]);
+    expect(cmd).toEqual({
+      command: 'run',
+      agent: 'a',
+      input: 'hi',
+      agentsConvention: false,
+      skillDirs: ['/x'],
+    });
+  });
 });
 
 describe('runSingleShot', () => {
