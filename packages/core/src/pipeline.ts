@@ -1,5 +1,6 @@
 import type {
   AbortSignal,
+  ErrorResult,
   PipelineContext,
   PipelineStage,
   Processor,
@@ -39,7 +40,7 @@ function deepFreeze<T>(obj: T, seen: WeakSet<object> = new WeakSet()): Readonly<
   return obj as Readonly<T>;
 }
 
-export type RunResult = PipelineContext | AbortSignal | SuspensionSignal;
+export type RunResult = PipelineContext | AbortSignal | SuspensionSignal | ErrorResult;
 
 export interface PipelineRunnerOptions {
   tracer?: Tracer;
@@ -145,6 +146,14 @@ export class PipelineRunner {
             rootSpan.end();
             return stageResult;
           }
+          if (this.isError(stageResult)) {
+            stageSpan.end();
+            if (this.hookManager) {
+              try { await this.hookManager.invoke('error', { error: stageResult.error, stage: stageResult.stage }, {}); } catch { /* hook error must not mask original */ }
+            }
+            rootSpan.end();
+            return stageResult;
+          }
           ctx = stageResult;
           ctx = await this.consumeStream(ctx);
 
@@ -196,6 +205,15 @@ export class PipelineRunner {
             stageSpan.end();
             rootSpan.end();
             yield { type: 'suspended', suspensionId: stageResult.suspensionId, reason: stageResult.reason, checkpoint: stageResult.checkpoint };
+            return;
+          }
+          if (this.isError(stageResult)) {
+            stageSpan.end();
+            if (this.hookManager) {
+              try { await this.hookManager.invoke('error', { error: stageResult.error, stage: stageResult.stage }, {}); } catch { /* hook error must not mask original */ }
+            }
+            rootSpan.end();
+            yield { type: 'error', error: stageResult.error, stage: stageResult.stage, recoverable: stageResult.recoverable };
             return;
           }
           ctx = stageResult;
@@ -274,7 +292,7 @@ export class PipelineRunner {
     ctx: PipelineContext,
     stage: StageName,
     stageSpan: Span,
-  ): Promise<PipelineContext | AbortSignal | SuspensionSignal> {
+  ): Promise<PipelineContext | AbortSignal | SuspensionSignal | ErrorResult> {
     const stageProcessors = this.processors.filter((p) => p.stage === stage);
     if (stageProcessors.length === 0) return ctx;
     if (stageProcessors.every((p) => p.isNoOp)) return ctx;
@@ -291,7 +309,7 @@ export class PipelineRunner {
         iteration: { ...currentCtx.iteration, span: stageSpan },
       });
       const result: ProcessorResult = await processor.execute(ctxWithSpan);
-      if ('type' in result && (result.type === 'abort' || result.type === 'suspend')) {
+      if ('type' in result && (result.type === 'abort' || result.type === 'suspend' || result.type === 'error')) {
         return result;
       }
       currentCtx = deepFreeze({ ...(result as PipelineContext) });
@@ -311,6 +329,10 @@ export class PipelineRunner {
 
   private isSuspend(result: RunResult): result is SuspensionSignal {
     return 'type' in result && result.type === 'suspend';
+  }
+
+  private isError(result: RunResult): result is ErrorResult {
+    return 'type' in result && result.type === 'error';
   }
 
   private async consumeStream(ctx: PipelineContext): Promise<PipelineContext> {

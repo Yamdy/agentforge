@@ -117,7 +117,7 @@ describe('PipelineRunner - ErrorResult', () => {
     const eventBus = new EventBus();
     const hookManager = new HookManager(eventBus);
     const hookErrors: unknown[] = [];
-    eventBus.subscribe('hook:error', (data: unknown) => hookErrors.push(data));
+    eventBus.subscribe('error', (data: unknown) => hookErrors.push(data));
 
     const runner = new PipelineRunner({ hookManager });
     const testError = new Error('hook test error');
@@ -313,7 +313,7 @@ describe('LoopOrchestrator - ErrorResult', () => {
     const eventBus = new EventBus();
     const hookManager = new HookManager(eventBus);
     const hookErrors: unknown[] = [];
-    eventBus.subscribe('hook:error', (data: unknown) => hookErrors.push(data));
+    eventBus.subscribe('error', (data: unknown) => hookErrors.push(data));
 
     const runner = new PipelineRunner({ hookManager });
     const testError = new Error('recoverable hook');

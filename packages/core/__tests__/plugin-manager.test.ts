@@ -201,7 +201,7 @@ describe('PluginManager', () => {
     expect(received).toEqual(['before-shutdown']);
   });
 
-  it('plugin resource start errors are caught without crashing', async () => {
+  it('plugin resource start errors throw AggregateError', async () => {
     const plugin = (api: HarnessAPI): PluginRegistration => {
       api.registerResource({
         id: 'bad',
@@ -214,7 +214,7 @@ describe('PluginManager', () => {
     };
 
     manager.initializePlugin(plugin);
-    await manager.initializeAll();
+    await expect(manager.initializeAll()).rejects.toThrow(AggregateError);
 
     const errors = manager.getErrors();
     expect(errors).toHaveLength(1);

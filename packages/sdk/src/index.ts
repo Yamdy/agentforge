@@ -354,7 +354,8 @@ export type StreamEvent =
   | { type: 'tool_result'; name: string; result: unknown }
   | { type: 'complete'; context: PipelineContext }
   | { type: 'abort'; reason: string; retryFrom?: StageName }
-  | { type: 'suspended'; suspensionId: string; reason: string; checkpoint: PipelineCheckpoint };
+  | { type: 'suspended'; suspensionId: string; reason: string; checkpoint: PipelineCheckpoint }
+  | { type: 'error'; error: Error; stage: StageName; recoverable?: boolean };
 
 export type ServerStreamEvent = StreamEvent
   | { type: 'session.started'; sessionId: string }

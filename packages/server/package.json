@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@primo-ai/core": "workspace:*",
+    "@primo-ai/observability": "workspace:*",
     "@primo-ai/plugins": "workspace:*",
     "@primo-ai/sdk": "workspace:*",
     "@hono/node-server": "^2.0.2",

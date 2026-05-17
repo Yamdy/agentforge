@@ -181,6 +181,7 @@ export class LoopOrchestrator {
           yield event;
           return;
         }
+        if (event.type === 'error') throw event.error;
         if (event.type === 'complete') loopCtx = (event as { context: PipelineContext }).context;
         yield event;
       }
@@ -217,6 +218,14 @@ export class LoopOrchestrator {
               this.stateMachine.transition('paused');
               yield event;
               return;
+            }
+            if (event.type === 'error') {
+              if (event.recoverable) {
+                this.eventBus?.emit('pipeline:stage_error', { stage: event.stage, error: event.error });
+                loopBreak = true;
+                break;
+              }
+              throw event.error;
             }
             if (event.type === 'complete') loopCtx = (event as { context: PipelineContext }).context;
             yield event;
