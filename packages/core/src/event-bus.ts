@@ -33,7 +33,25 @@ export class EventBus {
     return () => set!.delete(handler);
   }
 
-  once(eventType: string): Promise<unknown> {
+  /** Remove a specific handler for an event type. */
+  unsubscribe(eventType: string, handler: (data?: unknown) => void): void {
+    const set = this.handlers.get(eventType);
+    if (set) {
+      set.delete(handler);
+    }
+  }
+
+  /** Register a handler that fires at most once, then auto-unsubscribes. */
+  once(eventType: string, handler: (data?: unknown) => void): void {
+    const wrapped = (data?: unknown) => {
+      handler(data);
+      this.unsubscribe(eventType, wrapped);
+    };
+    this.subscribe(eventType, wrapped);
+  }
+
+  /** Promise-based once: returns a Promise that resolves on the next emission. */
+  oncePromise(eventType: string): Promise<unknown> {
     return new Promise((resolve) => {
       const unsub = this.subscribe(eventType, (data) => {
         unsub();

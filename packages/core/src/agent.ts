@@ -1,5 +1,6 @@
 import type {
   AgentConfig,
+  AgentSimpleConfig,
   CheckpointStore,
   PipelineContext,
   PipelineStageConfig,
@@ -71,7 +72,9 @@ export class Agent {
   private activeAbortController: AbortController | null = null;
   private lastContext?: PipelineContext;
 
-  constructor(config: AgentConfig, deps?: AgentDependencies) {
+  constructor(config: AgentSimpleConfig);
+  constructor(config: AgentConfig, deps?: AgentDependencies);
+  constructor(config: AgentConfig | AgentSimpleConfig, deps?: AgentDependencies) {
     this.config = config;
     this.modelFactory = deps?.modelFactory ?? new ModelFactory();
     this.modelFactory.registerGateway(getDefaultBuiltInGateway());
@@ -126,6 +129,21 @@ export class Agent {
 
   get state(): import('./state-machine.js').AgentState {
     return this.orchestrator.state;
+  }
+
+  /** Subscribe to an event type. Returns an unsubscribe function. */
+  on(eventType: string, handler: (data?: unknown) => void): () => void {
+    return this.eventBus.subscribe(eventType, handler);
+  }
+
+  /** Subscribe to an event type for at most one emission. */
+  once(eventType: string, handler: (data?: unknown) => void): void {
+    this.eventBus.once(eventType, handler);
+  }
+
+  /** Remove a specific handler for an event type. */
+  off(eventType: string, handler: (data?: unknown) => void): void {
+    this.eventBus.unsubscribe(eventType, handler);
   }
 
   get _contextBuilder(): ContextBuilder {
@@ -368,6 +386,14 @@ export class Agent {
     this.runner.register(createEvaluateIterationProcessor({ eventBus: this._pluginManager.eventBus }));
     this.runner.register(processOutputProcessor);
   }
+}
+
+/**
+ * Create an Agent from a simple config. Convenience wrapper for single-agent usage.
+ * For advanced usage (Dynamic config, providerOptions, custom dependencies), use `new Agent(config, deps)`.
+ */
+export function createAgent(config: AgentSimpleConfig): Agent {
+  return new Agent(config);
 }
 
 function isAuthOrNotFoundError(error: unknown): boolean {

@@ -355,14 +355,17 @@ export type StreamEvent =
   | { type: 'complete'; context: PipelineContext }
   | { type: 'abort'; reason: string; retryFrom?: StageName }
   | { type: 'suspended'; suspensionId: string; reason: string; checkpoint: PipelineCheckpoint }
-  | { type: 'error'; error: Error; stage: StageName; recoverable?: boolean };
-
-export type ServerStreamEvent = StreamEvent
+  | { type: 'error'; error: Error; stage: StageName; recoverable?: boolean }
+  // Session lifecycle events
   | { type: 'session.started'; sessionId: string }
   | { type: 'session.completed'; sessionId: string; tokenUsage: TokenUsage }
   | { type: 'session.aborted'; sessionId: string }
+  // Permission events
   | { type: 'permission.request'; sessionId: string; permissionId: string; toolName: string; args: Record<string, unknown>; reason: string }
   | { type: 'permission.resolved'; sessionId: string; permissionId: string; decision: 'allow' | 'deny' };
+
+/** @deprecated Use StreamEvent — the union now includes all event types */
+export type ServerStreamEvent = StreamEvent;
 
 // ---------------------------------------------------------------------------
 // Plugin System
@@ -429,21 +432,48 @@ export interface ResourceDeclaration {
   stop: (instance: unknown) => Promise<void>;
 }
 
-export interface HarnessAPI {
+/** Pipeline extension: register Processors */
+export interface PipelineRegistry {
   registerProcessor(stage: StageName, processor: Processor): void;
+}
+
+/** Tool registration */
+export interface ToolRegistryAPI {
   registerTool(tool: ToolDefinition): void;
   unregisterTool(name: string): boolean;
-  registerCommand(name: string, handler: (args: string) => Promise<void>): void;
+}
+
+/** Interception & events */
+export interface InterceptionAPI {
   registerHook(hook: Hook): void;
   subscribe(eventType: string, handler: (data?: unknown) => void): () => void;
-  registerResource(declaration: ResourceDeclaration): void;
-  registerProvider(name: string, factory: unknown): void;
-  registerCompressionStrategy(strategy: CompressionStrategy): void;
   emit(eventType: string, data?: unknown): void;
+}
+
+/** Pipeline stage mutation (frozen after agent starts) */
+export interface StageMutationAPI {
   insertStage(phase: 'preLoop' | 'loop' | 'postLoop', after: StageName, newStage: StageName): void;
   removeStage(phase: 'preLoop' | 'loop' | 'postLoop', stage: StageName): void;
   replaceStages(phase: 'preLoop' | 'loop' | 'postLoop', stages: StageName[]): void;
 }
+
+/** Lifecycle & model providers */
+export interface LifecycleAPI {
+  registerResource(declaration: ResourceDeclaration): void;
+  registerProvider(name: string, factory: unknown): void;
+  registerCompressionStrategy(strategy: CompressionStrategy): void;
+  registerCommand(name: string, handler: (args: string) => Promise<void>): void;
+}
+
+/** Full Harness API — composes all sub-interfaces.
+ *  Plugin devs can depend on individual sub-interfaces for selective dependency. */
+export interface HarnessAPI extends
+  PipelineRegistry,
+  ToolRegistryAPI,
+  InterceptionAPI,
+  StageMutationAPI,
+  LifecycleAPI
+{}
 
 export interface PluginRegistration {
   processors?: Processor[];
@@ -489,6 +519,18 @@ export interface AgentConfig {
    *  - 'enforce': when exhausted, injects synthetic tool calls and continues the loop.
    */
   requiredToolPolicy?: 'advise' | 'enforce';
+}
+
+// ---------------------------------------------------------------------------
+// AgentSimpleConfig — Convenience type for single-agent usage
+// ---------------------------------------------------------------------------
+
+/** Convenience config for single-agent usage. Static fields only — no Dynamic<T> or advanced options. */
+export interface AgentSimpleConfig {
+  model: string;
+  systemPrompt?: string;
+  maxIterations?: number;
+  tools?: Tool[];
 }
 
 // ---------------------------------------------------------------------------
@@ -580,6 +622,7 @@ export interface GatewayConfig {
 
 /**
  * Top-level framework configuration.
+ * @internal For multi-agent and server deployments. For single-agent usage, use `AgentSimpleConfig` or `createAgent()`.
  * Merged from multiple layers (highest priority first):
  *   1. Session-level — runtime parameters passed to agent.run()
  *   2. Project-level — .agentforge/config.jsonc in project root

@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { EventBus } from '../src/event-bus.js';
 
-describe('EventBus.once()', () => {
+describe('EventBus.oncePromise()', () => {
   it('returns Promise that resolves on first event', async () => {
     const bus = new EventBus();
 
-    const promise = bus.once('test:event');
+    const promise = bus.oncePromise('test:event');
 
     // Emit after subscribing
     bus.emit('test:event', { value: 42 });
@@ -21,7 +21,7 @@ describe('EventBus.once()', () => {
     // Set up a persistent subscriber to track all emissions
     bus.subscribe('auto-unsub', (data) => received.push(data));
 
-    const promise = bus.once('auto-unsub');
+    const promise = bus.oncePromise('auto-unsub');
     bus.emit('auto-unsub', 'first');
 
     await promise;
@@ -37,31 +37,31 @@ describe('EventBus.once()', () => {
     expect(result).toBe('first');
   });
 
-  it('multiple once() calls for same event type each get their own resolution', async () => {
+  it('multiple oncePromise() calls for same event type each get their own resolution', async () => {
     const bus = new EventBus();
 
-    // Register three once() listeners sequentially, emitting between each
-    const promise1 = bus.once('seq');
+    // Register three oncePromise() listeners sequentially, emitting between each
+    const promise1 = bus.oncePromise('seq');
     bus.emit('seq', 'first');
 
-    const promise2 = bus.once('seq');
+    const promise2 = bus.oncePromise('seq');
     bus.emit('seq', 'second');
 
-    const promise3 = bus.once('seq');
+    const promise3 = bus.oncePromise('seq');
     bus.emit('seq', 'third');
 
     const [result1, result2, result3] = await Promise.all([promise1, promise2, promise3]);
 
-    // Each once() resolves with the first emission after it was registered
+    // Each oncePromise() resolves with the first emission after it was registered
     expect(result1).toBe('first');
     expect(result2).toBe('second');
     expect(result3).toBe('third');
   });
 
-  it('once() on event type with no emissions stays pending', async () => {
+  it('oncePromise() on event type with no emissions stays pending', async () => {
     const bus = new EventBus();
 
-    const promise = bus.once('never-emitted');
+    const promise = bus.oncePromise('never-emitted');
 
     // Race with a short timeout to verify it does NOT resolve immediately
     const result = await Promise.race([
