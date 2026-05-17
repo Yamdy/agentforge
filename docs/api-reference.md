@@ -985,12 +985,25 @@ Google Agent-to-Agent 协议支持。
 ## @primo-ai/tools — 内置工具
 
 ```ts
-import { echoTool } from '@primo-ai/tools';
+import {
+  echoTool, httpTool, fileReadTool, fileWriteTool, fileEditTool,
+  globTool, grepTool, shellTool, calculatorTool, datetimeTool, jsonTool,
+} from '@primo-ai/tools';
 ```
 
-| 工具 | 输入 Schema | 输出 | 说明 |
-|------|------------|------|------|
-| `echoTool` | `{ message: z.string() }` | `string` | 回显输入消息 |
+| 工具 | 输入 Schema | 输出 | 说明 | 需审批 |
+|------|------------|------|------|--------|
+| `echoTool` | `{ message: z.string() }` | `string` | 回显输入消息 | 否 |
+| `httpTool` | `{ url, method?, headers?, body? }` | `{ status, headers, body }` | HTTP 请求 (GET/POST/PUT/PATCH/DELETE) | 否 |
+| `fileReadTool` | `{ path, encoding?, offset?, limit? }` | `{ content, lines, path }` | 读取文件，支持行范围 | 否 |
+| `fileWriteTool` | `{ path, content, encoding?, append? }` | `{ path, bytes }` | 写入文件，自动创建目录 | 是 |
+| `fileEditTool` | `{ path, oldString, newString, replaceAll? }` | `{ path, replacements }` | 精确字符串替换 | 是 |
+| `globTool` | `{ pattern, path? }` | `{ files, count }` | 文件模式匹配查找 | 否 |
+| `grepTool` | `{ pattern, path?, include?, maxResults? }` | `{ matches, count }` | 正则搜索文件内容 | 否 |
+| `shellTool` | `{ command, cwd?, timeout? }` | `{ exitCode, stdout, stderr }` | 执行 Shell 命令 | 是 |
+| `calculatorTool` | `{ expression }` | `{ result, expression }` | 数学表达式求值 | 否 |
+| `datetimeTool` | `{ format?, timezone? }` | `{ iso, formatted, timezone, unix }` | 获取当前日期时间 | 否 |
+| `jsonTool` | `{ operation, data, path?, indent? }` | `{ result }` | JSON 解析/格式化/路径查询 | 否 |
 
 ---
 

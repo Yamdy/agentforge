@@ -22,7 +22,7 @@ npm install @primo-ai/core @primo-ai/sdk @primo-ai/tools
 |---|---|
 | `@primo-ai/sdk` | 类型定义（零依赖） |
 | `@primo-ai/core` | Agent、Pipeline、模型解析 |
-| `@primo-ai/tools` | 内置工具（echo 等） |
+| `@primo-ai/tools` | 11 个内置工具（http、文件、shell、计算器等） |
 | `@primo-ai/plugins` | 插件（memory、compression、MCP 等） |
 | `@primo-ai/observability` | OpenTelemetry 桥接 |
 
@@ -77,6 +77,39 @@ console.log(response);
 ```bash
 DEEPSEEK_API_KEY=sk-xxx npx tsx your-file.ts
 ```
+
+## 内置工具
+
+`@primo-ai/tools` 提供 11 个开箱即用的工具，零外部依赖：
+
+| 工具 | 说明 |
+|------|------|
+| `echoTool` | 回显消息（测试用） |
+| `httpTool` | HTTP 请求 (GET/POST/PUT/PATCH/DELETE) |
+| `fileReadTool` | 读取文件 |
+| `fileWriteTool` | 写入文件 |
+| `fileEditTool` | 精确字符串替换 |
+| `globTool` | 文件模式匹配查找 |
+| `grepTool` | 正则搜索文件内容 |
+| `shellTool` | 执行 Shell 命令 |
+| `calculatorTool` | 数学表达式求值 |
+| `datetimeTool` | 获取当前日期时间 |
+| `jsonTool` | JSON 解析/格式化/查询 |
+
+```ts
+import {
+  echoTool, httpTool, fileReadTool, fileWriteTool, fileEditTool,
+  globTool, grepTool, shellTool, calculatorTool, datetimeTool, jsonTool,
+} from '@primo-ai/tools';
+
+const agent = new Agent({
+  model: 'deepseek/deepseek-v4-flash',
+  tools: [httpTool, fileReadTool, calculatorTool, datetimeTool, jsonTool],
+  maxIterations: 5,
+});
+```
+
+> 完整 API 参考：[工具 Schema](/api-reference#primo-ai-tools-内置工具)
 
 ## 流式输出
 
