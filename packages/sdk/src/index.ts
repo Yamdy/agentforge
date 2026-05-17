@@ -154,7 +154,10 @@ export interface IterationRegion {
 export interface SessionRegion {
   messageHistory?: Message[];
   totalTokenUsage?: TokenUsage;
-  /** Plugin extension point. Namespaced by plugin ID. */
+  /**
+   * Plugin extension point. Use plugin ID as key name to avoid collisions.
+   * Type-safe usage: SimpleProcessorContext.getState<MyPluginState>('myPlugin')
+   */
   custom: Record<string, unknown>;
 }
 
@@ -209,6 +212,18 @@ export interface ErrorResult {
 
 export type ProcessorResult = PipelineContext | AbortSignal | SuspensionSignal | ErrorResult;
 
+/**
+ * Processor -- Business logic unit in the pipeline. CAN read and modify PipelineContext.
+ * Use for: context assembly, LLM calls, tool execution, iteration evaluation.
+ *
+ * Hook -- Observation/interception point in the pipeline. CANNOT modify Context.
+ * Use for: logging, metrics, event emission, permission checks (allow/deny).
+ *
+ * Boundary rules:
+ * - Need to modify ctx -> Use Processor
+ * - Need to intercept/deny -> Use Hook
+ * - Only need to observe -> Use Event (subscribe/on)
+ */
 export interface Processor {
   stage: StageName;
   execute(context: PipelineContext): Promise<ProcessorResult>;
@@ -853,3 +868,9 @@ export interface AgentProfile {
   model?: string;
   maxIterations?: number;
 }
+
+// ---------------------------------------------------------------------------
+// SimpleProcessorContext -- flat PipelineContext convenience wrapper
+// ---------------------------------------------------------------------------
+
+export { SimpleProcessorContext } from './simple-context.js';
