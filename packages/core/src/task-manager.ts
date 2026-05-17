@@ -124,8 +124,12 @@ export class TaskManagerImpl implements ITaskManager {
     this.handles.set(taskId, handle);
 
     // Fire-and-forget the async work
-    this.executeTask(state, config, prompt).catch(() => {
-      // Errors are handled inside executeTask
+    this.executeTask(state, config, prompt).catch((err) => {
+      if (state.status === 'pending' || state.status === 'running') {
+        state.status = 'failed';
+        state.error = err instanceof Error ? err : new Error(String(err));
+        this.eventBus?.emit('task:error', { taskId: state.taskId, error: state.error });
+      }
     });
 
     return handle;

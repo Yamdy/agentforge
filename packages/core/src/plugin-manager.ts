@@ -69,10 +69,9 @@ export class PluginManager {
       }
       this.initializePlugin(factory);
     } catch (err) {
-      this.errors.push({
-        source: filePath,
-        error: err instanceof Error ? err : new Error(String(err)),
-      });
+      const error = err instanceof Error ? err : new Error(String(err));
+      this.eventBus.emit('plugin:load_error', { source: filePath, error });
+      this.errors.push({ source: filePath, error });
     }
   }
 
@@ -119,11 +118,16 @@ export class PluginManager {
         const instance = await resource.start();
         this.resourceInstances.set(resource.id, instance);
       } catch (err) {
-        this.errors.push({
-          source: `resource:${resource.id}`,
-          error: err instanceof Error ? err : new Error(String(err)),
-        });
+        const error = err instanceof Error ? err : new Error(String(err));
+        this.eventBus.emit('plugin:resource_init_error', { source: `resource:${resource.id}`, error });
+        this.errors.push({ source: `resource:${resource.id}`, error });
       }
+    }
+    if (this.errors.length > 0) {
+      throw new AggregateError(
+        this.errors.map(e => e.error),
+        `Plugin initialization failed for ${this.errors.length} resource(s): ${this.errors.map(e => e.source).join(', ')}`,
+      );
     }
   }
 
@@ -139,10 +143,9 @@ export class PluginManager {
       try {
         await resource.stop(instance);
       } catch (err) {
-        this.errors.push({
-          source: `resource:${resource.id}`,
-          error: err instanceof Error ? err : new Error(String(err)),
-        });
+        const error = err instanceof Error ? err : new Error(String(err));
+        this.eventBus.emit('plugin:shutdown_error', { source: `resource:${resource.id}`, error });
+        this.errors.push({ source: `resource:${resource.id}`, error });
       }
     }
     this.resourceInstances.clear();

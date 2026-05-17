@@ -36,10 +36,14 @@ export function createEvaluateIterationProcessor(deps?: EvaluateIterationDeps): 
     stage: 'evaluateIteration',
     execute: async (ctx) => {
       const prevTotal = ctx.session.totalTokenUsage ?? { input: 0, output: 0 };
-      const iterUsage = ctx.iteration.tokenUsage ?? { input: 0, output: 0 };
+      const iterUsage = ctx.iteration.tokenUsage;
+      if (!iterUsage) {
+        eventBus?.emit('token:usage_unavailable', { step: ctx.iteration.step });
+      }
+      const safeUsage = iterUsage ?? { input: 0, output: 0 };
       const totalTokenUsage: TokenUsage = {
-        input: prevTotal.input + iterUsage.input,
-        output: prevTotal.output + iterUsage.output,
+        input: prevTotal.input + safeUsage.input,
+        output: prevTotal.output + safeUsage.output,
       };
 
       const totalTokens = totalTokenUsage.input + totalTokenUsage.output;

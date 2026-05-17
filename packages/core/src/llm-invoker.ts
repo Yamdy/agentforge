@@ -20,27 +20,27 @@ export interface LLMInvokeInput {
 
 export interface LLMInvokeResult {
   response: string;
-  tokenUsage: TokenUsage;
+  tokenUsage: TokenUsage | null;
 }
 
 export interface LLMStreamHandle {
   fullStream: AsyncIterable<unknown>;
-  usage: Promise<TokenUsage>;
+  usage: Promise<TokenUsage | null>;
   reasoning: Promise<string | undefined>;
 }
 
 type UsageShape = { inputTokens?: number | { total?: number }; outputTokens?: number | { total?: number } } | null | undefined;
 
-export function extractTokenUsage(usage: unknown): TokenUsage {
+export function extractTokenUsage(usage: unknown): TokenUsage | null {
   const u = usage as UsageShape;
-  return {
-    input: typeof u?.inputTokens === 'number'
-      ? u.inputTokens
-      : u?.inputTokens?.total ?? 0,
-    output: typeof u?.outputTokens === 'number'
-      ? u.outputTokens
-      : u?.outputTokens?.total ?? 0,
-  };
+  if (!u) return null;
+  const input = typeof u?.inputTokens === 'number'
+    ? u.inputTokens
+    : u?.inputTokens?.total ?? 0;
+  const output = typeof u?.outputTokens === 'number'
+    ? u.outputTokens
+    : u?.outputTokens?.total ?? 0;
+  return { input, output };
 }
 
 export class LLMInvoker {
@@ -156,7 +156,7 @@ export class LLMInvoker {
         .catch((err) => {
           endSpan();
           this.options.eventBus?.emit('llm:usage_unavailable', { error: err instanceof Error ? err.message : String(err) });
-          return { input: 0, output: 0 };
+          return null;
         }),
       reasoning: Promise.resolve(result!.reasoningText).catch((err) => {
         this.options.eventBus?.emit('llm:reasoning_error', { error: err instanceof Error ? err.message : String(err) });

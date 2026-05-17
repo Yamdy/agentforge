@@ -135,11 +135,11 @@ export interface IterationRegion {
   loopDirective?: LoopDirective;
   /** AI SDK fullStream yielding text-delta, tool-call, finish-step, error events. */
   fullStream?: AsyncIterable<unknown>;
-  usagePromise?: Promise<TokenUsage>;
+  usagePromise?: Promise<TokenUsage | null>;
   /** Promise resolving to reasoning text from the model (e.g. DeepSeek reasoning_content). */
   reasoningPromise?: Promise<string | undefined>;
   response?: string;
-  tokenUsage?: TokenUsage;
+  tokenUsage?: TokenUsage | null;
   /** Tool calls extracted from the LLM response by PipelineRunner stream consumption. */
   pendingToolCalls?: ToolCall[];
   /** Reasoning content from thinking-mode models (e.g. DeepSeek). Must be passed back on subsequent turns. */
@@ -200,7 +200,14 @@ export interface SuspensionSignal {
   expiresAt?: string;
 }
 
-export type ProcessorResult = PipelineContext | AbortSignal | SuspensionSignal;
+export interface ErrorResult {
+  type: 'error';
+  error: Error;
+  stage: StageName;
+  recoverable?: boolean;
+}
+
+export type ProcessorResult = PipelineContext | AbortSignal | SuspensionSignal | ErrorResult;
 
 export interface Processor {
   stage: StageName;

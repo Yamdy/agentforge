@@ -125,8 +125,11 @@ describe('LLMInvoker edge cases', () => {
     for await (const _unused of handle.fullStream) { void _unused; }
 
     const usage = await handle.usage;
-    expect(typeof usage.input).toBe('number');
-    expect(typeof usage.output).toBe('number');
+    expect(usage).not.toBeNull();
+    if (usage) {
+      expect(typeof usage.input).toBe('number');
+      expect(typeof usage.output).toBe('number');
+    }
   });
 
   it('stream resolves reasoning promise (undefined for non-reasoning models)', async () => {

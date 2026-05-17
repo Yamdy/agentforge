@@ -55,7 +55,7 @@ interface FullStreamResult {
   chunks: string[];
   toolCalls: ToolCall[];
   reasoningParts: string[];
-  usage: TokenUsage | undefined;
+  usage: TokenUsage | null | undefined;
 }
 
 async function parseFullStream(
@@ -65,7 +65,7 @@ async function parseFullStream(
   const chunks: string[] = [];
   const toolCalls: ToolCall[] = [];
   const reasoningParts: string[] = [];
-  let usage: TokenUsage | undefined;
+  let usage: TokenUsage | null | undefined;
 
   for await (const event of fullStream) {
     if (event.type === 'text-delta') {
@@ -205,7 +205,7 @@ export class PipelineRunner {
             const chunks: string[] = [];
             const toolCalls: ToolCall[] = [];
             const reasoningParts: string[] = [];
-            let usage: TokenUsage | undefined;
+            let usage: TokenUsage | null | undefined;
 
             for await (const event of fullStream as AsyncIterable<{ type: string; [key: string]: unknown }>) {
               if (event.type === 'text-delta') {
@@ -240,7 +240,7 @@ export class PipelineRunner {
                 response: chunks.join('') || ctx.iteration.response || '',
                 pendingToolCalls: toolCalls.length > 0 ? toolCalls : undefined,
                 reasoningContent,
-                tokenUsage: usage ?? pendingUsage,
+                tokenUsage: usage ?? pendingUsage ?? undefined,
                 fullStream: undefined,
                 usagePromise: undefined,
                 reasoningPromise: undefined,
@@ -330,7 +330,7 @@ export class PipelineRunner {
         response: result.chunks.join('') || ctx.iteration.response,
         pendingToolCalls: result.toolCalls.length > 0 ? result.toolCalls : undefined,
         reasoningContent,
-        tokenUsage: result.usage ?? pendingUsage,
+        tokenUsage: result.usage ?? pendingUsage ?? undefined,
         fullStream: undefined,
         usagePromise: undefined,
         reasoningPromise: undefined,
