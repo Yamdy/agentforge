@@ -1,0 +1,49 @@
+{
+  // AgentForge Server Configuration
+  // Place this file at .agentforge/config.jsonc or pass via --config flag
+  //
+  // Run: npx agentforge serve --config server-config.jsonc
+
+  // ─── Agent Definitions ──────────────────────────────────────────────────
+  // Each key is an agent ID used in API calls (POST /agents/{id}/run)
+  "agents": {
+    "assistant": {
+      "model": "deepseek/deepseek-v4-flash",
+      "systemPrompt": "You are a helpful assistant. Answer concisely and accurately.",
+      "maxIterations": 5
+    },
+
+    "coder": {
+      "model": "deepseek/deepseek-v4-flash",
+      "systemPrompt": "You are an expert programmer. Write clean, well-documented code.",
+      "maxIterations": 10,
+      "profile": "coding"
+    },
+
+    "analyst": {
+      "model": "deepseek/deepseek-v4-flash",
+      "systemPrompt": "You are a data analyst. Provide clear, data-driven insights.",
+      "maxIterations": 5,
+      "profile": "data"
+    }
+  },
+
+  // ─── Model Gateways ─────────────────────────────────────────────────────
+  // Custom OpenAI-compatible endpoints for model resolution.
+  // API keys are resolved from environment variables (e.g. CUSTOM_API_KEY)
+  // or can be specified inline.
+  "modelGateways": [
+    {
+      "name": "custom",
+      "url": "https://api.example.com/v1",
+      "apiKey": "sk-your-key-here"
+    }
+  ],
+
+  // ─── Available Built-in Profiles ────────────────────────────────────────
+  // Set "profile" on an agent to apply one of:
+  //   "coding"    — Code generation and review
+  //   "business"  — Business analysis and reporting
+  //   "data"      — Data analysis and visualization
+  //   "personal"  — General-purpose personal assistant
+}
