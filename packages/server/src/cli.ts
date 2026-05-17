@@ -4,8 +4,7 @@ import { existsSync, watch } from 'node:fs';
 import { resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { AgentRegistry } from './registry.js';
-import { resolveConfigSources, resolveSkillDirectories, resolveMcpServers, type DiscoveryOptions } from './discovery.js';
-import { discoverSkills, type SkillFileSystem } from '@primo-ai/plugins';
+import { resolveConfigSources, type DiscoveryOptions } from './discovery.js';
 
 // ---------------------------------------------------------------------------
 // Version
