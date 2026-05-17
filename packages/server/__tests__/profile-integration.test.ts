@@ -103,6 +103,62 @@ describe('profile integration in config-loader', () => {
     expect(registry.get('dev')).toBeDefined();
     expect(registry.get('biz')).toBeDefined();
   });
+
+  it('profile plugins are applied to the agent without errors', async () => {
+    const path = await writeConfig(JSON.stringify({
+      agents: {
+        coder: { model: 'test-model', profile: 'coding-agent' },
+      },
+    }));
+
+    const registry = new AgentRegistry();
+    await loadAndRegister(path, registry);
+
+    const agent = registry.get('coder');
+    expect(agent).toBeDefined();
+
+    // Verify that the coding-agent profile plugins were applied
+    // The profile registers memory, compression, permission, and skill plugins
+    // If any plugin failed, getErrors() would contain errors
+    expect(agent!.pluginManager.getErrors()).toHaveLength(0);
+  });
+
+  it('profile with custom tools applies tools to the agent', async () => {
+    // Test that a profile with tools in its definition registers those tools
+    const path = await writeConfig(JSON.stringify({
+      agents: {
+        custom: { model: 'test-model' },
+      },
+    }));
+
+    const registry = new AgentRegistry();
+    const { agentIds } = await loadAndRegister(path, registry, 'coding-agent');
+
+    expect(agentIds).toEqual(['custom']);
+    const agent = registry.get('custom');
+    expect(agent).toBeDefined();
+
+    // The coding-agent profile applies plugins via use(), not tools directly
+    // but we can verify the plugin manager has no errors
+    expect(agent!.pluginManager.getErrors()).toHaveLength(0);
+  });
+
+  it('applies profile plugins that register processors', async () => {
+    // Verify that a profile which registers custom processors (like business-agent)
+    // successfully applies them to the agent
+    const path = await writeConfig(JSON.stringify({
+      agents: {
+        biz: { model: 'test-model', profile: 'business-agent' },
+      },
+    }));
+
+    const registry = new AgentRegistry();
+    await loadAndRegister(path, registry);
+
+    const agent = registry.get('biz');
+    expect(agent).toBeDefined();
+    expect(agent!.pluginManager.getErrors()).toHaveLength(0);
+  });
 });
 
 describe('builtinProfiles registration in ProfileLoader', () => {

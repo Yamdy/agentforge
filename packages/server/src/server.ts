@@ -7,6 +7,7 @@ import { sessionRoutes } from './routes/sessions.js';
 import { authMiddleware } from './middleware/auth.js';
 import { requestLogger } from './middleware/logger.js';
 import { WebSocketBridge } from './bridge/bridge.js';
+import { a2aRoutes, type A2ARoutesOptions } from './a2a/routes.js';
 import type { SessionStorage, AuthAdapter } from '@agentforge/sdk';
 import { StaticKeyAuthAdapter } from './middleware/static-key-auth.js';
 
@@ -24,13 +25,20 @@ export interface CorsOptions {
   maxAge?: number;
 }
 
+export interface A2AOptions {
+  agentId: string;
+  cardOptions: Omit<A2ARoutesOptions['cardOptions'], 'tools'>;
+}
+
 export interface ServerOptions {
   port?: number;
   apiKey?: string;
   authAdapter?: AuthAdapter;
   sessionStorage?: SessionStorage;
+  registry?: AgentRegistry;
   enableWebSocket?: boolean;
   cors?: CorsOptions;
+  a2a?: A2AOptions;
   requestTimeout?: number;
   shutdownTimeout?: number;
 }
@@ -46,7 +54,7 @@ interface WsLike {
 }
 
 export class AgentForgeServer {
-  readonly registry = new AgentRegistry();
+  readonly registry: AgentRegistry;
   readonly bridge: WebSocketBridge;
   private app: Hono;
   private port: number;
@@ -58,6 +66,7 @@ export class AgentForgeServer {
   private _startTime?: Date;
 
   constructor(options?: ServerOptions) {
+    this.registry = options?.registry ?? new AgentRegistry();
     this.port = options?.port ?? 3000;
     this._sessionStorage = options?.sessionStorage;
     this._enableWebSocket = options?.enableWebSocket ?? false;
@@ -102,6 +111,16 @@ export class AgentForgeServer {
     }));
     this.app.route('/agents', agentRoutes(this.registry));
     this.app.route('/sessions', sessionRoutes(this._sessionStorage));
+
+    // Mount A2A routes if configured
+    if (options?.a2a) {
+      const { app: a2aApp } = a2aRoutes({
+        registry: this.registry,
+        agentId: options.a2a.agentId,
+        cardOptions: options.a2a.cardOptions,
+      });
+      this.app.route('/a2a', a2aApp);
+    }
   }
 
   get hono(): Hono {
