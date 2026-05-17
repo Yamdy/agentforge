@@ -152,7 +152,7 @@ describe('WebSocket Bridge Integration', () => {
       };
       const mockSocket = { destroy: vi.fn() };
 
-      handler(mockReq as any, mockSocket as any, Buffer.alloc(0));
+      handler(mockReq as unknown as { headers: { get: (name: string) => string | null } }, mockSocket as unknown as { destroy: () => void }, Buffer.alloc(0));
       expect(mockSocket.destroy).toHaveBeenCalled();
     });
 
@@ -199,7 +199,7 @@ describe('WebSocket Bridge Integration', () => {
             resolve({ status: res.statusCode, upgraded: false });
             res.destroy();
           });
-          req.on('error', (err) => {
+          req.on('error', (_err) => {
             // If 'ws' is not installed, the upgrade handler destroys the socket
             // which causes an error — that's expected behavior
             resolve({ upgraded: false });

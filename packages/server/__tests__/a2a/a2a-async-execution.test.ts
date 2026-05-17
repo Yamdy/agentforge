@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { Agent } from '@primo-ai/core';
 import { A2ARequestHandler } from '../../src/a2a/server.js';
 import { InMemoryTaskStore } from '../../src/a2a/task-store.js';
 import type { JsonRpcRequest } from '../../src/a2a/types.js';
@@ -16,7 +17,7 @@ function createMockAgent(response: string, delayMs = 50) {
     toolRegistry: {
       toAiSdkToolSchemas: vi.fn().mockReturnValue({}),
     },
-  } as any;
+  } as unknown as Agent;
 }
 
 function createFailingAgent(error: Error, delayMs = 50) {
@@ -28,7 +29,7 @@ function createFailingAgent(error: Error, delayMs = 50) {
     toolRegistry: {
       toAiSdkToolSchemas: vi.fn().mockReturnValue({}),
     },
-  } as any;
+  } as unknown as Agent;
 }
 
 function sendRequest(messageText: string, contextId?: string): JsonRpcRequest {
@@ -62,7 +63,7 @@ describe('A2A async execution', () => {
     const response = await handler.handle(sendRequest('hi'));
 
     expect(response.result).toBeDefined();
-    const result = response.result as { task: any };
+    const result = response.result as { task: { id: string; status: { state: string } } };
     expect(result.task.status.state).toBe('working');
     expect(result.task.id).toBeDefined();
   });
@@ -72,7 +73,7 @@ describe('A2A async execution', () => {
     const handler = new A2ARequestHandler({ agent, taskStore });
 
     const response = await handler.handle(sendRequest('hi'));
-    const result = response.result as { task: any };
+    const result = response.result as { task: { id: string; status: { state: string } } };
     const taskId = result.task.id;
 
     // Wait for background execution to complete
@@ -88,7 +89,7 @@ describe('A2A async execution', () => {
     const handler = new A2ARequestHandler({ agent, taskStore });
 
     const response = await handler.handle(sendRequest('hi'));
-    const taskId = (response.result as { task: any }).task.id;
+    const taskId = (response.result as { task: { id: string; status: { state: string } } }).task.id;
 
     // Wait for background execution
     await new Promise((r) => setTimeout(r, 200));
@@ -106,7 +107,7 @@ describe('A2A async execution', () => {
     const handler = new A2ARequestHandler({ agent, taskStore });
 
     const response = await handler.handle(sendRequest('hi'));
-    const taskId = (response.result as { task: any }).task.id;
+    const taskId = (response.result as { task: { id: string; status: { state: string } } }).task.id;
 
     // Wait for background execution to fail
     await new Promise((r) => setTimeout(r, 200));
@@ -121,7 +122,7 @@ describe('A2A async execution', () => {
 
     // SendMessage should set status to working immediately
     const response = await handler.handle(sendRequest('hi'));
-    const result = response.result as { task: any };
+    const result = response.result as { task: { id: string; status: { state: string } } };
 
     // Task was created with 'submitted' then moved to 'working'
     expect(result.task.status.state).toBe('working');
@@ -140,7 +141,7 @@ describe('A2A async execution', () => {
 
     // Start async execution
     const sendResp = await handler.handle(sendRequest('hi'));
-    const taskId = (sendResp.result as { task: any }).task.id;
+    const taskId = (sendResp.result as { task: { id: string; status: { state: string } } }).task.id;
 
     // Immediately query - should be working
     const getResp = await handler.handle({
@@ -149,7 +150,7 @@ describe('A2A async execution', () => {
       id: 2,
       params: { id: taskId },
     });
-    const getResult = getResp.result as { task: any };
+    const getResult = getResp.result as { task: { id: string; status: { state: string } } };
     expect(getResult.task.status.state).toBe('working');
 
     // Wait for completion
@@ -161,7 +162,7 @@ describe('A2A async execution', () => {
       id: 3,
       params: { id: taskId },
     });
-    const finalResult = finalResp.result as { task: any };
+    const finalResult = finalResp.result as { task: { id: string; status: { state: string } } };
     expect(finalResult.task.status.state).toBe('completed');
   });
 
@@ -170,7 +171,7 @@ describe('A2A async execution', () => {
     const handler = new A2ARequestHandler({ agent, taskStore });
 
     const sendResp = await handler.handle(sendRequest('hi'));
-    const taskId = (sendResp.result as { task: any }).task.id;
+    const taskId = (sendResp.result as { task: { id: string; status: { state: string } } }).task.id;
 
     // Cancel while still working
     const cancelResp = await handler.handle({
@@ -179,7 +180,7 @@ describe('A2A async execution', () => {
       id: 2,
       params: { id: taskId },
     });
-    const cancelResult = cancelResp.result as { task: any };
+    const cancelResult = cancelResp.result as { task: { id: string; status: { state: string } } };
     expect(cancelResult.task.status.state).toBe('canceled');
   });
 
@@ -190,8 +191,8 @@ describe('A2A async execution', () => {
     const resp1 = await handler.handle(sendRequest('task1', 'ctx-1'));
     const resp2 = await handler.handle(sendRequest('task2', 'ctx-2'));
 
-    const id1 = (resp1.result as { task: any }).task.id;
-    const id2 = (resp2.result as { task: any }).task.id;
+    const id1 = (resp1.result as { task: { id: string; status: { state: string } } }).task.id;
+    const id2 = (resp2.result as { task: { id: string; status: { state: string } } }).task.id;
 
     expect(id1).not.toBe(id2);
 

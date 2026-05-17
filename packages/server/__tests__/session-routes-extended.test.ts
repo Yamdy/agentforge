@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { sessionRoutes } from '../src/routes/sessions.js';
 import { AgentRegistry } from '../src/registry.js';
 import { SessionEventStream } from '../src/session-event-stream.js';
@@ -11,7 +11,7 @@ import { parseSSE } from '../src/sse.js';
 
 function createMockStorage(sessions: SessionRecord[] = []): SessionStorage {
   const store = [...sessions];
-  const messagesStore = new Map<string, any[]>();
+  const messagesStore = new Map<string, unknown[]>();
 
   return {
     append: vi.fn().mockResolvedValue(undefined),
@@ -164,7 +164,7 @@ describe('Extended session routes', () => {
 
       const res = await app.request('/s1/messages');
       expect(res.status).toBe(200);
-      const body = await res.json() as any[];
+      const body = await res.json() as unknown[];
       expect(body.length).toBeGreaterThan(0);
       expect(storage.getMessages).toHaveBeenCalledWith('s1', {});
     });
@@ -401,7 +401,7 @@ describe('Extended session routes', () => {
     });
 
     it('returns 404 when no eventStream configured', async () => {
-      const app = sessionRoutes(createMockStorage([makeSession('s1')]), new AgentRegistry(), undefined as any);
+      const app = sessionRoutes(createMockStorage([makeSession('s1')]), new AgentRegistry(), undefined as unknown as SessionEventStream);
       const res = await app.request('/s1/events');
       expect(res.status).toBe(404);
     });

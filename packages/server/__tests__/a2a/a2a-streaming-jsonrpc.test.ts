@@ -1,5 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { Hono } from 'hono';
+import { describe, it, expect, vi } from 'vitest';
 import { a2aRoutes } from '../../src/a2a/routes.js';
 import type { Agent } from '@primo-ai/core';
 import type { AgentRegistry } from '../../src/registry.js';
@@ -78,13 +77,13 @@ describe('A2A streaming JSON-RPC', () => {
 
     // Should have status-update working
     const hasWorking = events.some(
-      (e: any) => e.result?.kind === 'status-update' && e.result?.status?.state === 'working',
+      (e: { result?: { kind?: string; status?: { state?: string } } }) => e.result?.kind === 'status-update' && e.result?.status?.state === 'working',
     );
     expect(hasWorking).toBe(true);
 
     // Should have status-update completed
     const hasCompleted = events.some(
-      (e: any) => e.result?.kind === 'status-update' && e.result?.status?.state === 'completed',
+      (e: { result?: { kind?: string; status?: { state?: string } } }) => e.result?.kind === 'status-update' && e.result?.status?.state === 'completed',
     );
     expect(hasCompleted).toBe(true);
   });
@@ -127,7 +126,7 @@ describe('A2A streaming JSON-RPC', () => {
     const events = dataLines.map((l) => JSON.parse(l.slice(6)));
 
     const hasArtifact = events.some(
-      (e: any) => e.result?.kind === 'artifact-update',
+      (e: { result?: { kind?: string; status?: { state?: string } } }) => e.result?.kind === 'artifact-update',
     );
     expect(hasArtifact).toBe(true);
   });
@@ -177,7 +176,7 @@ describe('A2A streaming JSON-RPC', () => {
     const events = dataLines.map((l) => JSON.parse(l.slice(6)));
 
     const hasFailed = events.some(
-      (e: any) => e.result?.kind === 'status-update' && e.result?.status?.state === 'failed',
+      (e: { result?: { kind?: string; status?: { state?: string } } }) => e.result?.kind === 'status-update' && e.result?.status?.state === 'failed',
     );
     expect(hasFailed).toBe(true);
   });

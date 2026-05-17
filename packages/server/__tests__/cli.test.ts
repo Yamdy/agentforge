@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseCommand, runSingleShot, formatHelp, getVersion } from '../src/cli.js';
+import { parseCommand, runSingleShot } from '../src/cli.js';
 import { AgentRegistry } from '../src/registry.js';
 
 describe('parseCommand', () => {

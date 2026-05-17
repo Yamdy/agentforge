@@ -1,7 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { SessionEventStream } from '../src/session-event-stream.js';
 import { AgentRegistry } from '../src/registry.js';
-import { serializeSSE } from '../src/sse.js';
 import { parseSSE } from '../src/sse.js';
 import { EventBus } from '@primo-ai/core';
 
@@ -114,7 +113,7 @@ describe('SessionEventStream', () => {
 
       const agent = registry.getAgentBySession('sess-1')!;
       agent.continueStream = vi.fn().mockImplementation(async function* () {
-        yield { type: 'text_delta', text: 'world' } as any;
+        yield { type: 'text_delta', text: 'world' } as unknown;
       });
 
       const stream = ses.fromAgentContinue('sess-1', 'hello');
@@ -133,8 +132,8 @@ describe('SessionEventStream', () => {
 
       const agent = registry.getAgentBySession('sess-1')!;
       agent.continueStream = vi.fn().mockImplementation(async function* () {
-        yield { type: 'text_delta', text: 'hello' } as any;
-        yield { type: 'text_delta', text: ' world' } as any;
+        yield { type: 'text_delta', text: 'hello' } as unknown;
+        yield { type: 'text_delta', text: ' world' } as unknown;
       });
 
       const stream = ses.fromAgentContinue('sess-1', 'test');
@@ -143,8 +142,8 @@ describe('SessionEventStream', () => {
 
       const textDeltas = messages.filter(m => m.type === 'text_delta');
       expect(textDeltas).toHaveLength(2);
-      expect((textDeltas[0] as any).text).toBe('hello');
-      expect((textDeltas[1] as any).text).toBe(' world');
+      expect((textDeltas[0] as unknown as { text: string }).text).toBe('hello');
+      expect((textDeltas[1] as unknown as { text: string }).text).toBe(' world');
     });
 
     it('emits session.started with sessionId', async () => {
@@ -160,7 +159,7 @@ describe('SessionEventStream', () => {
 
       const started = messages.find(m => m.type === 'session.started');
       expect(started).toBeDefined();
-      expect((started as any).sessionId).toBe('sess-1');
+      expect((started as unknown as { sessionId: string }).sessionId).toBe('sess-1');
     });
 
     it('returns error SSE when agent not found', async () => {
@@ -173,7 +172,7 @@ describe('SessionEventStream', () => {
 
       const errorEvent = messages.find(m => m.type === 'error');
       expect(errorEvent).toBeDefined();
-      expect((errorEvent as any).message).toContain('No agent');
+      expect((errorEvent as unknown as { message: string }).message).toContain('No agent');
     });
   });
 });

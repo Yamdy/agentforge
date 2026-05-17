@@ -1,4 +1,3 @@
-import type { Agent } from '@primo-ai/core';
 import { serializeSSE } from './sse.js';
 import type { AgentRegistry } from './registry.js';
 

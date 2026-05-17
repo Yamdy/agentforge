@@ -70,7 +70,7 @@ describe('Cross-connection stream abort isolation', () => {
     let streamBAborted = false;
     let callCount = 0;
 
-    (mockAgent as any).streamEvents.mockImplementation(
+    (mockAgent as unknown as { streamEvents: { mockImplementation: (...args: unknown[]) => void } }).streamEvents.mockImplementation(
       async function* (_input: string, signal?: AbortSignal) {
         callCount++;
         if (callCount === 1) {
@@ -124,7 +124,7 @@ describe('Cross-connection stream abort isolation', () => {
     let streamBAborted = false;
     let resolveStreamB = () => {};
 
-    (mockAgent as any).streamEvents.mockImplementation(
+    (mockAgent as unknown as { streamEvents: { mockImplementation: (...args: unknown[]) => void } }).streamEvents.mockImplementation(
       async function* (_input: string, signal?: AbortSignal) {
         callCount++;
         if (callCount === 1) {
@@ -179,7 +179,7 @@ describe('Cross-connection stream abort isolation', () => {
     let stream1Aborted = false;
     let stream2Aborted = false;
 
-    (mockAgent as any).streamEvents.mockImplementation(
+    (mockAgent as unknown as { streamEvents: { mockImplementation: (...args: unknown[]) => void } }).streamEvents.mockImplementation(
       async function* (_input: string, signal?: AbortSignal) {
         callCount++;
         const idx = callCount;

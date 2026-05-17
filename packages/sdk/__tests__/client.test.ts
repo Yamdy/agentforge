@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AgentForgeClient, AgentForgeClientError, isRetryableError } from '../src/client.js';
+import { AgentForgeClient, AgentForgeClientError } from '../src/client.js';
 
 describe('AgentForgeClient', () => {
   beforeEach(() => {

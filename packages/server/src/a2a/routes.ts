@@ -5,7 +5,7 @@ import { A2ARequestHandler } from './server.js';
 import { InMemoryTaskStore } from './task-store.js';
 import { buildAgentCard } from './agent-card.js';
 import type { AgentCardOptions } from './agent-card.js';
-import type { A2AAgentCard, JsonRpcRequest } from './types.js';
+import type { A2AAgentCard, A2AMessage, JsonRpcRequest } from './types.js';
 
 export interface A2ARoutesOptions {
   registry: AgentRegistry;
@@ -39,7 +39,7 @@ export function a2aRoutes(options: A2ARoutesOptions): { app: Hono; card: A2AAgen
 
       return stream(c, async (s) => {
         try {
-          const params = request.params as { message: any };
+          const params = request.params as { message: A2AMessage };
           for await (const event of handler.streamSendMessage({ message: params.message })) {
             const sseData = JSON.stringify({
               jsonrpc: '2.0',
@@ -120,7 +120,7 @@ export function a2aMultiAgentRoutes(options: A2AMultiAgentRoutesOptions): Hono {
 
         return stream(c, async (s) => {
           try {
-            const params = request.params as { message: any };
+            const params = request.params as { message: A2AMessage };
             for await (const event of handler.streamSendMessage({ message: params.message })) {
               const sseData = JSON.stringify({
                 jsonrpc: '2.0',

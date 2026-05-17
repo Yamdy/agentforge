@@ -3,7 +3,7 @@ import { mkdir, writeFile, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { loadAndRegister } from '../src/config-loader.js';
 import { AgentRegistry } from '../src/registry.js';
-import { builtinProfiles, applyProfile } from '../src/profiles/index.js';
+import { builtinProfiles } from '../src/profiles/index.js';
 
 const TMP_DIR = resolve(import.meta.dirname, '__tmp_profile_test__');
 

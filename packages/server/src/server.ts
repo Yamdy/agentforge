@@ -15,6 +15,8 @@ import type { SessionStorage, AuthAdapter } from '@primo-ai/sdk';
 import type { PermissionManager, ModelFactory } from '@primo-ai/core';
 import type { McpManager } from '@primo-ai/plugins';
 import { StaticKeyAuthAdapter } from './middleware/static-key-auth.js';
+import type { StudioObservability } from './studio/observability.js';
+import { studioRoutes, studioStaticRoutes } from './studio.js';
 
 export interface ServerHandle {
   port: number;
@@ -49,17 +51,11 @@ export interface ServerOptions {
   modelFactory?: ModelFactory;
   permissionManager?: PermissionManager;
   mcpManager?: McpManager;
+  studio?: StudioObservability;
 }
 
 const DEFAULT_REQUEST_TIMEOUT = 30_000;
 const DEFAULT_SHUTDOWN_TIMEOUT = 10_000;
-
-/** Minimal shape of a WebSocket instance (avoids hard dep on @types/ws). */
-interface WsLike {
-  send(data: unknown): void;
-  close(): void;
-  on(event: string, handler: (...args: unknown[]) => void): void;
-}
 
 export class AgentForgeServer {
   readonly registry: AgentRegistry;
@@ -138,6 +134,16 @@ export class AgentForgeServer {
       });
       this.app.route('/a2a', a2aApp);
     }
+
+    // Mount Studio routes if StudioObservability is provided
+    if (options?.studio) {
+      this.app.route('/api/studio', studioRoutes({
+        observability: options.studio,
+        sessionStorage: this._sessionStorage,
+        registry: this.registry,
+      }));
+      this.app.route('/studio', studioStaticRoutes());
+    }
   }
 
   get hono(): Hono {
@@ -170,19 +176,18 @@ export class AgentForgeServer {
       // Lazy-load 'ws' to avoid hard dependency
       try {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const wsModule = require('ws');
-        const wss = new (wsModule as any).WebSocketServer({ noServer: true }) as any;
+        const { WebSocketServer } = require('ws') as { WebSocketServer: new (...args: unknown[]) => { handleUpgrade: (req: unknown, socket: unknown, head: unknown, cb: (ws: { send: (data: string) => void; close: () => void; on: (event: string, handler: (...args: unknown[]) => void) => void }) => void) => void } };
+        const wss = new WebSocketServer({ noServer: true });
         wss.handleUpgrade(
-          req as any,
-          socket as any,
+          req as unknown as import('node:http').IncomingMessage,
+          socket as unknown as import('node:stream').Duplex,
           _head,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (ws: any) => {
+          (ws: { send: (data: string) => void; close: () => void; on: (event: string, handler: (...args: unknown[]) => void) => void }) => {
             this.bridge.handleUpgrade({
               send: (data: string) => ws.send(data),
               close: () => ws.close(),
               on: (event: string, handler: (...args: unknown[]) => void) => {
-                ws.on(event as any, handler as any);
+                ws.on(event, handler);
               },
             });
           },
@@ -209,7 +214,7 @@ export class AgentForgeServer {
       // Wire WebSocket upgrade handler if enabled
       if (this._enableWebSocket) {
         const handler = this.createUpgradeHandler();
-        server.on('upgrade', handler as any);
+        server.on('upgrade', handler as unknown as (req: import('node:http').IncomingMessage, socket: import('node:net').Socket, head: Buffer) => void);
       }
     });
   }

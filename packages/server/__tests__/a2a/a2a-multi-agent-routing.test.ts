@@ -1,5 +1,4 @@
 import { describe, it, expect, vi } from 'vitest';
-import { Hono } from 'hono';
 import { a2aMultiAgentRoutes } from '../../src/a2a/routes.js';
 import type { Agent } from '@primo-ai/core';
 import type { AgentRegistry } from '../../src/registry.js';
