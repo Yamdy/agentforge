@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import type { Processor, PipelineContext, ProcessorResult, TokenCounter, Message } from '@agentforge/sdk';
-import { SpanAttributeKeys, SpanType } from '@agentforge/sdk';
+import type { Processor, PipelineContext, ProcessorResult, TokenCounter, Message } from '@primo-ai/sdk';
+import { SpanAttributeKeys, SpanType } from '@primo-ai/sdk';
 
 export interface TokenBudgetConfig {
   maxContextTokens: number;

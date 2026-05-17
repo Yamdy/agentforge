@@ -3,7 +3,7 @@ import { Agent } from '../src/agent.js';
 import { PipelineRunner } from '../src/pipeline.js';
 import { ToolRegistry } from '../src/tool-registry.js';
 import { createMockLanguageModel, registerMockProvider } from './helpers.js';
-import type { AgentConfig } from '@agentforge/sdk';
+import type { AgentConfig } from '@primo-ai/sdk';
 
 describe('Agent', () => {
   beforeEach(() => {

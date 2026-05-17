@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { Agent } from '../src/agent.js';
 import { createMockLanguageModel, createMockModelWithToolCalls, registerMockProvider } from './helpers.js';
-import type { AbortSignal, PipelineContext, PipelineStage, Tool } from '@agentforge/sdk';
+import type { AbortSignal, PipelineContext, PipelineStage, Tool } from '@primo-ai/sdk';
 import type { ToolRegistry } from '../src/tool-registry.js';
 import { z } from 'zod';
 

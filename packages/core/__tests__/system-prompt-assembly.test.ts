@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createInvokeLLMProcessor } from '../src/processors/invoke-llm.js';
-import type { PipelineContext } from '@agentforge/sdk';
+import type { PipelineContext } from '@primo-ai/sdk';
 import type { ToolRegistry } from '../src/tool-registry.js';
 import type { HookManager } from '../src/hook-manager.js';
 import type { LLMInvoker } from '../src/llm-invoker.js';

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ModelFactory } from '../src/model-factory.js';
-import type { ModelGateway } from '@agentforge/sdk';
+import type { ModelGateway } from '@primo-ai/sdk';
 
 function mockGateway(name: string, models: string[]): ModelGateway {
   return {

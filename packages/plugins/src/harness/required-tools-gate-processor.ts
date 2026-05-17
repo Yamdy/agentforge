@@ -1,4 +1,4 @@
-import type { Processor, PipelineContext, ProcessorResult } from '@agentforge/sdk';
+import type { Processor, PipelineContext, ProcessorResult } from '@primo-ai/sdk';
 
 /**
  * Creates a processor that gates the pipeline on the presence of required tools.

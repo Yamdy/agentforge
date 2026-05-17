@@ -29,8 +29,8 @@ import {
   ConcurrencyController,
   TaskManagerImpl,
   JsonlCheckpointStore,
-} from '@agentforge/core';
-import { OTelBridge } from '@agentforge/observability';
+} from '@primo-ai/core';
+import { OTelBridge } from '@primo-ai/observability';
 import {
   memoryPlugin,
   InMemoryBackend,
@@ -40,11 +40,11 @@ import {
   evictionPlugin,
   InMemoryEvictionStorage,
   mcpPlugin,
-} from '@agentforge/plugins';
-import { echoTool } from '@agentforge/tools';
+} from '@primo-ai/plugins';
+import { echoTool } from '@primo-ai/tools';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import type { HarnessAPI, PluginRegistration, Tool, PipelineContext, PromptFragment } from '@agentforge/sdk';
-import type { SkillDefinition } from '@agentforge/plugins';
+import type { HarnessAPI, PluginRegistration, Tool, PipelineContext, PromptFragment } from '@primo-ai/sdk';
+import type { SkillDefinition } from '@primo-ai/plugins';
 import { z } from 'zod';
 import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
@@ -492,7 +492,7 @@ async function main() {
         eventBus: bus,
         concurrencyController: cc,
         runAgentFn: async (agentConfig, input, _signal) => {
-          const { Agent: AgentCtor } = await import('@agentforge/core');
+          const { Agent: AgentCtor } = await import('@primo-ai/core');
           const taskAgent = new AgentCtor(agentConfig, { eventBus: bus } as any);
           const result = await taskAgent.run(input);
           return { response: result.response, tokenUsage: result.tokenUsage, sessionId: result.sessionId };

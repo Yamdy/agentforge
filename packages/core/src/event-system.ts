@@ -1,4 +1,4 @@
-import type { ReplayBackend, ReplayOptions, SessionEvent } from '@agentforge/sdk';
+import type { ReplayBackend, ReplayOptions, SessionEvent } from '@primo-ai/sdk';
 import { EventBus } from './event-bus.js';
 
 /** Sentinel key added to replayed event payloads. Reserved namespace: plugins MUST NOT use this key in event payloads. */

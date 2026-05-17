@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { HarnessAPI, PluginRegistration, EvictionStorage, Processor, PipelineContext, ProcessorResult } from '@agentforge/sdk';
+import type { HarnessAPI, PluginRegistration, EvictionStorage, Processor, PipelineContext, ProcessorResult } from '@primo-ai/sdk';
 
 export interface EvictionPluginOptions {
   maxSize: number;

@@ -1,5 +1,5 @@
-import type { Agent } from '@agentforge/core';
-import type { AgentProfile } from '@agentforge/sdk';
+import type { Agent } from '@primo-ai/core';
+import type { AgentProfile } from '@primo-ai/sdk';
 
 export function applyProfile(agent: Agent, profile: AgentProfile): void {
   for (const pluginFactory of profile.plugins ?? []) {

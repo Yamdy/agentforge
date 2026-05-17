@@ -1,4 +1,4 @@
-import type { Processor } from '@agentforge/sdk';
+import type { Processor } from '@primo-ai/sdk';
 
 export const prepareStepExtensionPoint: Processor = {
   stage: 'prepareStep',

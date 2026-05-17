@@ -7,7 +7,7 @@ import type {
   SessionManager,
   Tool,
   Tracer,
-} from '@agentforge/sdk';
+} from '@primo-ai/sdk';
 import { PipelineRunner } from './pipeline.js';
 import { serialize } from './serialize.js';
 import { ToolRegistry } from './tool-registry.js';
@@ -18,7 +18,7 @@ import { BuiltInGateway, getDefaultBuiltInGateway } from './gateways/builtin-gat
 import { AuthError, ModelNotFoundError } from './errors.js';
 import { LoopOrchestrator } from './loop-orchestrator.js';
 import { JsonlCheckpointStore } from './checkpoint-store.js';
-import { echoTool } from '@agentforge/tools';
+import { echoTool } from '@primo-ai/tools';
 import {
   processInputProcessor,
   prepareStepExtensionPoint,
@@ -50,7 +50,7 @@ export interface AgentDependencies {
 
 export interface AgentRunResult {
   response: string;
-  tokenUsage: import('@agentforge/sdk').TokenUsage;
+  tokenUsage: import('@primo-ai/sdk').TokenUsage;
   sessionId: string;
   /** Number of compat retries that occurred during the agentic loop. */
   compatRetries: number;
@@ -217,7 +217,7 @@ export class Agent {
     }
   }
 
-  async *streamEvents(input: string, signal?: globalThis.AbortSignal): AsyncGenerator<import('@agentforge/sdk').StreamEvent> {
+  async *streamEvents(input: string, signal?: globalThis.AbortSignal): AsyncGenerator<import('@primo-ai/sdk').StreamEvent> {
     if (signal?.aborted) throw new DOMException('Agent stream aborted', 'AbortError');
 
     const context = await this.createContext(input);

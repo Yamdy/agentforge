@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AgentForgeServer } from '../src/server.js';
 import { WebSocketBridge, type WSSocket } from '../src/bridge/bridge.js';
-import type { Agent } from '@agentforge/core';
+import type { Agent } from '@primo-ai/core';
 import http from 'node:http';
 
 // ---------------------------------------------------------------------------

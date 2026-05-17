@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createEvaluateIterationProcessor } from '../src/processors/evaluate-iteration.js';
 import { EventBus } from '../src/event-bus.js';
-import type { PipelineContext, Message, AgentConfig, ToolCall, ToolResult, Span } from '@agentforge/sdk';
+import type { PipelineContext, Message, AgentConfig, ToolCall, ToolResult, Span } from '@primo-ai/sdk';
 
 function makeContext(overrides?: {
   config?: Partial<AgentConfig>;

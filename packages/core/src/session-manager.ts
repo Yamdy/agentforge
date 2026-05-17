@@ -1,4 +1,4 @@
-import type { SessionStorage, SessionRecord, SessionManager, PipelineContext, SessionEvent, Message } from '@agentforge/sdk';
+import type { SessionStorage, SessionRecord, SessionManager, PipelineContext, SessionEvent, Message } from '@primo-ai/sdk';
 import type { EventBus } from './event-bus.js';
 
 export class SessionManagerImpl implements SessionManager {

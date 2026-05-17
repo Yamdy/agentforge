@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { WebSocketBridge } from '../src/bridge/bridge.js';
 import type { AgentRegistry } from '../src/registry.js';
-import type { Agent } from '@agentforge/core';
+import type { Agent } from '@primo-ai/core';
 
 function createMockSocket() {
   const sent: string[] = [];

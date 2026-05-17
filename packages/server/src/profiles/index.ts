@@ -1,4 +1,4 @@
-import type { AgentProfile } from '@agentforge/sdk';
+import type { AgentProfile } from '@primo-ai/sdk';
 import { codingAgentProfile } from './coding-agent.js';
 import { businessAgentProfile } from './business-agent.js';
 import { personalAgentProfile } from './personal-agent.js';

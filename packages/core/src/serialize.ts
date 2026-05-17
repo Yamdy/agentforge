@@ -1,4 +1,4 @@
-import type { PipelineContext, IterationRegion, SessionRegion, AgentRegion } from '@agentforge/sdk';
+import type { PipelineContext, IterationRegion, SessionRegion, AgentRegion } from '@primo-ai/sdk';
 
 type SerializableIteration = Omit<IterationRegion, 'fullStream' | 'usagePromise' | 'reasoningPromise' | 'span'>;
 

@@ -3,7 +3,7 @@ import {
   createOutputValidationProcessor,
   type OutputValidationConfig,
 } from '../src/validation/output-validation-plugin.js';
-import type { PipelineContext } from '@agentforge/sdk';
+import type { PipelineContext } from '@primo-ai/sdk';
 
 function makeContext(response?: string, overrides?: Partial<PipelineContext>): PipelineContext {
   return {

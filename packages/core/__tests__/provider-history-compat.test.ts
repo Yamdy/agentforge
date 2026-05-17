@@ -4,7 +4,7 @@ import {
   applyReactiveRules,
   BUILTIN_COMPAT_RULES,
 } from '../src/processors/provider-history-compat.js';
-import type { Message, ProviderCapabilities, CompatRule, ToolCall } from '@agentforge/sdk';
+import type { Message, ProviderCapabilities, CompatRule, ToolCall } from '@primo-ai/sdk';
 
 // ---------------------------------------------------------------------------
 // Helpers

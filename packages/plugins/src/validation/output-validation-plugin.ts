@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Processor, PipelineContext, ProcessorResult } from '@agentforge/sdk';
+import type { Processor, PipelineContext, ProcessorResult } from '@primo-ai/sdk';
 
 /**
  * Strategy for handling validation failures:

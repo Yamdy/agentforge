@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { AgentRegistry } from "../registry.js";
 import { serializeSSE, serializeSSEEvent } from "../sse.js";
-import type { StreamEvent } from "@agentforge/sdk";
+import type { StreamEvent } from "@primo-ai/sdk";
 import { validateAgentRunRequest, MAX_BODY_SIZE } from "./validate-request.js";
 
 export function agentRoutes(registry: AgentRegistry): Hono {

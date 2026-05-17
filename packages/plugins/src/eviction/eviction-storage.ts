@@ -1,4 +1,4 @@
-import type { EvictionStorage } from '@agentforge/sdk';
+import type { EvictionStorage } from '@primo-ai/sdk';
 
 export class InMemoryEvictionStorage implements EvictionStorage {
   private data = new Map<string, unknown>();

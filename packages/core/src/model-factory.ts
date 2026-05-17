@@ -1,5 +1,5 @@
 import type { LanguageModel } from 'ai';
-import type { ModelGateway } from '@agentforge/sdk';
+import type { ModelGateway } from '@primo-ai/sdk';
 import { GatewayChain } from './gateways/gateway-chain.js';
 
 type ProviderFactory = (modelId: string) => LanguageModel;

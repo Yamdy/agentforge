@@ -3,7 +3,7 @@ import {
   createRateLimitProcessor,
   type RateLimitConfig,
 } from '../src/harness/rate-limit-processor.js';
-import type { PipelineContext } from '@agentforge/sdk';
+import type { PipelineContext } from '@primo-ai/sdk';
 
 function makeContext(model?: string, overrides?: Partial<PipelineContext>): PipelineContext {
   return {

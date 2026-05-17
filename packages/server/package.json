@@ -1,5 +1,5 @@
 {
-  "name": "@agentforge/server",
+  "name": "@primo-ai/server",
   "version": "0.0.1",
   "type": "module",
   "main": "./dist/index.js",
@@ -20,9 +20,9 @@
     "lint": "eslint src __tests__"
   },
   "dependencies": {
-    "@agentforge/core": "workspace:*",
-    "@agentforge/plugins": "workspace:*",
-    "@agentforge/sdk": "workspace:*",
+    "@primo-ai/core": "workspace:*",
+    "@primo-ai/plugins": "workspace:*",
+    "@primo-ai/sdk": "workspace:*",
     "@hono/node-server": "^2.0.2",
     "hono": "^4.7.0"
   },

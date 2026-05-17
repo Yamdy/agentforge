@@ -1,4 +1,4 @@
-import type { Processor, PipelineContext, ProcessorResult, HarnessAPI, PluginRegistration, ResourceDeclaration, ToolDefinition } from '@agentforge/sdk';
+import type { Processor, PipelineContext, ProcessorResult, HarnessAPI, PluginRegistration, ResourceDeclaration, ToolDefinition } from '@primo-ai/sdk';
 import { z } from 'zod';
 
 // ---------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Tool } from '@agentforge/sdk';
+import type { Tool } from '@primo-ai/sdk';
 
 export const echoTool: Tool<{ message: string }, string> = {
   name: 'echo',

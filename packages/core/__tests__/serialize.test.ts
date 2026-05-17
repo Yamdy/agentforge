@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { serialize, deserialize } from '../src/serialize.js';
-import type { PipelineContext } from '@agentforge/sdk';
+import type { PipelineContext } from '@primo-ai/sdk';
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
@@ -40,7 +40,7 @@ describe('serialize', () => {
         fullStream: (async function* () { yield 'x'; })(),
         usagePromise: Promise.resolve({ input: 1, output: 1 }),
         reasoningPromise: Promise.resolve('reason'),
-        span: { name: 'test', end: () => {}, setAttribute: () => ({} as unknown as import('@agentforge/sdk').Span), startChild: () => ({} as unknown as import('@agentforge/sdk').Span), addEvent: () => ({} as unknown as import('@agentforge/sdk').Span), spanContext: () => ({ spanId: '', traceId: '' }) },
+        span: { name: 'test', end: () => {}, setAttribute: () => ({} as unknown as import('@primo-ai/sdk').Span), startChild: () => ({} as unknown as import('@primo-ai/sdk').Span), addEvent: () => ({} as unknown as import('@primo-ai/sdk').Span), spanContext: () => ({ spanId: '', traceId: '' }) },
       },
     });
 

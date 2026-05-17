@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Processor, PipelineContext, ProcessorResult, SuspensionSignal, HarnessAPI, PluginRegistration } from '@agentforge/sdk';
+import type { Processor, PipelineContext, ProcessorResult, SuspensionSignal, HarnessAPI, PluginRegistration } from '@primo-ai/sdk';
 
 // ---------------------------------------------------------------------------
 // Types

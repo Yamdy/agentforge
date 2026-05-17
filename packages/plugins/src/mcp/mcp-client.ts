@@ -1,4 +1,4 @@
-import type { McpServerConfig } from '@agentforge/sdk';
+import type { McpServerConfig } from '@primo-ai/sdk';
 import type { McpToolDefinition } from './tool-converter.js';
 
 // ---------------------------------------------------------------------------

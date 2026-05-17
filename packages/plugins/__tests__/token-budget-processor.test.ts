@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createTokenBudgetProcessor } from '../src/harness/token-budget-processor.js';
-import type { PipelineContext, ProcessorResult } from '@agentforge/sdk';
+import type { PipelineContext, ProcessorResult } from '@primo-ai/sdk';
 
 function makeContext(history?: Array<{ role: 'user'; content: string }>): PipelineContext {
   return {

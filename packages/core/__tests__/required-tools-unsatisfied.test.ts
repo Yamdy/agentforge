@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { EventBus } from '../src/event-bus.js';
 import { createEvaluateIterationProcessor } from '../src/processors/evaluate-iteration.js';
-import type { PipelineContext, Span } from '@agentforge/sdk';
+import type { PipelineContext, Span } from '@primo-ai/sdk';
 
 function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
   return {

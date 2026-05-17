@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { Agent } from '../src/agent.js';
 import { createMockLanguageModel, registerMockProvider } from './helpers.js';
-import type { AbortSignal, AgentConfig, PipelineStage } from '@agentforge/sdk';
+import type { AbortSignal, AgentConfig, PipelineStage } from '@primo-ai/sdk';
 
 describe('Agent streaming through pipeline', () => {
   it('yields streaming chunks via AsyncGenerator through the pipeline', async () => {

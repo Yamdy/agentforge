@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { Agent } from '../src/agent.js';
 import { createMockLanguageModel, registerMockProvider, createMockModelWithToolCalls } from './helpers.js';
-import type { PipelineContext, PipelineStage, Tool, AgentConfig } from '@agentforge/sdk';
+import type { PipelineContext, PipelineStage, Tool, AgentConfig } from '@primo-ai/sdk';
 import type { PipelineRunner } from '../src/pipeline.js';
 import type { HookManager } from '../src/hook-manager.js';
 
@@ -187,7 +187,7 @@ describe('Agent edge cases', () => {
       let loopCallCount = 0;
       const mockRunner = {
         run: async () => { throw new Error('should not be called'); },
-        async *stream(ctx: PipelineContext, stages: PipelineStage[]): AsyncGenerator<import('@agentforge/sdk').StreamEvent> {
+        async *stream(ctx: PipelineContext, stages: PipelineStage[]): AsyncGenerator<import('@primo-ai/sdk').StreamEvent> {
           // Pre-loop stages (processInput, buildContext)
           if (stages[0] === 'processInput') {
             yield { type: 'complete', context: { ...ctx, session: { ...ctx.session, messageHistory: historyWithBadToolCall } } };

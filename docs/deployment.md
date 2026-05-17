@@ -92,7 +92,7 @@ Clients must include the header: `Authorization: Bearer my-secret-key`
 Implement the `AuthAdapter` interface for custom authentication:
 
 ```typescript
-import type { AuthAdapter, AuthResult } from '@agentforge/sdk';
+import type { AuthAdapter, AuthResult } from '@primo-ai/sdk';
 
 const jwtAdapter: AuthAdapter = {
   async authenticate(request): Promise<AuthResult> {
@@ -238,7 +238,7 @@ For testing or stateless deployments:
 Implement the `SessionStorage` interface:
 
 ```typescript
-import type { SessionStorage, SessionEvent, SessionRecord } from '@agentforge/sdk';
+import type { SessionStorage, SessionEvent, SessionRecord } from '@primo-ai/sdk';
 
 class RedisSessionStorage implements SessionStorage {
   async append(sessionId: string, event: SessionEvent): Promise<void> { /* ... */ }

@@ -7,9 +7,9 @@ import {
   createMockModelWithToolCalls,
   registerMockProvider,
 } from './helpers.js';
-import { TestExporter } from '@agentforge/observability';
+import { TestExporter } from '@primo-ai/observability';
 import { z } from 'zod';
-import type { PipelineContext } from '@agentforge/sdk';
+import type { PipelineContext } from '@primo-ai/sdk';
 
 describe('SubAgent', () => {
   beforeEach(() => {

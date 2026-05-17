@@ -1,5 +1,5 @@
-import type { AgentProfile } from '@agentforge/sdk';
-import { memoryPlugin, InMemoryBackend, compressionPlugin, permissionPlugin, skillPlugin } from '@agentforge/plugins';
+import type { AgentProfile } from '@primo-ai/sdk';
+import { memoryPlugin, InMemoryBackend, compressionPlugin, permissionPlugin, skillPlugin } from '@primo-ai/plugins';
 
 export const codingAgentProfile: AgentProfile = {
   name: 'coding-agent',

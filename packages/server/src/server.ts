@@ -8,7 +8,7 @@ import { authMiddleware } from './middleware/auth.js';
 import { requestLogger } from './middleware/logger.js';
 import { WebSocketBridge } from './bridge/bridge.js';
 import { a2aRoutes, type A2ARoutesOptions } from './a2a/routes.js';
-import type { SessionStorage, AuthAdapter } from '@agentforge/sdk';
+import type { SessionStorage, AuthAdapter } from '@primo-ai/sdk';
 import { StaticKeyAuthAdapter } from './middleware/static-key-auth.js';
 
 export interface ServerHandle {

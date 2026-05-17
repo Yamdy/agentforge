@@ -3,7 +3,7 @@ import { PluginManager } from '../src/plugin-manager.js';
 import { PipelineRunner } from '../src/pipeline.js';
 import { ToolRegistry } from '../src/tool-registry.js';
 import type { PluginFactory } from '../src/plugin-manager.js';
-import type { Tool } from '@agentforge/sdk';
+import type { Tool } from '@primo-ai/sdk';
 
 function makePluginManager(): PluginManager {
   const runner = new PipelineRunner();

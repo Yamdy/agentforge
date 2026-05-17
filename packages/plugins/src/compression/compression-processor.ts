@@ -1,4 +1,4 @@
-import type { CompressionStrategy, Message, TokenCounter } from '@agentforge/sdk';
+import type { CompressionStrategy, Message, TokenCounter } from '@primo-ai/sdk';
 
 export type { Message };
 

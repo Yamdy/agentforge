@@ -1,4 +1,4 @@
-import type { AuthAdapter, AuthResult } from '@agentforge/sdk';
+import type { AuthAdapter, AuthResult } from '@primo-ai/sdk';
 
 export class StaticKeyAuthAdapter implements AuthAdapter {
   constructor(private apiKey: string) {}

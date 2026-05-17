@@ -5,7 +5,7 @@ import type {
   AgentConfig,
   SubAgentResult,
   TaskManager as ITaskManager,
-} from '@agentforge/sdk';
+} from '@primo-ai/sdk';
 import type { EventBus } from './event-bus.js';
 import type { ConcurrencyController } from './concurrency-controller.js';
 

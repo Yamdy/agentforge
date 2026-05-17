@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { ToolRegistry } from '../src/tool-registry.js';
 import { EventBus } from '../src/event-bus.js';
-import type { Tool } from '@agentforge/sdk';
+import type { Tool } from '@primo-ai/sdk';
 
 /**
  * F-13: Tool output truncation should emit a 'tool:output_truncated' event

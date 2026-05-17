@@ -1,5 +1,5 @@
 {
-  "name": "@agentforge/observability",
+  "name": "@primo-ai/observability",
   "version": "0.0.1",
   "type": "module",
   "main": "./dist/index.js",
@@ -17,7 +17,7 @@
     "lint": "eslint src __tests__"
   },
   "devDependencies": {
-    "@agentforge/sdk": "workspace:*",
+    "@primo-ai/sdk": "workspace:*",
     "@opentelemetry/resources": "^2.7.1",
     "@opentelemetry/sdk-trace-base": "^2.7.1",
     "typescript": "^5.7.3",

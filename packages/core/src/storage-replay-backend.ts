@@ -1,4 +1,4 @@
-import type { ReplayBackend, SessionStorage, SessionEvent } from '@agentforge/sdk';
+import type { ReplayBackend, SessionStorage, SessionEvent } from '@primo-ai/sdk';
 
 export class StorageReplayBackend implements ReplayBackend {
   constructor(private storage: SessionStorage) {}

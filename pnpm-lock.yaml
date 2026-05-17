@@ -45,24 +45,6 @@ importers:
 
   examples:
     dependencies:
-      '@agentforge/core':
-        specifier: workspace:*
-        version: link:../packages/core
-      '@agentforge/observability':
-        specifier: workspace:^
-        version: link:../packages/observability
-      '@agentforge/plugins':
-        specifier: workspace:*
-        version: link:../packages/plugins
-      '@agentforge/sdk':
-        specifier: workspace:*
-        version: link:../packages/sdk
-      '@agentforge/server':
-        specifier: workspace:*
-        version: link:../packages/server
-      '@agentforge/tools':
-        specifier: workspace:*
-        version: link:../packages/tools
       '@ai-sdk/openai-compatible':
         specifier: ^2.0.47
         version: 2.0.47(zod@4.4.3)
@@ -72,6 +54,24 @@ importers:
       '@opentelemetry/sdk-trace-base':
         specifier: ^2.7.1
         version: 2.7.1(@opentelemetry/api@1.9.1)
+      '@primo-ai/core':
+        specifier: workspace:*
+        version: link:../packages/core
+      '@primo-ai/observability':
+        specifier: workspace:^
+        version: link:../packages/observability
+      '@primo-ai/plugins':
+        specifier: workspace:*
+        version: link:../packages/plugins
+      '@primo-ai/sdk':
+        specifier: workspace:*
+        version: link:../packages/sdk
+      '@primo-ai/server':
+        specifier: workspace:*
+        version: link:../packages/server
+      '@primo-ai/tools':
+        specifier: workspace:*
+        version: link:../packages/tools
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -85,12 +85,6 @@ importers:
 
   packages/core:
     dependencies:
-      '@agentforge/observability':
-        specifier: workspace:*
-        version: link:../observability
-      '@agentforge/tools':
-        specifier: workspace:*
-        version: link:../tools
       '@ai-sdk/anthropic':
         specifier: ^3.0.76
         version: 3.0.76(zod@4.4.3)
@@ -103,6 +97,12 @@ importers:
       '@ai-sdk/openai':
         specifier: ^3.0.63
         version: 3.0.63(zod@4.4.3)
+      '@primo-ai/observability':
+        specifier: workspace:*
+        version: link:../observability
+      '@primo-ai/tools':
+        specifier: workspace:*
+        version: link:../tools
       ai:
         specifier: ^6.0.177
         version: 6.0.177(zod@4.4.3)
@@ -113,7 +113,7 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
-      '@agentforge/sdk':
+      '@primo-ai/sdk':
         specifier: workspace:*
         version: link:../sdk
       '@types/node':
@@ -132,15 +132,15 @@ importers:
         specifier: ^1.9.1
         version: 1.9.1
     devDependencies:
-      '@agentforge/sdk':
-        specifier: workspace:*
-        version: link:../sdk
       '@opentelemetry/resources':
         specifier: ^2.7.1
         version: 2.7.1(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-trace-base':
         specifier: ^2.7.1
         version: 2.7.1(@opentelemetry/api@1.9.1)
+      '@primo-ai/sdk':
+        specifier: workspace:*
+        version: link:../sdk
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
@@ -150,12 +150,12 @@ importers:
 
   packages/plugins:
     dependencies:
-      '@agentforge/core':
-        specifier: workspace:*
-        version: link:../core
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
         version: 1.29.0(zod@4.4.3)
+      '@primo-ai/core':
+        specifier: workspace:*
+        version: link:../core
       better-sqlite3:
         specifier: ^12.9.0
         version: 12.9.0
@@ -163,7 +163,7 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
-      '@agentforge/sdk':
+      '@primo-ai/sdk':
         specifier: workspace:*
         version: link:../sdk
       '@types/better-sqlite3':
@@ -187,18 +187,18 @@ importers:
 
   packages/server:
     dependencies:
-      '@agentforge/core':
-        specifier: workspace:*
-        version: link:../core
-      '@agentforge/plugins':
-        specifier: workspace:*
-        version: link:../plugins
-      '@agentforge/sdk':
-        specifier: workspace:*
-        version: link:../sdk
       '@hono/node-server':
         specifier: ^2.0.2
         version: 2.0.2(hono@4.12.18)
+      '@primo-ai/core':
+        specifier: workspace:*
+        version: link:../core
+      '@primo-ai/plugins':
+        specifier: workspace:*
+        version: link:../plugins
+      '@primo-ai/sdk':
+        specifier: workspace:*
+        version: link:../sdk
       hono:
         specifier: ^4.7.0
         version: 4.12.18
@@ -219,7 +219,7 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
-      '@agentforge/sdk':
+      '@primo-ai/sdk':
         specifier: workspace:*
         version: link:../sdk
       typescript:

@@ -1,4 +1,4 @@
-# @agentforge/observability
+# @primo-ai/observability
 
 Span, Tracer, and Metrics abstractions with an OpenTelemetry bridge.
 
@@ -9,8 +9,8 @@ Provides the observability layer for AgentForge. All pipeline stages emit spans 
 ## Quick Example
 
 ```typescript
-import { OTelBridge } from '@agentforge/observability';
-import { EventBus } from '@agentforge/core';
+import { OTelBridge } from '@primo-ai/observability';
+import { EventBus } from '@primo-ai/core';
 import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
 
 const exporter = new InMemorySpanExporter();
@@ -64,7 +64,7 @@ The SDK defines standard span types via `SpanType`:
 ## Metrics
 
 ```typescript
-import { InMemoryMetrics } from '@agentforge/observability';
+import { InMemoryMetrics } from '@primo-ai/observability';
 
 const metrics = new InMemoryMetrics();
 metrics.increment('llm.calls', 1, { model: 'deepseek' });
@@ -76,4 +76,4 @@ const snapshot = metrics.snapshot();
 
 ## Dependencies
 
-- `@agentforge/sdk` -- Span, Tracer, Metrics interfaces
+- `@primo-ai/sdk` -- Span, Tracer, Metrics interfaces

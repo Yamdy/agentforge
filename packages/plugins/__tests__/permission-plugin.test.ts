@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { permissionPlugin, createPermissionProcessor, type PermissionDecisionEvent } from '../src/permission/index.js';
-import type { HarnessAPI, PipelineContext } from '@agentforge/sdk';
+import type { HarnessAPI, PipelineContext } from '@primo-ai/sdk';
 
 function createHarnessAPI(): { api: HarnessAPI; processors: Map<string, unknown>; emitted: Array<{ type: string; data: unknown }> } {
   const processors = new Map<string, unknown>();

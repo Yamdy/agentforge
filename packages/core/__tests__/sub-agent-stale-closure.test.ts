@@ -8,7 +8,7 @@ import {
   registerMockProvider,
 } from './helpers.js';
 import { z } from 'zod';
-import type { PipelineContext } from '@agentforge/sdk';
+import type { PipelineContext } from '@primo-ai/sdk';
 
 /**
  * Fix 1: Sub-agent stale closure -- mergeSessionState

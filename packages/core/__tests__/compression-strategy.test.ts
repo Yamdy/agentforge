@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ContextBuilder } from '../src/context-builder.js';
-import type { PipelineContext, Message, CompressionStrategy } from '@agentforge/sdk';
+import type { PipelineContext, Message, CompressionStrategy } from '@primo-ai/sdk';
 import type { ToolRegistry } from '../src/tool-registry.js';
 
 function makeMockRegistry(): ToolRegistry {

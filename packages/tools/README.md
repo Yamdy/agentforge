@@ -1,10 +1,10 @@
-# @agentforge/tools
+# @primo-ai/tools
 
 Built-in tool implementations for AgentForge.
 
 ## Overview
 
-Provides ready-to-use tools that can be passed to any AgentForge agent. Tools follow the `Tool<TInput, TOutput>` interface from `@agentforge/sdk`.
+Provides ready-to-use tools that can be passed to any AgentForge agent. Tools follow the `Tool<TInput, TOutput>` interface from `@primo-ai/sdk`.
 
 ## Available Tools
 
@@ -13,8 +13,8 @@ Provides ready-to-use tools that can be passed to any AgentForge agent. Tools fo
 Returns the input message unchanged. Useful for testing and debugging.
 
 ```typescript
-import { echoTool } from '@agentforge/tools';
-import { Agent } from '@agentforge/core';
+import { echoTool } from '@primo-ai/tools';
+import { Agent } from '@primo-ai/core';
 
 const agent = new Agent({
   model: 'deepseek/deepseek-v4-flash',
@@ -31,7 +31,7 @@ Tools use Zod schemas for input validation:
 
 ```typescript
 import { z } from 'zod';
-import type { Tool } from '@agentforge/sdk';
+import type { Tool } from '@primo-ai/sdk';
 
 const myTool: Tool<{ query: string }, string> = {
   name: 'search',
@@ -45,5 +45,5 @@ const myTool: Tool<{ query: string }, string> = {
 
 ## Dependencies
 
-- `@agentforge/sdk` -- `Tool` interface and type definitions
+- `@primo-ai/sdk` -- `Tool` interface and type definitions
 - `zod` -- Schema validation

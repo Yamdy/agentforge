@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { HarnessAPI, ResourceDeclaration, ToolDefinition, McpServerConfig } from '@agentforge/sdk';
+import type { HarnessAPI, ResourceDeclaration, ToolDefinition, McpServerConfig } from '@primo-ai/sdk';
 import { convertMcpTool, type McpToolDefinition } from '../src/mcp/tool-converter.js';
 import { createMcpClient, createMockMcpClient } from '../src/mcp/mcp-client.js';
 import { mcpPlugin, type McpPluginOptions } from '../src/mcp/index.js';

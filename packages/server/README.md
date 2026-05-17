@@ -1,4 +1,4 @@
-# @agentforge/server
+# @primo-ai/server
 
 HTTP server, WebSocket bridge, A2A protocol, and CLI for AgentForge.
 
@@ -11,8 +11,8 @@ Provides a production-ready server for exposing AgentForge agents via HTTP, WebS
 ### Programmatic
 
 ```typescript
-import { AgentForgeServer } from '@agentforge/server';
-import { Agent } from '@agentforge/core';
+import { AgentForgeServer } from '@primo-ai/server';
+import { Agent } from '@primo-ai/core';
 
 const server = new AgentForgeServer({
   port: 3000,
@@ -73,7 +73,7 @@ server.bridge.handleUpgrade(wsConnection);
 Implements the Agent-to-Agent protocol for multi-agent communication:
 
 ```typescript
-import { A2AClient, A2ARequestHandler, buildAgentCard } from '@agentforge/server';
+import { A2AClient, A2ARequestHandler, buildAgentCard } from '@primo-ai/server';
 
 // Server side: create an A2A handler for an agent
 const handler = new A2ARequestHandler({ agent: myAgent });

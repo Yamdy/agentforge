@@ -28,9 +28,9 @@ pnpm build
 创建一个能回显消息的 Agent：
 
 ```ts
-import { Agent } from '@agentforge/core';
-import { echoTool } from '@agentforge/tools';
-import { registerProvider } from '@agentforge/core';
+import { Agent } from '@primo-ai/core';
+import { echoTool } from '@primo-ai/tools';
+import { registerProvider } from '@primo-ai/core';
 
 // 1. 注册 LLM provider
 registerProvider('deepseek', (modelId: string) => {
@@ -82,7 +82,7 @@ for await (const event of agent.stream('今天天气如何？')) {
 
 ```ts
 import { z } from 'zod';
-import type { Tool } from '@agentforge/sdk';
+import type { Tool } from '@primo-ai/sdk';
 
 const weatherTool: Tool = {
   name: 'getWeather',
@@ -106,8 +106,8 @@ const agent = new Agent({
 插件通过 `agent.use()` 加载，在 pipeline 中注入处理器、工具和钩子：
 
 ```ts
-import { memoryPlugin, InMemoryBackend } from '@agentforge/plugins';
-import { compressionPlugin } from '@agentforge/plugins';
+import { memoryPlugin, InMemoryBackend } from '@primo-ai/plugins';
+import { compressionPlugin } from '@primo-ai/plugins';
 
 // 记忆插件 — 自动存储和检索对话记忆
 agent.use(memoryPlugin({
@@ -127,7 +127,7 @@ agent.use(compressionPlugin({
 插入自己的逻辑到 pipeline 任意阶段：
 
 ```ts
-import type { Processor, PipelineContext } from '@agentforge/sdk';
+import type { Processor, PipelineContext } from '@primo-ai/sdk';
 
 const loggingProcessor: Processor = {
   stage: 'processOutput',
@@ -156,7 +156,7 @@ AgentForge 使用 `"provider/modelId"` 格式指定模型：
 通过 `OpenAICompatibleGateway` 连接任意 OpenAI 兼容端点：
 
 ```ts
-import { OpenAICompatibleGateway, ModelFactory } from '@agentforge/core';
+import { OpenAICompatibleGateway, ModelFactory } from '@primo-ai/core';
 
 // 注册自定义网关
 const factory = new ModelFactory();
@@ -169,7 +169,7 @@ factory.registerGateway(new OpenAICompatibleGateway({
 const model = await factory.resolve('local-llama/llama3');
 ```
 
-> **注意**: `GatewayChain` 和 `BuiltInGateway` 未从 `@agentforge/core` barrel 导出。推荐使用 `ModelFactory` 作为模型解析的规范入口。
+> **注意**: `GatewayChain` 和 `BuiltInGateway` 未从 `@primo-ai/core` barrel 导出。推荐使用 `ModelFactory` 作为模型解析的规范入口。
 
 ### Dynamic 配置
 
@@ -188,7 +188,7 @@ const agent = new Agent({
 使用 JSONL 文件存储会话历史：
 
 ```ts
-import { EventBus, FilesystemSessionStorage, SessionPersistence, SessionManagerImpl } from '@agentforge/core';
+import { EventBus, FilesystemSessionStorage, SessionPersistence, SessionManagerImpl } from '@primo-ai/core';
 
 const bus = new EventBus();
 const storage = new FilesystemSessionStorage('./sessions');
@@ -210,7 +210,7 @@ await sessionMgr.resume(session.sessionId, '确认通过，继续');
 创建同步子 Agent（作为工具调用）：
 
 ```ts
-import { createSubAgentTool } from '@agentforge/core';
+import { createSubAgentTool } from '@primo-ai/core';
 
 const researchTool = createSubAgentTool({
   name: 'researcher',
@@ -233,7 +233,7 @@ const mainAgent = new Agent({
 接入 OpenTelemetry：
 
 ```ts
-import { OTelBridge } from '@agentforge/observability';
+import { OTelBridge } from '@primo-ai/observability';
 
 const tracer = new OTelBridge({ tracerProvider: yourOtelProvider });
 const agent = new Agent(config, { tracer });
@@ -256,7 +256,7 @@ agent_run
 通过 MCP 插件连接外部工具服务器：
 
 ```ts
-import { mcpPlugin } from '@agentforge/plugins';
+import { mcpPlugin } from '@primo-ai/plugins';
 
 agent.use(mcpPlugin({
   servers: [{
@@ -291,7 +291,7 @@ MCP 工具会自动以 `serverName__toolName` 格式注册到 Agent。
 
 | 命令 | 说明 |
 |------|------|
-| `pnpm --filter @agentforge/core test` | 仅运行 core 包测试 |
-| `pnpm --filter @agentforge/core vitest run __tests__/pipeline.test.ts` | 运行单个测试文件 |
+| `pnpm --filter @primo-ai/core test` | 仅运行 core 包测试 |
+| `pnpm --filter @primo-ai/core vitest run __tests__/pipeline.test.ts` | 运行单个测试文件 |
 | `cd examples && npx tsx unified-demo.ts` | 运行示例（需要 .env） |
 <!-- /AUTO-GENERATED -->

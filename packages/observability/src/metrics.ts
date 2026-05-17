@@ -1,4 +1,4 @@
-import type { Metrics } from '@agentforge/sdk';
+import type { Metrics } from '@primo-ai/sdk';
 
 export interface HistogramStats {
   count: number;

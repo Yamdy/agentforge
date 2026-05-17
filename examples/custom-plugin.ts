@@ -17,9 +17,9 @@ import {
   Agent,
   registerProvider,
   EventBus,
-} from '@agentforge/core';
+} from '@primo-ai/core';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import type { HarnessAPI, PluginRegistration, PipelineContext } from '@agentforge/sdk';
+import type { HarnessAPI, PluginRegistration, PipelineContext } from '@primo-ai/sdk';
 import { z } from 'zod';
 
 // ─── Provider setup ─────────────────────────────────────────────────────────

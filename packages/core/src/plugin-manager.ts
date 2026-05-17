@@ -3,7 +3,7 @@ import type {
   HarnessAPI,
   PluginRegistration,
   StageMutation,
-} from '@agentforge/sdk';
+} from '@primo-ai/sdk';
 import type { PipelineRunner } from './pipeline.js';
 import type { ToolRegistry } from './tool-registry.js';
 import type { ContextBuilder } from './context-builder.js';

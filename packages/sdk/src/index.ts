@@ -1,4 +1,4 @@
-// @agentforge/sdk — public type definitions
+// @primo-ai/sdk — public type definitions
 
 // ---------------------------------------------------------------------------
 // Pipeline Stage

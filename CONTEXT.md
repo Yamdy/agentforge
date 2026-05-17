@@ -82,7 +82,7 @@ Compression, tool output truncation, progressive disclosure — preventing model
 - **Agent lifecycle**: `StateMachine` manages `pending`→`running`→`completed`/`paused`/`cancelled`/`error`; terminal states resettable for multiple `run()` calls
 - **Checkpoint**: `InMemoryCheckpointStore` + `JsonlCheckpointStore` implement `CheckpointStore` interface; `serialize()`/`deserialize()` for suspend/resume
 - **Context assembly**: Dedicated `ContextBuilder` module assembling PipelineContext from config, input, sessionId
-- **Server**: `@agentforge/server` package — Hono HTTP server, CLI binary, A2A protocol; routes: health, agents (list/status/run/stream/resume), sessions (list/get)
+- **Server**: `@primo-ai/server` package — Hono HTTP server, CLI binary, A2A protocol; routes: health, agents (list/status/run/stream/resume), sessions (list/get)
 - **Stage mutation**: Runtime pipeline stage mutation API for plugins — add/remove stages dynamically without reconstruction
 
 ## Pipeline Architecture

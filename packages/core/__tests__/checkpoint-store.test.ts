@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { InMemoryCheckpointStore, JsonlCheckpointStore } from '../src/checkpoint-store.js';
 import { serialize, deserialize } from '../src/serialize.js';
-import type { PipelineContext } from '@agentforge/sdk';
+import type { PipelineContext } from '@primo-ai/sdk';
 
 type Serialized = ReturnType<typeof serialize>;
 

@@ -6,7 +6,7 @@ import { FilesystemSessionStorage } from '../src/session-storage.js';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import type { SessionEvent } from '@agentforge/sdk';
+import type { SessionEvent } from '@primo-ai/sdk';
 
 // ---------------------------------------------------------------------------
 // EventSystem — emit/subscribe delegation

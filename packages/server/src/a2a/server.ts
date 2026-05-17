@@ -1,4 +1,4 @@
-import type { Agent } from '@agentforge/core';
+import type { Agent } from '@primo-ai/core';
 import type {
   JsonRpcRequest,
   JsonRpcResponse,

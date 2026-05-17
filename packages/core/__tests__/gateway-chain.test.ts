@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { GatewayChain, BuiltInGateway, OpenAICompatibleGateway } from '../src/model-resolver.js';
-import type { ModelGateway } from '@agentforge/sdk';
+import type { ModelGateway } from '@primo-ai/sdk';
 
 // ---------------------------------------------------------------------------
 // GatewayChain

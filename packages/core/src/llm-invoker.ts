@@ -1,7 +1,7 @@
 import { streamText } from 'ai';
 import type { LanguageModel } from 'ai';
-import type { TokenUsage, Tracer } from '@agentforge/sdk';
-import { SpanType } from '@agentforge/sdk';
+import type { TokenUsage, Tracer } from '@primo-ai/sdk';
+import { SpanType } from '@primo-ai/sdk';
 import { streamWithRetry, type RetryOptions } from './retry.js';
 
 export interface LLMInvokerOptions {

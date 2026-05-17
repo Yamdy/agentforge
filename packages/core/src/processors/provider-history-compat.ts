@@ -1,4 +1,4 @@
-import type { CompatRule, ProviderCapabilities } from '@agentforge/sdk';
+import type { CompatRule, ProviderCapabilities } from '@primo-ai/sdk';
 import { detectProvider } from '../provider-capabilities.js';
 
 // ---------------------------------------------------------------------------
@@ -99,7 +99,7 @@ const sanitizeToolCallIds: CompatRule = {
       });
       return changed ? { ...m, toolCalls } : msg;
     });
-    return changed ? next as import('@agentforge/sdk').Message[] : null;
+    return changed ? next as import('@primo-ai/sdk').Message[] : null;
   },
 };
 
@@ -117,7 +117,7 @@ const deepseekReasoningRequired: CompatRule = {
       changed = true;
       return { ...m, reasoningContent: '' };
     });
-    return changed ? next as import('@agentforge/sdk').Message[] : null;
+    return changed ? next as import('@primo-ai/sdk').Message[] : null;
   },
 };
 
@@ -153,11 +153,11 @@ export function applyPreemptiveRules(
 
 /** Try reactive rules against an API error. Returns fixed history + diff, or null. */
 export function applyReactiveRules(
-  history: import('@agentforge/sdk').Message[],
+  history: import('@primo-ai/sdk').Message[],
   modelString: string,
   error: unknown,
   rules: CompatRule[] = BUILTIN_COMPAT_RULES,
-): import('@agentforge/sdk').CompatResult | null {
+): import('@primo-ai/sdk').CompatResult | null {
   const provider = detectProvider(modelString);
   const errorMsg = error instanceof Error ? error.message : String(error);
   for (const rule of rules) {
@@ -166,14 +166,14 @@ export function applyReactiveRules(
     if (!rule.errorPatterns.some(p => p.test(errorMsg))) continue;
     const fixed = rule.fixHistory(history, error);
     if (fixed) {
-      const diff: import('@agentforge/sdk').CompatDiffEntry[] = [];
-      const patched = fixed.map((msg: unknown, i: number): import('@agentforge/sdk').Message => {
+      const diff: import('@primo-ai/sdk').CompatDiffEntry[] = [];
+      const patched = fixed.map((msg: unknown, i: number): import('@primo-ai/sdk').Message => {
         const original = (history as unknown[])[i];
         if (msg !== original) {
           diff.push({ index: i, ruleName: rule.name, description: `modified by ${rule.name}` });
         }
         const { _compatFixed, ...clean } = msg as MessageShape & { _compatFixed?: boolean };
-        return clean as import('@agentforge/sdk').Message;
+        return clean as import('@primo-ai/sdk').Message;
       });
       return { history: patched, diff };
     }

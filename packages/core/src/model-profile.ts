@@ -1,4 +1,4 @@
-import type { PipelineContext, ModelProfile } from '@agentforge/sdk';
+import type { PipelineContext, ModelProfile } from '@primo-ai/sdk';
 
 /**
  * Find the first ModelProfile whose modelPattern matches the given model string.

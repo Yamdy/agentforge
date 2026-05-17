@@ -187,7 +187,7 @@ const card: A2AAgentCard = {
 ## Server Setup
 
 ```typescript
-import { AgentForgeServer, A2ARequestHandler, a2aRoutes, InMemoryTaskStore } from '@agentforge/server';
+import { AgentForgeServer, A2ARequestHandler, a2aRoutes, InMemoryTaskStore } from '@primo-ai/server';
 
 const server = new AgentForgeServer({ port: 3000 });
 const agent = /* your Agent instance */;
@@ -203,7 +203,7 @@ await server.start();
 ## Client Usage
 
 ```typescript
-import { A2AClient } from '@agentforge/server';
+import { A2AClient } from '@primo-ai/server';
 
 const client = new A2AClient({
   card: { name: 'remote', url: 'http://localhost:3000/a2a', /* ... */ },

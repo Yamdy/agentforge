@@ -11,9 +11,9 @@ import type {
   ToolCall,
   Tracer,
   TokenUsage,
-} from '@agentforge/sdk';
-import { SpanType } from '@agentforge/sdk';
-import { NoOpTracer } from '@agentforge/observability';
+} from '@primo-ai/sdk';
+import { SpanType } from '@primo-ai/sdk';
+import { NoOpTracer } from '@primo-ai/observability';
 import type { HookManager } from './hook-manager.js';
 import { extractTokenUsage } from './llm-invoker.js';
 

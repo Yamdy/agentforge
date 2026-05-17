@@ -1,4 +1,4 @@
-import type { PipelineContext, SessionRegion, SubAgentConfig, SubAgentResult, Tool, ToolDefinition, Tracer } from '@agentforge/sdk';
+import type { PipelineContext, SessionRegion, SubAgentConfig, SubAgentResult, Tool, ToolDefinition, Tracer } from '@primo-ai/sdk';
 import { Agent } from './agent.js';
 
 

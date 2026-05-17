@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { PipelineRunner } from '../src/pipeline.js';
 import { HookManager } from '../src/hook-manager.js';
 import { EventBus } from '../src/event-bus.js';
-import type { PipelineContext, Processor, StageHookInput, SuspensionSignal } from '@agentforge/sdk';
+import type { PipelineContext, Processor, StageHookInput, SuspensionSignal } from '@primo-ai/sdk';
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {

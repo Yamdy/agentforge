@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { ProfileLoader, mergeProfiles } from '../../src/profiles/profile-loader.js';
 import { applyProfile } from '../../src/profiles/apply-profile.js';
 import { builtinProfiles } from '../../src/profiles/index.js';
-import type { AgentProfile } from '@agentforge/sdk';
-import type { Agent } from '@agentforge/core';
+import type { AgentProfile } from '@primo-ai/sdk';
+import type { Agent } from '@primo-ai/core';
 
 describe('ProfileLoader', () => {
   it('loads a registered profile by name', () => {

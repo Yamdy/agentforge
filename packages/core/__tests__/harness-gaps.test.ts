@@ -8,7 +8,7 @@ import { PipelineRunner } from '../src/pipeline.js';
 import { HookManager } from '../src/hook-manager.js';
 import { EventBus } from '../src/event-bus.js';
 import { JsonlCheckpointStore } from '../src/checkpoint-store.js';
-import type { PipelineContext, Processor, PipelineStage, ErrorHookInput } from '@agentforge/sdk';
+import type { PipelineContext, Processor, PipelineStage, ErrorHookInput } from '@primo-ai/sdk';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -347,11 +347,11 @@ describe('A-1: runLoop and streamEvents produce equivalent results', () => {
     const runResult = await createOrchestrator().runLoop(ctx, baseOptions);
 
     // streamEvents path
-    const events: import('@agentforge/sdk').StreamEvent[] = [];
+    const events: import('@primo-ai/sdk').StreamEvent[] = [];
     for await (const event of createOrchestrator().streamEvents(ctx, baseOptions)) {
       events.push(event);
     }
-    const completeEvent = [...events].reverse().find((e: import('@agentforge/sdk').StreamEvent) => e.type === 'complete');
+    const completeEvent = [...events].reverse().find((e: import('@primo-ai/sdk').StreamEvent) => e.type === 'complete');
 
     expect(completeEvent).toBeDefined();
     const streamCtx = (completeEvent as { context: PipelineContext }).context;

@@ -1,4 +1,4 @@
-import type { SessionEvent, SessionRecord, SessionStorage, SessionStatus } from '@agentforge/sdk';
+import type { SessionEvent, SessionRecord, SessionStorage, SessionStatus } from '@primo-ai/sdk';
 import { appendFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 

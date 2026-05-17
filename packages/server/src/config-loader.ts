@@ -1,8 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { ConfigLoader, OpenAICompatibleGateway, ModelFactory } from '@agentforge/core';
+import { ConfigLoader, OpenAICompatibleGateway, ModelFactory } from '@primo-ai/core';
 import type { AgentRegistry } from './registry.js';
-import type { GatewayConfig, AgentConfig } from '@agentforge/sdk';
+import type { GatewayConfig, AgentConfig } from '@primo-ai/sdk';
 import { ProfileLoader, builtinProfiles, applyProfile } from './profiles/index.js';
 
 export interface ServerConfig {

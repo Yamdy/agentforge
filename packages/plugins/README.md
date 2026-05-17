@@ -1,4 +1,4 @@
-# @agentforge/plugins
+# @primo-ai/plugins
 
 Built-in processor plugins for the AgentForge pipeline.
 
@@ -9,8 +9,8 @@ Plugins extend the agent pipeline by registering processors, hooks, tools, and r
 ## Usage
 
 ```typescript
-import { Agent } from '@agentforge/core';
-import { memoryPlugin, InMemoryBackend } from '@agentforge/plugins';
+import { Agent } from '@primo-ai/core';
+import { memoryPlugin, InMemoryBackend } from '@primo-ai/plugins';
 
 const agent = new Agent({ model: 'deepseek/deepseek-v4-flash' });
 agent.use(memoryPlugin({ backend: new InMemoryBackend() }));
@@ -111,7 +111,7 @@ evictionPlugin({
 ## Writing a Custom Plugin
 
 ```typescript
-import type { HarnessAPI, PluginRegistration } from '@agentforge/sdk';
+import type { HarnessAPI, PluginRegistration } from '@primo-ai/sdk';
 
 function myPlugin(api: HarnessAPI): PluginRegistration {
   // Register a processor on a pipeline stage
@@ -144,5 +144,5 @@ function myPlugin(api: HarnessAPI): PluginRegistration {
 
 ## Dependencies
 
-- `@agentforge/sdk` -- type definitions
-- `@agentforge/core` -- plugin harness API
+- `@primo-ai/sdk` -- type definitions
+- `@primo-ai/core` -- plugin harness API

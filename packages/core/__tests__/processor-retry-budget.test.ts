@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { Agent } from '../src/agent.js';
 import { createMockLanguageModel, registerMockProvider } from './helpers.js';
-import type { PipelineStage } from '@agentforge/sdk';
+import type { PipelineStage } from '@primo-ai/sdk';
 
 describe('Processor retryFrom budget', () => {
   beforeEach(() => {

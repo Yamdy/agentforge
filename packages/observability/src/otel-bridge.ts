@@ -1,4 +1,4 @@
-import type { Span, SpanContext, Tracer } from '@agentforge/sdk';
+import type { Span, SpanContext, Tracer } from '@primo-ai/sdk';
 import type { Span as OTelSpanType, Tracer as OTelTracerType, Context } from '@opentelemetry/api';
 import { context, trace } from '@opentelemetry/api';
 import { NoOpSpan } from './noop.js';
@@ -73,7 +73,7 @@ export class OTelBridge implements Tracer {
 
   constructor(options?: OTelBridgeOptions) {
     this.otelTracer = options?.tracerProvider?.getTracer(
-      options?.tracerName ?? '@agentforge/observability',
+      options?.tracerName ?? '@primo-ai/observability',
     );
     this.eventBus = options?.eventBus;
   }

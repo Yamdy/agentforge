@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { skillPlugin, parseFrontmatter, discoverSkills, type SkillDefinition } from '../src/skill/index.js';
-import type { HarnessAPI, PipelineContext } from '@agentforge/sdk';
+import type { HarnessAPI, PipelineContext } from '@primo-ai/sdk';
 
 // ---------------------------------------------------------------------------
 // Test helpers

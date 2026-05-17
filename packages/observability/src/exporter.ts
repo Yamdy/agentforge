@@ -1,4 +1,4 @@
-import type { Span, Tracer } from '@agentforge/sdk';
+import type { Span, Tracer } from '@primo-ai/sdk';
 import { SpanImpl, type SpanData } from './tracer.js';
 
 class ExporterSpan extends SpanImpl {

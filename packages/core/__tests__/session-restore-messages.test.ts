@@ -6,7 +6,7 @@ import { EventBus } from '../src/event-bus.js';
 import { FilesystemSessionStorage } from '../src/session-storage.js';
 import { SessionPersistence } from '../src/session-persistence.js';
 import { SessionManagerImpl } from '../src/session-manager.js';
-import type { SessionEvent, Message } from '@agentforge/sdk';
+import type { SessionEvent, Message } from '@primo-ai/sdk';
 
 describe('SessionManager restore — message format compliance', () => {
   let basePath: string;

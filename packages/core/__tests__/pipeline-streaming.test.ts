@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { PipelineRunner } from '../src/pipeline.js';
-import type { PipelineContext, StreamEvent } from '@agentforge/sdk';
+import type { PipelineContext, StreamEvent } from '@primo-ai/sdk';
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {

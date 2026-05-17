@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { resolveDynamic } from '../src/dynamic-resolver.js';
-import type { ResolveContext } from '@agentforge/sdk';
+import type { ResolveContext } from '@primo-ai/sdk';
 
 const baseCtx: ResolveContext = {
   input: 'hello',

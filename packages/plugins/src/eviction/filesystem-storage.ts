@@ -1,4 +1,4 @@
-import type { EvictionStorage } from '@agentforge/sdk';
+import type { EvictionStorage } from '@primo-ai/sdk';
 import { mkdir, readFile, writeFile, rename, unlink, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 

@@ -1,5 +1,5 @@
-import type { AgentProfile } from '@agentforge/sdk';
-import { compressionPlugin, createTokenBudgetProcessor } from '@agentforge/plugins';
+import type { AgentProfile } from '@primo-ai/sdk';
+import { compressionPlugin, createTokenBudgetProcessor } from '@primo-ai/plugins';
 
 export const dataAgentProfile: AgentProfile = {
   name: 'data-agent',

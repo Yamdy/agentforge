@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createCompressionStrategy } from '../src/compression/compression-processor.js';
-import { TiktokenCounter } from '@agentforge/core';
-import type { HarnessAPI, Message } from '@agentforge/sdk';
+import { TiktokenCounter } from '@primo-ai/core';
+import type { HarnessAPI, Message } from '@primo-ai/sdk';
 
 function makeTokenCounter(): TiktokenCounter {
   return new TiktokenCounter();

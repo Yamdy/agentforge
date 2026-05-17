@@ -1,4 +1,4 @@
-import type { Processor, LoopDirective, TokenUsage, Message, ToolCall } from '@agentforge/sdk';
+import type { Processor, LoopDirective, TokenUsage, Message, ToolCall } from '@primo-ai/sdk';
 import type { EventBus } from '../event-bus.js';
 
 export interface EvaluateIterationDeps {

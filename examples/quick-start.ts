@@ -9,7 +9,7 @@
  * Run: npx tsx --env-file=.env quick-start.ts
  */
 
-import { Agent, registerProvider } from '@agentforge/core';
+import { Agent, registerProvider } from '@primo-ai/core';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 
 // Step 1: Register a model provider

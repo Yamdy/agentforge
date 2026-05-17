@@ -5,7 +5,7 @@ import { ConcurrencyController } from '../src/concurrency-controller.js';
 import type {
   SubAgentResult,
   AsyncTaskConfig,
-} from '@agentforge/sdk';
+} from '@primo-ai/sdk';
 
 function createMockRunAgent() {
   return vi.fn(

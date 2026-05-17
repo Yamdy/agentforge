@@ -1,4 +1,4 @@
-import type { CheckpointStore } from '@agentforge/sdk';
+import type { CheckpointStore } from '@primo-ai/sdk';
 import { readFile, writeFile, mkdir, rm, readdir, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { streamText, tool } from 'ai';
 import { z } from 'zod';
-import type { PipelineContext } from '@agentforge/sdk';
+import type { PipelineContext } from '@primo-ai/sdk';
 import type { LanguageModel } from 'ai';
 import { PipelineRunner } from '../src/pipeline.js';
 

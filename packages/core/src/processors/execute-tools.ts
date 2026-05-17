@@ -1,5 +1,5 @@
-import type { Processor, Message, ToolResult } from '@agentforge/sdk';
-import { SpanAttributeKeys, SpanType } from '@agentforge/sdk';
+import type { Processor, Message, ToolResult } from '@primo-ai/sdk';
+import { SpanAttributeKeys, SpanType } from '@primo-ai/sdk';
 import type { ToolRegistry } from '../tool-registry.js';
 
 export function createExecuteToolsProcessor(registry: ToolRegistry): Processor {

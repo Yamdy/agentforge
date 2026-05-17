@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createRequiredToolsGate } from '../src/harness/required-tools-gate-processor.js';
-import type { PipelineContext, ProcessorResult } from '@agentforge/sdk';
+import type { PipelineContext, ProcessorResult } from '@primo-ai/sdk';
 
 function makeContext(toolDeclarations: Array<{ name: string; description: string }> = []): PipelineContext {
   return {

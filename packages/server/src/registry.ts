@@ -1,5 +1,5 @@
-import { Agent, type AgentDependencies } from '@agentforge/core';
-import type { AgentConfig } from '@agentforge/sdk';
+import { Agent, type AgentDependencies } from '@primo-ai/core';
+import type { AgentConfig } from '@primo-ai/sdk';
 
 export interface AgentEntry {
   id: string;

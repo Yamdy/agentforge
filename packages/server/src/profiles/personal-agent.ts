@@ -1,5 +1,5 @@
-import type { AgentProfile } from '@agentforge/sdk';
-import { memoryPlugin, InMemoryBackend, createGoalEchoProcessor } from '@agentforge/plugins';
+import type { AgentProfile } from '@primo-ai/sdk';
+import { memoryPlugin, InMemoryBackend, createGoalEchoProcessor } from '@primo-ai/plugins';
 
 export const personalAgentProfile: AgentProfile = {
   name: 'personal-agent',

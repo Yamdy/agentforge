@@ -1,4 +1,4 @@
-import type { Message, PipelineContext, Processor } from '@agentforge/sdk';
+import type { Message, PipelineContext, Processor } from '@primo-ai/sdk';
 import type { LLMInvoker } from '../llm-invoker.js';
 import type { ToolRegistry } from '../tool-registry.js';
 import type { HookManager } from '../hook-manager.js';

@@ -1,4 +1,4 @@
-import type { ToolDefinition } from '@agentforge/sdk';
+import type { ToolDefinition } from '@primo-ai/sdk';
 
 // ---------------------------------------------------------------------------
 // Types

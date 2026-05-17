@@ -1,5 +1,5 @@
 import type { MiddlewareHandler } from 'hono';
-import type { AuthAdapter } from '@agentforge/sdk';
+import type { AuthAdapter } from '@primo-ai/sdk';
 
 export function authMiddleware(adapter: AuthAdapter): MiddlewareHandler {
   return async (c, next) => {

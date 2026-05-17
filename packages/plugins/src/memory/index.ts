@@ -1,4 +1,4 @@
-import type { HarnessAPI, PluginRegistration, Tool, ToolDefinition } from '@agentforge/sdk';
+import type { HarnessAPI, PluginRegistration, Tool, ToolDefinition } from '@primo-ai/sdk';
 import { z } from 'zod';
 import type { MemoryBackend } from './backend.js';
 import { createMemoryProcessor, createMemoryOutputProcessor, type MemoryConfig, type MemoryTriggerMode } from './memory-processor.js';

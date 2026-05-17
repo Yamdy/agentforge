@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ConfigLoader } from '../src/config.js';
-import type { HarnessConfig } from '@agentforge/sdk';
+import type { HarnessConfig } from '@primo-ai/sdk';
 
 describe('parseJsonc', () => {
   const loader = new ConfigLoader();

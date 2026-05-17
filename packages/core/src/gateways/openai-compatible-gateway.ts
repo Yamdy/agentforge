@@ -1,4 +1,4 @@
-import type { ModelGateway, GatewayConfig } from '@agentforge/sdk';
+import type { ModelGateway, GatewayConfig } from '@primo-ai/sdk';
 import { parseModel } from '../parse-model.js';
 
 export class OpenAICompatibleGateway implements ModelGateway {

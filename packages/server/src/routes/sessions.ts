@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import type { SessionStorage, SessionRecord } from '@agentforge/sdk';
+import type { SessionStorage, SessionRecord } from '@primo-ai/sdk';
 
 export function sessionRoutes(storage?: SessionStorage): Hono {
   const app = new Hono();

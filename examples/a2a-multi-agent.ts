@@ -12,13 +12,13 @@
  * Run: npx tsx --env-file=.env a2a-multi-agent.ts
  */
 
-import { Agent, registerProvider } from '@agentforge/core';
+import { Agent, registerProvider } from '@primo-ai/core';
 import {
   AgentForgeServer,
   A2AClient,
   buildAgentCard,
   a2aRoutes,
-} from '@agentforge/server';
+} from '@primo-ai/server';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 
 // ─── Provider setup ─────────────────────────────────────────────────────────

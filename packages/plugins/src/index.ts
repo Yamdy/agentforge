@@ -1,4 +1,4 @@
-// @agentforge/plugins — Built-in Processors
+// @primo-ai/plugins — Built-in Processors
 
 export {
   memoryPlugin,

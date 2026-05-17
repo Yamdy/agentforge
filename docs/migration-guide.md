@@ -93,8 +93,8 @@ const model = PROVIDER_MAP['openai']('gpt-4o');
 
 ```ts
 // 新模式 — GatewayChain
-import { GatewayChain, BuiltInGateway } from '@agentforge/core';
-import { OpenAICompatibleGateway } from '@agentforge/core';
+import { GatewayChain, BuiltInGateway } from '@primo-ai/core';
+import { OpenAICompatibleGateway } from '@primo-ai/core';
 
 const chain = new GatewayChain();
 chain.register(new OpenAICompatibleGateway({
@@ -132,9 +132,9 @@ class Agent {
 
 ```ts
 // 新模式 — 工厂函数创建的独立 Processor
-import { processInputProcessor } from '@agentforge/core/processors/process-input';
-import { createBuildContextProcessor } from '@agentforge/core/processors/build-context';
-import { createInvokeLLMProcessor } from '@agentforge/core/processors/invoke-llm';
+import { processInputProcessor } from '@primo-ai/core/processors/process-input';
+import { createBuildContextProcessor } from '@primo-ai/core/processors/build-context';
+import { createInvokeLLMProcessor } from '@primo-ai/core/processors/invoke-llm';
 ```
 
 Agent 变为纯编排器，组合 Processor 并管理生命周期。自定义逻辑通过 `PipelineRunner.register()` 或 Plugin 注入。
@@ -217,7 +217,7 @@ bus.emit('tool:call', data);
 内置 6 条规则，通常无需手动干预。如需自定义：
 
 ```ts
-import { applyPreemptiveRules, applyReactiveRules } from '@agentforge/core';
+import { applyPreemptiveRules, applyReactiveRules } from '@primo-ai/core';
 
 // 自定义 CompatRule
 const myRule: CompatRule = {
@@ -237,7 +237,7 @@ const myRule: CompatRule = {
 按模型定制行为，无需修改全局配置：
 
 ```ts
-import { matchProfile, applyProfile } from '@agentforge/core';
+import { matchProfile, applyProfile } from '@primo-ai/core';
 
 const profiles: ModelProfile[] = [{
   modelPattern: 'deepseek/*',
@@ -270,7 +270,7 @@ if (profile) {
 ```
 
 ```ts
-import { ConfigLoader } from '@agentforge/core';
+import { ConfigLoader } from '@primo-ai/core';
 
 const loader = new ConfigLoader();
 const config = await loader.load({
@@ -304,8 +304,8 @@ const result = await agent.chat('你好');
 
 ```ts
 // 新模式
-import { Agent, registerProvider, EventBus } from '@agentforge/core';
-import { OTelBridge } from '@agentforge/observability';
+import { Agent, registerProvider, EventBus } from '@primo-ai/core';
+import { OTelBridge } from '@primo-ai/observability';
 
 // 1. Provider 注册
 registerProvider('openai', (modelId) => {

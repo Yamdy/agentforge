@@ -1,5 +1,5 @@
-import type { AgentProfile } from '@agentforge/sdk';
-import { createFactInjectionProcessor, createCostCapProcessor } from '@agentforge/plugins';
+import type { AgentProfile } from '@primo-ai/sdk';
+import { createFactInjectionProcessor, createCostCapProcessor } from '@primo-ai/plugins';
 
 export const businessAgentProfile: AgentProfile = {
   name: 'business-agent',

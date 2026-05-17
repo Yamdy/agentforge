@@ -1,2 +1,2 @@
-export { AgentForgeClient } from '@agentforge/sdk';
-export type { ClientOptions, AgentRunResult } from '@agentforge/sdk';
+export { AgentForgeClient } from '@primo-ai/sdk';
+export type { ClientOptions, AgentRunResult } from '@primo-ai/sdk';

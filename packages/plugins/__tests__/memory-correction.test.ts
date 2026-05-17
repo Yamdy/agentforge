@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createMemoryOutputProcessor } from '../src/memory/memory-processor.js';
 import { InMemoryBackend } from '../src/memory/in-memory-backend.js';
-import type { PipelineContext } from '@agentforge/sdk';
+import type { PipelineContext } from '@primo-ai/sdk';
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {

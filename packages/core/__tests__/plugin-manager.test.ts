@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { PluginManager } from '../src/plugin-manager.js';
 import { PipelineRunner } from '../src/pipeline.js';
 import { ToolRegistry } from '../src/tool-registry.js';
-import type { PipelineStage, PipelineContext, Processor, Tool, PluginRegistration, HarnessAPI, Hook } from '@agentforge/sdk';
+import type { PipelineStage, PipelineContext, Processor, Tool, PluginRegistration, HarnessAPI, Hook } from '@primo-ai/sdk';
 import { z } from 'zod';
 import path from 'node:path';
 

@@ -1,4 +1,4 @@
-// @agentforge/core — Agent Loop, Processor Pipeline, Context, Tool Registry
+// @primo-ai/core — Agent Loop, Processor Pipeline, Context, Tool Registry
 
 export { PipelineRunner, type PipelineRunnerOptions } from './pipeline.js';
 export { Agent, type AgentDependencies, type AgentRunResult } from './agent.js';
@@ -30,7 +30,7 @@ export { InMemoryCheckpointStore, JsonlCheckpointStore } from './checkpoint-stor
 export { ContextBuilder, type ContextBuilderOptions } from './context-builder.js';
 export { HarnessAPIImpl, type HarnessDeps } from './harness.js';
 export { TiktokenCounter } from './token-counter.js';
-export type { StreamEvent } from '@agentforge/sdk';
+export type { StreamEvent } from '@primo-ai/sdk';
 export { OpenAICompatibleGateway } from './gateways/openai-compatible-gateway.js';
 export {
   AgentForgeError,

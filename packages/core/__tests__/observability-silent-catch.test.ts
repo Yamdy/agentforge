@@ -6,7 +6,7 @@ import { PluginManager } from '../src/plugin-manager.js';
 import { PipelineRunner } from '../src/pipeline.js';
 import { ToolRegistry } from '../src/tool-registry.js';
 import { SessionPersistence } from '../src/session-persistence.js';
-import type { SessionStorage, SessionEvent, ResourceDeclaration } from '@agentforge/sdk';
+import type { SessionStorage, SessionEvent, ResourceDeclaration } from '@primo-ai/sdk';
 
 /**
  * F-D tests: Silent catch blocks in critical paths must emit

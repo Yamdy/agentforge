@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { memoryPlugin } from '../src/memory/index.js';
 import { InMemoryBackend } from '../src/memory/in-memory-backend.js';
-import type { HarnessAPI, PipelineContext } from '@agentforge/sdk';
+import type { HarnessAPI, PipelineContext } from '@primo-ai/sdk';
 
 function createHarnessAPI(): { api: HarnessAPI; processors: Map<string, unknown>; tools: Map<string, unknown> } {
   const processors = new Map<string, unknown>();

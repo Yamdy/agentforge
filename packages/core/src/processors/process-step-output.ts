@@ -1,4 +1,4 @@
-import type { Processor, Message } from '@agentforge/sdk';
+import type { Processor, Message } from '@primo-ai/sdk';
 
 export const processStepOutputProcessor: Processor = {
   stage: 'processStepOutput',

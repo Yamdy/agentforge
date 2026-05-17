@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createFactInjectionProcessor } from '../src/harness/fact-injection-processor.js';
-import type { PipelineContext, ProcessorResult } from '@agentforge/sdk';
+import type { PipelineContext, ProcessorResult } from '@primo-ai/sdk';
 
 function makeContext(): PipelineContext {
   return {

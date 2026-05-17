@@ -1,4 +1,4 @@
-import type { ConcurrencySlot } from '@agentforge/sdk';
+import type { ConcurrencySlot } from '@primo-ai/sdk';
 
 interface SlotState {
   current: number;

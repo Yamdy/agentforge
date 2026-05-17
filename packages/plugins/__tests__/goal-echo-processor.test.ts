@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createGoalEchoProcessor } from '../src/harness/goal-echo-processor.js';
-import type { PipelineContext, ProcessorResult } from '@agentforge/sdk';
+import type { PipelineContext, ProcessorResult } from '@primo-ai/sdk';
 
 function makeContext(step = 0): PipelineContext {
   return {

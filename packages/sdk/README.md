@@ -1,4 +1,4 @@
-# @agentforge/sdk
+# @primo-ai/sdk
 
 Pure type definitions for the AgentForge framework. Zero dependencies.
 

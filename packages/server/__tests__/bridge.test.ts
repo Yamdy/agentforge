@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { WebSocketBridge, type WSMessage, type WSSocket } from '../src/bridge/bridge.js';
 import type { AgentRegistry } from '../src/registry.js';
-import type { Agent } from '@agentforge/core';
-import type { StreamEvent } from '@agentforge/sdk';
+import type { Agent } from '@primo-ai/core';
+import type { StreamEvent } from '@primo-ai/sdk';
 
 // ---------------------------------------------------------------------------
 // Helpers — lightweight WS mock

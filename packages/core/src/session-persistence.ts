@@ -1,4 +1,4 @@
-import type { SessionStorage, SessionEvent } from '@agentforge/sdk';
+import type { SessionStorage, SessionEvent } from '@primo-ai/sdk';
 import type { EventBus } from './event-bus.js';
 import { REPLAY_SENTINEL } from './event-system.js';
 

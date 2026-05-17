@@ -1,4 +1,4 @@
-import type { Hook, HookPoint, HookProfile } from '@agentforge/sdk';
+import type { Hook, HookPoint, HookProfile } from '@primo-ai/sdk';
 import type { EventBus } from './event-bus.js';
 
 const DEFAULT_PRIORITY = 100;

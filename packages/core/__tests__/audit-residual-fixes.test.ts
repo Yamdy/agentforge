@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
-import type { Tool, Message, PipelineContext, TokenCounter } from '@agentforge/sdk';
+import type { Tool, Message, PipelineContext, TokenCounter } from '@primo-ai/sdk';
 import { ToolRegistry } from '../src/tool-registry.js';
 import { HookManager } from '../src/hook-manager.js';
 import { EventBus } from '../src/event-bus.js';

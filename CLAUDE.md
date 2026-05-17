@@ -12,10 +12,10 @@ pnpm build
 pnpm test
 
 # Run tests for a single package
-pnpm --filter @agentforge/core test
+pnpm --filter @primo-ai/core test
 
 # Run a single test file
-pnpm --filter @agentforge/core vitest run __tests__/pipeline.test.ts
+pnpm --filter @primo-ai/core vitest run __tests__/pipeline.test.ts
 
 # Type-check all packages
 pnpm check-types

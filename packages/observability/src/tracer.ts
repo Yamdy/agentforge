@@ -1,4 +1,4 @@
-import type { Metrics, Span, SpanContext, Tracer } from '@agentforge/sdk';
+import type { Metrics, Span, SpanContext, Tracer } from '@primo-ai/sdk';
 
 export interface SpanData {
   name: string;

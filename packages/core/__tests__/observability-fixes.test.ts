@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { Agent } from '../src/agent.js';
 import { ToolRegistry } from '../src/tool-registry.js';
-import { TracerImpl, type SpanData } from '@agentforge/observability';
+import { TracerImpl, type SpanData } from '@primo-ai/observability';
 import { HookManager } from '../src/hook-manager.js';
 import { EventBus } from '../src/event-bus.js';
 import { LLMInvoker } from '../src/llm-invoker.js';
 import { createMockLanguageModel, registerMockProvider } from './helpers.js';
-import type { Tool } from '@agentforge/sdk';
+import type { Tool } from '@primo-ai/sdk';
 import { z } from 'zod';
 
 /**

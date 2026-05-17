@@ -1,4 +1,4 @@
-import { SpanAttributeKeys, type Span } from '@agentforge/sdk';
+import { SpanAttributeKeys, type Span } from '@primo-ai/sdk';
 
 /** Set gate decision attributes on a span. */
 export function setGateDecision(

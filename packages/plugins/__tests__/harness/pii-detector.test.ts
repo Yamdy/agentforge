@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createPiiDetectorProcessor } from '../../src/harness/pii-detector-processor.js';
-import type { PipelineContext, ProcessorResult } from '@agentforge/sdk';
+import type { PipelineContext, ProcessorResult } from '@primo-ai/sdk';
 
 function makeContext(input = 'Hello, how are you?', response?: string): PipelineContext {
   return {

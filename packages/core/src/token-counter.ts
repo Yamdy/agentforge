@@ -1,4 +1,4 @@
-import type { TokenCounter, Message } from '@agentforge/sdk';
+import type { TokenCounter, Message } from '@primo-ai/sdk';
 import { getEncoding, type Tiktoken } from 'js-tiktoken';
 
 type ModelEncodings =

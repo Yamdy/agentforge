@@ -1,4 +1,4 @@
-# @agentforge/core
+# @primo-ai/core
 
 Core agent loop, processor pipeline, and orchestration layer.
 
@@ -20,7 +20,7 @@ This package provides the main building blocks of the AgentForge framework:
 ## Quick Example
 
 ```typescript
-import { Agent, registerProvider } from '@agentforge/core';
+import { Agent, registerProvider } from '@primo-ai/core';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 
 registerProvider('deepseek', (modelId) => {
@@ -108,7 +108,7 @@ Registers a plugin or processor. Accepts a `PluginFactory` function or a `Proces
 
 ## Dependencies
 
-- `@agentforge/sdk` -- type definitions
-- `@agentforge/observability` -- tracing and metrics
-- `@agentforge/tools` -- built-in tools
+- `@primo-ai/sdk` -- type definitions
+- `@primo-ai/observability` -- tracing and metrics
+- `@primo-ai/tools` -- built-in tools
 - `ai` + provider SDKs -- Vercel AI SDK core

@@ -8,7 +8,7 @@ import type {
   StageName,
   StreamEvent,
   SuspensionSignal,
-} from '@agentforge/sdk';
+} from '@primo-ai/sdk';
 import type { PipelineRunner } from './pipeline.js';
 import type { HookManager } from './hook-manager.js';
 import type { EventBus } from './event-bus.js';

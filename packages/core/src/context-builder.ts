@@ -6,7 +6,7 @@ import type {
   PipelineContext,
   Processor,
   TokenCounter,
-} from '@agentforge/sdk';
+} from '@primo-ai/sdk';
 import type { ToolRegistry } from './tool-registry.js';
 import { TiktokenCounter } from './token-counter.js';
 

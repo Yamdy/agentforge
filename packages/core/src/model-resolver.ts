@@ -1,5 +1,5 @@
 import type { LanguageModel } from 'ai';
-import type { GatewayConfig } from '@agentforge/sdk';
+import type { GatewayConfig } from '@primo-ai/sdk';
 import { GatewayChain } from './gateways/gateway-chain.js';
 import { BuiltInGateway, getDefaultBuiltInGateway } from './gateways/builtin-gateway.js';
 import { OpenAICompatibleGateway } from './gateways/openai-compatible-gateway.js';

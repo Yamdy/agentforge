@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { SpanType } from '@agentforge/sdk';
+import { SpanType } from '@primo-ai/sdk';
 import { PipelineRunner } from '../src/pipeline.js';
-import { TraceCollector } from '@agentforge/observability';
-import type { PipelineContext } from '@agentforge/sdk';
+import { TraceCollector } from '@primo-ai/observability';
+import type { PipelineContext } from '@primo-ai/sdk';
 import { createMockLanguageModel } from './helpers.js';
 
 function makeContext(): PipelineContext {

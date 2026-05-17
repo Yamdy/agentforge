@@ -1,4 +1,4 @@
-import type { HarnessAPI, PluginRegistration } from '@agentforge/sdk';
+import type { HarnessAPI, PluginRegistration } from '@primo-ai/sdk';
 import { z } from 'zod';
 import {
   createCompressionStrategy,

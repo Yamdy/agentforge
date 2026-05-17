@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { HarnessAPI, PluginRegistration, McpServerConfig } from '@agentforge/sdk';
+import type { HarnessAPI, PluginRegistration, McpServerConfig } from '@primo-ai/sdk';
 import { convertMcpTool } from './tool-converter.js';
 import { createMcpClient, type McpClient } from './mcp-client.js';
 

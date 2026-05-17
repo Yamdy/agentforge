@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { LLMInvoker } from '../src/llm-invoker.js';
 import { createMockLanguageModel } from './helpers.js';
-import type { TokenUsage, Tracer, Span } from '@agentforge/sdk';
+import type { TokenUsage, Tracer, Span } from '@primo-ai/sdk';
 
 describe('LLMInvoker', () => {
   it('invoke returns response and token usage', async () => {

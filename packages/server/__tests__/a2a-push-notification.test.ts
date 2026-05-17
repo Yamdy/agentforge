@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { Agent } from '@agentforge/core';
+import type { Agent } from '@primo-ai/core';
 import { A2ARequestHandler } from '../src/a2a/server.js';
 import { InMemoryTaskStore } from '../src/a2a/task-store.js';
 import { InMemoryNotificationRegistry } from '../src/a2a/push-notification.js';

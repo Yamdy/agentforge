@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { AgentForgeServer } from '../src/server.js';
-import { FilesystemSessionStorage } from '@agentforge/core';
+import { FilesystemSessionStorage } from '@primo-ai/core';
 import { mkdtempSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createMcpClient } from '../src/mcp/mcp-client.js';
-import type { McpServerConfig } from '@agentforge/sdk';
+import type { McpServerConfig } from '@primo-ai/sdk';
 
 describe('MCP transport factory', () => {
   it('creates client for SSE transport without throwing', () => {

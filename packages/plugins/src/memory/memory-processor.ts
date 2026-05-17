@@ -1,4 +1,4 @@
-import type { Processor, PipelineContext, ProcessorResult } from '@agentforge/sdk';
+import type { Processor, PipelineContext, ProcessorResult } from '@primo-ai/sdk';
 import type { MemoryBackend } from './backend.js';
 
 export type MemoryTriggerMode =

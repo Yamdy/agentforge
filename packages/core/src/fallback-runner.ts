@@ -1,4 +1,4 @@
-import type { FallbackEntry, TokenUsage } from '@agentforge/sdk';
+import type { FallbackEntry, TokenUsage } from '@primo-ai/sdk';
 import type { EventBus } from './event-bus.js';
 
 export interface FallbackInvoker {

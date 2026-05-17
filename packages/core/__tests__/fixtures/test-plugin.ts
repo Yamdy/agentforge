@@ -1,4 +1,4 @@
-import type { HarnessAPI, PluginRegistration, Processor, Tool } from '@agentforge/sdk';
+import type { HarnessAPI, PluginRegistration, Processor, Tool } from '@primo-ai/sdk';
 import { z } from 'zod';
 
 const stageLogger: Processor = {

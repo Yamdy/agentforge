@@ -3,8 +3,8 @@ import type {
   PipelineContext,
   LoopDirective,
   Message,
-} from '@agentforge/sdk';
-import type { AgentConfig } from '@agentforge/sdk';
+} from '@primo-ai/sdk';
+import type { AgentConfig } from '@primo-ai/sdk';
 import { Agent } from '../src/agent.js';
 import { createMockLanguageModel, registerMockProvider } from './helpers.js';
 

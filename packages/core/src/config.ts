@@ -1,4 +1,4 @@
-import type { HarnessConfig } from '@agentforge/sdk';
+import type { HarnessConfig } from '@primo-ai/sdk';
 import { z } from 'zod';
 import { deepMerge } from './config-merge.js';
 

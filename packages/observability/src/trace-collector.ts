@@ -1,4 +1,4 @@
-import type { Span, Tracer } from '@agentforge/sdk';
+import type { Span, Tracer } from '@primo-ai/sdk';
 import { SpanImpl, type SpanData } from './tracer.js';
 
 export interface TraceNode {
@@ -197,7 +197,7 @@ export function formatTraceOtlp(trace: Trace, options?: OtlpOptions): string {
         attributes: [{ key: 'service.name', value: { stringValue: serviceName } }],
       },
       scopeSpans: [{
-        scope: { name: '@agentforge/observability' },
+        scope: { name: '@primo-ai/observability' },
         spans: otlpSpans,
       }],
     }],

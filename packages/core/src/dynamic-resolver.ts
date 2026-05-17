@@ -1,4 +1,4 @@
-import type { Dynamic, ResolveContext } from '@agentforge/sdk';
+import type { Dynamic, ResolveContext } from '@primo-ai/sdk';
 
 /**
  * Resolve a Dynamic<T> value: if it's a function, call it with the context;

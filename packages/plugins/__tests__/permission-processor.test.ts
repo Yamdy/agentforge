@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { PipelineContext } from '@agentforge/sdk';
+import type { PipelineContext } from '@primo-ai/sdk';
 import { createPermissionProcessor, type PermissionRule } from '../src/permission/index.js';
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {

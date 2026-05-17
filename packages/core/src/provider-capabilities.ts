@@ -1,4 +1,4 @@
-import type { ProviderCapabilities } from '@agentforge/sdk';
+import type { ProviderCapabilities } from '@primo-ai/sdk';
 
 const DEFAULT: ProviderCapabilities = {
   supportsReasoning: false,

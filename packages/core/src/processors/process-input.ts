@@ -1,4 +1,4 @@
-import type { Processor, Dynamic, ResolveContext } from '@agentforge/sdk';
+import type { Processor, Dynamic, ResolveContext } from '@primo-ai/sdk';
 import { resolveDynamic } from '../dynamic-resolver.js';
 
 export const processInputProcessor: Processor = {

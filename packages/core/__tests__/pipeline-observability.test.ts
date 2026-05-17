@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { PipelineRunner } from '../src/pipeline.js';
-import type { PipelineContext, PipelineStage, Span } from '@agentforge/sdk';
-import { SpanType } from '@agentforge/sdk';
-import { TestExporter } from '@agentforge/observability';
+import type { PipelineContext, PipelineStage, Span } from '@primo-ai/sdk';
+import { SpanType } from '@primo-ai/sdk';
+import { TestExporter } from '@primo-ai/observability';
 import { LoopOrchestrator } from '../src/loop-orchestrator.js';
 import { EventBus } from '../src/event-bus.js';
 import type { HookManager } from '../src/hook-manager.js';
@@ -130,7 +130,7 @@ describe('LoopOrchestrator compatRetries exposure', () => {
   it('returns compatRetries = 0 when no compat retry occurs', async () => {
     const mockRunner = {
       run: async () => { throw new Error('should not be called'); },
-      async *stream(ctx: PipelineContext, stages: PipelineStage[]): AsyncGenerator<import('@agentforge/sdk').StreamEvent> {
+      async *stream(ctx: PipelineContext, stages: PipelineStage[]): AsyncGenerator<import('@primo-ai/sdk').StreamEvent> {
         // Pre-loop stages
         if (stages[0] === 'processInput') {
           yield { type: 'complete', context: { ...ctx, session: { ...ctx.session, messageHistory: [] } } };
@@ -178,7 +178,7 @@ describe('LoopOrchestrator compatRetries exposure', () => {
     let loopCallCount = 0;
     const mockRunner = {
       run: async () => { throw new Error('should not be called'); },
-      async *stream(ctx: PipelineContext, stages: PipelineStage[]): AsyncGenerator<import('@agentforge/sdk').StreamEvent> {
+      async *stream(ctx: PipelineContext, stages: PipelineStage[]): AsyncGenerator<import('@primo-ai/sdk').StreamEvent> {
         // Pre-loop stages
         if (stages[0] === 'processInput') {
           yield { type: 'complete', context: { ...ctx, session: { ...ctx.session, messageHistory: historyWithBadToolCall } } };

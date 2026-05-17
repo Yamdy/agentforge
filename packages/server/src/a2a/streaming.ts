@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { stream } from 'hono/streaming';
-import type { Agent } from '@agentforge/core';
+import type { Agent } from '@primo-ai/core';
 import type {
   A2AMessage,
   A2AStreamEvent,

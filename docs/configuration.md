@@ -126,7 +126,7 @@ interface HarnessConfig {
 Agent configuration fields support `Dynamic<T>` -- a value that is either static or resolved per-request:
 
 ```typescript
-import { Agent } from '@agentforge/core';
+import { Agent } from '@primo-ai/core';
 
 const agent = new Agent({
   model: 'deepseek/deepseek-v4-flash',

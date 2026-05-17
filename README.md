@@ -15,7 +15,7 @@
 
 <p align="center">
   <a href="https://agentforge-docs.vercel.app/"><img src="https://img.shields.io/badge/docs-agentforge--docs.vercel.app-brightgreen" alt="docs" /></a>
-  <a href="https://www.npmjs.com/package/@agentforge/core"><img src="https://img.shields.io/npm/v/@agentforge/core?label=%40agentforge%2Fcore" alt="npm" /></a>
+  <a href="https://www.npmjs.com/package/@primo-ai/core"><img src="https://img.shields.io/npm/v/@primo-ai/core?label=%40primo-ai%2Fcore" alt="npm" /></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="license" /></a>
   <img src="https://img.shields.io/badge/TypeScript-5.7-blue?logo=typescript&logoColor=white" alt="TypeScript" />
   <a href="https://github.com/Yamdy/agentforge/stargazers"><img src="https://img.shields.io/github/stars/Yamdy/agentforge?style=social" alt="stars" /></a>
@@ -37,11 +37,11 @@
 ## Quick Start
 
 ```bash
-npm install @agentforge/core
+npm install @primo-ai/core
 ```
 
 ```typescript
-import { Agent, registerProvider } from '@agentforge/core';
+import { Agent, registerProvider } from '@primo-ai/core';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 
 // Register any OpenAI-compatible provider
@@ -68,7 +68,7 @@ console.log(response);
 <summary>📦 Using OpenAI / Anthropic / Google</summary>
 
 ```typescript
-import { Agent, registerProvider } from '@agentforge/core';
+import { Agent, registerProvider } from '@primo-ai/core';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
@@ -110,7 +110,7 @@ agent.eventSystem.subscribe('invokeLLM:after', (data) => {
 Swap in production plugins with one line each.
 
 ```typescript
-import { memoryPlugin, compressionPlugin, permissionPlugin } from '@agentforge/plugins';
+import { memoryPlugin, compressionPlugin, permissionPlugin } from '@primo-ai/plugins';
 
 const agent = new Agent({
   model: 'deepseek/deepseek-v4-flash',
@@ -129,7 +129,7 @@ const agent = new Agent({
 Two agents talking over the Agent-to-Agent protocol.
 
 ```typescript
-import { AgentForgeServer, A2AClient, buildAgentCard, a2aRoutes } from '@agentforge/server';
+import { AgentForgeServer, A2AClient, buildAgentCard, a2aRoutes } from '@primo-ai/server';
 
 // Start a researcher agent on port 3001
 const server = new AgentForgeServer({ port: 3001 });
@@ -158,7 +158,7 @@ const result = await client.sendMessage('Summarize neural networks in 2 sentence
 Write your own pipeline stage in 10 lines.
 
 ```typescript
-import { createFactInjectionProcessor } from '@agentforge/plugins';
+import { createFactInjectionProcessor } from '@primo-ai/plugins';
 
 const agent = new Agent({
   model: 'deepseek/deepseek-v4-flash',

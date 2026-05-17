@@ -1,5 +1,5 @@
 import { jsonSchema } from 'ai';
-import type { Tool, ToolExecutionContext, ToolResult } from '@agentforge/sdk';
+import type { Tool, ToolExecutionContext, ToolResult } from '@primo-ai/sdk';
 import type { HookManager } from './hook-manager.js';
 import type { EventBus } from './event-bus.js';
 

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { LoopOrchestrator } from '../src/loop-orchestrator.js';
-import type { StageMutation, StageName } from '@agentforge/sdk';
+import type { StageMutation, StageName } from '@primo-ai/sdk';
 
 function makeOrchestrator(): LoopOrchestrator {
   const mockRunner = {

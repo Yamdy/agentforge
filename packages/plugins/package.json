@@ -1,5 +1,5 @@
 {
-  "name": "@agentforge/plugins",
+  "name": "@primo-ai/plugins",
   "version": "0.0.1",
   "type": "module",
   "main": "./dist/index.js",
@@ -17,13 +17,13 @@
     "lint": "eslint src __tests__"
   },
   "devDependencies": {
-    "@agentforge/sdk": "workspace:*",
+    "@primo-ai/sdk": "workspace:*",
     "@types/better-sqlite3": "^7.6.13",
     "typescript": "^5.7.3",
     "vitest": "^3.0.5"
   },
   "dependencies": {
-    "@agentforge/core": "workspace:*",
+    "@primo-ai/core": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "better-sqlite3": "^12.9.0",
     "zod": "^4.4.3"

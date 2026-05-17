@@ -1,4 +1,4 @@
-import type { AgentProfile } from '@agentforge/sdk';
+import type { AgentProfile } from '@primo-ai/sdk';
 
 export class ProfileLoader {
   private profiles = new Map<string, AgentProfile>();

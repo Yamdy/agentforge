@@ -39,7 +39,7 @@ The `HarnessAPI` provides these registration methods:
 ### Basic Structure
 
 ```typescript
-import type { HarnessAPI, PluginRegistration, PipelineContext } from '@agentforge/sdk';
+import type { HarnessAPI, PluginRegistration, PipelineContext } from '@primo-ai/sdk';
 
 function myPlugin(api: HarnessAPI): PluginRegistration {
   // Register processors, hooks, tools, etc.
@@ -144,7 +144,7 @@ api.registerProcessor('myCustomStage', {
 ## Using Plugins
 
 ```typescript
-import { Agent } from '@agentforge/core';
+import { Agent } from '@primo-ai/core';
 
 const agent = new Agent({ model: 'deepseek/deepseek-v4-flash' });
 
@@ -186,7 +186,7 @@ api.registerProcessor('gateLLM', {
 Processors can suspend the pipeline for human-in-the-loop workflows:
 
 ```typescript
-import { serialize } from '@agentforge/core';
+import { serialize } from '@primo-ai/core';
 
 api.registerProcessor('gateTool', {
   stage: 'gateTool',

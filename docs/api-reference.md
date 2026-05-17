@@ -2,13 +2,13 @@
 
 AgentForge 公共 API 参考。按包分组，覆盖类型、类和函数导出。
 
-> **包版本**: @agentforge/core 0.0.1
+> **包版本**: @primo-ai/core 0.0.1
 
 ---
 
 ## 目录
 
-- [@agentforge/sdk — 类型定义](#agentsdorge-sdk--类型定义)
+- [@primo-ai/sdk — 类型定义](#agentsdorge-sdk--类型定义)
   - [PipelineContext 四区域](#pipelinecontext-四区域)
   - [Processor 系统](#processor-系统)
   - [Tool 系统](#tool-系统)
@@ -21,7 +21,7 @@ AgentForge 公共 API 参考。按包分组，覆盖类型、类和函数导出�
   - [Sub-Agent](#sub-agent)
   - [运行时安全](#运行时安全)
   - [其他类型](#其他类型)
-- [@agentforge/core — 运行时](#agentforge-core--运行时)
+- [@primo-ai/core — 运行时](#agentforge-core--运行时)
   - [Agent](#agent)
   - [PipelineRunner](#pipelinerunner)
   - [LLMInvoker](#llminvoker)
@@ -44,12 +44,12 @@ AgentForge 公共 API 参考。按包分组，覆盖类型、类和函数导出�
   - [序列化](#序列化)
   - [错误体系](#错误体系)
   - [TiktokenCounter](#tiktokencounter)
-- [@agentforge/server — HTTP 服务器](#agentforge-server--http-服务器)
+- [@primo-ai/server — HTTP 服务器](#agentforge-server--http-服务器)
   - [HTTP API 端点](#http-api-端点)
   - [A2A Protocol](#a2a-protocol)
-- [@agentforge/tools — 内置工具](#agentforge-tools--内置工具)
-- [@agentforge/observability — 可观测性](#agentforge-observability--可观测性)
-- [@agentforge/plugins — 官方插件](#agentforge-plugins--官方插件)
+- [@primo-ai/tools — 内置工具](#agentforge-tools--内置工具)
+- [@primo-ai/observability — 可观测性](#agentforge-observability--可观测性)
+- [@primo-ai/plugins — 官方插件](#agentforge-plugins--官方插件)
   - [memoryPlugin](#memoryplugin)
   - [compressionPlugin](#compressionplugin)
   - [evictionPlugin](#evictionplugin)
@@ -60,12 +60,12 @@ AgentForge 公共 API 参考。按包分组，覆盖类型、类和函数导出�
 
 ---
 
-## @agentforge/sdk — 类型定义
+## @primo-ai/sdk — 类型定义
 
 零运行时依赖的纯类型包。所有导出均为 TypeScript 类型/接口。
 
 ```ts
-import type { AgentConfig, Processor, Tool, PipelineContext } from '@agentforge/sdk';
+import type { AgentConfig, Processor, Tool, PipelineContext } from '@primo-ai/sdk';
 ```
 
 ### PipelineContext 四区域
@@ -520,7 +520,7 @@ interface McpServerConfig {
 
 ---
 
-## @agentforge/core — 运行时
+## @primo-ai/core — 运行时
 
 ```ts
 import {
@@ -531,7 +531,7 @@ import {
   InMemoryCheckpointStore, JsonlCheckpointStore,
   AgentForgeError, RecoverableError, FatalError, AuthError, ModelNotFoundError, ToolExecutionError,
   TiktokenCounter,
-} from '@agentforge/core';
+} from '@primo-ai/core';
 ```
 
 ### Agent
@@ -702,7 +702,7 @@ const gateway = new OpenAICompatibleGateway({
 ### Provider Capabilities
 
 ```ts
-import { detectProvider, detectCapabilities } from '@agentforge/core';
+import { detectProvider, detectCapabilities } from '@primo-ai/core';
 
 const provider = detectProvider('deepseek/deepseek-v4-flash'); // 'deepseek'
 const caps = detectCapabilities('deepseek/deepseek-v4-flash');
@@ -877,7 +877,7 @@ const store = new JsonlCheckpointStore({ dir: './checkpoints' });
 ### 序列化
 
 ```ts
-import { serialize, deserialize } from '@agentforge/core';
+import { serialize, deserialize } from '@primo-ai/core';
 
 // Suspend 时序列化上下文
 const checkpoint = serialize(context);
@@ -922,14 +922,14 @@ const tokens = counter.count('Hello world'); // → number
 
 ---
 
-## @agentforge/server — HTTP 服务器
+## @primo-ai/server — HTTP 服务器
 
 ```ts
 import {
   AgentForgeServer, AgentRegistry, AgentForgeClient,
   StaticKeyAuthAdapter, serializeSSE, parseSSE,
   InMemoryTaskStore, buildAgentCard, A2ARequestHandler, A2AClient, a2aRoutes,
-} from '@agentforge/server';
+} from '@primo-ai/server';
 ```
 
 ### AgentForgeServer
@@ -982,10 +982,10 @@ Google Agent-to-Agent 协议支持。
 
 ---
 
-## @agentforge/tools — 内置工具
+## @primo-ai/tools — 内置工具
 
 ```ts
-import { echoTool } from '@agentforge/tools';
+import { echoTool } from '@primo-ai/tools';
 ```
 
 | 工具 | 输入 Schema | 输出 | 说明 |
@@ -994,10 +994,10 @@ import { echoTool } from '@agentforge/tools';
 
 ---
 
-## @agentforge/observability — 可观测性
+## @primo-ai/observability — 可观测性
 
 ```ts
-import { OTelBridge, TracerImpl, NoOpTracer, TestExporter } from '@agentforge/observability';
+import { OTelBridge, TracerImpl, NoOpTracer, TestExporter } from '@primo-ai/observability';
 ```
 
 | 导出 | 类型 | 说明 |
@@ -1010,7 +1010,7 @@ import { OTelBridge, TracerImpl, NoOpTracer, TestExporter } from '@agentforge/ob
 **OTelBridge 用法：**
 
 ```ts
-import { OTelBridge } from '@agentforge/observability';
+import { OTelBridge } from '@primo-ai/observability';
 import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
 
 const exporter = new InMemorySpanExporter();
@@ -1022,13 +1022,13 @@ const tracer = new OTelBridge({ tracerProvider: provider, eventBus: bus });
 
 ---
 
-## @agentforge/plugins — 官方插件
+## @primo-ai/plugins — 官方插件
 
 ```ts
 import {
   memoryPlugin, compressionPlugin, evictionPlugin,
   permissionPlugin, skillPlugin, mcpPlugin,
-} from '@agentforge/plugins';
+} from '@primo-ai/plugins';
 ```
 
 ### memoryPlugin
@@ -1140,7 +1140,7 @@ import {
   createFactInjectionProcessor, createGoalEchoProcessor,
   createTokenBudgetProcessor, createCostCapProcessor,
   setGateDecision, setCostAttributes, setBudgetAttributes,
-} from '@agentforge/plugins';
+} from '@primo-ai/plugins';
 ```
 
 | 导出 | 说明 |

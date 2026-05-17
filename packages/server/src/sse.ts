@@ -1,4 +1,4 @@
-import type { StreamEvent } from '@agentforge/sdk';
+import type { StreamEvent } from '@primo-ai/sdk';
 
 export interface SSEMessage {
   type: string;

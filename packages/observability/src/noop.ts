@@ -1,4 +1,4 @@
-import type { Span, SpanContext, Tracer } from '@agentforge/sdk';
+import type { Span, SpanContext, Tracer } from '@primo-ai/sdk';
 
 export class NoOpSpan implements Span {
   readonly name: string;

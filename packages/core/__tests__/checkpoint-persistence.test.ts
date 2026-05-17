@@ -10,7 +10,7 @@ import { PipelineRunner } from '../src/pipeline.js';
 import { HookManager } from '../src/hook-manager.js';
 import { EventBus } from '../src/event-bus.js';
 import { serialize } from '../src/serialize.js';
-import type { CheckpointStore, PipelineContext } from '@agentforge/sdk';
+import type { CheckpointStore, PipelineContext } from '@primo-ai/sdk';
 
 describe('Checkpoint persistence (P0)', () => {
   let dir: string;
@@ -139,7 +139,7 @@ describe('Auto checkpoint per iteration (P0)', () => {
 
   it('autoCheckpoint=false (default) does not save checkpoint', async () => {
     const saveSpy = [] as string[];
-    const store: import('@agentforge/sdk').CheckpointStore<unknown> = {
+    const store: import('@primo-ai/sdk').CheckpointStore<unknown> = {
       save: async (id) => { saveSpy.push(id); },
       load: async () => undefined,
       delete: async () => {},

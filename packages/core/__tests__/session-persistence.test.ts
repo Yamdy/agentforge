@@ -6,7 +6,7 @@ import { EventBus } from '../src/event-bus.js';
 import { FilesystemSessionStorage } from '../src/session-storage.js';
 import { SessionPersistence } from '../src/session-persistence.js';
 import { REPLAY_SENTINEL } from '../src/event-system.js';
-import type { SessionEvent } from '@agentforge/sdk';
+import type { SessionEvent } from '@primo-ai/sdk';
 
 describe('SessionPersistence', () => {
   let basePath: string;
@@ -63,7 +63,7 @@ describe('SessionPersistence', () => {
   it('recovers after transient storage failure', async () => {
     const isolatedBus = new EventBus();
     let hasFailed = false;
-    const flakyStorage: import('@agentforge/sdk').SessionStorage = {
+    const flakyStorage: import('@primo-ai/sdk').SessionStorage = {
       append: async (sessionId, event) => {
         if (!hasFailed) {
           hasFailed = true;

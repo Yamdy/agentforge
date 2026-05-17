@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AgentForgeServer } from '../src/server.js';
-import type { SessionStorage, SessionRecord } from '@agentforge/sdk';
+import type { SessionStorage, SessionRecord } from '@primo-ai/sdk';
 
 // ---------------------------------------------------------------------------
 // Helpers

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
-import type { Tool } from '@agentforge/sdk';
+import type { Tool } from '@primo-ai/sdk';
 import type { LanguageModel } from 'ai';
 import { Agent } from '../src/agent.js';
 import { registerProvider } from '../src/model-resolver.js';

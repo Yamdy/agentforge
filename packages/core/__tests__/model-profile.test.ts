@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { matchProfile, applyProfile } from '../src/model-profile.js';
-import type { PipelineContext, ModelProfile } from '@agentforge/sdk';
+import type { PipelineContext, ModelProfile } from '@primo-ai/sdk';
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
