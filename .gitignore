@@ -5,3 +5,8 @@ dist/
 *.tsbuildinfo
 coverage/
 .env
+docs/.vitepress/cache/
+docs/.vitepress/dist/
+.playwright-mcp/
+*.jpg
+*.png

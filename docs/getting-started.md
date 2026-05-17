@@ -272,9 +272,8 @@ MCP 工具会自动以 `serverName__toolName` 格式注册到 Agent。
 
 ## 下一步
 
-- [API 参考](api-reference.md) — 完整的类型和方法文档
-- [迁移指南](migration-guide.md) — 从早期版本迁移
-- [架构决策记录](adr/) — 设计决策的上下文和理由
+- [API 参考](/api-reference) — 完整的类型和方法文档
+- [迁移指南](/migration-guide) — 从早期版本迁移
 
 ## 脚本参考
 

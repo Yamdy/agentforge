@@ -146,4 +146,4 @@ Default triage label vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`
 
 ### Domain docs
 
-Single-context layout (`CONTEXT.md` + `docs/adr/` at repo root). See `docs/agents/domain.md`.
+Single-context layout (`CONTEXT.md` + `design/adr/` at repo root). See `docs/agents/domain.md`.
