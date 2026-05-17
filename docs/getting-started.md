@@ -236,7 +236,7 @@ const agent = new Agent({
 
 ## Session 持久化
 
-使用 JSONL 文件存储会话历史：
+### JSONL 文件存储（默认）
 
 ```ts
 import { EventBus, FilesystemSessionStorage, SessionPersistence, SessionManagerImpl } from '@primo-ai/core';
@@ -255,6 +255,23 @@ await sessionMgr.suspend(session.sessionId, '等待用户确认');
 // 恢复
 await sessionMgr.resume(session.sessionId, '确认通过，继续');
 ```
+
+### SQLite 存储（可选）
+
+需要安装 `better-sqlite3`：
+
+```bash
+npm install better-sqlite3
+```
+
+```ts
+import { SqliteSessionStorage } from '@primo-ai/core';
+
+const storage = new SqliteSessionStorage('./sessions.db');
+const sessionMgr = new SessionManagerImpl(storage, bus);
+```
+
+支持 WAL 模式并发读，消息历史分页查询（`getMessages({ limit: 50, before: 'msg_xxx' })`）。
 
 ## Sub-Agent
 

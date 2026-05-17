@@ -140,8 +140,9 @@ interface PipelineContext {
 
 ```ts
 type PipelineStage =
-  | 'processInput' | 'buildContext' | 'prepareStep' | 'invokeLLM'
-  | 'processStepOutput' | 'executeTools' | 'evaluateIteration' | 'processOutput'
+  | 'processInput' | 'buildContext' | 'prepareStep'
+  | 'gateLLM' | 'invokeLLM' | 'processStepOutput'
+  | 'gateTool' | 'executeTools' | 'evaluateIteration' | 'processOutput'
   | 'beforeTool' | 'execute' | 'afterTool';
 ```
 
@@ -417,6 +418,24 @@ interface SessionRecord {
 }
 ```
 
+#### `SessionStorage`
+
+```ts
+interface SessionStorage {
+  append(sessionId: string, event: SessionEvent): Promise<void>;
+  read(sessionId: string): AsyncIterable<SessionEvent>;
+  list(filter?: { parentSessionId?: string; status?: SessionStatus }): Promise<SessionRecord[]>;
+  updateMeta(sessionId: string, meta: Partial<SessionRecord>): Promise<void>;
+  get(sessionId: string): Promise<SessionRecord | undefined>;
+  delete(sessionId: string): Promise<void>;
+  getMessages(sessionId: string, options?: { limit?: number; before?: string }): Promise<Message[]>;
+}
+```
+
+- `get()` — 单会话查找，避免扫描全部会话
+- `delete()` — 删除会话及所有事件
+- `getMessages()` — 从事件流重建 `Message[]`，支持分页
+
 #### `SessionManager`
 
 ```ts
@@ -494,6 +513,19 @@ type StreamEvent =
   | { type: 'abort'; signal: AbortSignal };
 ```
 
+#### `ServerStreamEvent`
+
+```ts
+type ServerStreamEvent = StreamEvent
+  | { type: 'session.started'; sessionId: string }
+  | { type: 'session.completed'; sessionId: string; tokenUsage: TokenUsage }
+  | { type: 'session.aborted'; sessionId: string }
+  | { type: 'permission.request'; sessionId: string; permissionId: string; toolName: string; args: Record<string, unknown>; reason: string }
+  | { type: 'permission.resolved'; sessionId: string; permissionId: string; decision: 'allow' | 'deny' };
+```
+
+扩展 `StreamEvent`，增加 Session 生命周期和 Permission 交互事件，用于 SSE 事件流。
+
 #### `SpanType`
 
 ```ts
@@ -529,6 +561,7 @@ import {
   ContextBuilder, EventSystem, HookManager, EventBus,
   serialize, deserialize,
   InMemoryCheckpointStore, JsonlCheckpointStore,
+  PermissionManager, SqliteSessionStorage,
   AgentForgeError, RecoverableError, FatalError, AuthError, ModelNotFoundError, ToolExecutionError,
   TiktokenCounter,
 } from '@primo-ai/core';
@@ -551,6 +584,9 @@ const agent = new Agent(config: AgentConfig, options?: { tracer?: Tracer });
 | `stream` | `(input: string, signal?: AbortSignal) => AsyncIterable<string>` | 流式运行，逐文本片段返回 |
 | `streamEvents` | `(input: string, signal?: AbortSignal) => AsyncIterable<StreamEvent>` | 流式运行，逐事件返回 |
 | `resume` | `(sessionId: string) => Promise<AgentRunResult>` | 从挂起点恢复运行 |
+| `continue` | `(sessionId: string, message: string, signal?: AbortSignal) => Promise<AgentRunResult>` | 在已有会话中追加消息并继续运行 |
+| `continueStream` | `(sessionId: string, message: string, signal?: AbortSignal) => AsyncIterable<StreamEvent>` | 继续已有会话的流式运行 |
+| `abort` | `() => void` | 中止正在运行的 Agent（幂等，非运行态调用无副作用） |
 
 **属性：**
 
@@ -559,6 +595,7 @@ const agent = new Agent(config: AgentConfig, options?: { tracer?: Tracer });
 | `pipelineRunner` | `PipelineRunner` | 内部 pipeline 运行器 |
 | `toolRegistry` | `ToolRegistry` | 工具注册表 |
 | `pluginManager` | `PluginManager` | 插件管理器 |
+| `eventSystem` | `EventSystem` | 事件系统（EventBus + 重放） |
 | `state` | `AgentState` | Agent 生命周期状态（`pending`/`running`/`paused`/`completed`/`cancelled`/`error`） |
 
 ### PipelineRunner
@@ -623,6 +660,20 @@ JSONL 文件存储：
 const storage = new FilesystemSessionStorage(basePath: string);
 ```
 
+#### `SqliteSessionStorage`
+
+基于 better-sqlite3 的 SQLite 会话存储（可选依赖）：
+
+```ts
+import { SqliteSessionStorage } from '@primo-ai/core';
+
+const storage = new SqliteSessionStorage('./sessions.db');
+```
+
+实现 `SessionStorage` 全部 7 个方法，含 `getMessages()` 支持分页。WAL 模式，支持并发读。
+
+> **安装**: `npm install better-sqlite3`（可选）
+
 #### `SessionPersistence`
 
 桥接 EventBus 事件到 SessionStorage：
@@ -679,7 +730,10 @@ const chain = new GatewayChain();
 chain.register(customGateway);
 chain.register(new BuiltInGateway());
 const model = await chain.resolve('deepseek/deepseek-v4-flash');
+const gateways = chain.listGateways(); // Array<{ name: string }>
 ```
+
+- `listGateways()` — 列出已注册的网关名称
 
 #### `BuiltInGateway`
 
@@ -789,9 +843,10 @@ handle.on_complete((result) => console.log(result.response));
 ```ts
 const factory = new ModelFactory({ tracer });
 const model = await factory.resolve('deepseek/deepseek-v4-flash');
+const gateways = factory.listGateways(); // Array<{ name: string; canResolve: (model: string) => boolean }>
 ```
 
-替代已废弃的 `resolveModel()` 函数。支持实例化注入和测试替换。
+替代已废弃的 `resolveModel()` 函数。支持实例化注入和测试替换。`listGateways()` 返回已注册网关的元数据。
 
 ### StateMachine
 
@@ -844,6 +899,20 @@ eventSystem.emit('agent.start', { input });
 eventSystem.subscribe('tool.after', (event) => { /* ... */ });
 ```
 
+#### `EventBus`
+
+```ts
+class EventBus {
+  subscribe(eventType: string, handler: (data: unknown) => void): () => void;
+  once(eventType: string): Promise<unknown>;
+  emit(eventType: string, data: unknown): void;
+}
+```
+
+- `subscribe()` — 持久订阅，返回取消订阅函数
+- `once()` — 单次订阅，首次事件后自动取消，返回 Promise
+- `emit()` — 发送事件到所有订阅者
+
 ### HookManager
 
 12 个拦截点的轻量级钩子系统。
@@ -884,6 +953,39 @@ const checkpoint = serialize(context);
 
 // Resume 时反序列化
 const restored = deserialize(checkpoint);
+```
+
+### PermissionManager
+
+权限审批管理器，用于交互式模式下的人机审批。
+
+```ts
+import { PermissionManager } from '@primo-ai/core';
+
+const pm = new PermissionManager();
+```
+
+**方法：**
+
+| 方法 | 签名 | 说明 |
+|------|------|------|
+| `awaitDecision` | `(permission: PendingPermission) => Promise<boolean>` | 等待审批决策，返回 `true`(批准) 或 `false`(拒绝) |
+| `resolve` | `(permissionId: string, approved: boolean) => void` | 服务器端解析审批请求 |
+| `list` | `() => PendingPermission[]` | 列出所有待审批权限请求 |
+| `getBySession` | `(sessionId: string) => PendingPermission[]` | 按会话过滤待审批请求 |
+| `get` | `(permissionId: string) => PendingPermission \| undefined` | 获取单个权限请求详情 |
+
+**类型：**
+
+```ts
+interface PendingPermission {
+  permissionId: string;
+  sessionId: string;
+  toolName: string;
+  args: Record<string, unknown>;
+  reason: string;
+  createdAt: string;
+}
 ```
 
 ### 错误体系
@@ -927,6 +1029,7 @@ const tokens = counter.count('Hello world'); // → number
 ```ts
 import {
   AgentForgeServer, AgentRegistry, AgentForgeClient,
+  SessionEventStream,
   StaticKeyAuthAdapter, serializeSSE, parseSSE,
   InMemoryTaskStore, buildAgentCard, A2ARequestHandler, A2AClient, a2aRoutes,
 } from '@primo-ai/server';
@@ -937,22 +1040,109 @@ import {
 Hono HTTP 服务器。
 
 ```ts
-const server = new AgentForgeServer({ port: 3000, auth: new StaticKeyAuthAdapter('secret') });
+const server = new AgentForgeServer({
+  port: 3000,
+  auth: new StaticKeyAuthAdapter('secret'),
+  // 可选：注入共享依赖
+  permissionManager: new PermissionManager(),
+  modelFactory: new ModelFactory({}),
+  mcpManager: new McpManager(),
+  sessionStorage: 'sqlite',          // 'file' | 'sqlite'
+  storagePath: './data/sessions.db',
+});
 await server.start();
+```
+
+`ServerOptions` 可选依赖：
+| 选项 | 类型 | 说明 |
+|------|------|------|
+| `permissionManager` | `PermissionManager` | 共享的权限管理器实例 |
+| `modelFactory` | `ModelFactory` | 共享的模型工厂实例 |
+| `mcpManager` | `McpManager` | 共享的 MCP 管理器实例 |
+| `sessionStorage` | `'file' \| 'sqlite'` | 会话存储后端（默认 `'file'`） |
+| `storagePath` | `string` | 存储路径（文件模式为目录，SQLite 为 db 路径） |
+
+### AgentRegistry
+
+Agent 注册表，含 Session→Agent 反向映射。
+
+```ts
+const registry = new AgentRegistry();
+registry.register('assistant', agentConfig);
+registry.registerSession('session-1', 'assistant');  // 记录 session→agent 映射
+const agent = registry.getAgentBySession('session-1'); // 按 session 查找 Agent
+registry.unregisterSession('session-1');              // 清除映射
+```
+
+### SessionEventStream
+
+SSE 事件流基础设施，用于长连接订阅 session 事件。
+
+```ts
+import { SessionEventStream } from '@primo-ai/server';
+
+const stream = new SessionEventStream(registry);
+const readable = stream.subscribe('session-1');         // 订阅会话事件 SSE
+const readable2 = stream.fromAgentContinue('agent-1', 'session-1', '请继续'); // Agent continue + SSE
 ```
 
 ### HTTP API 端点
 
+#### 健康检查
+
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| `GET` | `/health` | 健康检查，返回 `{ status: 'ok', timestamp }` |
+| `GET` | `/health/live` | 存活检查，进程是否在运行 |
+| `GET` | `/health/ready` | 就绪检查，是否能服务请求（至少一个 Agent 已注册） |
+
+#### Agent 管理
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
 | `GET` | `/agents` | 列出所有已注册 Agent |
 | `GET` | `/agents/:id` | 获取 Agent 状态（`{ id, state }`） |
 | `POST` | `/agents/:id/run` | 同步运行 Agent，返回 `AgentRunResult` |
 | `POST` | `/agents/:id/stream` | SSE 流式运行（`?mode=events` 返回结构化事件，默认文本流） |
 | `POST` | `/agents/:id/resume` | 从 sessionId 恢复运行 |
+
+#### Session 管理
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
 | `GET` | `/sessions` | 列出所有会话 |
+| `GET` | `/sessions/status` | 批量获取活跃会话状态 |
 | `GET` | `/sessions/:id` | 获取指定会话 |
+| `GET` | `/sessions/:id/messages` | 获取消息历史（`?limit=50&before=msg_xxx` 分页） |
+| `GET` | `/sessions/:id/events` | SSE 订阅会话事件（长连接） |
+| `POST` | `/sessions/:id/abort` | 中止正在运行的会话 |
+| `POST` | `/sessions/:id/prompt` | 在已有会话中追加消息（同步返回最终结果） |
+| `POST` | `/sessions/:id/prompt/stream` | 在已有会话中追加消息（SSE 流式） |
+| `DELETE` | `/sessions/:id` | 删除会话及其所有事件 |
+
+#### 权限管理
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/permissions/pending` | 列出所有待审批权限请求 |
+| `GET` | `/permissions/pending/:permissionId` | 获取单个权限请求详情 |
+| `POST` | `/permissions/pending/:permissionId/respond` | 批准或拒绝权限请求 `{ approved: boolean }` |
+
+#### Provider 管理
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/providers` | 列出已注册的网关及模型提示 |
+| `GET` | `/providers/models` | 列出可用模型模式（网关名称 + canResolve 提示） |
+
+#### MCP 管理
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/mcp` | 列出 MCP 服务器状态 |
+| `GET` | `/mcp/:name/tools` | 列出指定服务器的工具 |
+| `POST` | `/mcp` | 运行时添加 MCP 服务器 |
+| `DELETE` | `/mcp/:name` | 移除 MCP 服务器 |
+| `POST` | `/mcp/:name/reconnect` | 重新连接 MCP 服务器 |
 
 **请求体**（run/stream）：
 
@@ -1041,6 +1231,7 @@ const tracer = new OTelBridge({ tracerProvider: provider, eventBus: bus });
 import {
   memoryPlugin, compressionPlugin, evictionPlugin,
   permissionPlugin, skillPlugin, mcpPlugin,
+  McpManager,
 } from '@primo-ai/plugins';
 ```
 
@@ -1105,13 +1296,14 @@ agent.use(permissionPlugin({
     { tool: 'file_write', action: 'ask' },
     { tool: 'echo', action: 'allow' },
   ],
+  permissionManager: new PermissionManager(),  // 可选：交互式审批
 }));
 ```
 
 **模式：**
 - `full-auto` — 所有工具允许
 - `plan-only` — 危险工具自动拒绝
-- `interactive` — 按规则评估，`ask` 暂停等待人工审批
+- `interactive` — 按规则评估，`ask` 规则通过 `PermissionManager.awaitDecision()` 等待人工审批（提供时）或 fallback 到 suspend 行为（未提供时）
 
 ### skillPlugin
 
@@ -1143,6 +1335,22 @@ agent.use(mcpPlugin({
 ```
 
 MCP 工具名自动添加 `serverName__` 前缀防止冲突。生命周期通过 `ResourceDeclaration` 管理：`start()` 连接并发现工具，`stop()` 断开并注销。
+
+#### `McpManager`
+
+运行时 MCP 服务器管理类：
+
+```ts
+import { McpManager } from '@primo-ai/plugins';
+
+const manager = new McpManager();
+await manager.addServer({ name: 'filesystem', transport: 'stdio', command: 'node', args: ['server.js'] });
+const status = manager.listServers(); // McpServerStatus[]
+await manager.removeServer('filesystem');
+await manager.reconnect('filesystem');
+```
+
+通过 `/mcp` 路由暴露管理 API，支持运行时添加/移除/重连 MCP 服务器。
 
 ### Harness Processors
 

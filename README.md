@@ -32,7 +32,7 @@
 | 🪝 **Pipeline = Hook** | Every stage is a hook target — intercept before/after with full context access |
 | 🤖 **A2A Protocol** | Native Agent-to-Agent JSON-RPC with streaming — multi-agent out of the box |
 | 🛡️ **15+ Production Plugins** | memory, compression, permission, costCap, tokenBudget, rateLimit, PII, moderation... |
-| ⏸️ **Session Persistence** | Suspend/resume + checkpoint recovery + JSONL storage |
+| ⏸️ **Session Persistence** | Suspend/resume + checkpoint recovery + File/SQLite storage |
 
 ## Quick Start
 
@@ -271,11 +271,22 @@ npx agentforge dev --config .agentforge/config.jsonc # Dev mode with watch
 ### API Endpoints
 
 ```
-GET  /health/live          -- Liveness probe
-GET  /health/ready         -- Readiness probe
-POST /agents/:id/run       -- Run an agent
-GET  /agents/:id/stream    -- Stream agent output (SSE)
-GET  /sessions              -- List sessions
+GET  /health/live              -- Liveness probe
+GET  /health/ready             -- Readiness probe
+POST /agents/:id/run           -- Run an agent
+GET  /agents/:id/stream        -- Stream agent output (SSE)
+GET  /sessions                 -- List sessions
+GET  /sessions/:id             -- Get session details
+GET  /sessions/:id/messages    -- Get message history
+GET  /sessions/:id/events      -- Session event stream (SSE)
+POST /sessions/:id/abort       -- Abort running session
+POST /sessions/:id/prompt      -- Continue session (sync)
+POST /sessions/:id/prompt/stream -- Continue session (SSE)
+GET  /permissions/pending      -- List pending permissions
+POST /permissions/pending/:id/respond -- Approve/deny
+GET  /providers                -- List model gateways
+GET  /mcp                      -- List MCP servers
+POST /mcp                      -- Add MCP server
 ```
 
 ### Docker

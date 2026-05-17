@@ -106,8 +106,8 @@ interface HarnessConfig {
 
   // Session persistence
   "session": {
-    "storage": "file",
-    "path": "./sessions"
+    "storage": "file",      // 'file' | 'sqlite' | 'memory'
+    "path": "./sessions"    // directory for file mode, .db path for sqlite
   },
 
   // Cost control

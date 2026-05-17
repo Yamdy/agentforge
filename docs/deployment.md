@@ -221,6 +221,23 @@ Sessions are stored as JSONL files. Configure the storage path:
 }
 ```
 
+### SQLite
+
+基于 better-sqlite3 的 SQLite 存储（需安装 `better-sqlite3`）：
+
+```jsonc
+{
+  "session": {
+    "storage": "sqlite",
+    "path": "./data/sessions.db"
+  }
+}
+```
+
+支持 WAL 模式并发读，`getMessages()` 支持 limit/before 分页查询。
+
+> **依赖**: `npm install better-sqlite3`（可选，未安装时自动回退到文件模式）
+
 ### In-memory
 
 For testing or stateless deployments:
@@ -245,5 +262,8 @@ class RedisSessionStorage implements SessionStorage {
   async read(sessionId: string): AsyncIterable<SessionEvent> { /* ... */ }
   async list(filter?: { parentSessionId?: string; status?: SessionStatus }): Promise<SessionRecord[]> { /* ... */ }
   async updateMeta(sessionId: string, meta: Partial<SessionRecord>): Promise<void> { /* ... */ }
+  async get(sessionId: string): Promise<SessionRecord | undefined> { /* ... */ }
+  async delete(sessionId: string): Promise<void> { /* ... */ }
+  async getMessages(sessionId: string, options?: { limit?: number; before?: string }): Promise<Message[]> { /* ... */ }
 }
 ```
