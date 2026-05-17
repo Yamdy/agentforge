@@ -14,6 +14,7 @@
 </p>
 
 <p align="center">
+  <a href="https://agentforge-docs.vercel.app/"><img src="https://img.shields.io/badge/docs-agentforge--docs.vercel.app-brightgreen" alt="docs" /></a>
   <a href="https://www.npmjs.com/package/@agentforge/core"><img src="https://img.shields.io/npm/v/@agentforge/core?label=%40agentforge%2Fcore" alt="npm" /></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="license" /></a>
   <img src="https://img.shields.io/badge/TypeScript-5.7-blue?logo=typescript&logoColor=white" alt="TypeScript" />
