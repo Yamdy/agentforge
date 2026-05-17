@@ -1,4 +1,4 @@
-export { AgentForgeServer } from './server.js';
+export { AgentForgeServer, type ServerOptions, type A2AOptions, type CorsOptions, type ServerHandle } from './server.js';
 export { AgentRegistry } from './registry.js';
 export { AgentForgeClient } from './client.js';
 export { StaticKeyAuthAdapter } from './middleware/static-key-auth.js';
