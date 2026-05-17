@@ -2,7 +2,7 @@
 
 AgentForge 公共 API 参考。按包分组，覆盖类型、类和函数导出。
 
-> **包版本**: @primo-ai/core 0.0.1
+> **包版本**: @primo-ai/core 0.1.3
 
 ---
 

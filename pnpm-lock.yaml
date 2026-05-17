@@ -24,6 +24,9 @@ importers:
       eslint:
         specifier: ^9.0.0
         version: 9.39.4
+      husky:
+        specifier: ^9.1.7
+        version: 9.1.7
       tsx:
         specifier: ^4.21.0
         version: 4.21.0
@@ -100,6 +103,9 @@ importers:
       '@primo-ai/observability':
         specifier: workspace:*
         version: link:../observability
+      '@primo-ai/sdk':
+        specifier: workspace:*
+        version: link:../sdk
       '@primo-ai/tools':
         specifier: workspace:*
         version: link:../tools
@@ -113,9 +119,6 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
-      '@primo-ai/sdk':
-        specifier: workspace:*
-        version: link:../sdk
       '@types/node':
         specifier: ^22.15.0
         version: 22.19.18
@@ -1793,6 +1796,11 @@ packages:
   http-errors@2.0.1:
     resolution: {integrity: sha512-4FbRdAX+bSdmo4AUFuS0WNiPz8NgFt+r8ThgNWmlrjQjt1Q7ZR9+zTlce2859x4KSXrwIsaeTqDoKQmtP8pLmQ==}
     engines: {node: '>= 0.8'}
+
+  husky@9.1.7:
+    resolution: {integrity: sha512-5gs5ytaNjBrh5Ow3zrvdUUY+0VxIuWVL4i9irt6friV+BqdCfmV11CQTWMiBYWHbXhco+J1kHfTOUkePhCDvMA==}
+    engines: {node: '>=18'}
+    hasBin: true
 
   iconv-lite@0.7.2:
     resolution: {integrity: sha512-im9DjEDQ55s9fL4EYzOAv0yMqmMBSZp6G0VvFyTMPKWxiSBHUj9NW/qqLmXUwXrrM7AvqSlTCfvqRb0cM8yYqw==}
@@ -4150,6 +4158,8 @@ snapshots:
       setprototypeof: 1.2.0
       statuses: 2.0.2
       toidentifier: 1.0.1
+
+  husky@9.1.7: {}
 
   iconv-lite@0.7.2:
     dependencies:

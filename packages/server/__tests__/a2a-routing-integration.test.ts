@@ -104,7 +104,8 @@ describe('A2A route mounting integration', () => {
         {
           name: 'echo',
           description: 'Echoes input',
-          parameters: { type: 'object', properties: { text: { type: 'string' } } },
+          inputSchema: { type: 'object', properties: { text: { type: 'string' } } },
+          execute: async () => 'ok',
         },
       ],
     });

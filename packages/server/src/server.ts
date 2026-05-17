@@ -152,7 +152,7 @@ export class AgentForgeServer {
 
       // Lazy-load 'ws' to avoid hard dependency
       try {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
         const wsModule = require('ws');
         const wss = new (wsModule as any).WebSocketServer({ noServer: true }) as any;
         wss.handleUpgrade(

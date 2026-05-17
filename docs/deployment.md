@@ -67,7 +67,7 @@ The readiness check verifies that at least one agent is registered in the regist
 ```json
 {
   "status": "ok",
-  "version": "0.0.1",
+  "version": "0.1.3",
   "uptime": 3600,
   "agents": 3
 }
