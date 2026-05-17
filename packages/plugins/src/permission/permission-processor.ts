@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { Processor, PipelineContext, ProcessorResult, SuspensionSignal, HarnessAPI, PluginRegistration } from '@primo-ai/sdk';
+import type { PermissionManager } from '@primo-ai/core';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -25,6 +26,8 @@ export interface PermissionDecisionEvent {
   rule?: string;
   /** The permission mode under which the decision was made */
   mode: PermissionMode;
+  /** Permission ID (present when permissionManager is used) */
+  permissionId?: string;
 }
 
 export interface PermissionConfig {
@@ -32,6 +35,12 @@ export interface PermissionConfig {
   rules: PermissionRule[];
   /** Callback invoked on every permission decision for audit trail */
   onDecision?: (event: PermissionDecisionEvent) => void;
+  /**
+   * Optional PermissionManager for interactive mode.
+   * When provided, 'ask' rules use awaitDecision() instead of suspending.
+   * When not provided, falls back to current suspend behavior.
+   */
+  permissionManager?: PermissionManager;
 }
 
 // ---------------------------------------------------------------------------
@@ -131,6 +140,7 @@ function evaluateRules(
 
 export function createPermissionProcessor(config: PermissionConfig): Processor {
   const emit = config.onDecision ?? (() => {});
+  let permissionCounter = 0;
 
   return {
     stage: 'gateTool',
@@ -162,7 +172,29 @@ export function createPermissionProcessor(config: PermissionConfig): Processor {
               emit({ decision: 'deny', toolName: toolCall.name, rule: matched.rule.tool, mode: config.mode });
               return { type: 'abort', reason: `Permission denied: tool '${toolCall.name}' requires approval (ask rule, plan-only mode)` };
             }
-            // In interactive mode, 'ask' suspends awaiting human approval
+            // In interactive mode with permissionManager: await interactive decision
+            if (config.permissionManager) {
+              const permissionId = `perm-${toolCall.name}-${Date.now()}-${++permissionCounter}`;
+              const permission = {
+                permissionId,
+                sessionId: ctx.request.sessionId,
+                toolName: toolCall.name,
+                args: toolCall.args,
+                reason: `Tool '${toolCall.name}' requires approval (ask rule)`,
+                createdAt: new Date().toISOString(),
+              };
+
+              emit({ decision: 'ask', toolName: toolCall.name, rule: matched.rule.tool, mode: config.mode, permissionId });
+
+              const approved = await config.permissionManager.awaitDecision(permission);
+              if (approved) {
+                emit({ decision: 'allow', toolName: toolCall.name, rule: matched.rule.tool, mode: config.mode, permissionId });
+                return ctx;
+              }
+              emit({ decision: 'deny', toolName: toolCall.name, rule: matched.rule.tool, mode: config.mode, permissionId });
+              return { type: 'abort', reason: `Permission denied: tool '${toolCall.name}' blocked by user` };
+            }
+            // In interactive mode without permissionManager, 'ask' suspends awaiting human approval
             emit({ decision: 'ask', toolName: toolCall.name, rule: matched.rule.tool, mode: config.mode });
             return {
               type: 'suspend',

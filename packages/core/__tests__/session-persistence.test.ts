@@ -74,6 +74,9 @@ describe('SessionPersistence', () => {
       read: (sessionId) => storage.read(sessionId),
       list: (filter) => storage.list(filter),
       updateMeta: (sessionId, meta) => storage.updateMeta(sessionId, meta),
+      get: (sessionId) => storage.get(sessionId),
+      delete: (sessionId) => storage.delete(sessionId),
+      getMessages: (sessionId, options) => storage.getMessages(sessionId, options),
     };
 
     const flakyPersistence = new SessionPersistence(isolatedBus, flakyStorage);

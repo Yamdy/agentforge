@@ -7,3 +7,5 @@ export {
   type PermissionDecisionEvent,
   type PermissionPluginOptions,
 } from './permission-processor.js';
+
+export { type PermissionManager } from '@primo-ai/core';
