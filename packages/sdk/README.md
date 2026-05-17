@@ -12,8 +12,9 @@ This package contains all shared types used across the AgentForge monorepo. It h
 
 | Type | Description |
 |------|-------------|
-| `PipelineStage` | Union of all 13 stage names |
-| `StageName` | `PipelineStage` plus arbitrary plugin-defined strings |
+| `PipelineStage` | Union of 10 main agent lifecycle stages |
+| `ToolExecutionStage` | Sub-pipeline stages: `beforeTool`, `execute`, `afterTool` |
+| `StageName` | `PipelineStage \| ToolExecutionStage` plus arbitrary plugin-defined strings |
 | `Processor` | `{ stage, execute(context) => Promise<ProcessorResult> }` |
 | `ProcessorResult` | `PipelineContext \| AbortSignal \| SuspensionSignal` |
 | `PipelineContext` | Container with `request`, `agent`, `iteration`, `session` regions |

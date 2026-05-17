@@ -4,7 +4,7 @@
 // Pipeline Stage
 // ---------------------------------------------------------------------------
 
-/** The agent lifecycle stages + gate stages + tool sub-pipeline stages. */
+/** Agent lifecycle stages: pre-loop setup, agentic loop, and post-loop output. */
 export type PipelineStage =
   | 'processInput'
   | 'buildContext'
@@ -15,13 +15,13 @@ export type PipelineStage =
   | 'gateTool'
   | 'executeTools'
   | 'evaluateIteration'
-  | 'processOutput'
-  | 'beforeTool'
-  | 'execute'
-  | 'afterTool';
+  | 'processOutput';
+
+/** Tool execution sub-pipeline stages — internal to ToolRegistry. */
+export type ToolExecutionStage = 'beforeTool' | 'execute' | 'afterTool';
 
 /** Stage name that accepts built-in stages AND arbitrary plugin-defined strings. */
-export type StageName = PipelineStage | (string & {});
+export type StageName = PipelineStage | ToolExecutionStage | (string & {});
 
 /** A mutation operation applied to a pipeline phase's stage list. */
 export type StageMutation =

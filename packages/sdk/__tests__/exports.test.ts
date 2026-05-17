@@ -26,23 +26,20 @@ import type {
 import { SpanType } from '../src/index.js';
 
 describe('PipelineStage', () => {
-  it('accepts all 8 agent lifecycle stage names', () => {
+  it('accepts all 10 main stage names', () => {
     const stages: PipelineStage[] = [
       'processInput',
       'buildContext',
       'prepareStep',
+      'gateLLM',
       'invokeLLM',
       'processStepOutput',
+      'gateTool',
       'executeTools',
       'evaluateIteration',
       'processOutput',
     ];
-    expect(stages).toHaveLength(8);
-  });
-
-  it('accepts tool sub-pipeline stage names', () => {
-    const toolStages: PipelineStage[] = ['beforeTool', 'execute', 'afterTool'];
-    expect(toolStages).toHaveLength(3);
+    expect(stages).toHaveLength(10);
   });
 });
 

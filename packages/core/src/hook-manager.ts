@@ -12,6 +12,7 @@ const HOOK_TO_EVENT: Record<string, string> = {
   'llm.after': 'llm:after',
   'tool.before': 'tool:before',
   'tool.after': 'tool:after',
+  'iteration.end': 'iteration:end',
   'error': 'error',
 };
 
