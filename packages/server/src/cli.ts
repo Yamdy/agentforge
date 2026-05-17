@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { AgentRegistry } from './registry.js';
 import { resolveConfigSources, type DiscoveryOptions } from './discovery.js';
+import type { StudioObservability } from './studio/observability.js';
 
 // ---------------------------------------------------------------------------
 // Version
@@ -68,7 +69,7 @@ Dev Options:
 // ---------------------------------------------------------------------------
 
 type CliCommand =
-  | { command: 'serve'; port?: number; apiKey?: string; config?: string; profile?: string; verbose?: boolean; quiet?: boolean; agentsConvention?: false; agentforgeConvention?: false; skillDirs?: string[] }
+  | { command: 'serve'; port?: number; apiKey?: string; config?: string; profile?: string; verbose?: boolean; quiet?: boolean; studio?: boolean; agentsConvention?: false; agentforgeConvention?: false; skillDirs?: string[] }
   | { command: 'run'; agent: string; input: string; config?: string; profile?: string; verbose?: boolean; quiet?: boolean; agentsConvention?: false; agentforgeConvention?: false; skillDirs?: string[] }
   | { command: 'dev'; config?: string; apiKey?: string; port?: number; profile?: string; verbose?: boolean; quiet?: boolean; agentsConvention?: false; agentforgeConvention?: false; skillDirs?: string[] }
   | { command: 'help' }
@@ -97,6 +98,8 @@ export function parseCommand(args: string[]): CliCommand {
       flags.agentsConvention = false;
     } else if (args[i] === '--no-agentforge-convention') {
       flags.agentforgeConvention = false;
+    } else if (args[i] === '--studio') {
+      flags.studio = true;
     } else if (args[i] === '--skill-dir' && args[i + 1]) {
       skillDirs.push(args[++i]);
     } else if (args[i].startsWith('--') && args[i + 1]) {
@@ -115,6 +118,7 @@ export function parseCommand(args: string[]): CliCommand {
         profile: flags.profile as string | undefined,
         verbose: flags.verbose as boolean | undefined,
         quiet: flags.quiet as boolean | undefined,
+        studio: flags.studio as boolean | undefined,
         ...(flags.agentsConvention === false ? { agentsConvention: false } : {}),
         ...(flags.agentforgeConvention === false ? { agentforgeConvention: false } : {}),
         ...(flags.skillDirs ? { skillDirs: flags.skillDirs as string[] } : {}),
@@ -167,7 +171,15 @@ export async function handleServe(opts: Extract<CliCommand, { command: 'serve' }
   const home = homedir();
   const configSources = resolveConfigSources(cwd, home, opts.config);
   const configPath = configSources.project ?? '.agentforge/config.jsonc';
-  const server = new AgentForgeServer({ port: opts.port, apiKey: opts.apiKey });
+
+  // Create StudioObservability before server if --studio is enabled
+  let observability: StudioObservability | undefined;
+  if (opts.studio) {
+    const { StudioObservability } = await import('./studio/observability.js');
+    observability = new StudioObservability();
+  }
+
+  const server = new AgentForgeServer({ port: opts.port, apiKey: opts.apiKey, studio: observability });
 
   if (existsSync(resolve(configPath))) {
     const discoveryOpts: DiscoveryOptions = {
@@ -175,7 +187,7 @@ export async function handleServe(opts: Extract<CliCommand, { command: 'serve' }
       agentforgeConvention: opts.agentforgeConvention === false ? false : undefined,
       extraSkillDirs: opts.skillDirs,
     };
-    const { agentIds } = await loadAndRegister(configSources, server.registry, opts.profile, discoveryOpts);
+    const { agentIds } = await loadAndRegister(configSources, server.registry, opts.profile, discoveryOpts, observability);
     console.log(`Loaded ${agentIds.length} agent(s): ${agentIds.join(', ')}`);
   } else {
     console.warn(`Config not found at ${configPath}, starting with empty registry`);

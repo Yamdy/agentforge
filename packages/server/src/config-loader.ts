@@ -6,6 +6,7 @@ import type { GatewayConfig, AgentConfig } from '@primo-ai/sdk';
 import { ProfileLoader, builtinProfiles, applyProfile } from './profiles/index.js';
 import { type ResolvedConfigSources, type DiscoveryOptions, resolveSkillDirectories, resolveMcpServers } from './discovery.js';
 import { discoverSkills, skillPlugin, mcpPlugin, McpManager, type SkillFileSystem } from '@primo-ai/plugins';
+import type { StudioObservability } from './studio/observability.js';
 
 export interface ServerConfig {
   agents?: Record<string, Partial<AgentConfig> & { model: string; profile?: string }>;
@@ -89,6 +90,7 @@ export async function loadAndRegister(
   registry: AgentRegistry,
   defaultProfile?: string,
   discoveryOpts?: DiscoveryOptions,
+  observability?: StudioObservability,
 ): Promise<{ agentIds: string[]; modelFactory: ModelFactory; mcpManager?: McpManager }> {
   // Load and merge config from all sources
   const loader = new ConfigLoader();
@@ -143,6 +145,11 @@ export async function loadAndRegister(
 
     if (mcpServers.length > 0) {
       agent.use(mcpPlugin({ servers: mcpServers }));
+    }
+
+    // Attach to Studio observability if enabled
+    if (observability) {
+      observability.attachAgent(agent);
     }
 
     agentIds.push(id);
