@@ -57,6 +57,11 @@ export {
 } from './mcp/index.js';
 
 export {
+  McpManager,
+  type McpServerStatus,
+} from './mcp/mcp-manager.js';
+
+export {
   convertMcpTool,
   type McpToolDefinition,
 } from './mcp/tool-converter.js';

@@ -5,7 +5,7 @@ import type { AgentRegistry } from './registry.js';
 import type { GatewayConfig, AgentConfig } from '@primo-ai/sdk';
 import { ProfileLoader, builtinProfiles, applyProfile } from './profiles/index.js';
 import { type ResolvedConfigSources, type DiscoveryOptions, resolveSkillDirectories, resolveMcpServers } from './discovery.js';
-import { discoverSkills, skillPlugin, mcpPlugin, type SkillFileSystem } from '@primo-ai/plugins';
+import { discoverSkills, skillPlugin, mcpPlugin, McpManager, type SkillFileSystem } from '@primo-ai/plugins';
 
 export interface ServerConfig {
   agents?: Record<string, Partial<AgentConfig> & { model: string; profile?: string }>;
@@ -89,7 +89,7 @@ export async function loadAndRegister(
   registry: AgentRegistry,
   defaultProfile?: string,
   discoveryOpts?: DiscoveryOptions,
-): Promise<{ agentIds: string[] }> {
+): Promise<{ agentIds: string[]; modelFactory: ModelFactory; mcpManager?: McpManager }> {
   // Load and merge config from all sources
   const loader = new ConfigLoader();
   const config = await loader.load({
@@ -148,5 +148,8 @@ export async function loadAndRegister(
     agentIds.push(id);
   }
 
-  return { agentIds };
+  // Expose McpManager for runtime management via API when MCP servers are configured
+  const mcpManager = mcpServers.length > 0 ? new McpManager() : undefined;
+
+  return { agentIds, modelFactory, mcpManager };
 }

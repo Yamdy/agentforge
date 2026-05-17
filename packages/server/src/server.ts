@@ -4,11 +4,16 @@ import { AgentRegistry } from './registry.js';
 import { healthRoutes } from './routes/health.js';
 import { agentRoutes } from './routes/agents.js';
 import { sessionRoutes } from './routes/sessions.js';
+import { permissionRoutes } from './routes/permissions.js';
+import { providerRoutes } from './routes/providers.js';
+import { mcpRoutes } from './routes/mcp.js';
 import { authMiddleware } from './middleware/auth.js';
 import { requestLogger } from './middleware/logger.js';
 import { WebSocketBridge } from './bridge/bridge.js';
 import { a2aRoutes, type A2ARoutesOptions } from './a2a/routes.js';
 import type { SessionStorage, AuthAdapter } from '@primo-ai/sdk';
+import type { PermissionManager, ModelFactory } from '@primo-ai/core';
+import type { McpManager } from '@primo-ai/plugins';
 import { StaticKeyAuthAdapter } from './middleware/static-key-auth.js';
 
 export interface ServerHandle {
@@ -41,6 +46,9 @@ export interface ServerOptions {
   a2a?: A2AOptions;
   requestTimeout?: number;
   shutdownTimeout?: number;
+  modelFactory?: ModelFactory;
+  permissionManager?: PermissionManager;
+  mcpManager?: McpManager;
 }
 
 const DEFAULT_REQUEST_TIMEOUT = 30_000;
@@ -64,6 +72,9 @@ export class AgentForgeServer {
   private _shutdownTimeout: number;
   private _requestTimeout: number;
   private _startTime?: Date;
+  private _modelFactory?: ModelFactory;
+  private _permissionManager?: PermissionManager;
+  private _mcpManager?: McpManager;
 
   constructor(options?: ServerOptions) {
     this.registry = options?.registry ?? new AgentRegistry();
@@ -72,6 +83,9 @@ export class AgentForgeServer {
     this._enableWebSocket = options?.enableWebSocket ?? false;
     this._shutdownTimeout = options?.shutdownTimeout ?? DEFAULT_SHUTDOWN_TIMEOUT;
     this._requestTimeout = options?.requestTimeout ?? DEFAULT_REQUEST_TIMEOUT;
+    this._modelFactory = options?.modelFactory;
+    this._permissionManager = options?.permissionManager;
+    this._mcpManager = options?.mcpManager;
     this.app = new Hono();
     this.bridge = new WebSocketBridge(this.registry);
 
@@ -111,6 +125,9 @@ export class AgentForgeServer {
     }));
     this.app.route('/agents', agentRoutes(this.registry));
     this.app.route('/sessions', sessionRoutes(this._sessionStorage));
+    this.app.route('/permissions', permissionRoutes(this._permissionManager));
+    this.app.route('/providers', providerRoutes(this._modelFactory));
+    this.app.route('/mcp', mcpRoutes(this._mcpManager));
 
     // Mount A2A routes if configured
     if (options?.a2a) {

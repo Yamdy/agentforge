@@ -32,4 +32,13 @@ export class EventBus {
     set.add(handler);
     return () => set!.delete(handler);
   }
+
+  once(eventType: string): Promise<unknown> {
+    return new Promise((resolve) => {
+      const unsub = this.subscribe(eventType, (data) => {
+        unsub();
+        resolve(data);
+      });
+    });
+  }
 }

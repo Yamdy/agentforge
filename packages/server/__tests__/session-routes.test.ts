@@ -48,6 +48,10 @@ function createMockStorage(sessions: SessionRecord[] = []): SessionStorage {
       }
       return false;
     }),
+    get: vi.fn().mockImplementation(async (id: string) => {
+      return store.find(s => s.sessionId === id);
+    }),
+    getMessages: vi.fn().mockResolvedValue([]),
   } as unknown as SessionStorage;
 }
 

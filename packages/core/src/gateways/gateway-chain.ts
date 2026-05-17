@@ -22,4 +22,11 @@ export class GatewayChain {
   get size(): number {
     return this.gateways.length;
   }
+
+  listGateways(): Array<{ name: string; canResolve: (model: string) => boolean }> {
+    return this.gateways.map(gw => ({
+      name: gw.name,
+      canResolve: (model: string) => gw.canResolve(model),
+    }));
+  }
 }

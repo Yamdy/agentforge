@@ -3,6 +3,9 @@ import type { HarnessAPI, PluginRegistration, McpServerConfig } from '@primo-ai/
 import { convertMcpTool } from './tool-converter.js';
 import { createMcpClient, type McpClient } from './mcp-client.js';
 
+// Re-export McpManager for external consumers
+export { McpManager, type McpServerStatus } from './mcp-manager.js';
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------

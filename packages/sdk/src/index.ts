@@ -349,6 +349,13 @@ export type StreamEvent =
   | { type: 'abort'; reason: string; retryFrom?: StageName }
   | { type: 'suspended'; suspensionId: string; reason: string; checkpoint: PipelineCheckpoint };
 
+export type ServerStreamEvent = StreamEvent
+  | { type: 'session.started'; sessionId: string }
+  | { type: 'session.completed'; sessionId: string; tokenUsage: TokenUsage }
+  | { type: 'session.aborted'; sessionId: string }
+  | { type: 'permission.request'; sessionId: string; permissionId: string; toolName: string; args: Record<string, unknown>; reason: string }
+  | { type: 'permission.resolved'; sessionId: string; permissionId: string; decision: 'allow' | 'deny' };
+
 // ---------------------------------------------------------------------------
 // Plugin System
 // ---------------------------------------------------------------------------
@@ -604,7 +611,7 @@ export interface HarnessConfig {
 // Session Persistence
 // ---------------------------------------------------------------------------
 
-export type SessionStatus = 'active' | 'completed' | 'suspended' | 'error';
+export type SessionStatus = 'active' | 'completed' | 'suspended' | 'cancelled' | 'error';
 
 export interface SessionRecord {
   sessionId: string;
@@ -628,6 +635,9 @@ export interface SessionStorage {
   read(sessionId: string): AsyncIterable<SessionEvent>;
   list(filter?: { parentSessionId?: string; status?: SessionStatus }): Promise<SessionRecord[]>;
   updateMeta(sessionId: string, meta: Partial<SessionRecord>): Promise<void>;
+  get(sessionId: string): Promise<SessionRecord | undefined>;
+  delete(sessionId: string): Promise<void>;
+  getMessages(sessionId: string, options?: { limit?: number; before?: string }): Promise<Message[]>;
 }
 
 // ---------------------------------------------------------------------------

@@ -101,4 +101,74 @@ export class FilesystemSessionStorage implements SessionStorage {
       status: 'active',
     };
   }
+
+  async get(sessionId: string): Promise<SessionRecord | undefined> {
+    return this.readMeta(sessionId);
+  }
+
+  async delete(sessionId: string): Promise<void> {
+    const dir = this.sessionDir(sessionId);
+    const { rm } = await import('node:fs/promises');
+    await rm(dir, { recursive: true, force: true });
+  }
+
+  async getMessages(sessionId: string, options?: { limit?: number; before?: string }): Promise<import('@primo-ai/sdk').Message[]> {
+    const events: SessionEvent[] = [];
+    for await (const event of this.read(sessionId)) {
+      events.push(event);
+    }
+
+    if (events.length === 0) return [];
+
+    // Rebuild Message[] from events — same logic as SessionManagerImpl.restore()
+    const messages: import('@primo-ai/sdk').Message[] = [];
+    let toolCallIdx = 0;
+
+    for (const event of events) {
+      const payload = event.payload as Record<string, unknown> | undefined;
+      if (!payload) continue;
+
+      switch (event.type) {
+        case 'iteration:end':
+        case 'iteration.end': {
+          if (payload.response) {
+            messages.push({ role: 'assistant', content: payload.response as string });
+          }
+          break;
+        }
+        case 'tool:after':
+        case 'tool.after': {
+          const toolName = payload.toolName as string;
+          const content = payload.error
+            ? String(payload.error)
+            : typeof payload.result === 'string'
+              ? payload.result
+              : JSON.stringify(payload.result ?? '');
+          const msg: import('@primo-ai/sdk').Message = {
+            role: 'tool',
+            content,
+            toolCallId: `restored_${toolName}_${toolCallIdx++}`,
+            toolName,
+          };
+          if (payload.error) (msg as import('@primo-ai/sdk').Message & { error?: string }).error = String(payload.error);
+          if (payload.result !== undefined) (msg as import('@primo-ai/sdk').Message & { result?: unknown }).result = payload.result;
+          messages.push(msg);
+          break;
+        }
+        case 'error': {
+          messages.push({ role: 'assistant', content: `[Error] ${String(payload.error)}` });
+          break;
+        }
+        default:
+          break;
+      }
+    }
+
+    // Apply pagination
+    if (options?.limit && options.limit > 0) {
+      return messages.slice(-options.limit);
+    }
+
+    return messages;
+  }
 }

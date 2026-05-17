@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { FilesystemSessionStorage } from '../src/session-storage.js';
@@ -154,6 +154,132 @@ describe('FilesystemSessionStorage', () => {
     it('accepts valid UUID sessionIds', async () => {
       const id = crypto.randomUUID();
       await expect(storage.append(id, makeEvent(1, 'test'))).resolves.toBeUndefined();
+    });
+  });
+
+  describe('get', () => {
+    it('returns SessionRecord for existing session', async () => {
+      await storage.updateMeta('s1', { status: 'active', model: 'gpt-4' });
+
+      const record = await storage.get('s1');
+      expect(record).toBeDefined();
+      expect(record!.sessionId).toBe('s1');
+      expect(record!.status).toBe('active');
+      expect(record!.model).toBe('gpt-4');
+    });
+
+    it('returns undefined for non-existent session', async () => {
+      const record = await storage.get('no-such-session');
+      expect(record).toBeUndefined();
+    });
+  });
+
+  describe('delete', () => {
+    it('removes session directory and all files', async () => {
+      await storage.updateMeta('s1', { status: 'active' });
+      await storage.append('s1', makeEvent(1, 'agent:start', { sessionId: 's1' }));
+
+      const dirBefore = join(basePath, 's1');
+      expect(existsSync(dirBefore)).toBe(true);
+
+      await storage.delete('s1');
+
+      expect(existsSync(dirBefore)).toBe(false);
+      const record = await storage.get('s1');
+      expect(record).toBeUndefined();
+    });
+
+    it('is a no-op for non-existent session', async () => {
+      // Should not throw
+      await expect(storage.delete('no-such-session')).resolves.toBeUndefined();
+    });
+  });
+
+  describe('getMessages', () => {
+    it('reconstructs Message[] from events', async () => {
+      await storage.append('s1', makeEvent(1, 'agent:start', { input: 'Hello' }));
+      await storage.append('s1', makeEvent(2, 'iteration:end', {
+        step: 0,
+        response: 'Hi there!',
+        tokenUsage: { input: 10, output: 5 },
+      }));
+      await storage.append('s1', makeEvent(3, 'tool:after', {
+        toolName: 'echo',
+        result: 'pong',
+      }));
+      await storage.append('s1', makeEvent(4, 'iteration:end', {
+        step: 1,
+        response: 'Done',
+      }));
+
+      const messages = await storage.getMessages('s1');
+      expect(messages).toHaveLength(3);
+      expect(messages[0]).toEqual({ role: 'assistant', content: 'Hi there!' });
+      expect(messages[1]).toEqual(expect.objectContaining({
+        role: 'tool',
+        content: 'pong',
+        toolName: 'echo',
+      }));
+      expect(messages[2]).toEqual({ role: 'assistant', content: 'Done' });
+    });
+
+    it('returns only last N messages with limit option', async () => {
+      await storage.append('s1', makeEvent(1, 'agent:start', { input: 'Hello' }));
+      await storage.append('s1', makeEvent(2, 'iteration:end', { step: 0, response: 'First' }));
+      await storage.append('s1', makeEvent(3, 'iteration:end', { step: 1, response: 'Second' }));
+      await storage.append('s1', makeEvent(4, 'iteration:end', { step: 2, response: 'Third' }));
+
+      const messages = await storage.getMessages('s1', { limit: 2 });
+      expect(messages).toHaveLength(2);
+      expect(messages[0]).toEqual({ role: 'assistant', content: 'Second' });
+      expect(messages[1]).toEqual({ role: 'assistant', content: 'Third' });
+    });
+
+    it('returns empty array for empty session', async () => {
+      // Create a session with meta but no events
+      await storage.updateMeta('s1', { status: 'active' });
+
+      const messages = await storage.getMessages('s1');
+      expect(messages).toEqual([]);
+    });
+
+    it('returns empty array for non-existent session', async () => {
+      const messages = await storage.getMessages('no-such-session');
+      expect(messages).toEqual([]);
+    });
+
+    it('handles error events', async () => {
+      await storage.append('s1', makeEvent(1, 'agent:start', { input: 'Hello' }));
+      await storage.append('s1', makeEvent(2, 'error', { error: 'Something went wrong' }));
+
+      const messages = await storage.getMessages('s1');
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toEqual({ role: 'assistant', content: '[Error] Something went wrong' });
+    });
+
+    it('handles tool:after with error result', async () => {
+      await storage.append('s1', makeEvent(1, 'agent:start', { input: 'Hello' }));
+      await storage.append('s1', makeEvent(2, 'tool:after', {
+        toolName: 'failing-tool',
+        error: 'Tool crashed',
+      }));
+
+      const messages = await storage.getMessages('s1');
+      expect(messages).toHaveLength(1);
+      expect(messages[0].role).toBe('tool');
+      expect(messages[0].content).toBe('Tool crashed');
+    });
+
+    it('handles iteration.end (dot notation) event variant', async () => {
+      await storage.append('s1', makeEvent(1, 'agent:start', { input: 'Hello' }));
+      await storage.append('s1', makeEvent(2, 'iteration.end', {
+        step: 0,
+        response: 'Dot notation response',
+      }));
+
+      const messages = await storage.getMessages('s1');
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toEqual({ role: 'assistant', content: 'Dot notation response' });
     });
   });
 });

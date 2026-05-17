@@ -47,4 +47,8 @@ export class ModelFactory {
   registerProvider(name: string, factory: ProviderFactory): void {
     this.providerGateway.addProvider(name, factory);
   }
+
+  listGateways(): Array<{ name: string; canResolve: (model: string) => boolean }> {
+    return this.chain.listGateways();
+  }
 }

@@ -9,6 +9,7 @@ export interface AgentEntry {
 
 export class AgentRegistry {
   private agents = new Map<string, AgentEntry>();
+  private sessionAgentMap = new Map<string, string>();
 
   register(id: string, config: AgentConfig, deps?: AgentDependencies): Agent {
     const agent = new Agent(config, deps);
@@ -33,5 +34,23 @@ export class AgentRegistry {
 
   clear(): void {
     this.agents.clear();
+    this.sessionAgentMap.clear();
+  }
+
+  /** Map a sessionId to an agentId for reverse lookup. */
+  registerSession(sessionId: string, agentId: string): void {
+    this.sessionAgentMap.set(sessionId, agentId);
+  }
+
+  /** Look up the agent associated with a session. */
+  getAgentBySession(sessionId: string): Agent | undefined {
+    const agentId = this.sessionAgentMap.get(sessionId);
+    if (!agentId) return undefined;
+    return this.agents.get(agentId)?.agent;
+  }
+
+  /** Remove a session→agent mapping. */
+  unregisterSession(sessionId: string): void {
+    this.sessionAgentMap.delete(sessionId);
   }
 }

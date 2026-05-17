@@ -12,6 +12,7 @@ export { StorageReplayBackend } from './storage-replay-backend.js';
 export { HookManager, type HookManagerOptions } from './hook-manager.js';
 export { ToolRegistry, type AiSdkToolSchema, type ToolRegistryOptions } from './tool-registry.js';
 export { FilesystemSessionStorage } from './session-storage.js';
+export { SqliteSessionStorage } from './session-storage-sqlite.js';
 export { SessionPersistence } from './session-persistence.js';
 export { SessionManagerImpl } from './session-manager.js';
 export { createSubAgentTool } from './sub-agent.js';
@@ -41,3 +42,5 @@ export {
   ToolExecutionError,
   type AgentErrorOptions,
 } from './errors.js';
+export { PermissionManager } from './pending-permission.js';
+export type { PendingPermission } from './pending-permission.js';
