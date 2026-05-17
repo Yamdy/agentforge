@@ -26,7 +26,7 @@ describe('profile integration in config-loader', () => {
     }));
 
     const registry = new AgentRegistry();
-    const { agentIds } = await loadAndRegister(path, registry);
+    const { agentIds } = await loadAndRegister({ project: path }, registry);
 
     expect(agentIds).toEqual(['coder']);
     const agent = registry.get('coder');
@@ -41,7 +41,7 @@ describe('profile integration in config-loader', () => {
     }));
 
     const registry = new AgentRegistry();
-    const { agentIds } = await loadAndRegister(path, registry, 'data-agent');
+    const { agentIds } = await loadAndRegister({ project: path }, registry, 'data-agent');
 
     expect(agentIds).toEqual(['bot']);
     const agent = registry.get('bot');
@@ -56,7 +56,7 @@ describe('profile integration in config-loader', () => {
     }));
 
     const registry = new AgentRegistry();
-    const { agentIds } = await loadAndRegister(path, registry, 'coding-agent');
+    const { agentIds } = await loadAndRegister({ project: path }, registry, 'coding-agent');
 
     expect(agentIds).toEqual(['bot']);
   });
@@ -69,7 +69,7 @@ describe('profile integration in config-loader', () => {
     }));
 
     const registry = new AgentRegistry();
-    await expect(loadAndRegister(path, registry)).rejects.toThrow(
+    await expect(loadAndRegister({ project: path }, registry)).rejects.toThrow(
       /Unknown profile.*nonexistent-profile/,
     );
   });
@@ -82,7 +82,7 @@ describe('profile integration in config-loader', () => {
     }));
 
     const registry = new AgentRegistry();
-    const { agentIds } = await loadAndRegister(path, registry);
+    const { agentIds } = await loadAndRegister({ project: path }, registry);
 
     expect(agentIds).toEqual(['plain']);
     expect(registry.get('plain')).toBeDefined();
@@ -97,7 +97,7 @@ describe('profile integration in config-loader', () => {
     }));
 
     const registry = new AgentRegistry();
-    const { agentIds } = await loadAndRegister(path, registry);
+    const { agentIds } = await loadAndRegister({ project: path }, registry);
 
     expect(agentIds.sort()).toEqual(['biz', 'dev']);
     expect(registry.get('dev')).toBeDefined();
@@ -112,7 +112,7 @@ describe('profile integration in config-loader', () => {
     }));
 
     const registry = new AgentRegistry();
-    await loadAndRegister(path, registry);
+    await loadAndRegister({ project: path }, registry);
 
     const agent = registry.get('coder');
     expect(agent).toBeDefined();
@@ -132,7 +132,7 @@ describe('profile integration in config-loader', () => {
     }));
 
     const registry = new AgentRegistry();
-    const { agentIds } = await loadAndRegister(path, registry, 'coding-agent');
+    const { agentIds } = await loadAndRegister({ project: path }, registry, 'coding-agent');
 
     expect(agentIds).toEqual(['custom']);
     const agent = registry.get('custom');
@@ -153,7 +153,7 @@ describe('profile integration in config-loader', () => {
     }));
 
     const registry = new AgentRegistry();
-    await loadAndRegister(path, registry);
+    await loadAndRegister({ project: path }, registry);
 
     const agent = registry.get('biz');
     expect(agent).toBeDefined();

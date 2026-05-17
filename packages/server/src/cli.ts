@@ -2,7 +2,10 @@ import { AgentForgeServer } from './server.js';
 import { loadAndRegister } from './config-loader.js';
 import { existsSync, watch } from 'node:fs';
 import { resolve } from 'node:path';
+import { homedir } from 'node:os';
 import { AgentRegistry } from './registry.js';
+import { resolveConfigSources, resolveSkillDirectories, resolveMcpServers, type DiscoveryOptions } from './discovery.js';
+import { discoverSkills, type SkillFileSystem } from '@primo-ai/plugins';
 
 // ---------------------------------------------------------------------------
 // Version
@@ -161,11 +164,19 @@ export async function runSingleShot(registry: AgentRegistry, agentId: string, in
 // ---------------------------------------------------------------------------
 
 export async function handleServe(opts: Extract<CliCommand, { command: 'serve' }>) {
-  const configPath = opts.config ?? '.agentforge/config.jsonc';
+  const cwd = process.cwd();
+  const home = homedir();
+  const configSources = resolveConfigSources(cwd, home, opts.config);
+  const configPath = configSources.project ?? '.agentforge/config.jsonc';
   const server = new AgentForgeServer({ port: opts.port, apiKey: opts.apiKey });
 
   if (existsSync(resolve(configPath))) {
-    const { agentIds } = await loadAndRegister(configPath, server.registry, opts.profile);
+    const discoveryOpts: DiscoveryOptions = {
+      agentsConvention: opts.agentsConvention === false ? false : undefined,
+      agentforgeConvention: opts.agentforgeConvention === false ? false : undefined,
+      extraSkillDirs: opts.skillDirs,
+    };
+    const { agentIds } = await loadAndRegister(configSources, server.registry, opts.profile, discoveryOpts);
     console.log(`Loaded ${agentIds.length} agent(s): ${agentIds.join(', ')}`);
   } else {
     console.warn(`Config not found at ${configPath}, starting with empty registry`);
@@ -184,26 +195,43 @@ export async function handleServe(opts: Extract<CliCommand, { command: 'serve' }
 }
 
 export async function handleRun(opts: Extract<CliCommand, { command: 'run' }>) {
-  const configPath = opts.config ?? '.agentforge/config.jsonc';
+  const cwd = process.cwd();
+  const home = homedir();
+  const configSources = resolveConfigSources(cwd, home, opts.config);
+  const configPath = configSources.project ?? '.agentforge/config.jsonc';
   const registry = new AgentRegistry();
 
   if (!existsSync(resolve(configPath))) {
     throw new Error(`Config not found at ${configPath}`);
   }
 
-  await loadAndRegister(configPath, registry, opts.profile);
+  const discoveryOpts: DiscoveryOptions = {
+    agentsConvention: opts.agentsConvention === false ? false : undefined,
+    agentforgeConvention: opts.agentforgeConvention === false ? false : undefined,
+    extraSkillDirs: opts.skillDirs,
+  };
+  await loadAndRegister(configSources, registry, opts.profile, discoveryOpts);
   const result = await runSingleShot(registry, opts.agent, opts.input);
   console.log(JSON.stringify(result, null, 2));
 }
 
 export async function handleDev(opts: Extract<CliCommand, { command: 'dev' }>) {
-  const configPath = resolve(opts.config ?? '.agentforge/config.jsonc');
+  const cwd = process.cwd();
+  const home = homedir();
+  const configSources = resolveConfigSources(cwd, home, opts.config);
+  const configPath = resolve(configSources.project ?? '.agentforge/config.jsonc');
   const server = new AgentForgeServer({ port: opts.port, apiKey: opts.apiKey });
+
+  const discoveryOpts: DiscoveryOptions = {
+    agentsConvention: opts.agentsConvention === false ? false : undefined,
+    agentforgeConvention: opts.agentforgeConvention === false ? false : undefined,
+    extraSkillDirs: opts.skillDirs,
+  };
 
   const loadConfig = async () => {
     server.registry.clear();
     if (existsSync(configPath)) {
-      const { agentIds } = await loadAndRegister(configPath, server.registry, opts.profile);
+      const { agentIds } = await loadAndRegister(configSources, server.registry, opts.profile, discoveryOpts);
       console.log(`[dev] Loaded ${agentIds.length} agent(s): ${agentIds.join(', ')}`);
     } else {
       console.warn(`[dev] Config not found at ${configPath}`);

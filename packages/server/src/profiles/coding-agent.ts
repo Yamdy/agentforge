@@ -1,5 +1,5 @@
 import type { AgentProfile } from '@primo-ai/sdk';
-import { memoryPlugin, InMemoryBackend, compressionPlugin, permissionPlugin, skillPlugin } from '@primo-ai/plugins';
+import { memoryPlugin, InMemoryBackend, compressionPlugin, permissionPlugin } from '@primo-ai/plugins';
 
 export const codingAgentProfile: AgentProfile = {
   name: 'coding-agent',
@@ -8,7 +8,6 @@ export const codingAgentProfile: AgentProfile = {
     memoryPlugin({ backend: new InMemoryBackend(), triggerMode: { type: 'automatic', onLoad: 'always' } }),
     compressionPlugin({ maxContextTokens: 8000, phases: [{ type: 'truncate', maxTokens: 2000 }] }),
     permissionPlugin({ mode: 'full-auto', rules: [] }),
-    skillPlugin({ skills: [] }),
   ],
   config: {
     costCap: { maxCost: 1.0, strategy: 'warn' },

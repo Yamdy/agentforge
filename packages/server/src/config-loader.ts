@@ -4,6 +4,8 @@ import { ConfigLoader, OpenAICompatibleGateway, ModelFactory } from '@primo-ai/c
 import type { AgentRegistry } from './registry.js';
 import type { GatewayConfig, AgentConfig } from '@primo-ai/sdk';
 import { ProfileLoader, builtinProfiles, applyProfile } from './profiles/index.js';
+import { type ResolvedConfigSources, type DiscoveryOptions, resolveSkillDirectories, resolveMcpServers } from './discovery.js';
+import { discoverSkills, skillPlugin, mcpPlugin, type SkillFileSystem } from '@primo-ai/plugins';
 
 export interface ServerConfig {
   agents?: Record<string, Partial<AgentConfig> & { model: string; profile?: string }>;
@@ -65,25 +67,55 @@ export function validateConfig(raw: unknown): ServerConfig {
   return config as unknown as ServerConfig;
 }
 
+const nodeFs: SkillFileSystem = {
+  readdir: async (dir: string) => {
+    const { readdir: fsReaddir } = await import('node:fs/promises');
+    return fsReaddir(dir);
+  },
+  readFile: async (path: string) => {
+    const { readFile: fsReadFile } = await import('node:fs/promises');
+    return fsReadFile(path, 'utf-8');
+  },
+};
+
+const nodeMcpFs = {
+  readFile: async (path: string) => {
+    return readFile(resolve(path), 'utf-8');
+  },
+};
+
 export async function loadAndRegister(
-  configPath: string,
+  configSources: ResolvedConfigSources,
   registry: AgentRegistry,
   defaultProfile?: string,
+  discoveryOpts?: DiscoveryOptions,
 ): Promise<{ agentIds: string[] }> {
-  const content = await readFile(resolve(configPath), 'utf-8');
+  // Load and merge config from all sources
   const loader = new ConfigLoader();
-  const raw = loader.parseJsonc(content);
-  const config = validateConfig(raw);
+  const config = await loader.load({
+    env: configSources.env,
+    global: configSources.global,
+    project: configSources.project,
+  });
+
+  const serverConfig = validateConfig(config);
 
   // Build shared ModelFactory with custom gateways
   const modelFactory = new ModelFactory();
-  for (const gw of config.modelGateways ?? []) {
+  for (const gw of serverConfig.modelGateways ?? []) {
     modelFactory.registerGateway(new OpenAICompatibleGateway({
       name: gw.name,
       url: gw.url,
       apiKey: gw.apiKey ?? process.env[`${gw.name.toUpperCase()}_API_KEY`],
     }));
   }
+
+  // Discover skills
+  const skillDirs = resolveSkillDirectories(process.cwd(), process.env.HOME ?? '', discoveryOpts);
+  const skills = await discoverSkills(skillDirs, nodeFs);
+
+  // Discover MCP servers
+  const mcpServers = await resolveMcpServers(process.cwd(), process.env.HOME ?? '', nodeMcpFs);
 
   // Build profile loader with built-in profiles
   const profileLoader = new ProfileLoader();
@@ -93,13 +125,24 @@ export async function loadAndRegister(
 
   // Register agents and apply profiles
   const agentIds: string[] = [];
-  for (const [id, agentConfig] of Object.entries(config.agents ?? {})) {
+  for (const [id, agentConfig] of Object.entries(serverConfig.agents ?? {})) {
     const agent = registry.register(id, agentConfig as AgentConfig, { modelFactory });
 
+    // Apply profile first (may include its own skillPlugin with empty skills)
     const profileName = agentConfig.profile ?? defaultProfile;
     if (profileName) {
       const profile = profileLoader.load(profileName);
       applyProfile(agent, profile);
+    }
+
+    // Attach discovery-based plugins after profile
+    // (skillPlugin from discovery replaces the empty-skills one from profile)
+    if (skills.length > 0) {
+      agent.use(skillPlugin({ skills }));
+    }
+
+    if (mcpServers.length > 0) {
+      agent.use(mcpPlugin({ servers: mcpServers }));
     }
 
     agentIds.push(id);
