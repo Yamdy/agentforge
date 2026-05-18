@@ -24,6 +24,21 @@ const LOOP_STAGES: PipelineStage[] = [
 ];
 const POST_LOOP_STAGES: PipelineStage[] = ['processOutput'];
 
+// ---------------------------------------------------------------------------
+// RunMode — concurrent control for shell-interrupt
+// ---------------------------------------------------------------------------
+
+export enum RunMode {
+  Normal = 'Normal',
+  Shell = 'Shell',
+}
+
+/** Allowed RunMode transitions (excluding self -> self no-ops). */
+const RUN_MODE_TRANSITIONS: Record<RunMode, RunMode[]> = {
+  [RunMode.Normal]: [RunMode.Shell],
+  [RunMode.Shell]: [RunMode.Normal],
+};
+
 /** Result of runLoop / resumeLoop, carrying both the final context and retry statistics. */
 export interface LoopResult {
   context: PipelineContext;
@@ -54,6 +69,67 @@ export class LoopOrchestrator {
   private preLoopStages: StageName[];
   private loopStages: StageName[];
   private postLoopStages: StageName[];
+
+  // ---------------------------------------------------------------------------
+  // RunMode (concurrent control)
+  // ---------------------------------------------------------------------------
+
+  private _mode: RunMode = RunMode.Normal;
+  private _pendingRun: {
+    ctx: PipelineContext;
+    options: LoopOptions;
+    resolve: (result: LoopResult) => void;
+    reject: (err: unknown) => void;
+  } | null = null;
+  private _onModeChange: ((mode: RunMode) => void) | null = null;
+
+  /** Current run mode. Defaults to `RunMode.Normal`. */
+  get mode(): RunMode {
+    return this._mode;
+  }
+
+  /**
+   * Set the run mode. Valid transitions:
+   * - Normal -> Shell (queues subsequent runs)
+   * - Shell -> Normal (drains the queued run)
+   * - Same -> Same (no-op)
+   */
+  setMode(mode: RunMode): void {
+    if (mode === this._mode) return;
+    const allowed = RUN_MODE_TRANSITIONS[this._mode];
+    if (!allowed?.includes(mode)) {
+      throw new Error(`Invalid RunMode transition: ${this._mode} -> ${mode}`);
+    }
+    const prev = this._mode;
+    this._mode = mode;
+    if (prev === RunMode.Shell && mode === RunMode.Normal) {
+      this.drainQueue();
+    }
+    this._onModeChange?.(mode);
+  }
+
+  /**
+   * Register a callback invoked on every mode change (no-op transitions excluded).
+   */
+  onModeChange(cb: (mode: RunMode) => void): void {
+    this._onModeChange = cb;
+  }
+
+  private enqueueRun(ctx: PipelineContext, options: LoopOptions): Promise<LoopResult> {
+    if (this._pendingRun) {
+      return Promise.reject(new Error('A run is already queued; only one pending run allowed'));
+    }
+    return new Promise<LoopResult>((resolve, reject) => {
+      this._pendingRun = { ctx, options, resolve, reject };
+    });
+  }
+
+  private drainQueue(): void {
+    if (!this._pendingRun) return;
+    const { ctx, options, resolve, reject } = this._pendingRun;
+    this._pendingRun = null;
+    this.runLoop(ctx, options).then(resolve).catch(reject);
+  }
 
   constructor(
     private runner: PipelineRunner,
@@ -112,6 +188,9 @@ export class LoopOrchestrator {
   // ---------------------------------------------------------------------------
 
   async runLoop(ctx: PipelineContext, options: LoopOptions): Promise<LoopResult> {
+    if (this._mode === RunMode.Shell) {
+      return this.enqueueRun(ctx, options);
+    }
     const runState: LoopRunState = { compatRetries: 0 };
     let finalCtx = ctx;
 
