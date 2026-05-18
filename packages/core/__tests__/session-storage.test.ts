@@ -213,14 +213,15 @@ describe('FilesystemSessionStorage', () => {
       }));
 
       const messages = await storage.getMessages('s1');
-      expect(messages).toHaveLength(3);
-      expect(messages[0]).toEqual({ role: 'assistant', content: 'Hi there!' });
-      expect(messages[1]).toEqual(expect.objectContaining({
+      expect(messages).toHaveLength(4);
+      expect(messages[0]).toEqual({ role: 'user', content: 'Hello' });
+      expect(messages[1]).toEqual({ role: 'assistant', content: 'Hi there!' });
+      expect(messages[2]).toEqual(expect.objectContaining({
         role: 'tool',
         content: 'pong',
         toolName: 'echo',
       }));
-      expect(messages[2]).toEqual({ role: 'assistant', content: 'Done' });
+      expect(messages[3]).toEqual({ role: 'assistant', content: 'Done' });
     });
 
     it('returns only last N messages with limit option', async () => {
@@ -253,8 +254,9 @@ describe('FilesystemSessionStorage', () => {
       await storage.append('s1', makeEvent(2, 'error', { error: 'Something went wrong' }));
 
       const messages = await storage.getMessages('s1');
-      expect(messages).toHaveLength(1);
-      expect(messages[0]).toEqual({ role: 'assistant', content: '[Error] Something went wrong' });
+      expect(messages).toHaveLength(2);
+      expect(messages[0]).toEqual({ role: 'user', content: 'Hello' });
+      expect(messages[1]).toEqual({ role: 'assistant', content: '[Error] Something went wrong' });
     });
 
     it('handles tool:after with error result', async () => {
@@ -265,9 +267,10 @@ describe('FilesystemSessionStorage', () => {
       }));
 
       const messages = await storage.getMessages('s1');
-      expect(messages).toHaveLength(1);
-      expect(messages[0].role).toBe('tool');
-      expect(messages[0].content).toBe('Tool crashed');
+      expect(messages).toHaveLength(2);
+      expect(messages[0]).toEqual({ role: 'user', content: 'Hello' });
+      expect(messages[1].role).toBe('tool');
+      expect(messages[1].content).toBe('Tool crashed');
     });
 
     it('handles iteration.end (dot notation) event variant', async () => {
@@ -278,8 +281,9 @@ describe('FilesystemSessionStorage', () => {
       }));
 
       const messages = await storage.getMessages('s1');
-      expect(messages).toHaveLength(1);
-      expect(messages[0]).toEqual({ role: 'assistant', content: 'Dot notation response' });
+      expect(messages).toHaveLength(2);
+      expect(messages[0]).toEqual({ role: 'user', content: 'Hello' });
+      expect(messages[1]).toEqual({ role: 'assistant', content: 'Dot notation response' });
     });
   });
 });

@@ -240,6 +240,13 @@ export class SqliteSessionStorage implements SessionStorage {
       if (!payload) continue;
 
       switch (event.type) {
+        case 'agent:start': {
+          const input = ((payload.request as Record<string, unknown> | undefined)?.input ?? payload.input) as string | undefined;
+          if (input) {
+            messages.push({ role: 'user', content: input });
+          }
+          break;
+        }
         case 'iteration:end':
         case 'iteration.end': {
           if (payload.response) {

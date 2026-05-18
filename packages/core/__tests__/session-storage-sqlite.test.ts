@@ -156,11 +156,12 @@ describe('SqliteSessionStorage', () => {
 
       // All messages
       const all = await storage.getMessages('s1');
-      expect(all).toHaveLength(4); // 3 assistant + 1 tool
-      expect(all[0]).toEqual({ role: 'assistant', content: 'First' });
-      expect(all[1]).toEqual(expect.objectContaining({ role: 'tool', toolName: 'echo', content: 'pong' }));
-      expect(all[2]).toEqual({ role: 'assistant', content: 'Second' });
-      expect(all[3]).toEqual({ role: 'assistant', content: 'Third' });
+      expect(all).toHaveLength(5); // 1 user + 3 assistant + 1 tool
+      expect(all[0]).toEqual({ role: 'user', content: 'Hello' });
+      expect(all[1]).toEqual({ role: 'assistant', content: 'First' });
+      expect(all[2]).toEqual(expect.objectContaining({ role: 'tool', toolName: 'echo', content: 'pong' }));
+      expect(all[3]).toEqual({ role: 'assistant', content: 'Second' });
+      expect(all[4]).toEqual({ role: 'assistant', content: 'Third' });
 
       // With limit
       const limited = await storage.getMessages('s1', { limit: 2 });
@@ -186,8 +187,9 @@ describe('SqliteSessionStorage', () => {
       await storage.append('s1', makeEvent(2, 'error', { error: 'Boom' }));
 
       const messages = await storage.getMessages('s1');
-      expect(messages).toHaveLength(1);
-      expect(messages[0]).toEqual({ role: 'assistant', content: '[Error] Boom' });
+      expect(messages).toHaveLength(2);
+      expect(messages[0]).toEqual({ role: 'user', content: 'Hello' });
+      expect(messages[1]).toEqual({ role: 'assistant', content: '[Error] Boom' });
     });
 
     it('handles tool:after with error result', async () => {
@@ -196,9 +198,10 @@ describe('SqliteSessionStorage', () => {
       await storage.append('s1', makeEvent(2, 'tool:after', { toolName: 'fail', error: 'Crashed' }));
 
       const messages = await storage.getMessages('s1');
-      expect(messages).toHaveLength(1);
-      expect(messages[0].role).toBe('tool');
-      expect(messages[0].content).toBe('Crashed');
+      expect(messages).toHaveLength(2);
+      expect(messages[0]).toEqual({ role: 'user', content: 'Hello' });
+      expect(messages[1].role).toBe('tool');
+      expect(messages[1].content).toBe('Crashed');
     });
 
     it('handles tool.after (dot notation) variant', async () => {
@@ -207,8 +210,9 @@ describe('SqliteSessionStorage', () => {
       await storage.append('s1', makeEvent(2, 'tool.after', { toolName: 'echo', result: 'pong' }));
 
       const messages = await storage.getMessages('s1');
-      expect(messages).toHaveLength(1);
-      expect(messages[0].role).toBe('tool');
+      expect(messages).toHaveLength(2);
+      expect(messages[0]).toEqual({ role: 'user', content: 'Hello' });
+      expect(messages[1].role).toBe('tool');
     });
   });
 
