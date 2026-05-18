@@ -92,18 +92,17 @@ const model = PROVIDER_MAP['openai']('gpt-4o');
 **现在**: 可插拔的 Gateway 链
 
 ```ts
-// 新模式 — GatewayChain
-import { GatewayChain, BuiltInGateway } from '@primo-ai/core';
-import { OpenAICompatibleGateway } from '@primo-ai/core';
+// 新模式 — 推荐使用 ModelFactory
+import { OpenAICompatibleGateway, ModelFactory } from '@primo-ai/core';
 
-const chain = new GatewayChain();
-chain.register(new OpenAICompatibleGateway({
+// 推荐使用 ModelFactory（GatewayChain 和 BuiltInGateway 为内部实现，未从 barrel 导出）
+const factory = new ModelFactory();
+factory.registerGateway(new OpenAICompatibleGateway({
   name: 'my-custom',
   url: 'https://api.example.com/v1',
 }));
-chain.register(new BuiltInGateway());
 
-// resolveModel 内部使用 GatewayChain
+// resolveModel 内部使用 GatewayChain（推荐直接使用 ModelFactory）
 ```
 
 `registerProvider()` 仍然可用，作为向后兼容的简写：

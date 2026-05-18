@@ -208,3 +208,44 @@ api.registerProcessor('gateTool', {
   },
 });
 ```
+
+## Compression Plugin -- Built-in SummarizeFn
+
+`compressionPlugin` 的 `summarize` phase 支持自定义摘要函数。
+
+### SummarizeFn 类型
+
+```typescript
+type SummarizeFn = (messages: Message[]) => Promise<string>;
+```
+
+### createSummarizeFn
+
+内置工厂函数，通过 LLM 调用生成摘要：
+
+```typescript
+import { createSummarizeFn } from '@primo-ai/plugins';
+
+const fn = createSummarizeFn(
+  (model) => ({ invoke: async (input) => ({ response: 'summary', tokenUsage: null }) }),
+  'deepseek/deepseek-v4-flash',  // 可选 model 参数
+);
+```
+
+`createSummarizeFn` 使用内置 system prompt 指导 LLM 生成结构化、保留关键信息的对话摘要。支持多语言（中文、日文等）。
+
+### 在 compressionPlugin 中使用
+
+```typescript
+agent.use(compressionPlugin({
+  maxContextTokens: 8000,
+  phases: [
+    { type: 'summarize', model: 'gpt-4o', maxTokens: 2000, summarizeFn: customFn },
+  ],
+  // 自动注入：提供 getLLM 即可自动为所有 summarize phase 创建 summarizeFn
+  getLLM: (model) => llmInvoker,
+  summarizeModel: 'deepseek/deepseek-v4-flash',
+}));
+```
+
+当提供 `getLLM` 时，插件自动调用 `createSummarizeFn(getLLM, summarizeModel)` 为所有缺少 `summarizeFn` 的 summarize phase 注入默认实现。
