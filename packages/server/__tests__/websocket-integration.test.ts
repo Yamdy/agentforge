@@ -121,7 +121,7 @@ describe('WebSocket Bridge Integration', () => {
         expect(results).toHaveLength(1);
       });
 
-      expect(mockAgent.run).toHaveBeenCalledWith('hello');
+      expect(mockAgent.run).toHaveBeenCalledWith('hello', undefined);
     });
 
     it('cleans up connection when socket closes', () => {

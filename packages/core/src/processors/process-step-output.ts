@@ -1,16 +1,26 @@
 import type { Processor, Message } from '@primo-ai/sdk';
+import { textContentFromBlocks, toolCallsFromBlocks, reasoningFromBlocks } from '../content-blocks.js';
 
 export const processStepOutputProcessor: Processor = {
   stage: 'processStepOutput',
   execute: async (ctx) => {
-    const response = ctx.iteration.response ?? '';
-    const toolCalls = ctx.iteration.pendingToolCalls;
+    // Prefer content[] when available, fallback to legacy fields
+    const content = ctx.iteration.content;
+    const response = content
+      ? textContentFromBlocks(content)
+      : ctx.iteration.response ?? '';
+    const toolCalls = content
+      ? toolCallsFromBlocks(content)
+      : ctx.iteration.pendingToolCalls;
+    const reasoningContent = content
+      ? reasoningFromBlocks(content)
+      : ctx.iteration.reasoningContent;
 
     const assistantMsg: Message = {
       role: 'assistant',
       content: response,
       ...(toolCalls?.length ? { toolCalls } : {}),
-      ...(ctx.iteration.reasoningContent ? { reasoningContent: ctx.iteration.reasoningContent } : {}),
+      ...(reasoningContent ? { reasoningContent } : {}),
     };
 
     const history: Message[] = [...(ctx.session.messageHistory ?? [])];

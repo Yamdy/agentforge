@@ -155,7 +155,7 @@ describe('WebSocketBridge', () => {
         sessionId: 'session-1',
       });
 
-      expect(mockAgent.run).toHaveBeenCalledWith('Hello agent');
+      expect(mockAgent.run).toHaveBeenCalledWith('Hello agent', undefined);
     });
 
     it('sends error when agent not found', async () => {

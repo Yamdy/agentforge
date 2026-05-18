@@ -118,7 +118,7 @@ describe('Agent routes: input validation', () => {
       body: JSON.stringify({ input: 'Hello agent' }),
     });
     expect(res.status).toBe(200);
-    expect(agent.run).toHaveBeenCalledWith('Hello agent');
+    expect(agent.run).toHaveBeenCalledWith('Hello agent', undefined);
   });
 
   it('passes through valid request with optional sessionId', async () => {
@@ -129,6 +129,6 @@ describe('Agent routes: input validation', () => {
       body: JSON.stringify({ input: 'Hello', sessionId: 'sess-123' }),
     });
     expect(res.status).toBe(200);
-    expect(agent.run).toHaveBeenCalledWith('Hello');
+    expect(agent.run).toHaveBeenCalledWith('Hello', { sessionId: 'sess-123' });
   });
 });

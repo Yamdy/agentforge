@@ -44,7 +44,7 @@ export function agentRoutes(registry: AgentRegistry): Hono {
     if (!agent) return c.json({ error: "Agent not found" }, 404);
     const parsed = await parseAndValidate(c);
     if (!parsed.ok) return parsed.response;
-    const result = await agent.run(parsed.data.input);
+    const result = await agent.run(parsed.data.input, parsed.data.sessionId ? { sessionId: parsed.data.sessionId } : undefined);
     return c.json(result);
   });
   // SSE stream
@@ -55,19 +55,21 @@ export function agentRoutes(registry: AgentRegistry): Hono {
     if (!parsed.ok) return parsed.response;
     const mode = new URL(c.req.url).searchParams.get("mode") === "events" ? "events" : "text";
     const input = parsed.data.input;
+    const sessionId = parsed.data.sessionId;
     const abortController = new AbortController();
     const signal = abortController.signal;
+    const streamOptions = sessionId ? { sessionId, signal } : signal;
     const stream = new ReadableStream({
       async start(controller) {
         const encoder = new TextEncoder();
         try {
           if (mode === "events") {
-            for await (const event of agent.streamEvents(input, signal)) {
+            for await (const event of agent.streamEvents(input, streamOptions)) {
               const sse = serializeSSEEvent(event as StreamEvent, "events");
               if (sse) controller.enqueue(encoder.encode(sse));
             }
           } else {
-            for await (const text of agent.stream(input, signal)) {
+            for await (const text of agent.stream(input, streamOptions)) {
               controller.enqueue(encoder.encode(serializeSSE({ type: "text_delta", text })));
             }
           }

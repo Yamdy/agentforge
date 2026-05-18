@@ -1,4 +1,5 @@
 import type { Processor, PipelineContext, ProcessorResult } from '@primo-ai/sdk';
+import { textContentFromBlocks } from '@primo-ai/core';
 import type { MemoryBackend } from './backend.js';
 
 export type MemoryTriggerMode =
@@ -90,7 +91,9 @@ export function createMemoryOutputProcessor(config: MemoryConfig): Processor {
     execute: async (ctx: PipelineContext): Promise<ProcessorResult> => {
       if (triggerMode.type === 'agent-controlled') return ctx;
 
-      const response = ctx.iteration.response;
+      const response = ctx.iteration.content
+        ? textContentFromBlocks(ctx.iteration.content)
+        : ctx.iteration.response;
       if (!response) return ctx;
 
       const userInput = ctx.request.input?.trim();

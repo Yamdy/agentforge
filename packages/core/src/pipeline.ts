@@ -17,6 +17,7 @@ import { SpanType } from '@primo-ai/sdk';
 import { NoOpTracer } from '@primo-ai/observability';
 import type { HookManager } from './hook-manager.js';
 import { extractTokenUsage } from './llm-invoker.js';
+import { assembleContentBlocks, textContentFromBlocks, toolCallsFromBlocks, reasoningFromBlocks } from './content-blocks.js';
 
 /**
  * Recursively freezes an object and all nested plain objects / arrays.
@@ -103,6 +104,22 @@ async function resolveReasoningContent(
   return reasoningContent;
 }
 
+/** Build a final ContentBlock from accumulated block data at content_block_end time. */
+function buildFinalBlock(
+  block: { type: string; chunks: string[] },
+  _toolCalls: ToolCall[],
+  _reasoningParts: string[],
+  _textParts: string[],
+): import('@primo-ai/sdk').ContentBlock | null {
+  if (block.type === 'text') {
+    return { type: 'text', text: block.chunks.join('') };
+  }
+  if (block.type === 'thinking') {
+    return { type: 'thinking', text: block.chunks.join('') };
+  }
+  return null;
+}
+
 export class PipelineRunner {
   private processors: Processor[] = [];
   private tracer: Tracer;
@@ -159,7 +176,7 @@ export class PipelineRunner {
 
           // Fire llm.after after stream is consumed (response is now available)
           if (stage === 'invokeLLM' && this.hookManager && (ctx.iteration as unknown as { _modelString?: string })._modelString) {
-            await this.hookManager.invoke('llm.after', { model: (ctx.iteration as unknown as { _modelString?: string })._modelString }, { response: ctx.iteration.response });
+            await this.hookManager.invoke('llm.after', { model: (ctx.iteration as unknown as { _modelString?: string })._modelString }, { response: ctx.iteration.response, content: ctx.iteration.content });
           }
 
           // Auto-enrich span with token usage after stream consumption
@@ -225,10 +242,34 @@ export class PipelineRunner {
             const reasoningParts: string[] = [];
             let usage: TokenUsage | null | undefined;
 
+            // Content block lifecycle tracking
+            let currentBlockType: string | null = null;
+            let currentBlockIndex = -1;
+            const openBlocks: Array<{ type: string; chunks: string[] }> = [];
+
             for await (const event of fullStream as AsyncIterable<{ type: string; [key: string]: unknown }>) {
               if (event.type === 'text-delta') {
-                chunks.push(event.text as string);
-                yield { type: 'text_delta', text: event.text as string };
+                const text = event.text as string;
+                chunks.push(text);
+
+                // Emit content_block_start on first text delta
+                if (currentBlockType !== 'text') {
+                  if (currentBlockType !== null) {
+                    // Close previous block
+                    const prevIdx = currentBlockIndex;
+                    const prevBlock = buildFinalBlock(openBlocks[prevIdx], toolCalls, reasoningParts, chunks);
+                    if (prevBlock) yield { type: 'content_block_end', index: prevIdx, block: prevBlock };
+                  }
+                  currentBlockType = 'text';
+                  currentBlockIndex++;
+                  openBlocks.push({ type: 'text', chunks: [] });
+                  yield { type: 'content_block_start', blockType: 'text', index: currentBlockIndex } as StreamEvent;
+                }
+                openBlocks[currentBlockIndex].chunks.push(text);
+                yield { type: 'content_block_delta', index: currentBlockIndex, delta: text } as StreamEvent;
+
+                // Backward compat
+                yield { type: 'text_delta', text };
               } else if (event.type === 'tool-call') {
                 const tc: ToolCall = {
                   id: (event.toolCallId ?? event.id ?? '') as string,
@@ -236,9 +277,44 @@ export class PipelineRunner {
                   args: (event.args ?? event.input ?? {}) as Record<string, unknown>,
                 };
                 toolCalls.push(tc);
+
+                // Close any open text block first
+                if (currentBlockType === 'text') {
+                  const prevBlock = buildFinalBlock(openBlocks[currentBlockIndex], toolCalls, reasoningParts, chunks);
+                  if (prevBlock) yield { type: 'content_block_end', index: currentBlockIndex, block: prevBlock };
+                }
+
+                // Start tool-call block
+                currentBlockType = 'tool-call';
+                currentBlockIndex++;
+                yield { type: 'content_block_start', blockType: 'tool-call', index: currentBlockIndex } as StreamEvent;
+
+                // Tool-call blocks end immediately (no delta stream)
+                const toolBlock = { type: 'tool-call' as const, id: tc.id, name: tc.name, args: tc.args };
+                yield { type: 'content_block_end', index: currentBlockIndex, block: toolBlock } as StreamEvent;
+
+                currentBlockType = null; // Reset — next event starts a new block
+
+                // Backward compat
                 yield { type: 'tool_call', name: tc.name, args: tc.args };
               } else if (event.type === 'reasoning') {
-                reasoningParts.push((event.textDelta ?? event.text ?? '') as string);
+                const delta = (event.textDelta ?? event.text ?? '') as string;
+                reasoningParts.push(delta);
+
+                // Emit content_block_start on first reasoning delta
+                if (currentBlockType !== 'thinking') {
+                  if (currentBlockType !== null) {
+                    // Close previous block
+                    const prevBlock = buildFinalBlock(openBlocks[currentBlockIndex], toolCalls, reasoningParts, chunks);
+                    if (prevBlock) yield { type: 'content_block_end', index: currentBlockIndex, block: prevBlock };
+                  }
+                  currentBlockType = 'thinking';
+                  currentBlockIndex++;
+                  openBlocks.push({ type: 'thinking', chunks: [] });
+                  yield { type: 'content_block_start', blockType: 'thinking', index: currentBlockIndex } as StreamEvent;
+                }
+                openBlocks[currentBlockIndex].chunks.push(delta);
+                yield { type: 'content_block_delta', index: currentBlockIndex, delta } as StreamEvent;
               } else if (event.type === 'finish-step') {
                 usage = extractTokenUsage(event.usage);
               } else if (event.type === 'error') {
@@ -246,29 +322,42 @@ export class PipelineRunner {
               }
             }
 
+            // Close any remaining open block
+            if (currentBlockType !== null && currentBlockIndex >= 0 && openBlocks[currentBlockIndex]) {
+              const finalBlock = buildFinalBlock(openBlocks[currentBlockIndex], toolCalls, reasoningParts, chunks);
+              if (finalBlock) yield { type: 'content_block_end', index: currentBlockIndex, block: finalBlock } as StreamEvent;
+            }
+
             const reasoningContent = await resolveReasoningContent(reasoningParts, ctx.iteration.reasoningPromise);
             const pendingUsage = ctx.iteration.usagePromise
               ? await ctx.iteration.usagePromise
               : undefined;
 
+            const content = assembleContentBlocks(chunks, toolCalls, reasoningParts);
             ctx = deepFreeze({
               ...ctx,
               iteration: {
                 ...ctx.iteration,
-                response: chunks.join('') || ctx.iteration.response || '',
-                pendingToolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-                reasoningContent,
+                content,
+                response: textContentFromBlocks(content) || ctx.iteration.response || '',
+                pendingToolCalls: toolCallsFromBlocks(content).length > 0 ? toolCallsFromBlocks(content) : undefined,
+                reasoningContent: reasoningFromBlocks(content) ?? reasoningContent,
                 tokenUsage: usage ?? pendingUsage ?? undefined,
                 fullStream: undefined,
                 usagePromise: undefined,
                 reasoningPromise: undefined,
               },
             });
+
+            // Emit step_complete after stream consumption
+            if (stage === 'invokeLLM' && usage) {
+              yield { type: 'step_complete', step: ctx.iteration.step, tokenUsage: usage, content: content } as StreamEvent;
+            }
           }
 
           // Fire llm.after after stream is consumed (response is now available)
           if (stage === 'invokeLLM' && this.hookManager && (ctx.iteration as unknown as { _modelString?: string })._modelString) {
-            await this.hookManager.invoke('llm.after', { model: (ctx.iteration as unknown as { _modelString?: string })._modelString }, { response: ctx.iteration.response });
+            await this.hookManager.invoke('llm.after', { model: (ctx.iteration as unknown as { _modelString?: string })._modelString }, { response: ctx.iteration.response, content: ctx.iteration.content });
           }
 
           // Auto-enrich span with token usage after stream consumption
@@ -345,13 +434,15 @@ export class PipelineRunner {
       ? await ctx.iteration.usagePromise
       : undefined;
 
+    const content = assembleContentBlocks(result.chunks, result.toolCalls, result.reasoningParts);
     return deepFreeze({
       ...ctx,
       iteration: {
         ...ctx.iteration,
-        response: result.chunks.join('') || ctx.iteration.response,
-        pendingToolCalls: result.toolCalls.length > 0 ? result.toolCalls : undefined,
-        reasoningContent,
+        content,
+        response: textContentFromBlocks(content) || ctx.iteration.response || '',
+        pendingToolCalls: toolCallsFromBlocks(content).length > 0 ? toolCallsFromBlocks(content) : undefined,
+        reasoningContent: reasoningFromBlocks(content) ?? reasoningContent,
         tokenUsage: result.usage ?? pendingUsage ?? undefined,
         fullStream: undefined,
         usagePromise: undefined,

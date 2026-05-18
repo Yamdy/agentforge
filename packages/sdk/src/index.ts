@@ -37,6 +37,37 @@ export interface PipelineStageConfig {
 }
 
 // ---------------------------------------------------------------------------
+// Content Blocks — structured LLM output (Pi-style minimal)
+// ---------------------------------------------------------------------------
+
+export interface TextBlock {
+  type: 'text';
+  text: string;
+}
+
+export interface ThinkingBlock {
+  type: 'thinking';
+  text: string;
+}
+
+export interface ToolCallBlock {
+  type: 'tool-call';
+  id: string;
+  name: string;
+  args: Record<string, unknown>;
+}
+
+export interface ToolResultBlock {
+  type: 'tool-result';
+  toolCallId: string;
+  name: string;
+  output: unknown;
+  error?: string;
+}
+
+export type ContentBlock = TextBlock | ThinkingBlock | ToolCallBlock | ToolResultBlock;
+
+// ---------------------------------------------------------------------------
 // Message (shared by memory, compression, session)
 // ---------------------------------------------------------------------------
 
@@ -138,6 +169,9 @@ export interface IterationRegion {
   usagePromise?: Promise<TokenUsage | null>;
   /** Promise resolving to reasoning text from the model (e.g. DeepSeek reasoning_content). */
   reasoningPromise?: Promise<string | undefined>;
+  /** Structured content blocks from the LLM response. */
+  content?: ContentBlock[];
+  /** Flat text response. Prefer content[] for structured access. */
   response?: string;
   tokenUsage?: TokenUsage | null;
   /** Tool calls extracted from the LLM response by PipelineRunner stream consumption. */
@@ -377,7 +411,14 @@ export type StreamEvent =
   | { type: 'session.aborted'; sessionId: string }
   // Permission events
   | { type: 'permission.request'; sessionId: string; permissionId: string; toolName: string; args: Record<string, unknown>; reason: string }
-  | { type: 'permission.resolved'; sessionId: string; permissionId: string; decision: 'allow' | 'deny' };
+  | { type: 'permission.resolved'; sessionId: string; permissionId: string; decision: 'allow' | 'deny' }
+  // Structured content block lifecycle events (Phase 3)
+  | { type: 'content_block_start'; blockType: ContentBlock['type']; index: number }
+  | { type: 'content_block_delta'; index: number; delta: string }
+  | { type: 'content_block_end'; index: number; block: ContentBlock }
+  | { type: 'step_complete'; step: number; tokenUsage: TokenUsage; content: ContentBlock[] }
+  | { type: 'tool_execution_start'; toolCallId: string; name: string; args: unknown }
+  | { type: 'tool_execution_end'; toolCallId: string; name: string; result: unknown; error?: string };
 
 /** @deprecated Use StreamEvent — the union now includes all event types */
 export type ServerStreamEvent = StreamEvent;

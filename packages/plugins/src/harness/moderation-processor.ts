@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { Processor, PipelineContext, ProcessorResult } from '@primo-ai/sdk';
 import { SpanAttributeKeys, SpanType } from '@primo-ai/sdk';
+import { textContentFromBlocks } from '@primo-ai/core';
 
 export interface ModerationMatch {
   category: string;
@@ -104,8 +105,10 @@ export function createModerationProcessor(config: ModerationConfig): Processor {
       // Check user input
       const inputResult = checker(ctx.request.input, config.categories);
 
-      // Check LLM output (response) if present
-      const outputText = ctx.iteration.response;
+      // Check LLM output — prefer content[] when available
+      const outputText = ctx.iteration.content
+        ? textContentFromBlocks(ctx.iteration.content)
+        : ctx.iteration.response;
       let outputResult: ModerationResult | undefined;
       if (outputText) {
         outputResult = checker(outputText, config.categories);
@@ -234,9 +237,14 @@ export function createModerationProcessor(config: ModerationConfig): Processor {
             redactedResponse.slice(0, m.index) + REDACTION + redactedResponse.slice(m.index + m.text.length);
         }
 
+        // Update both content[] TextBlock entries and legacy response
+        const updatedContent = ctx.iteration.content?.map((block) =>
+          block.type === 'text' ? { ...block, text: redactedResponse } : block
+        );
+
         return {
           ...ctx,
-          iteration: { ...ctx.iteration, response: redactedResponse },
+          iteration: { ...ctx.iteration, response: redactedResponse, ...(updatedContent ? { content: updatedContent } : {}) },
           session: {
             ...ctx.session,
             custom: {

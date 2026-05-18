@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { Processor, PipelineContext, ProcessorResult } from '@primo-ai/sdk';
+import { textContentFromBlocks } from '@primo-ai/core';
 
 /**
  * Strategy for handling validation failures:
@@ -113,7 +114,9 @@ export function createOutputValidationProcessor(config: OutputValidationConfig):
   return {
     stage: 'processOutput',
     execute: async (ctx: PipelineContext): Promise<ProcessorResult> => {
-      const response = ctx.iteration.response;
+      const response = ctx.iteration.content
+        ? textContentFromBlocks(ctx.iteration.content)
+        : ctx.iteration.response;
       if (!response) return ctx;
 
       // Parse JSON

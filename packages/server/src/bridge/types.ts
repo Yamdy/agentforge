@@ -9,6 +9,7 @@ export interface WSRunCommand {
   agentId: string;
   input: string;
   requestId: string;
+  sessionId?: string;
 }
 
 export interface WSStreamCommand {
@@ -16,6 +17,7 @@ export interface WSStreamCommand {
   agentId: string;
   input: string;
   requestId: string;
+  sessionId?: string;
 }
 
 export interface WSResumeCommand {

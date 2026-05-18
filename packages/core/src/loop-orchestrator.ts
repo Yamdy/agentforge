@@ -315,7 +315,7 @@ export class LoopOrchestrator {
     sessionId: string,
     autoCheckpoint?: boolean,
   ): Promise<void> {
-    await this.hookManager.invoke('iteration.end', { step: loopCtx.iteration.step, sessionId, response: loopCtx.iteration.response }, {});
+    await this.hookManager.invoke('iteration.end', { step: loopCtx.iteration.step, sessionId, response: loopCtx.iteration.response, content: loopCtx.iteration.content }, {});
     if (autoCheckpoint) {
       await this.saveCheckpoint(sessionId, loopCtx);
     }

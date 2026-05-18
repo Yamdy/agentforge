@@ -155,7 +155,7 @@ export class WebSocketBridge {
     this.emitState(conn, cmd.agentId, agent.state ?? 'running');
 
     try {
-      const result = await agent.run(cmd.input);
+      const result = await agent.run(cmd.input, cmd.sessionId ? { sessionId: cmd.sessionId } : undefined);
       this.send(conn, {
         type: 'run_result',
         requestId: cmd.requestId,
@@ -202,7 +202,7 @@ export class WebSocketBridge {
     this.emitState(conn, cmd.agentId, agent.state ?? 'running');
 
     try {
-      for await (const event of agent.streamEvents(cmd.input, controller.signal)) {
+      for await (const event of agent.streamEvents(cmd.input, cmd.sessionId ? { sessionId: cmd.sessionId, signal: controller.signal } : controller.signal)) {
         // Check if still connected
         if (!this.connections.has(conn.id)) return;
 

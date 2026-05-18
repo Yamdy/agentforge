@@ -49,12 +49,19 @@ export interface AgentDependencies {
   stageConfig?: PipelineStageConfig;
 }
 
+export interface RunOptions {
+  sessionId?: string;
+  signal?: globalThis.AbortSignal;
+}
+
 export interface AgentRunResult {
   response: string;
   tokenUsage: import('@primo-ai/sdk').TokenUsage;
   sessionId: string;
   /** Number of compat retries that occurred during the agentic loop. */
   compatRetries: number;
+  /** Structured content blocks from the final LLM response. */
+  content?: import('@primo-ai/sdk').ContentBlock[];
 }
 
 export class Agent {
@@ -150,11 +157,13 @@ export class Agent {
     return this.contextBuilder;
   }
 
-  async run(input: string, signal?: globalThis.AbortSignal): Promise<AgentRunResult> {
+  async run(input: string, options?: globalThis.AbortSignal | RunOptions): Promise<AgentRunResult> {
+    const signal = options instanceof AbortSignal ? options : options?.signal;
+    const sessionId = options instanceof AbortSignal ? undefined : options?.sessionId;
     if (signal?.aborted) throw new DOMException('Agent run aborted', 'AbortError');
     this._pluginManager.freezeHarnessInstances();
 
-    const context = await this.buildContext(input);
+    const context = await this.buildContext(input, sessionId);
     const hm = this._pluginManager.hookManager;
 
     // agent.start hook
@@ -182,6 +191,7 @@ export class Agent {
         tokenUsage: finalCtx.session.totalTokenUsage ?? { input: 0, output: 0 },
         sessionId: context.request.sessionId,
         compatRetries,
+        content: finalCtx.iteration.content,
       };
     } catch (error) {
       this.autoInvalidateModel(error);
@@ -213,6 +223,7 @@ export class Agent {
         tokenUsage: finalCtx.session.totalTokenUsage ?? { input: 0, output: 0 },
         sessionId,
         compatRetries,
+        content: finalCtx.iteration.content,
       };
     } catch (error) {
       this.autoInvalidateModel(error);
@@ -222,10 +233,12 @@ export class Agent {
     }
   }
 
-  async *stream(input: string, signal?: globalThis.AbortSignal): AsyncGenerator<string> {
+  async *stream(input: string, options?: globalThis.AbortSignal | RunOptions): AsyncGenerator<string> {
+    const signal = options instanceof AbortSignal ? options : options?.signal;
+    const sessionId = options instanceof AbortSignal ? undefined : options?.sessionId;
     if (signal?.aborted) throw new DOMException('Agent stream aborted', 'AbortError');
 
-    const context = await this.buildContext(input);
+    const context = await this.buildContext(input, sessionId);
     const hm = this._pluginManager.hookManager;
 
     // agent.start hook
@@ -257,10 +270,12 @@ export class Agent {
     }
   }
 
-  async *streamEvents(input: string, signal?: globalThis.AbortSignal): AsyncGenerator<import('@primo-ai/sdk').StreamEvent> {
+  async *streamEvents(input: string, options?: globalThis.AbortSignal | RunOptions): AsyncGenerator<import('@primo-ai/sdk').StreamEvent> {
+    const signal = options instanceof AbortSignal ? options : options?.signal;
+    const sessionId = options instanceof AbortSignal ? undefined : options?.sessionId;
     if (signal?.aborted) throw new DOMException('Agent stream aborted', 'AbortError');
 
-    const context = await this.buildContext(input);
+    const context = await this.buildContext(input, sessionId);
     const hm = this._pluginManager.hookManager;
 
     await hm.invoke('agent.start', { sessionId: context.request.sessionId, request: context.request, agentConfig: this.config }, {});
@@ -327,7 +342,8 @@ export class Agent {
     });
   }
 
-  private async buildContext(input: string): Promise<PipelineContext> {
+  private async buildContext(input: string, sessionId?: string): Promise<PipelineContext> {
+    // Path 1: In-memory continuation (highest priority)
     if (this.lastContext) {
       return {
         request: { input, sessionId: this.lastContext.request.sessionId },
@@ -343,17 +359,37 @@ export class Agent {
         },
       };
     }
-    return this.createContext(input);
+
+    // Path 2: Explicit sessionId → restore from sessionManager
+    if (sessionId && this.sessionManager) {
+      const restored = await this.sessionManager.restore(sessionId);
+      return {
+        request: { input, sessionId },
+        agent: { config: { ...this.config }, promptFragments: [], toolDeclarations: [] },
+        iteration: { step: 0 },
+        session: {
+          messageHistory: [
+            ...(restored.session.messageHistory ?? []),
+            { role: 'user', content: input },
+          ],
+          totalTokenUsage: restored.session.totalTokenUsage,
+          custom: { ...(restored.session.custom ?? {}) },
+        },
+      };
+    }
+
+    // Path 3: Fresh context
+    return this.createContext(input, sessionId);
   }
 
-  private async createContext(input: string): Promise<PipelineContext> {
-    let sessionId: string = crypto.randomUUID();
+  private async createContext(input: string, sessionId?: string): Promise<PipelineContext> {
+    let sid = sessionId ?? crypto.randomUUID();
     if (this.sessionManager) {
       const record = await this.sessionManager.start(input);
-      sessionId = record.sessionId;
+      sid = record.sessionId;
     }
     return {
-      request: { input, sessionId },
+      request: { input, sessionId: sid },
       agent: { config: { ...this.config }, promptFragments: [], toolDeclarations: [] },
       iteration: { step: 0 },
       session: { custom: {} },
