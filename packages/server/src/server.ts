@@ -15,6 +15,7 @@ import type { SessionStorage, AuthAdapter } from '@primo-ai/sdk';
 import type { PermissionManager, ModelFactory } from '@primo-ai/core';
 import type { McpManager } from '@primo-ai/plugins';
 import { StaticKeyAuthAdapter } from './middleware/static-key-auth.js';
+import { SessionEventStream } from './session-event-stream.js';
 import type { StudioObservability } from './studio/observability.js';
 import { studioRoutes, studioStaticRoutes } from './studio.js';
 
@@ -120,7 +121,7 @@ export class AgentForgeServer {
       version: '0.0.1',
     }));
     this.app.route('/agents', agentRoutes(this.registry));
-    this.app.route('/sessions', sessionRoutes(this._sessionStorage));
+    this.app.route('/sessions', sessionRoutes(this._sessionStorage, this.registry, new SessionEventStream(this.registry)));
     this.app.route('/permissions', permissionRoutes(this._permissionManager));
     this.app.route('/providers', providerRoutes(this._modelFactory));
     this.app.route('/mcp', mcpRoutes(this._mcpManager));

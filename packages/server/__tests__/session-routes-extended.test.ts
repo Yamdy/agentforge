@@ -254,7 +254,7 @@ describe('Extended session routes', () => {
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body).toEqual(mockResult);
-      expect(agent.run).toHaveBeenCalledWith('hello');
+      expect(agent.run).toHaveBeenCalledWith('hello', { sessionId: 's1' });
     });
 
     it('returns 400 when message is missing', async () => {

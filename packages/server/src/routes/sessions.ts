@@ -129,7 +129,7 @@ export function sessionRoutes(
       return c.json({ error: 'Missing or invalid field: message (must be a string)' }, 400);
     }
 
-    const result = await agent.run(obj.message);
+    const result = await agent.run(obj.message, { sessionId });
     return c.json(result);
   });
 

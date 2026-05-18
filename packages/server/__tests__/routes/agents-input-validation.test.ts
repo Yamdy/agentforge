@@ -27,6 +27,7 @@ function makeApp(agentOverrides?: Parameters<typeof mockAgent>[0]) {
   const registry = {
     get: vi.fn().mockReturnValue(agent),
     list: vi.fn().mockReturnValue([{ id: 'test-agent', state: 'pending' }]),
+    registerSession: vi.fn(),
   } as unknown as AgentRegistry;
 
   const app = new Hono();

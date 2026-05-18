@@ -40,22 +40,31 @@ export function agentRoutes(registry: AgentRegistry): Hono {
 
   // Sync run
   app.post("/:id/run", async (c) => {
-    const agent = registry.get(c.req.param("id"));
+    const agentId = c.req.param("id");
+    const agent = registry.get(agentId);
     if (!agent) return c.json({ error: "Agent not found" }, 404);
     const parsed = await parseAndValidate(c);
     if (!parsed.ok) return parsed.response;
-    const result = await agent.run(parsed.data.input, parsed.data.sessionId ? { sessionId: parsed.data.sessionId } : undefined);
+    const sessionId = parsed.data.sessionId;
+    if (sessionId) {
+      registry.registerSession(sessionId, agentId);
+    }
+    const result = await agent.run(parsed.data.input, sessionId ? { sessionId } : undefined);
     return c.json(result);
   });
   // SSE stream
   app.post("/:id/stream", async (c) => {
-    const agent = registry.get(c.req.param("id"));
+    const agentId = c.req.param("id");
+    const agent = registry.get(agentId);
     if (!agent) return c.json({ error: "Agent not found" }, 404);
     const parsed = await parseAndValidate(c);
     if (!parsed.ok) return parsed.response;
+    const sessionId = parsed.data.sessionId;
+    if (sessionId) {
+      registry.registerSession(sessionId, agentId);
+    }
     const mode = new URL(c.req.url).searchParams.get("mode") === "events" ? "events" : "text";
     const input = parsed.data.input;
-    const sessionId = parsed.data.sessionId;
     const abortController = new AbortController();
     const signal = abortController.signal;
     const streamOptions = sessionId ? { sessionId, signal } : signal;
