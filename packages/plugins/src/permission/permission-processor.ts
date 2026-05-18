@@ -229,6 +229,7 @@ export function createPermissionProcessor(config: PermissionConfig): Processor {
 export interface PermissionPluginOptions {
   mode: PermissionMode;
   rules: PermissionRule[];
+  permissionManager?: PermissionManager;
 }
 
 /**
@@ -252,6 +253,7 @@ export function permissionPlugin(options: PermissionPluginOptions): (api: Harnes
     const processor = createPermissionProcessor({
       mode: options.mode,
       rules: options.rules,
+      permissionManager: options.permissionManager,
       onDecision: (event: PermissionDecisionEvent) => {
         api.emit('permission.decision', event);
       },
