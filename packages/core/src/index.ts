@@ -26,9 +26,16 @@ export { FallbackRunner, type FallbackInvoker, type FallbackRunnerOptions } from
 export { TaskManagerImpl } from './task-manager.js';
 export { StateMachine, type AgentState } from './state-machine.js';
 export { ModelFactory } from './model-factory.js';
-export { LoopOrchestrator, type LoopOptions } from './loop-orchestrator.js';
+export { LoopOrchestrator, RunMode, type LoopOptions } from './loop-orchestrator.js';
 export { serialize, deserialize } from './serialize.js';
 export { InMemoryCheckpointStore, JsonlCheckpointStore } from './checkpoint-store.js';
+export {
+  InMemorySyncEventStore,
+  JsonlSyncEventStore,
+  VersionMismatchError,
+  type SyncEvent,
+  type SyncEventStore,
+} from './sync-event.js';
 export { ContextBuilder, type ContextBuilderOptions } from './context-builder.js';
 export { HarnessAPIImpl, type HarnessDeps } from './harness.js';
 export { TiktokenCounter } from './token-counter.js';

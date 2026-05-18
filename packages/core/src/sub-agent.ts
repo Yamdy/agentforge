@@ -9,6 +9,7 @@ interface SubAgentParentContext {
   eventBus?: { emit: (event: string, data: unknown) => void };
   tracer?: Tracer;
   getSessionState?: () => Record<string, unknown>;
+  summarizeFn?: (state: Record<string, unknown>) => Promise<string>;
 }
 
 export function createSubAgentTool(
@@ -49,7 +50,7 @@ export function createSubAgentTool(
 
         if (config.contextPolicy === 'summary-only' && parent.getSessionState) {
           const parentState = parent.getSessionState();
-          const summary = summarizeSessionState(parentState);
+          const summary = await summarizeSessionState(parentState, parent.summarizeFn);
           childAgent.use({
             stage: 'prepareStep',
             execute: async (ctx: PipelineContext) => ({
@@ -86,7 +87,13 @@ export function createSubAgentTool(
   return tool as ToolDefinition;
 }
 
-function summarizeSessionState(state: Record<string, unknown>): string {
+async function summarizeSessionState(
+  state: Record<string, unknown>,
+  summarizeFn?: (state: Record<string, unknown>) => Promise<string>,
+): Promise<string> {
+  if (summarizeFn) {
+    return summarizeFn(state);
+  }
   const history = state.messageHistory as Array<{ role: string; content: string }> | undefined;
   if (!history || !Array.isArray(history)) return '';
   return history
