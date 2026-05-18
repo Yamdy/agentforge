@@ -31,6 +31,8 @@ function projectAccount(
       return { ...state, balance: state.balance + event.payload.amount, version: event.version };
     case 'WITHDRAW':
       return { ...state, balance: state.balance - event.payload.amount, version: event.version };
+    default:
+      return state;
   }
 }
 
@@ -171,7 +173,7 @@ describe('SyncEvent', () => {
 
     beforeEach(async () => {
       dir = await mkdtemp(join(tmpdir(), 'sync-event-test-'));
-      store = new JsonlSyncEventStore(dir);
+      store = new JsonlSyncEventStore<AccountEvent>(dir);
     });
 
     afterEach(async () => {
@@ -179,7 +181,7 @@ describe('SyncEvent', () => {
     });
 
     it('append and replay round-trip', async () => {
-      const e1 = await store.append('acct-1', 'DEPOSIT', { type: 'DEPOSIT', amount: 100 });
+      await store.append('acct-1', 'DEPOSIT', { type: 'DEPOSIT', amount: 100 });
       await store.append('acct-1', 'DEPOSIT', { type: 'DEPOSIT', amount: 50 });
 
       const events: Array<SyncEvent<AccountEvent>> = [];
