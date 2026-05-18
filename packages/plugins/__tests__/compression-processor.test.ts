@@ -145,6 +145,86 @@ describe('createCompressionStrategy', () => {
   });
 });
 
+describe('createSummarizeFn', () => {
+  it('returns a function', async () => {
+    const { createSummarizeFn } = await import('../src/compression/compression-processor.js');
+    const getLLM = () => ({ invoke: async () => ({ response: 'summary', tokenUsage: null }) });
+    const fn = createSummarizeFn(getLLM);
+    expect(typeof fn).toBe('function');
+  });
+
+  it('calls getLLM with the provided model name', async () => {
+    const { createSummarizeFn } = await import('../src/compression/compression-processor.js');
+    const getModelArg: string[] = [];
+    const getLLM = (model: string) => {
+      getModelArg.push(model);
+      return { invoke: async () => ({ response: 'summary', tokenUsage: null }) };
+    };
+    const fn = createSummarizeFn(getLLM, 'gpt-4');
+    const messages: Message[] = [{ role: 'user', content: 'hello' }];
+    await fn(messages);
+    expect(getModelArg).toContain('gpt-4');
+  });
+
+  it('calls getLLM with default model when none provided', async () => {
+    const { createSummarizeFn } = await import('../src/compression/compression-processor.js');
+    const getModelArg: string[] = [];
+    const getLLM = (model: string) => {
+      getModelArg.push(model);
+      return { invoke: async () => ({ response: 'summary', tokenUsage: null }) };
+    };
+    const fn = createSummarizeFn(getLLM);
+    const messages: Message[] = [{ role: 'user', content: 'hello' }];
+    await fn(messages);
+    expect(getModelArg).toContain('default');
+  });
+
+  it('passes message content in the LLM prompt', async () => {
+    const { createSummarizeFn } = await import('../src/compression/compression-processor.js');
+    let capturedMessages: unknown[] = [];
+    const getLLM = () => ({
+      invoke: async (input: { messages: unknown[] }) => {
+        capturedMessages = input.messages;
+        return { response: 'summary', tokenUsage: null };
+      },
+    });
+    const fn = createSummarizeFn(getLLM);
+    const messages: Message[] = [
+      { role: 'user', content: 'question one' },
+      { role: 'assistant', content: 'answer one' },
+    ];
+    await fn(messages);
+    const userMsg = capturedMessages.find(m => (m as { role: string }).role === 'user');
+    expect(userMsg).toBeDefined();
+    const content = (userMsg as { content: string }).content;
+    expect(content).toContain('question one');
+    expect(content).toContain('answer one');
+  });
+
+  it('returns the LLM response text', async () => {
+    const { createSummarizeFn } = await import('../src/compression/compression-processor.js');
+    const getLLM = () => ({
+      invoke: async () => ({ response: 'This is the summary text.', tokenUsage: null }),
+    });
+    const fn = createSummarizeFn(getLLM);
+    const messages: Message[] = [{ role: 'user', content: 'hello' }];
+    const result = await fn(messages);
+    expect(result).toBe('This is the summary text.');
+  });
+
+  it('handles LLM failure gracefully without throwing', async () => {
+    const { createSummarizeFn } = await import('../src/compression/compression-processor.js');
+    const getLLM = () => ({
+      invoke: async () => { throw new Error('API error'); },
+    });
+    const fn = createSummarizeFn(getLLM);
+    const messages: Message[] = [{ role: 'user', content: 'hello' }];
+    await expect(fn(messages)).resolves.not.toThrow();
+    const result = await fn(messages);
+    expect(result).toContain('Summary unavailable');
+  });
+});
+
 describe('compressionPlugin', () => {
   function createHarnessAPI(): { api: HarnessAPI } {
     const api: HarnessAPI = {

@@ -45,6 +45,39 @@ async function applySummarize(
   return [{ role: 'assistant', content: summary }];
 }
 
+export function createSummarizeFn(
+  getLLM: (model: string) => { invoke: (input: { messages: unknown[] }) => Promise<{ response: string; tokenUsage: unknown }> },
+  model?: string,
+): SummarizeFn {
+  const defaultModel = model ?? 'default';
+  const systemPrompt = `You are a conversation summarizer. Produce a structured summary with these sections:
+- Goal / 目标
+- Constraints / 约束
+- Progress (Done / In Progress / Blocked)
+- Key Decisions / 关键决策
+- Next Steps / 后续步骤
+- Critical Context / 关键上下文`;
+
+  return async (messages: Message[]) => {
+    const conversation = messages
+      .map(m => `[${m.role}]: ${m.content}`)
+      .join('\n');
+
+    const llm = getLLM(defaultModel);
+    try {
+      const result = await llm.invoke({
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `Summarize this conversation:\n\n${conversation}` },
+        ],
+      });
+      return result.response;
+    } catch (error) {
+      return `[Summary unavailable: ${error instanceof Error ? error.message : String(error)}]`;
+    }
+  };
+}
+
 export function createCompressionStrategy(config: CompressionConfig): CompressionStrategy {
   return async (messages: Message[], tc: TokenCounter, budget: number): Promise<Message[]> => {
     const totalTokens = tc.countMessages(messages);

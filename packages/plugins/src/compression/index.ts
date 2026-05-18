@@ -2,6 +2,7 @@ import type { HarnessAPI, PluginRegistration } from '@primo-ai/sdk';
 import { z } from 'zod';
 import {
   createCompressionStrategy,
+  createSummarizeFn,
   type CompressionConfig,
   type CompressionPhase,
   type SummarizeFn,
@@ -9,12 +10,14 @@ import {
 } from './compression-processor.js';
 
 export type { CompressionConfig, CompressionPhase, SummarizeFn, Message };
-export { createCompressionStrategy } from './compression-processor.js';
+export { createCompressionStrategy, createSummarizeFn } from './compression-processor.js';
 
 export interface CompressionPluginOptions {
   maxContextTokens: number;
   phases: CompressionPhase[];
   summarizeFn?: SummarizeFn;
+  getLLM?: (model: string) => { invoke: (input: { messages: unknown[] }) => Promise<{ response: string; tokenUsage: unknown }> };
+  summarizeModel?: string;
 }
 
 const CompressionPluginOptionsSchema = z.object({
@@ -28,6 +31,15 @@ const CompressionPluginOptionsSchema = z.object({
 });
 
 export function compressionPlugin(options: CompressionPluginOptions): (api: HarnessAPI) => PluginRegistration {
+  // Auto-wire built-in summarizeFn for any summarize phase that lacks one
+  if (options.getLLM) {
+    const summarizeFn = createSummarizeFn(options.getLLM, options.summarizeModel);
+    options.phases = options.phases.map(phase =>
+      phase.type === 'summarize' && !phase.summarizeFn
+        ? { ...phase, summarizeFn }
+        : phase,
+    );
+  }
   CompressionPluginOptionsSchema.parse(options);
   const config: CompressionConfig = {
     maxContextTokens: options.maxContextTokens,
