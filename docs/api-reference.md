@@ -155,22 +155,19 @@ processInput → buildContext → [Agentic Loop:
 ] → processOutput
 ```
 
-#### `Processor` (v2 API)
+#### `Processor`
 
 ```ts
 interface Processor {
   stage: PipelineStage;
-  /** @deprecated Use executeV2 instead */
-  execute(context: PipelineContext): Promise<ProcessorResult>;
-  /** v2 API: receives ProcessorContext with state + control flow API */
-  executeV2?(context: ProcessorContext): Promise<PipelineContext | void>;
+  execute(context: ProcessorContext): Promise<PipelineContext | void>;
   isNoOp?: boolean;
 }
 ```
 
 #### `ProcessorContext`
 
-v2 API 上下文，提供状态访问和流程控制：
+处理器上下文，提供状态访问和流程控制：
 
 ```ts
 interface ProcessorContext {
@@ -184,25 +181,18 @@ interface ProcessorControl {
 }
 ```
 
-**v2 API 用法示例：**
+**用法示例：**
 
 ```ts
 const myProcessor: Processor = {
   stage: 'gateTool',
-  async executeV2(ctx) {
+  async execute(ctx) {
     const toolCalls = ctx.state.iteration.pendingToolCalls ?? [];
     if (toolCalls.some(tc => dangerousTools.includes(tc.name))) {
       ctx.control.abort('Dangerous tool not allowed');
     }
   },
 };
-```
-
-#### `ProcessorResult` (v1 API, deprecated)
-
-```ts
-/** @deprecated Use ProcessorContext with ctx.control.abort()/suspend() instead */
-type ProcessorResult = PipelineContext | AbortSignal | SuspensionSignal | ErrorResult;
 ```
 
 #### `AbortSignal` / `SuspensionSignal`

@@ -54,12 +54,10 @@ function myPlugin(api: HarnessAPI): PluginRegistration {
 
 Processors execute business logic at a specific pipeline stage:
 
-#### v2 API (Recommended)
-
 ```typescript
 api.registerProcessor('gateTool', {
   stage: 'gateTool',
-  async executeV2(ctx) {
+  async execute(ctx) {
     // Access state directly
     const toolCalls = ctx.state.iteration.pendingToolCalls ?? [];
 
@@ -73,22 +71,10 @@ api.registerProcessor('gateTool', {
 });
 ```
 
-**v2 API Benefits:**
+**Key Features:**
 - `ctx.state` provides mutable access to `PipelineContext`
 - `ctx.control.abort(reason)` / `ctx.control.suspend(id)` for clean flow control
 - Return `void` for in-place mutation, or return modified `PipelineContext`
-
-#### v1 API (Deprecated)
-
-```typescript
-api.registerProcessor('processOutput', {
-  stage: 'processOutput',
-  async execute(ctx: PipelineContext) {
-    console.log('Response length:', ctx.iteration.response?.length);
-    return ctx;
-  },
-});
-```
 
 Available stages: `processInput`, `buildContext`, `prepareStep`, `gateLLM`, `invokeLLM`, `processStepOutput`, `gateTool`, `executeTools`, `evaluateIteration`, `processOutput`.
 
@@ -186,7 +172,7 @@ const result = await agent.run('Hello');
 await agent.pluginManager.shutdown();
 ```
 
-## Flow Control (v2 API)
+## Flow Control
 
 ### Aborting the Pipeline
 
@@ -195,7 +181,7 @@ Processors can abort the pipeline with an optional retry point:
 ```typescript
 api.registerProcessor('gateLLM', {
   stage: 'gateLLM',
-  async executeV2(ctx) {
+  async execute(ctx) {
     const usage = ctx.state.session.totalTokenUsage;
     if (usage && usage.input > 100000) {
       ctx.control.abort('Token budget exceeded', 'buildContext');
@@ -213,7 +199,7 @@ import { randomUUID } from 'node:crypto';
 
 api.registerProcessor('gateTool', {
   stage: 'gateTool',
-  async executeV2(ctx) {
+  async execute(ctx) {
     const toolCall = ctx.state.iteration.pendingToolCalls?.[0];
     if (toolCall?.name === 'dangerous_action') {
       ctx.control.suspend(randomUUID());
@@ -239,9 +225,6 @@ api.registerProcessor('invokeLLM', modifiers.message((msgs, ctx) => [
 api.registerProcessor('gateTool', gates.permission({
   check: (toolName) => dangerousTools.includes(toolName) ? 'ask' : 'allow',
 }));
-```
-
-## Legacy: Returning Signals (v1 API, Deprecated)
 ```
 
 ## Compression Plugin -- Built-in SummarizeFn
