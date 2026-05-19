@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { Agent } from '../src/agent.js';
 import { createMockLanguageModel, createMockModelWithToolCalls, registerMockProvider } from './helpers.js';
-import type { AbortSignal, PipelineContext, PipelineStage, Tool } from '@primo-ai/sdk';
+import type { PipelineContext, StageName, Tool } from '@primo-ai/sdk';
 import type { ToolRegistry } from '../src/tool-registry.js';
 import { z } from 'zod';
 
@@ -13,8 +13,8 @@ describe('Full Pipeline Stages', () => {
   });
 
   it('executes all 8 stages in correct order', async () => {
-    const order: PipelineStage[] = [];
-    const allStages: PipelineStage[] = [
+    const order: StageName[] = [];
+    const allStages: StageName[] = [
       'processInput',
       'buildContext',
       'prepareStep',
@@ -30,9 +30,8 @@ describe('Full Pipeline Stages', () => {
     for (const stage of allStages) {
       agent.use({
         stage,
-        execute: async (ctx) => {
+        execute: async () => {
           order.push(stage);
-          return ctx;
         },
       });
     }
@@ -60,9 +59,8 @@ describe('Full Pipeline Stages', () => {
 
     agent.use({
       stage: 'prepareStep',
-      execute: async (ctx) => {
-        capturedCtx = ctx;
-        return ctx;
+      execute: async (pCtx) => {
+        capturedCtx = pCtx.state;
       },
     });
 
@@ -84,21 +82,20 @@ describe('Full Pipeline Stages', () => {
 
     const agent = new Agent({ model: 'mock/test', maxIterations: 3 });
 
-    // Override evaluateIteration to never stop, forcing maxIterations to control
+    // Override evaluateIteration to always continue, forcing maxIterations to control
     agent.use({
       stage: 'evaluateIteration',
-      execute: async (ctx) => {
-        // Return context without setting loopDirective to stop, so loop continues
-        return { ...ctx, iteration: { ...ctx.iteration, loopDirective: undefined } };
+      execute: async (pCtx) => {
+        // Override the default processor's stop directive to keep looping
+        pCtx.state.iteration.loopDirective = { action: 'continue' };
       },
     });
 
     // Track how many times the loop iterates
     agent.use({
       stage: 'prepareStep',
-      execute: async (ctx) => {
+      execute: async () => {
         stepCount++;
-        return ctx;
       },
     });
 
@@ -111,10 +108,9 @@ describe('Full Pipeline Stages', () => {
 
     agent.use({
       stage: 'processStepOutput',
-      execute: async (_ctx): Promise<AbortSignal> => ({
-        type: 'abort',
-        reason: 'Safety guardrail triggered',
-      }),
+      execute: async (pCtx) => {
+        pCtx.control.abort('Safety guardrail triggered');
+      },
     });
 
     await expect(agent.run('Do something bad')).rejects.toThrow(
@@ -130,26 +126,20 @@ describe('Full Pipeline Stages', () => {
 
     agent.use({
       stage: 'processStepOutput',
-      execute: async (ctx) => {
+      execute: async (pCtx) => {
         retryCount++;
         if (retryCount === 1) {
           order.push('retry');
-          return {
-            type: 'abort' as const,
-            reason: 'Output rejected, retry',
-            retryFrom: 'prepareStep' as PipelineStage,
-          };
+          pCtx.control.abort('Output rejected, retry', 'prepareStep');
         }
         order.push('accepted');
-        return ctx;
       },
     });
 
     agent.use({
       stage: 'prepareStep',
-      execute: async (ctx) => {
-        order.push(`prepare:${ctx.iteration.step}`);
-        return ctx;
+      execute: async (pCtx) => {
+        order.push(`prepare:${pCtx.state.iteration.step}`);
       },
     });
 
@@ -172,32 +162,25 @@ describe('Full Pipeline Stages', () => {
 
     agent.use({
       stage: 'processStepOutput',
-      execute: async (ctx) => {
+      execute: async (pCtx) => {
         retryCount++;
         if (retryCount === 1) {
-          return {
-            type: 'abort' as const,
-            reason: 'Output rejected, retry from invokeLLM',
-            retryFrom: 'invokeLLM' as PipelineStage,
-          };
+          pCtx.control.abort('Output rejected, retry from invokeLLM', 'invokeLLM');
         }
-        return ctx;
       },
     });
 
     agent.use({
       stage: 'prepareStep',
-      execute: async (ctx) => {
+      execute: async () => {
         prepareCount++;
-        return ctx;
       },
     });
 
     agent.use({
       stage: 'invokeLLM',
-      execute: async (ctx) => {
+      execute: async () => {
         invokeCount++;
-        return ctx;
       },
     });
 
@@ -211,6 +194,7 @@ describe('Full Pipeline Stages', () => {
 
   it('ContextBuilder trims messageHistory when budget is exceeded', async () => {
     const { ContextBuilder } = await import('../src/context-builder.js');
+    const { ProcessorContextImpl } = await import('../src/processor-context.js');
     const mockRegistry = {
       getAll: () => [{ name: 'myTool', description: 'should survive' }],
       register: () => {},
@@ -239,16 +223,17 @@ describe('Full Pipeline Stages', () => {
       session: { messageHistory: longHistory, custom: {} },
     };
 
-    const result = (await processor.execute(ctx)) as PipelineContext;
+    const pCtx = new ProcessorContextImpl(ctx);
+    await processor.execute(pCtx);
 
     // messageHistory trimmed by default semantic truncation to fit budget
-    expect(result.session.messageHistory!.length).toBeLessThan(60);
-    expect(result.session.messageHistory!.length).toBeGreaterThan(0);
+    expect(pCtx.state.session.messageHistory!.length).toBeLessThan(60);
+    expect(pCtx.state.session.messageHistory!.length).toBeGreaterThan(0);
 
     // toolDeclarations resolved from registry
-    expect(result.agent.toolDeclarations).toEqual([{ name: 'myTool', description: 'should survive' }]);
+    expect(pCtx.state.agent.toolDeclarations).toEqual([{ name: 'myTool', description: 'should survive' }]);
     // promptFragments preserved
-    expect(result.agent.promptFragments).toEqual(['keep me']);
+    expect(pCtx.state.agent.promptFragments).toEqual(['keep me']);
   });
 
   it('end-to-end: agent calls tool, loops, and produces final output', async () => {
