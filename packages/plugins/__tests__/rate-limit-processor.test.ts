@@ -4,6 +4,7 @@ import {
   type RateLimitConfig,
 } from '../src/harness/rate-limit-processor.js';
 import type { PipelineContext } from '@primo-ai/sdk';
+import { ProcessorContextImpl, AbortControlFlow } from '@primo-ai/core';
 
 function makeContext(model?: string, overrides?: Partial<PipelineContext>): PipelineContext {
   return {
@@ -17,6 +18,19 @@ function makeContext(model?: string, overrides?: Partial<PipelineContext>): Pipe
     session: { custom: {} },
     ...overrides,
   };
+}
+
+async function executeProcessor(processor: { execute: (ctx: unknown) => Promise<unknown> }, ctx: PipelineContext): Promise<{ aborted: boolean; reason?: string; ctx?: PipelineContext }> {
+  const pCtx = new ProcessorContextImpl(ctx);
+  try {
+    await processor.execute(pCtx);
+    return { aborted: false, ctx: pCtx.state };
+  } catch (e) {
+    if (e instanceof AbortControlFlow) {
+      return { aborted: true, reason: e.reason };
+    }
+    throw e;
+  }
 }
 
 describe('createRateLimitProcessor', () => {
@@ -41,9 +55,9 @@ describe('createRateLimitProcessor', () => {
 
       for (let i = 0; i < 5; i++) {
         const ctx = makeContext();
-        const result = await processor.execute(ctx);
+        const result = await executeProcessor(processor, ctx);
         // Should NOT be an abort
-        expect(result).toEqual(ctx);
+        expect(result.aborted).toBe(false);
       }
     });
 
@@ -55,15 +69,13 @@ describe('createRateLimitProcessor', () => {
       });
 
       // First two should pass
-      await processor.execute(makeContext());
-      await processor.execute(makeContext());
+      await executeProcessor(processor, makeContext());
+      await executeProcessor(processor, makeContext());
 
       // Third should be blocked
-      const result = await processor.execute(makeContext());
-      expect(result).toEqual({
-        type: 'abort',
-        reason: expect.stringContaining('Rate limit exceeded'),
-      });
+      const result = await executeProcessor(processor, makeContext());
+      expect(result.aborted).toBe(true);
+      expect(result.reason).toContain('Rate limit exceeded');
     });
 
     it('resets the window after the time period passes', async () => {
@@ -73,14 +85,14 @@ describe('createRateLimitProcessor', () => {
         strategy: 'block',
       });
 
-      await processor.execute(makeContext());
-      await processor.execute(makeContext());
+      await executeProcessor(processor, makeContext());
+      await executeProcessor(processor, makeContext());
 
       // Advance past the window
       vi.advanceTimersByTime(61_000);
 
-      const result = await processor.execute(makeContext());
-      expect(result).toEqual(makeContext());
+      const result = await executeProcessor(processor, makeContext());
+      expect(result.aborted).toBe(false);
     });
   });
 
@@ -99,19 +111,17 @@ describe('createRateLimitProcessor', () => {
       const ctx1 = makeContext('gpt-4');
       const ctx2 = makeContext('claude-3');
 
-      const result1 = await processor.execute(ctx1);
-      expect(result1).toEqual(ctx1);
+      const result1 = await executeProcessor(processor, ctx1);
+      expect(result1.aborted).toBe(false);
 
-      const result2 = await processor.execute(ctx2);
-      expect(result2).toEqual(ctx2);
+      const result2 = await executeProcessor(processor, ctx2);
+      expect(result2.aborted).toBe(false);
 
       // Third call to gpt-4 should be blocked
       const ctx3 = makeContext('gpt-4');
-      const result3 = await processor.execute(ctx3);
-      expect(result3).toEqual({
-        type: 'abort',
-        reason: expect.stringContaining('Rate limit exceeded'),
-      });
+      const result3 = await executeProcessor(processor, ctx3);
+      expect(result3.aborted).toBe(true);
+      expect(result3.reason).toContain('Rate limit exceeded');
     });
   });
 
@@ -128,14 +138,14 @@ describe('createRateLimitProcessor', () => {
 
       // First request passes immediately
       const ctx1 = makeContext();
-      const result1 = await processor.execute(ctx1);
-      expect(result1).toEqual(ctx1);
+      const result1 = await executeProcessor(processor, ctx1);
+      expect(result1.aborted).toBe(false);
 
       // Second request should be queued (returns context with delay metadata)
       const ctx2 = makeContext();
-      const result2 = await processor.execute(ctx2) as PipelineContext;
+      const result2 = await executeProcessor(processor, ctx2);
       // Queue strategy should pass through but mark the wait time
-      expect((result2 as PipelineContext).session?.custom?.rateLimitQueued).toBeDefined();
+      expect(result2.ctx?.session?.custom?.rateLimitQueued).toBeDefined();
     });
 
     it('eventually allows queued requests after window expires', async () => {
@@ -145,13 +155,13 @@ describe('createRateLimitProcessor', () => {
         strategy: 'queue',
       });
 
-      await processor.execute(makeContext());
-      await processor.execute(makeContext());
+      await executeProcessor(processor, makeContext());
+      await executeProcessor(processor, makeContext());
 
       vi.advanceTimersByTime(11_000);
 
-      const result = await processor.execute(makeContext());
-      expect(result).toEqual(makeContext());
+      const result = await executeProcessor(processor, makeContext());
+      expect(result.aborted).toBe(false);
     });
   });
 
@@ -167,27 +177,25 @@ describe('createRateLimitProcessor', () => {
       });
 
       // Make 3 requests at time 0, 3s, 6s
-      await processor.execute(makeContext());
+      await executeProcessor(processor, makeContext());
       vi.advanceTimersByTime(3_000);
-      await processor.execute(makeContext());
+      await executeProcessor(processor, makeContext());
       vi.advanceTimersByTime(3_000);
-      await processor.execute(makeContext());
+      await executeProcessor(processor, makeContext());
 
       // At time 6s, all 3 are within the 10s window.
       // 4th should be blocked
-      const result = await processor.execute(makeContext());
-      expect(result).toEqual({
-        type: 'abort',
-        reason: expect.stringContaining('Rate limit exceeded'),
-      });
+      const result = await executeProcessor(processor, makeContext());
+      expect(result.aborted).toBe(true);
+      expect(result.reason).toContain('Rate limit exceeded');
 
       // Advance past the first request's window (time 0 + 10001ms)
       vi.advanceTimersByTime(4_001); // now at time 10001ms
 
       // The first request (timestamp 0) now falls outside the window.
       // Only 2 requests remain in the window -> 3rd one should pass
-      const result2 = await processor.execute(makeContext());
-      expect(result2).toEqual(makeContext());
+      const result2 = await executeProcessor(processor, makeContext());
+      expect(result2.aborted).toBe(false);
     });
   });
 

@@ -3,7 +3,8 @@ import {
   createOutputValidationProcessor,
   type OutputValidationConfig,
 } from '../src/validation/output-validation-plugin.js';
-import type { PipelineContext } from '@primo-ai/sdk';
+import type { PipelineContext, Processor } from '@primo-ai/sdk';
+import { ProcessorContextImpl, AbortControlFlow } from '@primo-ai/core';
 
 function makeContext(response?: string, overrides?: Partial<PipelineContext>): PipelineContext {
   return {
@@ -13,6 +14,19 @@ function makeContext(response?: string, overrides?: Partial<PipelineContext>): P
     session: { custom: {} },
     ...overrides,
   };
+}
+
+async function executeProcessor(processor: Processor, ctx: PipelineContext): Promise<{ type: 'ok' | 'abort'; reason?: string; ctx?: PipelineContext }> {
+  const pCtx = new ProcessorContextImpl(ctx);
+  try {
+    await processor.execute(pCtx);
+    return { type: 'ok', ctx: pCtx.state };
+  } catch (e) {
+    if (e instanceof AbortControlFlow) {
+      return { type: 'abort', reason: e.reason };
+    }
+    throw e;
+  }
 }
 
 describe('createOutputValidationProcessor', () => {
@@ -36,36 +50,32 @@ describe('createOutputValidationProcessor', () => {
     it('passes valid JSON responses that match the schema', async () => {
       const processor = createOutputValidationProcessor(config);
       const ctx = makeContext(JSON.stringify({ name: 'Alice', age: 30 }));
-      const result = await processor.execute(ctx);
-      // Should return context unchanged (not an abort)
-      expect(result).toEqual(ctx);
+      const result = await executeProcessor(processor, ctx);
+      // Should return ok (not an abort)
+      expect(result.type).toBe('ok');
     });
 
     it('blocks invalid JSON responses with block strategy', async () => {
       const processor = createOutputValidationProcessor(config);
       const ctx = makeContext(JSON.stringify({ name: 'Alice' })); // missing 'age'
-      const result = await processor.execute(ctx);
-      expect(result).toEqual({
-        type: 'abort',
-        reason: expect.stringContaining('Output validation failed'),
-      });
+      const result = await executeProcessor(processor, ctx);
+      expect(result.type).toBe('abort');
+      expect(result.reason).toContain('Output validation failed');
     });
 
     it('blocks non-JSON responses when schema is expected', async () => {
       const processor = createOutputValidationProcessor(config);
       const ctx = makeContext('not json at all');
-      const result = await processor.execute(ctx);
-      expect(result).toEqual({
-        type: 'abort',
-        reason: expect.stringContaining('Output validation failed'),
-      });
+      const result = await executeProcessor(processor, ctx);
+      expect(result.type).toBe('abort');
+      expect(result.reason).toContain('Output validation failed');
     });
 
     it('passes when there is no response', async () => {
       const processor = createOutputValidationProcessor(config);
       const ctx = makeContext(undefined);
-      const result = await processor.execute(ctx);
-      expect(result).toEqual(ctx);
+      const result = await executeProcessor(processor, ctx);
+      expect(result.type).toBe('ok');
     });
   });
 
@@ -92,12 +102,12 @@ describe('createOutputValidationProcessor', () => {
 
       const processor = createOutputValidationProcessor(config);
       const ctx = makeContext(JSON.stringify({ wrong: true }));
-      const result = await processor.execute(ctx);
+      const result = await executeProcessor(processor, ctx);
 
       console.warn = originalWarn;
 
       // Should NOT abort — just warn
-      expect(result).toEqual(ctx);
+      expect(result.type).toBe('ok');
       expect(warnings.length).toBeGreaterThan(0);
     });
   });
@@ -122,20 +132,19 @@ describe('createOutputValidationProcessor', () => {
     it('attempts to fix invalid JSON by stripping extra fields', async () => {
       const processor = createOutputValidationProcessor(config);
       const ctx = makeContext(JSON.stringify({ name: 'Bob', extra: 'field' }));
-      const result = await processor.execute(ctx) as PipelineContext;
+      const result = await executeProcessor(processor, ctx);
 
       // Fix strategy should pass through since the required fields are present
-      expect((result as PipelineContext).iteration.response).toBeDefined();
+      expect(result.type).toBe('ok');
+      expect(result.ctx?.iteration.response).toBeDefined();
     });
 
     it('aborts if fix cannot make the response valid', async () => {
       const processor = createOutputValidationProcessor(config);
       const ctx = makeContext('not json');
-      const result = await processor.execute(ctx);
-      expect(result).toEqual({
-        type: 'abort',
-        reason: expect.stringContaining('Output validation failed'),
-      });
+      const result = await executeProcessor(processor, ctx);
+      expect(result.type).toBe('abort');
+      expect(result.reason).toContain('Output validation failed');
     });
   });
 
@@ -159,8 +168,8 @@ describe('createOutputValidationProcessor', () => {
 
       const processor = createOutputValidationProcessor(config);
       const ctx = makeContext(JSON.stringify({ name: 'Alice', age: 30 }));
-      const result = await processor.execute(ctx);
-      expect(result).toEqual(ctx);
+      const result = await executeProcessor(processor, ctx);
+      expect(result.type).toBe('ok');
     });
 
     it('blocks responses that fail Zod validation', async () => {
@@ -178,11 +187,9 @@ describe('createOutputValidationProcessor', () => {
 
       const processor = createOutputValidationProcessor(config);
       const ctx = makeContext(JSON.stringify({ name: 'Alice', age: 'not-a-number' }));
-      const result = await processor.execute(ctx);
-      expect(result).toEqual({
-        type: 'abort',
-        reason: expect.stringContaining('Output validation failed'),
-      });
+      const result = await executeProcessor(processor, ctx);
+      expect(result.type).toBe('abort');
+      expect(result.reason).toContain('Output validation failed');
     });
   });
 

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { InMemoryEvictionStorage } from '../src/eviction/eviction-storage.js';
 import { evictionPlugin } from '../src/eviction/eviction-plugin.js';
 import type { HarnessAPI, Processor, PipelineContext } from '@primo-ai/sdk';
+import { ProcessorContextImpl } from '@primo-ai/core';
 
 describe('InMemoryEvictionStorage', () => {
   let storage: InMemoryEvictionStorage;
@@ -62,6 +63,12 @@ describe('evictionPlugin', () => {
     };
   }
 
+  async function executeProcessor(processor: Processor, ctx: PipelineContext): Promise<PipelineContext> {
+    const pCtx = new ProcessorContextImpl(ctx);
+    await processor.execute(pCtx);
+    return pCtx.state;
+  }
+
   it('registers an executeTools processor', () => {
     const storage = new InMemoryEvictionStorage();
     const { api, processors } = createHarnessAPI();
@@ -83,7 +90,7 @@ describe('evictionPlugin', () => {
     ]);
 
     const processor = processors[0]!;
-    const result = await processor.execute(ctx) as PipelineContext;
+    const result = await executeProcessor(processor, ctx);
 
     const evicted = result.iteration.toolResults![0]!.output as { preview: string; reference: string; evicted: true };
     expect(evicted.evicted).toBe(true);
@@ -104,7 +111,7 @@ describe('evictionPlugin', () => {
     ]);
 
     const processor = processors[0]!;
-    const result = await processor.execute(ctx) as PipelineContext;
+    const result = await executeProcessor(processor, ctx);
 
     expect(result.iteration.toolResults![0]!.output).toBe('short result');
   });
@@ -120,7 +127,7 @@ describe('evictionPlugin', () => {
     ]);
 
     const processor = processors[0]!;
-    const result = await processor.execute(ctx) as PipelineContext;
+    const result = await executeProcessor(processor, ctx);
 
     expect(result.iteration.toolResults![0]!.output).toBeNull();
     expect(result.iteration.toolResults![1]!.output).toBeUndefined();
@@ -137,7 +144,7 @@ describe('evictionPlugin', () => {
     ]);
 
     const processor = processors[0]!;
-    const result = await processor.execute(ctx) as PipelineContext;
+    const result = await executeProcessor(processor, ctx);
 
     const evicted = result.iteration.toolResults![0]!.output as { preview: string; reference: string; evicted: true };
     expect(evicted.evicted).toBe(true);

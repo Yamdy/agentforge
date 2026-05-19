@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { skillPlugin, parseFrontmatter, discoverSkills, type SkillDefinition } from '../src/skill/index.js';
-import type { HarnessAPI, PipelineContext } from '@primo-ai/sdk';
+import type { HarnessAPI, PipelineContext, Processor } from '@primo-ai/sdk';
+import { ProcessorContextImpl } from '@primo-ai/core';
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -36,8 +37,8 @@ function createMockFileSystem(files: Map<string, string>): MockFileSystem {
   };
 }
 
-function createHarnessAPI(): { api: HarnessAPI; processors: Map<string, unknown>; tools: Map<string, unknown> } {
-  const processors = new Map<string, unknown>();
+function createHarnessAPI(): { api: HarnessAPI; processors: Map<string, Processor>; tools: Map<string, unknown> } {
+  const processors = new Map<string, Processor>();
   const tools = new Map<string, unknown>();
 
   const api: HarnessAPI = {
@@ -61,6 +62,12 @@ function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
     session: { custom: {} },
     ...overrides,
   };
+}
+
+async function executeProcessor(processor: Processor, ctx: PipelineContext): Promise<PipelineContext> {
+  const pCtx = new ProcessorContextImpl(ctx);
+  await processor.execute(pCtx);
+  return pCtx.state;
 }
 
 // ---------------------------------------------------------------------------
@@ -193,11 +200,11 @@ describe('SkillProcessor — buildContext', () => {
     const { api, processors } = createHarnessAPI();
     skillPlugin({ skills })(api);
 
-    const processor = processors.get('buildContext') as { stage: string; execute: (ctx: PipelineContext) => Promise<PipelineContext> };
+    const processor = processors.get('buildContext');
     expect(processor).toBeDefined();
 
     const ctx = makeContext();
-    const result = await processor.execute(ctx);
+    const result = await executeProcessor(processor!, ctx);
 
     const fragments = result.agent.promptFragments as string[];
     expect(fragments).toBeDefined();
@@ -217,9 +224,9 @@ describe('SkillProcessor — buildContext', () => {
     const { api, processors } = createHarnessAPI();
     skillPlugin({ skills })(api);
 
-    const processor = processors.get('buildContext') as { execute: (ctx: PipelineContext) => Promise<PipelineContext> };
+    const processor = processors.get('buildContext');
     const ctx = makeContext();
-    const result = await processor.execute(ctx);
+    const result = await executeProcessor(processor!, ctx);
 
     const combinedFragments = (result.agent.promptFragments as string[]).join('\n');
     expect(combinedFragments).toContain('verbose-skill');
@@ -231,9 +238,9 @@ describe('SkillProcessor — buildContext', () => {
     const { api, processors } = createHarnessAPI();
     skillPlugin({ skills: [] })(api);
 
-    const processor = processors.get('buildContext') as { execute: (ctx: PipelineContext) => Promise<PipelineContext> };
+    const processor = processors.get('buildContext');
     const ctx = makeContext();
-    const result = await processor.execute(ctx);
+    const result = await executeProcessor(processor!, ctx);
 
     // With no skills, promptFragments should remain as the original empty array
     expect(result.agent.promptFragments).toEqual([]);
