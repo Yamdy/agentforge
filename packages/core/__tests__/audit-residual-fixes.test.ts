@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
-import type { Tool, Message, PipelineContext, TokenCounter } from '@primo-ai/sdk';
+import type { Tool, Message, PipelineContext, ProcessorContext, TokenCounter } from '@primo-ai/sdk';
 import { ToolRegistry } from '../src/tool-registry.js';
 import { HookManager } from '../src/hook-manager.js';
 import { EventBus } from '../src/event-bus.js';
+import { ProcessorContextImpl } from '../src/processor-context.js';
 import { createExecuteToolsProcessor } from '../src/processors/execute-tools.js';
 import { createEvaluateIterationProcessor } from '../src/processors/evaluate-iteration.js';
 import { processStepOutputProcessor } from '../src/processors/process-step-output.js';
@@ -22,6 +23,10 @@ function makeCtx(overrides?: Partial<PipelineContext>): PipelineContext {
     session: { custom: {} },
     ...overrides,
   };
+}
+
+function makeProcessorContext(overrides?: Partial<PipelineContext>): ProcessorContext {
+  return new ProcessorContextImpl(makeCtx(overrides));
 }
 
 function findToolMessage(history: Message[] | undefined): (Message & { role: 'tool'; content: string }) | undefined {
@@ -54,14 +59,14 @@ describe('R-1/R-4: outputSchema validation + flag propagation', () => {
 
     // Now check that executeTools propagates validationError into the Message
     const processor = createExecuteToolsProcessor(registry);
-    const ctx = makeCtx({
+    const pCtx = makeProcessorContext({
       iteration: {
         step: 0,
         pendingToolCalls: [{ id: 'tc-1', name: 'badOutput', args: {} }],
       },
     });
-    const output = (await processor.execute(ctx)) as PipelineContext;
-    const toolMsg = findToolMessage(output.session.messageHistory);
+    await processor.execute(pCtx);
+    const toolMsg = findToolMessage(pCtx.state.session.messageHistory);
     expect(toolMsg).toBeDefined();
     // The tool message content should contain the validationError
     expect(toolMsg!.content).toContain('Output validation failed');
@@ -93,14 +98,14 @@ describe('R-1/R-4: outputSchema validation + flag propagation', () => {
 
     // Now check propagation through executeTools
     const processor = createExecuteToolsProcessor(registry);
-    const ctx = makeCtx({
+    const pCtx = makeProcessorContext({
       iteration: {
         step: 0,
         pendingToolCalls: [{ id: 'tc-2', name: 'mutateMe', args: {} }],
       },
     });
-    const output = (await processor.execute(ctx)) as PipelineContext;
-    const toolMsg = findToolMessage(output.session.messageHistory);
+    await processor.execute(pCtx);
+    const toolMsg = findToolMessage(pCtx.state.session.messageHistory);
     expect(toolMsg).toBeDefined();
     expect(toolMsg!.content).toBe('mutated!');
     // The Message should carry the mutated flag
@@ -122,14 +127,14 @@ describe('R-1/R-4: outputSchema validation + flag propagation', () => {
 
     // Check propagation through executeTools
     const processor = createExecuteToolsProcessor(registry);
-    const ctx = makeCtx({
+    const pCtx = makeProcessorContext({
       iteration: {
         step: 0,
         pendingToolCalls: [{ id: 'tc-3', name: 'longOutput', args: {} }],
       },
     });
-    const output = (await processor.execute(ctx)) as PipelineContext;
-    const toolMsg = findToolMessage(output.session.messageHistory);
+    await processor.execute(pCtx);
+    const toolMsg = findToolMessage(pCtx.state.session.messageHistory);
     expect(toolMsg).toBeDefined();
     expect((toolMsg as { truncated: boolean }).truncated).toBe(true);
   });
@@ -145,7 +150,7 @@ describe('F-6: Required tools exhausted response', () => {
     const toolDecl = { name: 'requiredTool', description: 'must be called', inputSchema: {} };
 
     // Simulate REQUIRED_TOOLS_MAX_RETRIES (3) iterations where the tool is never called
-    let lastResult: PipelineContext = makeCtx({
+    let pCtx = makeProcessorContext({
       agent: {
         config: { model: 'mock/test', requiredTools: ['requiredTool'] },
         promptFragments: [],
@@ -155,18 +160,19 @@ describe('F-6: Required tools exhausted response', () => {
     });
 
     for (let step = 0; step < 3; step++) {
-      lastResult = (await processor.execute({
-        ...lastResult,
+      pCtx = new ProcessorContextImpl({
+        ...pCtx.state,
         iteration: { step },
-      })) as PipelineContext;
+      });
+      await processor.execute(pCtx);
     }
 
     // After 3 retries, the exhausted branch should trigger
-    expect(lastResult.iteration.loopDirective?.action).toBe('stop');
+    expect(pCtx.state.iteration.loopDirective?.action).toBe('stop');
     // The response must NOT be empty — it should contain an error indicator
-    expect(lastResult.iteration.response).toBeDefined();
-    expect(lastResult.iteration.response).not.toBe('');
-    expect(lastResult.iteration.response).toContain('exhausted');
+    expect(pCtx.state.iteration.response).toBeDefined();
+    expect(pCtx.state.iteration.response).not.toBe('');
+    expect(pCtx.state.iteration.response).toContain('exhausted');
   });
 });
 
@@ -178,7 +184,7 @@ describe('F-7: processStepOutput user message detection', () => {
   it('adds user input even when history already has user messages from memory', async () => {
     // Simulate: memory injection already prepended user messages to history
     const memoryUserMsg: Message = { role: 'user', content: 'remembered fact' };
-    const ctx = makeCtx({
+    const pCtx = makeProcessorContext({
       request: { input: 'actual user question', sessionId: 's-1' },
       iteration: { step: 0, response: 'assistant reply' },
       session: {
@@ -187,8 +193,8 @@ describe('F-7: processStepOutput user message detection', () => {
       },
     });
 
-    const result = (await processStepOutputProcessor.execute(ctx)) as PipelineContext;
-    const history = result.session.messageHistory!;
+    await processStepOutputProcessor.execute(pCtx);
+    const history = pCtx.state.session.messageHistory!;
 
     // Both the memory user message AND the actual request input should be present
     const userMessages = history.filter(m => m.role === 'user');

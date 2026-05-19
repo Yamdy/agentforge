@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { PipelineRunner } from '../src/pipeline.js';
 import { HookManager } from '../src/hook-manager.js';
 import { EventBus } from '../src/event-bus.js';
-import type { PipelineContext, Processor, StageHookInput, SuspensionSignal } from '@primo-ai/sdk';
+import type { PipelineContext, Processor, ProcessorContext, StageHookInput, SuspensionSignal } from '@primo-ai/sdk';
+import { ProcessorContextImpl } from '../src/processor-context.js';
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
@@ -19,10 +20,9 @@ describe('PipelineRunner', () => {
     const runner = new PipelineRunner();
     const processor: Processor = {
       stage: 'processInput',
-      execute: async (ctx) => ({
-        ...ctx,
-        session: { ...ctx.session, custom: { ...ctx.session.custom, transformed: true } },
-      }),
+      execute: async (pCtx) => {
+        pCtx.state.session.custom.transformed = true;
+      },
     };
     runner.register(processor);
 
@@ -37,16 +37,16 @@ describe('PipelineRunner', () => {
 
     runner.register({
       stage: 'processInput',
-      execute: async (ctx) => {
+      execute: async (pCtx) => {
         order.push('first');
-        return { ...ctx, session: { ...ctx.session, custom: { ...ctx.session.custom, step: 'first' } } };
+        pCtx.state.session.custom.step = 'first';
       },
     });
     runner.register({
       stage: 'processInput',
-      execute: async (ctx) => {
+      execute: async (pCtx) => {
         order.push('second');
-        return { ...ctx, session: { ...ctx.session, custom: { ...ctx.session.custom, step: 'second' } } };
+        pCtx.state.session.custom.step = 'second';
       },
     });
 
@@ -61,23 +61,20 @@ describe('PipelineRunner', () => {
 
     runner.register({
       stage: 'processOutput',
-      execute: async (ctx) => {
+      execute: async () => {
         order.push('processOutput');
-        return ctx;
       },
     });
     runner.register({
       stage: 'processInput',
-      execute: async (ctx) => {
+      execute: async () => {
         order.push('processInput');
-        return ctx;
       },
     });
     runner.register({
       stage: 'invokeLLM',
-      execute: async (ctx) => {
+      execute: async () => {
         order.push('invokeLLM');
-        return ctx;
       },
     });
 
@@ -85,29 +82,26 @@ describe('PipelineRunner', () => {
     expect(order).toEqual(['processInput', 'invokeLLM', 'processOutput']);
   });
 
-  it('stops the pipeline when a processor returns an AbortSignal', async () => {
+  it('stops the pipeline when a processor aborts', async () => {
     const order: string[] = [];
     const runner = new PipelineRunner();
 
     runner.register({
       stage: 'processInput',
-      execute: async (ctx) => {
+      execute: async () => {
         order.push('processInput');
-        return ctx;
       },
     });
     runner.register({
       stage: 'invokeLLM',
-      execute: async () => ({
-        type: 'abort' as const,
-        reason: 'content policy violation',
-      }),
+      execute: async (pCtx) => {
+        pCtx.control.abort('content policy violation');
+      },
     });
     runner.register({
       stage: 'processOutput',
-      execute: async (ctx) => {
+      execute: async () => {
         order.push('processOutput');
-        return ctx;
       },
     });
 
@@ -121,26 +115,25 @@ describe('PipelineRunner', () => {
   });
 
   it('freezes context between stages to prevent mutation', async () => {
-    let frozenContext: PipelineContext | null = null;
     const runner = new PipelineRunner();
 
     runner.register({
       stage: 'processInput',
-      execute: async (ctx) => ({ ...ctx, session: { ...ctx.session, custom: { ...ctx.session.custom, stage: 'input' } } }),
+      execute: async (pCtx) => {
+        pCtx.state.session.custom.stage = 'input';
+      },
     });
     runner.register({
       stage: 'invokeLLM',
-      execute: async (ctx) => {
-        frozenContext = ctx;
-        return ctx;
-      },
+      execute: async () => {},
     });
 
-    await runner.run(makeContext(), ['processInput', 'invokeLLM']);
+    const result = await runner.run(makeContext(), ['processInput', 'invokeLLM']);
+    const frozenContext = result as PipelineContext;
 
-    expect(frozenContext).not.toBeNull();
+    // PipelineRunner returns frozen context that cannot be mutated
     expect(() => {
-      (frozenContext as PipelineContext).iteration = { step: 999 };
+      frozenContext.iteration = { step: 999 };
     }).toThrow();
   });
 
@@ -148,18 +141,14 @@ describe('PipelineRunner', () => {
     const runner = new PipelineRunner();
     runner.register({
       stage: 'invokeLLM',
-      execute: async (ctx) => ({
-        ...ctx,
-        iteration: {
-          ...ctx.iteration,
-          fullStream: (async function* () {
-            yield { type: 'text-delta', text: 'hello ' };
-            yield { type: 'text-delta', text: 'world' };
-            yield { type: 'finish-step', usage: { inputTokens: { total: 10, noCache: 10 }, outputTokens: { total: 2, text: 2 } } };
-          })(),
-          usagePromise: Promise.resolve({ input: 10, output: 2 }),
-        },
-      }),
+      execute: async (pCtx) => {
+        pCtx.state.iteration.fullStream = (async function* () {
+          yield { type: 'text-delta', text: 'hello ' };
+          yield { type: 'text-delta', text: 'world' };
+          yield { type: 'finish-step', usage: { inputTokens: { total: 10, noCache: 10 }, outputTokens: { total: 2, text: 2 } } };
+        })();
+        pCtx.state.iteration.usagePromise = Promise.resolve({ input: 10, output: 2 });
+      },
     });
 
     const result = await runner.run(makeContext(), ['invokeLLM']);
@@ -181,11 +170,11 @@ describe('PipelineRunner', () => {
       const runner = new PipelineRunner({ hookManager });
       runner.register({
         stage: 'processInput',
-        execute: async (ctx) => ctx,
+        execute: async () => {},
       });
       runner.register({
         stage: 'invokeLLM',
-        execute: async (ctx) => ctx,
+        execute: async () => {},
       });
 
       await runner.run(makeContext(), ['processInput', 'invokeLLM']);
@@ -207,10 +196,9 @@ describe('PipelineRunner', () => {
       const runner = new PipelineRunner({ hookManager });
       runner.register({
         stage: 'processInput',
-        execute: async (ctx) => ({
-          ...ctx,
-          session: { ...ctx.session, custom: { ...ctx.session.custom, modified: true } },
-        }),
+        execute: async (pCtx) => {
+          pCtx.state.session.custom.modified = true;
+        },
       });
 
       await runner.run(makeContext(), ['processInput']);
@@ -234,9 +222,8 @@ describe('PipelineRunner', () => {
       let processorSawInjected = false;
       runner.register({
         stage: 'processInput',
-        execute: async (ctx) => {
-          processorSawInjected = ctx.session.custom.injected === true;
-          return ctx;
+        execute: async (pCtx) => {
+          processorSawInjected = pCtx.state.session.custom.injected === true;
         },
       });
 
@@ -254,7 +241,7 @@ describe('PipelineRunner', () => {
       const runner = new PipelineRunner({ hookManager });
       runner.register({
         stage: 'processInput',
-        execute: async (ctx) => ctx,
+        execute: async () => {},
       });
 
       await runner.run(makeContext(), ['processInput']);
@@ -263,35 +250,30 @@ describe('PipelineRunner', () => {
   });
 
   describe('SuspensionSignal', () => {
-    it('stops the pipeline when a processor returns a SuspensionSignal', async () => {
+    it('stops the pipeline when a processor suspends', async () => {
       const order: string[] = [];
       const runner = new PipelineRunner();
 
       runner.register({
         stage: 'processInput',
-        execute: async (ctx) => {
+        execute: async () => {
           order.push('processInput');
-          return ctx;
         },
       });
       runner.register({
         stage: 'invokeLLM',
-        execute: async (ctx) => ({
-          type: 'suspend' as const,
-          suspensionId: 'sus-001',
-          reason: 'needs approval',
-          checkpoint: {
-            context: ctx,
+        execute: async (pCtx) => {
+          pCtx.control.suspend('sus-001', {
+            context: pCtx.state,
             nextStages: ['processStepOutput', 'executeTools'],
-            iteration: ctx.iteration.step,
-          },
-        }),
+            iteration: pCtx.state.iteration.step,
+          });
+        },
       });
       runner.register({
         stage: 'processOutput',
-        execute: async (ctx) => {
+        execute: async () => {
           order.push('processOutput');
-          return ctx;
         },
       });
 
@@ -300,7 +282,7 @@ describe('PipelineRunner', () => {
       expect(result).toEqual({
         type: 'suspend',
         suspensionId: 'sus-001',
-        reason: 'needs approval',
+        reason: expect.stringContaining('Suspended at stage'),
         checkpoint: {
           context: expect.any(Object),
           nextStages: ['processStepOutput', 'executeTools'],
@@ -316,19 +298,20 @@ describe('PipelineRunner', () => {
 
       runner.register({
         stage: 'invokeLLM',
-        execute: async (ctx) => ({
-          type: 'suspend' as const,
-          suspensionId: 'sus-002',
-          reason: 'timeout test',
-          checkpoint: { context: ctx, nextStages: [], iteration: 0 },
-          expiresAt,
-        }),
+        execute: async (pCtx) => {
+          pCtx.control.suspend('sus-002', {
+            context: pCtx.state,
+            nextStages: [],
+            iteration: 0,
+            expiresAt,
+          });
+        },
       });
 
       const result = await runner.run(makeContext(), ['invokeLLM']) as SuspensionSignal;
 
       expect(result.type).toBe('suspend');
-      expect(result.expiresAt).toBe(expiresAt);
+      expect(result.checkpoint?.expiresAt).toBe(expiresAt);
     });
   });
 
@@ -340,7 +323,7 @@ describe('PipelineRunner', () => {
 
       runner.register({
         stage: 'processInput',
-        execute: async (ctx) => ctx,
+        execute: async () => {},
       });
 
       await expect(runner.run(makeContext(), ['processInput'], { signal: controller.signal }))
@@ -354,24 +337,21 @@ describe('PipelineRunner', () => {
 
       runner.register({
         stage: 'processInput',
-        execute: async (ctx) => {
+        execute: async () => {
           order.push('processInput');
-          return ctx;
         },
       });
       runner.register({
         stage: 'invokeLLM',
-        execute: async (ctx) => {
+        execute: async () => {
           order.push('invokeLLM');
           controller.abort();
-          return ctx;
         },
       });
       runner.register({
         stage: 'processOutput',
-        execute: async (ctx) => {
+        execute: async () => {
           order.push('processOutput');
-          return ctx;
         },
       });
 
@@ -388,16 +368,15 @@ describe('PipelineRunner', () => {
 
       runner.register({
         stage: 'processInput',
-        execute: async (ctx) => {
+        execute: async () => {
           order.push('processInput');
-          return ctx;
         },
       });
       runner.register({
         stage: 'invokeLLM',
-        execute: async (ctx) => {
+        execute: async (pCtx) => {
           order.push('invokeLLM');
-          return { ...ctx, iteration: { ...ctx.iteration, response: 'from-llm' } };
+          pCtx.state.iteration.response = 'from-llm';
         },
       });
 
@@ -414,17 +393,16 @@ describe('PipelineRunner', () => {
 
       runner.register({
         stage: 'processInput',
-        execute: async (ctx) => {
+        execute: async () => {
           order.push('original');
-          return ctx;
         },
       });
 
       runner.replace('processInput', {
         stage: 'processInput',
-        execute: async (ctx) => {
+        execute: async (pCtx) => {
           order.push('replacement');
-          return { ...ctx, session: { ...ctx.session, custom: { ...ctx.session.custom, replaced: true } } };
+          pCtx.state.session.custom.replaced = true;
         },
       });
 
@@ -438,7 +416,9 @@ describe('PipelineRunner', () => {
 
       runner.replace('invokeLLM', {
         stage: 'invokeLLM',
-        execute: async (ctx) => ({ ...ctx, iteration: { ...ctx.iteration, response: 'mocked' } }),
+        execute: async (pCtx) => {
+          pCtx.state.iteration.response = 'mocked';
+        },
       });
 
       const result = await runner.run(makeContext(), ['invokeLLM']);
@@ -457,7 +437,7 @@ describe('PipelineRunner', () => {
       const runner = new PipelineRunner({ hookManager });
       runner.register({
         stage: 'processInput',
-        execute: async (ctx) => ctx,
+        execute: async () => {},
       });
       // gateLLM and gateTool have NO registered processors
 
@@ -470,10 +450,9 @@ describe('PipelineRunner', () => {
       const runner = new PipelineRunner();
       runner.register({
         stage: 'processInput',
-        execute: async (ctx) => ({
-          ...ctx,
-          session: { ...ctx.session, custom: { ...ctx.session.custom, touched: true } },
-        }),
+        execute: async (pCtx) => {
+          pCtx.state.session.custom.touched = true;
+        },
       });
 
       const result = await runner.run(makeContext(), ['processInput', 'gateLLM', 'processStepOutput']);
@@ -490,11 +469,11 @@ describe('PipelineRunner', () => {
 
       runner.register({
         stage: 'prepareStep',
-        execute: async (ctx) => { order.push('prepareStep'); return ctx; },
+        execute: async () => { order.push('prepareStep'); },
       });
       runner.register({
         stage: 'invokeLLM',
-        execute: async (ctx) => { order.push('invokeLLM'); return ctx; },
+        execute: async () => { order.push('invokeLLM'); },
       });
 
       const result = await runner.run(makeContext(), ['prepareStep', 'gateLLM', 'invokeLLM']);
@@ -503,17 +482,19 @@ describe('PipelineRunner', () => {
       expect('type' in result).toBe(false);
     });
 
-    it('aborts pipeline when gateLLM processor returns AbortSignal', async () => {
+    it('aborts pipeline when gateLLM processor aborts', async () => {
       const runner = new PipelineRunner();
       const order: string[] = [];
 
       runner.register({
         stage: 'gateLLM',
-        execute: async () => ({ type: 'abort' as const, reason: 'quota exceeded' }),
+        execute: async (pCtx) => {
+          pCtx.control.abort('quota exceeded');
+        },
       });
       runner.register({
         stage: 'invokeLLM',
-        execute: async (ctx) => { order.push('invokeLLM'); return ctx; },
+        execute: async () => { order.push('invokeLLM'); },
       });
 
       const result = await runner.run(makeContext(), ['gateLLM', 'invokeLLM']);
@@ -522,22 +503,23 @@ describe('PipelineRunner', () => {
       expect(order).toEqual([]);
     });
 
-    it('suspends pipeline when gateTool processor returns SuspensionSignal', async () => {
+    it('suspends pipeline when gateTool processor suspends', async () => {
       const runner = new PipelineRunner();
       const order: string[] = [];
 
       runner.register({
         stage: 'gateTool',
-        execute: async (ctx) => ({
-          type: 'suspend' as const,
-          suspensionId: 'hitl-001',
-          reason: 'requires human approval',
-          checkpoint: { context: ctx, nextStages: ['executeTools'], iteration: 0 },
-        }),
+        execute: async (pCtx) => {
+          pCtx.control.suspend('hitl-001', {
+            context: pCtx.state,
+            nextStages: ['executeTools'],
+            iteration: 0,
+          });
+        },
       });
       runner.register({
         stage: 'executeTools',
-        execute: async (ctx) => { order.push('executeTools'); return ctx; },
+        execute: async () => { order.push('executeTools'); },
       });
 
       const result = await runner.run(makeContext(), ['gateTool', 'executeTools']) as SuspensionSignal;
@@ -547,17 +529,17 @@ describe('PipelineRunner', () => {
       expect(order).toEqual([]);
     });
 
-    it('allows pipeline to continue when gate processor returns context', async () => {
+    it('allows pipeline to continue when gate processor returns normally', async () => {
       const runner = new PipelineRunner();
       const order: string[] = [];
 
       runner.register({
         stage: 'gateLLM',
-        execute: async (ctx) => { order.push('gateLLM'); return ctx; },
+        execute: async () => { order.push('gateLLM'); },
       });
       runner.register({
         stage: 'invokeLLM',
-        execute: async (ctx) => { order.push('invokeLLM'); return ctx; },
+        execute: async () => { order.push('invokeLLM'); },
       });
 
       await runner.run(makeContext(), ['gateLLM', 'invokeLLM']);
@@ -577,14 +559,14 @@ describe('PipelineRunner', () => {
       const runner = new PipelineRunner({ hookManager });
       runner.register({
         stage: 'processInput',
-        execute: async (ctx) => ctx,
+        execute: async () => {},
       });
       // Register no-op gateTool extension point (same as gateToolExtensionPoint)
       runner.register({
         stage: 'gateTool',
-        execute: async (ctx) => ctx,
+        execute: async () => {},
         isNoOp: true,
-      } as Processor & { isNoOp: boolean });
+      });
 
       await runner.run(makeContext(), ['processInput', 'gateTool']);
 
@@ -602,13 +584,13 @@ describe('PipelineRunner', () => {
       const runner = new PipelineRunner({ hookManager });
       runner.register({
         stage: 'gateLLM',
-        execute: async (ctx) => ctx,
+        execute: async () => {},
         isNoOp: true,
-      } as Processor & { isNoOp: boolean });
+      });
       // Plugin registers a real gate processor alongside the no-op
       runner.register({
         stage: 'gateLLM',
-        execute: async (ctx) => ctx,
+        execute: async () => {},
       });
 
       await runner.run(makeContext(), ['gateLLM']);

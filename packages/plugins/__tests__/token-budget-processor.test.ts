@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createTokenBudgetProcessor } from '../src/harness/token-budget-processor.js';
-import type { PipelineContext, ProcessorResult } from '@primo-ai/sdk';
+import type { PipelineContext, ProcessorContext } from '@primo-ai/sdk';
+import { ProcessorContextImpl, AbortControlFlow } from '@primo-ai/core';
 
 function makeContext(history?: Array<{ role: 'user'; content: string }>): PipelineContext {
   return {
@@ -16,12 +17,20 @@ function makeContext(history?: Array<{ role: 'user'; content: string }>): Pipeli
   } as PipelineContext;
 }
 
-function isAbort(r: ProcessorResult): r is { type: 'abort'; reason: string } {
-  return 'type' in r && r.type === 'abort';
+function makeProcessorContext(history?: Array<{ role: 'user'; content: string }>): ProcessorContext {
+  return new ProcessorContextImpl(makeContext(history));
 }
 
-function isContext(r: ProcessorResult): r is PipelineContext {
-  return 'request' in r && 'agent' in r;
+async function expectAbort(pCtx: ProcessorContext, processor: { execute: (ctx: ProcessorContext) => Promise<unknown> }): Promise<string> {
+  try {
+    await processor.execute(pCtx);
+    throw new Error('Expected abort but processor returned normally');
+  } catch (error) {
+    if (error instanceof AbortControlFlow) {
+      return error.reason;
+    }
+    throw error;
+  }
 }
 
 describe('TokenBudgetProcessor', () => {
@@ -31,8 +40,9 @@ describe('TokenBudgetProcessor', () => {
       reservedOutputTokens: 4096,
       strategy: 'block',
     });
-    const result = await processor.execute(makeContext());
-    expect(isContext(result)).toBe(true);
+    const pCtx = makeProcessorContext();
+    await processor.execute(pCtx);
+    // No abort = allowed
   });
 
   it('blocks when budget exceeded with block strategy', async () => {
@@ -45,11 +55,9 @@ describe('TokenBudgetProcessor', () => {
       reservedOutputTokens: 256,
       strategy: 'block',
     });
-    const result = await processor.execute(makeContext(longHistory));
-    expect(isAbort(result)).toBe(true);
-    if (isAbort(result)) {
-      expect(result.reason).toContain('Token budget exceeded');
-    }
+    const pCtx = makeProcessorContext(longHistory);
+    const reason = await expectAbort(pCtx, processor);
+    expect(reason).toContain('Token budget exceeded');
   });
 
   it('truncates history with truncate strategy', async () => {
@@ -62,11 +70,9 @@ describe('TokenBudgetProcessor', () => {
       reservedOutputTokens: 100,
       strategy: 'truncate',
     });
-    const result = await processor.execute(makeContext(longHistory));
-    expect(isContext(result)).toBe(true);
-    if (isContext(result)) {
-      expect(result.session.messageHistory!.length).toBeLessThan(longHistory.length);
-    }
+    const pCtx = makeProcessorContext(longHistory);
+    await processor.execute(pCtx);
+    expect(pCtx.state.session.messageHistory!.length).toBeLessThan(longHistory.length);
   });
 
   it('flags overrun with compress strategy', async () => {
@@ -79,10 +85,8 @@ describe('TokenBudgetProcessor', () => {
       reservedOutputTokens: 256,
       strategy: 'compress',
     });
-    const result = await processor.execute(makeContext(longHistory));
-    expect(isContext(result)).toBe(true);
-    if (isContext(result)) {
-      expect(result.session.custom.tokenBudgetOverrun).toBe(true);
-    }
+    const pCtx = makeProcessorContext(longHistory);
+    await processor.execute(pCtx);
+    expect(pCtx.state.session.custom.tokenBudgetOverrun).toBe(true);
   });
 });

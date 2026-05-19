@@ -1,6 +1,6 @@
-import type { Processor } from '@primo-ai/sdk';
+import type { Processor, ProcessorContext } from '@primo-ai/sdk';
 
 export const processOutputProcessor: Processor = {
   stage: 'processOutput',
-  execute: async (ctx) => ctx,
+  execute: async (_pCtx: ProcessorContext) => {},
 };

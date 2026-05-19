@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Processor, PipelineContext, ProcessorResult } from '@primo-ai/sdk';
+import type { Processor, ProcessorContext, PipelineContext } from '@primo-ai/sdk';
 import { SpanAttributeKeys, SpanType } from '@primo-ai/sdk';
 import { textContentFromBlocks } from '@primo-ai/core';
 
@@ -89,15 +89,13 @@ export function createPiiDetectorProcessor(config: PiiDetectorConfig): Processor
   PiiDetectorConfigSchema.parse(config);
   return {
     stage: 'processInput',
-    execute: async (ctx: PipelineContext): Promise<ProcessorResult> => {
-      if (!config.enabled) return ctx;
+    execute: async (pCtx: ProcessorContext) => {
+      const ctx = pCtx.state;
+      if (!config.enabled) return;
 
       const redaction = config.redactionText ?? '[REDACTED]';
 
-      // Check user input
       const inputMatches = detectPii(ctx.request.input, config.piiTypes, config.customPatterns);
-
-      // Check LLM output — prefer content[] when available
       const outputText = ctx.iteration.content
         ? textContentFromBlocks(ctx.iteration.content)
         : ctx.iteration.response;
@@ -115,120 +113,70 @@ export function createPiiDetectorProcessor(config: PiiDetectorConfig): Processor
       if (!hasPii) {
         childSpan?.setAttribute(SpanAttributeKeys.HARNESS_DECISION, 'allowed');
         childSpan?.end();
-        return {
-          ...ctx,
-          session: {
-            ...ctx.session,
-            custom: {
-              ...ctx.session.custom,
-              piiDetector: { lastDecision: 'allowed', matches: [] },
-            },
-          },
-        };
+        ctx.session.custom = { ...ctx.session.custom, piiDetector: { lastDecision: 'allowed', matches: [] } };
+        return;
       }
 
-      // Handle input PII first
       if (inputMatches.length > 0) {
         if (config.strategy === 'block') {
           childSpan?.setAttribute(SpanAttributeKeys.HARNESS_DECISION, 'blocked');
           childSpan?.setAttribute(SpanAttributeKeys.HARNESS_REASON, 'PII detected in input');
           childSpan?.end();
-          return {
-            type: 'abort',
-            reason: `PII detected in input: ${[...new Set(inputMatches.map((m) => m.type))].join(', ')}`,
-          };
+          pCtx.control.abort(`PII detected in input: ${[...new Set(inputMatches.map((m) => m.type))].join(', ')}`);
+          return;
         }
 
         if (config.strategy === 'warn') {
           childSpan?.setAttribute(SpanAttributeKeys.HARNESS_DECISION, 'warned');
           childSpan?.setAttribute(SpanAttributeKeys.HARNESS_REASON, 'PII detected in input');
           childSpan?.end();
-          return {
-            ...ctx,
-            session: {
-              ...ctx.session,
-              custom: {
-                ...ctx.session.custom,
-                piiDetector: { lastDecision: 'warned', matches: inputMatches },
-              },
-            },
-          };
+          ctx.session.custom = { ...ctx.session.custom, piiDetector: { lastDecision: 'warned', matches: inputMatches } };
+          return;
         }
 
-        // redact
         const redactedInput = redactMatches(ctx.request.input, inputMatches, redaction);
         childSpan?.setAttribute(SpanAttributeKeys.HARNESS_DECISION, 'redacted');
         childSpan?.setAttribute(SpanAttributeKeys.HARNESS_REASON, 'PII redacted in input');
         childSpan?.end();
-        return {
-          ...ctx,
-          request: { ...ctx.request, input: redactedInput },
-          session: {
-            ...ctx.session,
-            custom: {
-              ...ctx.session.custom,
-              piiDetector: { lastDecision: 'redacted', matches: inputMatches },
-            },
-          },
-        };
+        ctx.request.input = redactedInput;
+        ctx.session.custom = { ...ctx.session.custom, piiDetector: { lastDecision: 'redacted', matches: inputMatches } };
+        return;
       }
 
-      // Handle output PII
       if (outputMatches.length > 0) {
         if (config.strategy === 'block') {
           childSpan?.setAttribute(SpanAttributeKeys.HARNESS_DECISION, 'blocked');
           childSpan?.setAttribute(SpanAttributeKeys.HARNESS_REASON, 'PII detected in output');
           childSpan?.end();
-          return {
-            type: 'abort',
-            reason: `PII detected in output: ${[...new Set(outputMatches.map((m) => m.type))].join(', ')}`,
-          };
+          pCtx.control.abort(`PII detected in output: ${[...new Set(outputMatches.map((m) => m.type))].join(', ')}`);
+          return;
         }
 
         if (config.strategy === 'warn') {
           childSpan?.setAttribute(SpanAttributeKeys.HARNESS_DECISION, 'warned');
           childSpan?.setAttribute(SpanAttributeKeys.HARNESS_REASON, 'PII detected in output');
           childSpan?.end();
-          return {
-            ...ctx,
-            session: {
-              ...ctx.session,
-              custom: {
-                ...ctx.session.custom,
-                piiDetector: { lastDecision: 'warned', matches: outputMatches },
-              },
-            },
-          };
+          ctx.session.custom = { ...ctx.session.custom, piiDetector: { lastDecision: 'warned', matches: outputMatches } };
+          return;
         }
 
-        // redact
         const redactedResponse = redactMatches(outputText!, outputMatches, redaction);
         childSpan?.setAttribute(SpanAttributeKeys.HARNESS_DECISION, 'redacted');
         childSpan?.setAttribute(SpanAttributeKeys.HARNESS_REASON, 'PII redacted in output');
         childSpan?.end();
 
-        // Update both content[] TextBlock entries and legacy response
         const updatedContent = ctx.iteration.content?.map((block) =>
           block.type === 'text' ? { ...block, text: redactedResponse } : block
         );
 
-        return {
-          ...ctx,
-          iteration: { ...ctx.iteration, response: redactedResponse, ...(updatedContent ? { content: updatedContent } : {}) },
-          session: {
-            ...ctx.session,
-            custom: {
-              ...ctx.session.custom,
-              piiDetector: { lastDecision: 'redacted', matches: outputMatches },
-            },
-          },
-        };
+        ctx.iteration.response = redactedResponse;
+        if (updatedContent) ctx.iteration.content = updatedContent;
+        ctx.session.custom = { ...ctx.session.custom, piiDetector: { lastDecision: 'redacted', matches: outputMatches } };
+        return;
       }
 
-      // Should not reach here, but safe fallback
       childSpan?.setAttribute(SpanAttributeKeys.HARNESS_DECISION, 'allowed');
       childSpan?.end();
-      return ctx;
     },
   };
 }

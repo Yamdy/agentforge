@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Processor, PipelineContext, ProcessorResult } from '@primo-ai/sdk';
+import type { Processor, ProcessorContext, PipelineContext } from '@primo-ai/sdk';
 import { SpanAttributeKeys, SpanType } from '@primo-ai/sdk';
 import { textContentFromBlocks } from '@primo-ai/core';
 
@@ -96,8 +96,9 @@ export function createModerationProcessor(config: ModerationConfig): Processor {
   ModerationConfigSchema.parse(config);
   return {
     stage: 'processInput',
-    execute: async (ctx: PipelineContext): Promise<ProcessorResult> => {
-      if (!config.enabled) return ctx;
+    execute: async (pCtx: ProcessorContext) => {
+      const ctx = pCtx.state;
+      if (!config.enabled) return;
 
       const checker = config.checker ?? defaultChecker;
       const blockMessage = config.blockMessage ?? 'Content blocked by moderation policy';
@@ -124,30 +125,18 @@ export function createModerationProcessor(config: ModerationConfig): Processor {
       if (!combinedFlagged) {
         childSpan?.setAttribute(SpanAttributeKeys.HARNESS_DECISION, 'allowed');
         childSpan?.end();
-        return {
-          ...ctx,
-          session: {
-            ...ctx.session,
-            custom: {
-              ...ctx.session.custom,
-              moderation: { lastDecision: 'allowed', matches: [] },
-            },
-          },
-        };
+        ctx.session.custom = { ...ctx.session.custom, moderation: { lastDecision: 'allowed', matches: [] } };
+        return;
       }
 
-      // Determine which text to apply strategy to
-      // Priority: if input is flagged, handle input; if output is flagged, handle output
       if (inputResult.flagged) {
         if (config.strategy === 'block') {
           childSpan?.setAttribute(SpanAttributeKeys.HARNESS_DECISION, 'blocked');
           childSpan?.setAttribute(SpanAttributeKeys.HARNESS_REASON, `Moderation: ${blockMessage}`);
           childSpan?.setAttribute('moderation.categories', inputResult.categories);
           childSpan?.end();
-          return {
-            type: 'abort',
-            reason: `Moderation: ${blockMessage}`,
-          };
+          pCtx.control.abort(`Moderation: ${blockMessage}`);
+          return;
         }
 
         if (config.strategy === 'warn') {
@@ -155,16 +144,8 @@ export function createModerationProcessor(config: ModerationConfig): Processor {
           childSpan?.setAttribute(SpanAttributeKeys.HARNESS_REASON, 'Moderation: harmful content detected in input');
           childSpan?.setAttribute('moderation.categories', inputResult.categories);
           childSpan?.end();
-          return {
-            ...ctx,
-            session: {
-              ...ctx.session,
-              custom: {
-                ...ctx.session.custom,
-                moderation: { lastDecision: 'warned', matches: inputResult.matches },
-              },
-            },
-          };
+          ctx.session.custom = { ...ctx.session.custom, moderation: { lastDecision: 'warned', matches: inputResult.matches } };
+          return;
         }
 
         // redact strategy
@@ -174,24 +155,15 @@ export function createModerationProcessor(config: ModerationConfig): Processor {
         childSpan?.end();
 
         let redactedInput = ctx.request.input;
-        // Replace matches in reverse order to preserve indices
         const sortedMatches = [...inputResult.matches].sort((a, b) => b.index - a.index);
         for (const m of sortedMatches) {
           redactedInput =
             redactedInput.slice(0, m.index) + REDACTION + redactedInput.slice(m.index + m.text.length);
         }
 
-        return {
-          ...ctx,
-          request: { ...ctx.request, input: redactedInput },
-          session: {
-            ...ctx.session,
-            custom: {
-              ...ctx.session.custom,
-              moderation: { lastDecision: 'redacted', matches: inputResult.matches },
-            },
-          },
-        };
+        ctx.request.input = redactedInput;
+        ctx.session.custom = { ...ctx.session.custom, moderation: { lastDecision: 'redacted', matches: inputResult.matches } };
+        return;
       }
 
       // Output flagged
@@ -201,10 +173,8 @@ export function createModerationProcessor(config: ModerationConfig): Processor {
           childSpan?.setAttribute(SpanAttributeKeys.HARNESS_REASON, `Moderation: ${blockMessage}`);
           childSpan?.setAttribute('moderation.categories', outputResult!.categories);
           childSpan?.end();
-          return {
-            type: 'abort',
-            reason: `Moderation: ${blockMessage}`,
-          };
+          pCtx.control.abort(`Moderation: ${blockMessage}`);
+          return;
         }
 
         if (config.strategy === 'warn') {
@@ -212,16 +182,8 @@ export function createModerationProcessor(config: ModerationConfig): Processor {
           childSpan?.setAttribute(SpanAttributeKeys.HARNESS_REASON, 'Moderation: harmful content detected in output');
           childSpan?.setAttribute('moderation.categories', outputResult!.categories);
           childSpan?.end();
-          return {
-            ...ctx,
-            session: {
-              ...ctx.session,
-              custom: {
-                ...ctx.session.custom,
-                moderation: { lastDecision: 'warned', matches: outputResult!.matches },
-              },
-            },
-          };
+          ctx.session.custom = { ...ctx.session.custom, moderation: { lastDecision: 'warned', matches: outputResult!.matches } };
+          return;
         }
 
         // redact strategy for output
@@ -237,28 +199,18 @@ export function createModerationProcessor(config: ModerationConfig): Processor {
             redactedResponse.slice(0, m.index) + REDACTION + redactedResponse.slice(m.index + m.text.length);
         }
 
-        // Update both content[] TextBlock entries and legacy response
         const updatedContent = ctx.iteration.content?.map((block) =>
           block.type === 'text' ? { ...block, text: redactedResponse } : block
         );
 
-        return {
-          ...ctx,
-          iteration: { ...ctx.iteration, response: redactedResponse, ...(updatedContent ? { content: updatedContent } : {}) },
-          session: {
-            ...ctx.session,
-            custom: {
-              ...ctx.session.custom,
-              moderation: { lastDecision: 'redacted', matches: outputResult!.matches },
-            },
-          },
-        };
+        ctx.iteration.response = redactedResponse;
+        if (updatedContent) ctx.iteration.content = updatedContent;
+        ctx.session.custom = { ...ctx.session.custom, moderation: { lastDecision: 'redacted', matches: outputResult!.matches } };
+        return;
       }
 
-      // Should not reach here, but safe fallback
       childSpan?.setAttribute(SpanAttributeKeys.HARNESS_DECISION, 'allowed');
       childSpan?.end();
-      return ctx;
     },
   };
 }

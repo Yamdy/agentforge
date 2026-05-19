@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Processor, PipelineContext, ProcessorResult } from '@primo-ai/sdk';
+import type { Processor, ProcessorContext, PipelineContext } from '@primo-ai/sdk';
 import { textContentFromBlocks } from '@primo-ai/core';
 
 /**
@@ -113,18 +113,20 @@ export function createOutputValidationProcessor(config: OutputValidationConfig):
 
   return {
     stage: 'processOutput',
-    execute: async (ctx: PipelineContext): Promise<ProcessorResult> => {
+    execute: async (pCtx: ProcessorContext) => {
+      const ctx = pCtx.state;
       const response = ctx.iteration.content
         ? textContentFromBlocks(ctx.iteration.content)
         : ctx.iteration.response;
-      if (!response) return ctx;
+      if (!response) return;
 
       // Parse JSON
       let parsed: unknown;
       try {
         parsed = JSON.parse(response);
       } catch {
-        return handleInvalid(ctx, 'Response is not valid JSON', strategy);
+        handleInvalid(pCtx, 'Response is not valid JSON', strategy);
+        return;
       }
 
       // Validate
@@ -136,7 +138,7 @@ export function createOutputValidationProcessor(config: OutputValidationConfig):
         const zodSchema = config.schema as { safeParse: (v: unknown) => { success: boolean; error?: { issues: Array<{ message: string }> } } };
         const zodResult = zodSchema.safeParse(parsed);
         if (zodResult.success) {
-          return ctx;
+          return;
         }
         result = {
           valid: false,
@@ -144,7 +146,7 @@ export function createOutputValidationProcessor(config: OutputValidationConfig):
         };
       }
 
-      if (result.valid) return ctx;
+      if (result.valid) return;
 
       // Try fix strategy
       if (strategy === 'fix') {
@@ -152,39 +154,32 @@ export function createOutputValidationProcessor(config: OutputValidationConfig):
           const fixed = attemptFix(parsed, config.schema as Record<string, unknown>);
           const fixResult = validateJsonSchema(fixed, config.schema as Record<string, unknown>);
           if (fixResult.valid) {
-            return {
-              ...ctx,
-              iteration: {
-                ...ctx.iteration,
-                response: JSON.stringify(fixed),
-              },
-            };
+            ctx.iteration.response = JSON.stringify(fixed);
+            return;
           }
         }
         // Fix failed — fall through to block
-        return {
-          type: 'abort',
-          reason: `Output validation failed (fix attempt unsuccessful): ${result.errors.join('; ')}`,
-        };
+        pCtx.control.abort(`Output validation failed (fix attempt unsuccessful): ${result.errors.join('; ')}`);
+        return;
       }
 
-      return handleInvalid(ctx, result.errors.join('; '), strategy);
+      handleInvalid(pCtx, result.errors.join('; '), strategy);
     },
   };
 }
 
 function handleInvalid(
-  ctx: PipelineContext,
+  pCtx: ProcessorContext,
   errorDetail: string,
   strategy: ValidationStrategy,
-): ProcessorResult {
+): void {
   const message = `Output validation failed: ${errorDetail}`;
 
   if (strategy === 'warn') {
     console.warn(`[output-validation] ${message}`);
-    return ctx;
+    return;
   }
 
   // block
-  return { type: 'abort', reason: message };
+  pCtx.control.abort(message);
 }

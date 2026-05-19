@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Processor, PipelineContext, ProcessorResult } from '@primo-ai/sdk';
+import type { Processor, ProcessorContext, PipelineContext } from '@primo-ai/sdk';
 
 export interface RateLimitConfig {
   /** Maximum number of requests allowed within the window. */
@@ -54,7 +54,8 @@ export function createRateLimitProcessor(config: RateLimitConfig): Processor {
 
   return {
     stage: 'gateLLM',
-    execute: async (ctx: PipelineContext): Promise<ProcessorResult> => {
+    execute: async (pCtx: ProcessorContext) => {
+      const ctx = pCtx.state;
       const now = Date.now();
       const key = getKey(ctx);
 
@@ -71,33 +72,23 @@ export function createRateLimitProcessor(config: RateLimitConfig): Processor {
       // Check limit
       if (entries.length >= config.maxRequests) {
         if (config.strategy === 'queue') {
-          // Record the queuing metadata on session.custom
-          return {
-            ...ctx,
-            session: {
-              ...ctx.session,
-              custom: {
-                ...ctx.session.custom,
-                rateLimitQueued: true,
-                rateLimitKey: key,
-                rateLimitCurrentCount: entries.length,
-                rateLimitMax: config.maxRequests,
-              },
-            },
+          ctx.session.custom = {
+            ...ctx.session.custom,
+            rateLimitQueued: true,
+            rateLimitKey: key,
+            rateLimitCurrentCount: entries.length,
+            rateLimitMax: config.maxRequests,
           };
+          return;
         }
 
         // block
-        return {
-          type: 'abort',
-          reason: `Rate limit exceeded for ${key}: ${entries.length}/${config.maxRequests} requests in the last ${config.windowMs}ms`,
-        };
+        pCtx.control.abort(`Rate limit exceeded for ${key}: ${entries.length}/${config.maxRequests} requests in the last ${config.windowMs}ms`);
+        return;
       }
 
       // Record this request
       entries.push({ timestamp: now });
-
-      return ctx;
     },
   };
 }

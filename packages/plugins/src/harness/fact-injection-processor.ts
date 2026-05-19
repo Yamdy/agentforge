@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Processor, PipelineContext, ProcessorResult } from '@primo-ai/sdk';
+import type { Processor, ProcessorContext, PipelineContext } from '@primo-ai/sdk';
 import { SpanAttributeKeys, SpanType } from '@primo-ai/sdk';
 
 export interface FactInjectionConfig {
@@ -14,12 +14,13 @@ export function createFactInjectionProcessor(config: FactInjectionConfig): Proce
   FactInjectionConfigSchema.parse(config);
   return {
     stage: 'buildContext',
-    execute: async (ctx: PipelineContext): Promise<ProcessorResult> => {
+    execute: async (pCtx: ProcessorContext) => {
+      const ctx = pCtx.state;
       const resolvedFacts = typeof config.facts === 'function'
         ? await config.facts(ctx)
         : config.facts;
 
-      if (resolvedFacts.length === 0) return ctx;
+      if (resolvedFacts.length === 0) return;
 
       const childSpan = ctx.iteration.span?.startChild(SpanType.FACT_INJECTION);
       childSpan?.setAttribute(SpanAttributeKeys.FACT_COUNT, resolvedFacts.length);
@@ -30,13 +31,7 @@ export function createFactInjectionProcessor(config: FactInjectionConfig): Proce
 
       childSpan?.end();
 
-      return {
-        ...ctx,
-        agent: {
-          ...ctx.agent,
-          promptFragments: [...ctx.agent.promptFragments, fragment],
-        },
-      };
+      ctx.agent.promptFragments = [...ctx.agent.promptFragments, fragment];
     },
   };
 }

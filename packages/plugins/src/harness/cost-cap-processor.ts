@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Processor, PipelineContext, ProcessorResult } from '@primo-ai/sdk';
+import type { Processor, ProcessorContext, PipelineContext } from '@primo-ai/sdk';
 import { SpanAttributeKeys, SpanType } from '@primo-ai/sdk';
 
 export interface CostCapConfig {
@@ -36,7 +36,8 @@ export function createCostCapProcessor(config: CostCapConfig): Processor {
   CostCapConfigSchema.parse(config);
   return {
     stage: 'gateLLM',
-    execute: async (ctx: PipelineContext): Promise<ProcessorResult> => {
+    execute: async (pCtx: ProcessorContext) => {
+      const ctx = pCtx.state;
       const state = (ctx.session.custom.costCap as CostCapState | undefined)
         ?? { cumulativeCost: 0, iterations: [] };
 
@@ -64,10 +65,8 @@ export function createCostCapProcessor(config: CostCapConfig): Processor {
           childSpan?.setAttribute(SpanAttributeKeys.HARNESS_DECISION, 'blocked');
           childSpan?.setAttribute(SpanAttributeKeys.HARNESS_REASON, `Cost cap exceeded: $${projectedCost.toFixed(4)} > $${config.maxCost}`);
           childSpan?.end();
-          return {
-            type: 'abort',
-            reason: `Cost cap exceeded: projected $${projectedCost.toFixed(4)} exceeds budget $${config.maxCost}`,
-          };
+          pCtx.control.abort(`Cost cap exceeded: projected $${projectedCost.toFixed(4)} exceeds budget $${config.maxCost}`);
+          return;
         }
 
         childSpan?.setAttribute(SpanAttributeKeys.HARNESS_DECISION, 'warned');
@@ -83,13 +82,7 @@ export function createCostCapProcessor(config: CostCapConfig): Processor {
         iterations: [...state.iterations, { step: ctx.iteration.step, cost: estimatedStepCost }],
       };
 
-      return {
-        ...ctx,
-        session: {
-          ...ctx.session,
-          custom: { ...ctx.session.custom, costCap: newState },
-        },
-      };
+      ctx.session.custom = { ...ctx.session.custom, costCap: newState };
     },
   };
 }

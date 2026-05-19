@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { PipelineRunner } from '../src/pipeline.js';
-import type { PipelineContext, PipelineStage, Span } from '@primo-ai/sdk';
+import type { PipelineContext, PipelineStage, ProcessorContext, Span } from '@primo-ai/sdk';
 import { SpanType } from '@primo-ai/sdk';
 import { TestExporter } from '@primo-ai/observability';
 import { LoopOrchestrator } from '../src/loop-orchestrator.js';
 import { EventBus } from '../src/event-bus.js';
 import type { HookManager } from '../src/hook-manager.js';
+import { ProcessorContextImpl } from '../src/processor-context.js';
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
@@ -25,15 +26,15 @@ describe('PipelineRunner with Tracer', () => {
 
     runner.register({
       stage: 'processInput',
-      execute: async (ctx) => ctx,
+      execute: async () => {},
     });
     runner.register({
       stage: 'invokeLLM',
-      execute: async (ctx) => ctx,
+      execute: async () => {},
     });
     runner.register({
       stage: 'processOutput',
-      execute: async (ctx) => ctx,
+      execute: async () => {},
     });
 
     await runner.run(makeContext(), ['processInput', 'invokeLLM', 'processOutput']);
@@ -54,10 +55,9 @@ describe('PipelineRunner with Tracer', () => {
 
     runner.register({
       stage: 'processInput',
-      execute: async (ctx) => {
-        const span = ctx.iteration.span as Span;
-        span.setAttribute('input.length', ctx.request.input.length);
-        return ctx;
+      execute: async (pCtx: ProcessorContext) => {
+        const span = pCtx.state.iteration.span as Span;
+        span.setAttribute('input.length', pCtx.state.request.input.length);
       },
     });
 
@@ -73,7 +73,9 @@ describe('PipelineRunner with Tracer', () => {
 
     runner.register({
       stage: 'processInput',
-      execute: async (ctx) => ({ ...ctx, session: { ...ctx.session, custom: { ...ctx.session.custom, result: 'ok' } } }),
+      execute: async (pCtx) => {
+        pCtx.state.session.custom.result = 'ok';
+      },
     });
 
     const result = await runner.run(makeContext(), ['processInput']);

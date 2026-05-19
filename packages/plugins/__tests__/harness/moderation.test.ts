@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createModerationProcessor } from '../../src/harness/moderation-processor.js';
-import type { PipelineContext, ProcessorResult } from '@primo-ai/sdk';
+import type { PipelineContext, ProcessorContext } from '@primo-ai/sdk';
+import { ProcessorContextImpl, AbortControlFlow } from '@primo-ai/core';
 
 function makeContext(input = 'Hello, how are you?', response?: string): PipelineContext {
   return {
@@ -11,12 +12,21 @@ function makeContext(input = 'Hello, how are you?', response?: string): Pipeline
   } as PipelineContext;
 }
 
-function isAbort(r: ProcessorResult): r is { type: 'abort'; reason: string } {
-  return 'type' in r && r.type === 'abort';
+function makeProcessorContext(input = 'Hello, how are you?', response?: string): ProcessorContext {
+  return new ProcessorContextImpl(makeContext(input, response));
 }
 
-function isContext(r: ProcessorResult): r is PipelineContext {
-  return 'request' in r && 'agent' in r;
+/** Helper to test that a processor aborts. Returns the abort reason if aborted. */
+async function expectAbort(pCtx: ProcessorContext, processor: { execute: (ctx: ProcessorContext) => Promise<unknown> }): Promise<string> {
+  try {
+    await processor.execute(pCtx);
+    throw new Error('Expected abort but processor returned normally');
+  } catch (error) {
+    if (error instanceof AbortControlFlow) {
+      return error.reason;
+    }
+    throw error;
+  }
 }
 
 describe('ModerationProcessor', () => {
@@ -27,8 +37,9 @@ describe('ModerationProcessor', () => {
         strategy: 'block',
         categories: ['violence', 'hate', 'self-harm', 'sexual', 'harassment'],
       });
-      const result = await processor.execute(makeContext('What is the weather today?'));
-      expect(isContext(result)).toBe(true);
+      const pCtx = makeProcessorContext('What is the weather today?');
+      await processor.execute(pCtx);
+      // No abort = allowed
     });
 
     it('blocks violent input with block strategy', async () => {
@@ -38,11 +49,9 @@ describe('ModerationProcessor', () => {
         categories: ['violence'],
         blockMessage: 'Content blocked by moderation',
       });
-      const result = await processor.execute(makeContext('I will kill and destroy everything'));
-      expect(isAbort(result)).toBe(true);
-      if (isAbort(result)) {
-        expect(result.reason).toContain('moderation');
-      }
+      const pCtx = makeProcessorContext('I will kill and destroy everything');
+      const reason = await expectAbort(pCtx, processor);
+      expect(reason).toContain('moderation');
     });
 
     it('warns but continues with warn strategy on harmful input', async () => {
@@ -51,8 +60,9 @@ describe('ModerationProcessor', () => {
         strategy: 'warn',
         categories: ['violence'],
       });
-      const result = await processor.execute(makeContext('I will kill you'));
-      expect(isContext(result)).toBe(true);
+      const pCtx = makeProcessorContext('I will kill you');
+      await processor.execute(pCtx);
+      // No abort = continued
     });
 
     it('redacts harmful content with redact strategy', async () => {
@@ -61,13 +71,11 @@ describe('ModerationProcessor', () => {
         strategy: 'redact',
         categories: ['violence'],
       });
-      const result = await processor.execute(makeContext('I will kill you tomorrow'));
-      expect(isContext(result)).toBe(true);
-      if (isContext(result)) {
-        // The word "kill" should be redacted in the input
-        expect(result.request.input).not.toContain('kill');
-        expect(result.request.input).toContain('[REDACTED]');
-      }
+      const pCtx = makeProcessorContext('I will kill you tomorrow');
+      await processor.execute(pCtx);
+      // The word "kill" should be redacted in the input
+      expect(pCtx.state.request.input).not.toContain('kill');
+      expect(pCtx.state.request.input).toContain('[REDACTED]');
     });
 
     it('passes through when disabled', async () => {
@@ -76,11 +84,9 @@ describe('ModerationProcessor', () => {
         strategy: 'block',
         categories: ['violence'],
       });
-      const result = await processor.execute(makeContext('I will kill you'));
-      expect(isContext(result)).toBe(true);
-      if (isContext(result)) {
-        expect(result.request.input).toContain('kill');
-      }
+      const pCtx = makeProcessorContext('I will kill you');
+      await processor.execute(pCtx);
+      expect(pCtx.state.request.input).toContain('kill');
     });
 
     it('only checks configured categories', async () => {
@@ -90,8 +96,9 @@ describe('ModerationProcessor', () => {
         categories: ['self-harm'], // only check self-harm, not violence
       });
       // Violent content should pass when violence category is not configured
-      const result = await processor.execute(makeContext('I will kill you'));
-      expect(isContext(result)).toBe(true);
+      const pCtx = makeProcessorContext('I will kill you');
+      await processor.execute(pCtx);
+      // No abort = allowed
     });
 
     it('uses custom checker when provided', async () => {
@@ -106,7 +113,8 @@ describe('ModerationProcessor', () => {
         categories: ['custom'],
         checker: customChecker,
       });
-      await processor.execute(makeContext('something'));
+      const pCtx = makeProcessorContext('something');
+      await expectAbort(pCtx, processor);
       expect(customChecker).toHaveBeenCalledWith('something', ['custom']);
     });
 
@@ -116,11 +124,9 @@ describe('ModerationProcessor', () => {
         strategy: 'block',
         categories: ['violence'],
       });
-      const result = await processor.execute(makeContext('I will kill you'));
-      expect(isAbort(result)).toBe(true);
-      if (isAbort(result)) {
-        expect(result.reason).toContain('moderation');
-      }
+      const pCtx = makeProcessorContext('I will kill you');
+      const reason = await expectAbort(pCtx, processor);
+      expect(reason).toContain('moderation');
     });
   });
 
@@ -131,8 +137,8 @@ describe('ModerationProcessor', () => {
         strategy: 'block',
         categories: ['violence'],
       });
-      const result = await processor.execute(makeContext('Hello', 'Sure, here is how to kill someone'));
-      expect(isAbort(result)).toBe(true);
+      const pCtx = makeProcessorContext('Hello', 'Sure, here is how to kill someone');
+      await expectAbort(pCtx, processor);
     });
 
     it('redacts harmful output with redact strategy', async () => {
@@ -141,12 +147,10 @@ describe('ModerationProcessor', () => {
         strategy: 'redact',
         categories: ['violence'],
       });
-      const result = await processor.execute(makeContext('Hello', 'You should kill them'));
-      expect(isContext(result)).toBe(true);
-      if (isContext(result)) {
-        expect(result.iteration.response).not.toContain('kill');
-        expect(result.iteration.response).toContain('[REDACTED]');
-      }
+      const pCtx = makeProcessorContext('Hello', 'You should kill them');
+      await processor.execute(pCtx);
+      expect(pCtx.state.iteration.response).not.toContain('kill');
+      expect(pCtx.state.iteration.response).toContain('[REDACTED]');
     });
 
     it('warns but passes through harmful output with warn strategy', async () => {
@@ -155,12 +159,10 @@ describe('ModerationProcessor', () => {
         strategy: 'warn',
         categories: ['violence'],
       });
-      const result = await processor.execute(makeContext('Hello', 'You should kill them'));
-      expect(isContext(result)).toBe(true);
-      if (isContext(result)) {
-        // Original text preserved on warn
-        expect(result.iteration.response).toContain('kill');
-      }
+      const pCtx = makeProcessorContext('Hello', 'You should kill them');
+      await processor.execute(pCtx);
+      // Original text preserved on warn
+      expect(pCtx.state.iteration.response).toContain('kill');
     });
 
     it('allows clean output', async () => {
@@ -169,8 +171,9 @@ describe('ModerationProcessor', () => {
         strategy: 'block',
         categories: ['violence'],
       });
-      const result = await processor.execute(makeContext('Hello', 'The weather is nice today'));
-      expect(isContext(result)).toBe(true);
+      const pCtx = makeProcessorContext('Hello', 'The weather is nice today');
+      await processor.execute(pCtx);
+      // No abort = allowed
     });
 
     it('handles missing response gracefully', async () => {
@@ -179,8 +182,9 @@ describe('ModerationProcessor', () => {
         strategy: 'block',
         categories: ['violence'],
       });
-      const result = await processor.execute(makeContext('Hello'));
-      expect(isContext(result)).toBe(true);
+      const pCtx = makeProcessorContext('Hello');
+      await processor.execute(pCtx);
+      // No abort = allowed
     });
   });
 
@@ -191,8 +195,8 @@ describe('ModerationProcessor', () => {
         strategy: 'block',
         categories: ['violence'],
       });
-      const result = await processor.execute(makeContext('I will kill you'));
-      expect(isAbort(result)).toBe(true);
+      const pCtx = makeProcessorContext('I will kill you');
+      await expectAbort(pCtx, processor);
     });
 
     it('records allowed decision in session custom data', async () => {
@@ -201,13 +205,11 @@ describe('ModerationProcessor', () => {
         strategy: 'block',
         categories: ['violence'],
       });
-      const result = await processor.execute(makeContext('Nice weather'));
-      expect(isContext(result)).toBe(true);
-      if (isContext(result)) {
-        const moderationState = result.session.custom.moderation as { lastDecision: string };
-        expect(moderationState).toBeDefined();
-        expect(moderationState.lastDecision).toBe('allowed');
-      }
+      const pCtx = makeProcessorContext('Nice weather');
+      await processor.execute(pCtx);
+      const moderationState = pCtx.state.session.custom.moderation as { lastDecision: string };
+      expect(moderationState).toBeDefined();
+      expect(moderationState.lastDecision).toBe('allowed');
     });
   });
 
@@ -218,8 +220,8 @@ describe('ModerationProcessor', () => {
         strategy: 'block',
         categories: ['hate'],
       });
-      const result = await processor.execute(makeContext('I hate all people of that race'));
-      expect(isAbort(result)).toBe(true);
+      const pCtx = makeProcessorContext('I hate all people of that race');
+      await expectAbort(pCtx, processor);
     });
   });
 
@@ -230,8 +232,8 @@ describe('ModerationProcessor', () => {
         strategy: 'block',
         categories: ['self-harm'],
       });
-      const result = await processor.execute(makeContext('I want to hurt myself'));
-      expect(isAbort(result)).toBe(true);
+      const pCtx = makeProcessorContext('I want to hurt myself');
+      await expectAbort(pCtx, processor);
     });
   });
 
@@ -242,8 +244,8 @@ describe('ModerationProcessor', () => {
         strategy: 'block',
         categories: ['harassment'],
       });
-      const result = await processor.execute(makeContext('I will threaten and bully you'));
-      expect(isAbort(result)).toBe(true);
+      const pCtx = makeProcessorContext('I will threaten and bully you');
+      await expectAbort(pCtx, processor);
     });
   });
 });

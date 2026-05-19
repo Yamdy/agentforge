@@ -1,4 +1,4 @@
-import type { Processor, PipelineContext, ProcessorResult, HarnessAPI, PluginRegistration, ResourceDeclaration, ToolDefinition } from '@primo-ai/sdk';
+import type { Processor, ProcessorContext, PipelineContext, HarnessAPI, PluginRegistration, ResourceDeclaration, ToolDefinition } from '@primo-ai/sdk';
 import { z } from 'zod';
 
 // ---------------------------------------------------------------------------
@@ -128,22 +128,16 @@ export async function discoverSkills(
 export function createSkillProcessor(skills: SkillDefinition[]): Processor {
   return {
     stage: 'buildContext',
-    execute: async (ctx: PipelineContext): Promise<ProcessorResult> => {
-      if (skills.length === 0) return ctx;
+    execute: async (pCtx: ProcessorContext) => {
+      if (skills.length === 0) return;
+      const ctx = pCtx.state;
 
       const lines = skills.map(
         (s) => `- **${s.name}**: ${s.description}`,
       );
       const fragment = `<skills>\nAvailable skills (use read_skill tool to load full instructions):\n${lines.join('\n')}\n</skills>`;
 
-      const existingFragments = ctx.agent.promptFragments;
-      return {
-        ...ctx,
-        agent: {
-          ...ctx.agent,
-          promptFragments: [...existingFragments, fragment],
-        },
-      };
+      ctx.agent.promptFragments = [...ctx.agent.promptFragments, fragment];
     },
   };
 }

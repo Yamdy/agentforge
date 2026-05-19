@@ -1,7 +1,7 @@
-import type { Processor } from '@primo-ai/sdk';
+import type { Processor, ProcessorContext } from '@primo-ai/sdk';
 
 export const gateToolExtensionPoint: Processor = {
   stage: 'gateTool',
-  execute: async (ctx) => ctx,
+  execute: async (_pCtx: ProcessorContext) => {},
   isNoOp: true,
 };

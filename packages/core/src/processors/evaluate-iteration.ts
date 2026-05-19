@@ -1,4 +1,4 @@
-import type { Processor, LoopDirective, TokenUsage, Message, ToolCall } from '@primo-ai/sdk';
+import type { Processor, ProcessorContext, LoopDirective, TokenUsage, Message, ToolCall } from '@primo-ai/sdk';
 import type { EventBus } from '../event-bus.js';
 
 export interface EvaluateIterationDeps {
@@ -34,7 +34,8 @@ export function createEvaluateIterationProcessor(deps?: EvaluateIterationDeps): 
 
   return {
     stage: 'evaluateIteration',
-    execute: async (ctx) => {
+    execute: async (pCtx: ProcessorContext) => {
+      const ctx = pCtx.state;
       const prevTotal = ctx.session.totalTokenUsage ?? { input: 0, output: 0 };
       const iterUsage = ctx.iteration.tokenUsage;
       if (!iterUsage) {
@@ -71,17 +72,9 @@ export function createEvaluateIterationProcessor(deps?: EvaluateIterationDeps): 
           }
         }
 
-        return {
-          ...ctx,
-          iteration: {
-            ...ctx.iteration,
-            loopDirective: { action: 'stop' } as LoopDirective,
-          },
-          session: {
-            ...ctx.session,
-            totalTokenUsage,
-          },
-        };
+        ctx.iteration.loopDirective = { action: 'stop' } as LoopDirective;
+        ctx.session.totalTokenUsage = totalTokenUsage;
+        return;
       }
 
       if (requiredTools && requiredTools.length > 0) {
@@ -132,7 +125,6 @@ export function createEvaluateIterationProcessor(deps?: EvaluateIterationDeps): 
             const policy = ctx.agent.config.requiredToolPolicy ?? 'advise';
 
             if (policy === 'enforce') {
-              // Inject synthetic tool calls for exhausted uncalled tools and continue the loop
               const syntheticCalls: ToolCall[] = exhausted.map((name, i) => ({
                 id: `required-${i}`,
                 name,
@@ -147,40 +139,20 @@ export function createEvaluateIterationProcessor(deps?: EvaluateIterationDeps): 
               });
               ctx.iteration.span?.setAttribute('required_tools.enforced', exhausted.join(','));
 
-              return {
-                ...ctx,
-                iteration: {
-                  ...ctx.iteration,
-                  loopDirective: { action: 'continue' } as LoopDirective,
-                  pendingToolCalls: syntheticCalls,
-                },
-                session: {
-                  ...ctx.session,
-                  totalTokenUsage,
-                },
-              };
+              ctx.iteration.loopDirective = { action: 'continue' } as LoopDirective;
+              ctx.iteration.pendingToolCalls = syntheticCalls;
+              ctx.session.totalTokenUsage = totalTokenUsage;
+              return;
             }
 
-            // Default 'advise' behavior: stop with error message
-            return {
-              ...ctx,
-              agent: {
-                ...ctx.agent,
-                promptFragments: [
-                  ...ctx.agent.promptFragments,
-                  `[system] ${exhaustedMsg}`,
-                ],
-              },
-              iteration: {
-                ...ctx.iteration,
-                loopDirective: { action: 'stop' } as LoopDirective,
-                response: exhaustedMsg,
-              },
-              session: {
-                ...ctx.session,
-                totalTokenUsage,
-              },
-            };
+            ctx.agent.promptFragments = [
+              ...ctx.agent.promptFragments,
+              `[system] ${exhaustedMsg}`,
+            ];
+            ctx.iteration.loopDirective = { action: 'stop' } as LoopDirective;
+            ctx.iteration.response = exhaustedMsg;
+            ctx.session.totalTokenUsage = totalTokenUsage;
+            return;
           }
 
           eventBus?.emit('required_tools:incomplete', {
@@ -190,24 +162,13 @@ export function createEvaluateIterationProcessor(deps?: EvaluateIterationDeps): 
             sessionId: ctx.request.sessionId,
           });
 
-          return {
-            ...ctx,
-            agent: {
-              ...ctx.agent,
-              promptFragments: [
-                ...ctx.agent.promptFragments,
-                `[system] Required tools not yet called: ${uncalled.join(', ')}. Please call them before finishing.`,
-              ],
-            },
-            iteration: {
-              ...ctx.iteration,
-              loopDirective: { action: 'continue' } as LoopDirective,
-            },
-            session: {
-              ...ctx.session,
-              totalTokenUsage,
-            },
-          };
+          ctx.agent.promptFragments = [
+            ...ctx.agent.promptFragments,
+            `[system] Required tools not yet called: ${uncalled.join(', ')}. Please call them before finishing.`,
+          ];
+          ctx.iteration.loopDirective = { action: 'continue' } as LoopDirective;
+          ctx.session.totalTokenUsage = totalTokenUsage;
+          return;
         }
       }
 
@@ -216,17 +177,8 @@ export function createEvaluateIterationProcessor(deps?: EvaluateIterationDeps): 
         ? { action: 'continue' }
         : { action: 'stop' };
 
-      return {
-        ...ctx,
-        iteration: {
-          ...ctx.iteration,
-          loopDirective: directive,
-        },
-        session: {
-          ...ctx.session,
-          totalTokenUsage,
-        },
-      };
+      ctx.iteration.loopDirective = directive;
+      ctx.session.totalTokenUsage = totalTokenUsage;
     },
   };
 }

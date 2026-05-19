@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createCostCapProcessor } from '../src/harness/cost-cap-processor.js';
-import type { PipelineContext, ProcessorResult } from '@primo-ai/sdk';
+import type { PipelineContext, ProcessorContext } from '@primo-ai/sdk';
+import { ProcessorContextImpl, AbortControlFlow } from '@primo-ai/core';
 
 function makeContext(step = 0, custom?: Record<string, unknown>): PipelineContext {
   return {
@@ -11,12 +12,20 @@ function makeContext(step = 0, custom?: Record<string, unknown>): PipelineContex
   } as PipelineContext;
 }
 
-function isAbort(r: ProcessorResult): r is { type: 'abort'; reason: string } {
-  return 'type' in r && r.type === 'abort';
+function makeProcessorContext(step = 0, custom?: Record<string, unknown>): ProcessorContext {
+  return new ProcessorContextImpl(makeContext(step, custom));
 }
 
-function isContext(r: ProcessorResult): r is PipelineContext {
-  return 'request' in r && 'agent' in r;
+async function expectAbort(pCtx: ProcessorContext, processor: { execute: (ctx: ProcessorContext) => Promise<unknown> }): Promise<string> {
+  try {
+    await processor.execute(pCtx);
+    throw new Error('Expected abort but processor returned normally');
+  } catch (error) {
+    if (error instanceof AbortControlFlow) {
+      return error.reason;
+    }
+    throw error;
+  }
 }
 
 describe('CostCapProcessor', () => {
@@ -28,8 +37,9 @@ describe('CostCapProcessor', () => {
       strategy: 'block',
       modelPricing: pricing,
     });
-    const result = await processor.execute(makeContext());
-    expect(isContext(result)).toBe(true);
+    const pCtx = makeProcessorContext();
+    await processor.execute(pCtx);
+    // No abort = allowed
   });
 
   it('blocks when over budget with block strategy', async () => {
@@ -38,11 +48,9 @@ describe('CostCapProcessor', () => {
       strategy: 'block',
       modelPricing: pricing,
     });
-    const result = await processor.execute(makeContext());
-    expect(isAbort(result)).toBe(true);
-    if (isAbort(result)) {
-      expect(result.reason).toContain('Cost cap exceeded');
-    }
+    const pCtx = makeProcessorContext();
+    const reason = await expectAbort(pCtx, processor);
+    expect(reason).toContain('Cost cap exceeded');
   });
 
   it('warns but continues with warn strategy', async () => {
@@ -51,8 +59,9 @@ describe('CostCapProcessor', () => {
       strategy: 'warn',
       modelPricing: pricing,
     });
-    const result = await processor.execute(makeContext());
-    expect(isContext(result)).toBe(true);
+    const pCtx = makeProcessorContext();
+    await processor.execute(pCtx);
+    // No abort = continued
   });
 
   it('accumulates cost across iterations', async () => {
@@ -62,14 +71,14 @@ describe('CostCapProcessor', () => {
       modelPricing: pricing,
     });
 
-    const r0 = await processor.execute(makeContext(0));
-    expect(isContext(r0)).toBe(true);
-    const state0 = (r0 as PipelineContext).session.custom.costCap as { cumulativeCost: number };
+    const pCtx0 = makeProcessorContext(0);
+    await processor.execute(pCtx0);
+    const state0 = pCtx0.state.session.custom.costCap as { cumulativeCost: number };
     expect(state0.cumulativeCost).toBeGreaterThan(0);
 
-    const r1 = await processor.execute(makeContext(1, { costCap: state0 }));
-    expect(isContext(r1)).toBe(true);
-    const state1 = (r1 as PipelineContext).session.custom.costCap as { cumulativeCost: number };
+    const pCtx1 = makeProcessorContext(1, { costCap: state0 });
+    await processor.execute(pCtx1);
+    const state1 = pCtx1.state.session.custom.costCap as { cumulativeCost: number };
     expect(state1.cumulativeCost).toBeGreaterThan(state0.cumulativeCost);
   });
 
@@ -79,10 +88,10 @@ describe('CostCapProcessor', () => {
       strategy: 'block',
       modelPricing: pricing,
     });
-    const ctx = makeContext();
-    ctx.agent.config.model = 'unknown-model';
-    const result = await processor.execute(ctx);
-    expect(isContext(result)).toBe(true);
+    const pCtx = makeProcessorContext();
+    pCtx.state.agent.config.model = 'unknown-model';
+    await processor.execute(pCtx);
+    // No abort = allowed (unknown model has $0 cost)
   });
 
   it('stores iteration cost records', async () => {
@@ -91,9 +100,9 @@ describe('CostCapProcessor', () => {
       strategy: 'block',
       modelPricing: pricing,
     });
-    const result = await processor.execute(makeContext(0));
-    expect(isContext(result)).toBe(true);
-    const state = (result as PipelineContext).session.custom.costCap as { iterations: Array<{ step: number; cost: number }> };
+    const pCtx = makeProcessorContext(0);
+    await processor.execute(pCtx);
+    const state = pCtx.state.session.custom.costCap as { iterations: Array<{ step: number; cost: number }> };
     expect(state.iterations).toHaveLength(1);
     expect(state.iterations[0].step).toBe(0);
     expect(state.iterations[0].cost).toBeGreaterThan(0);

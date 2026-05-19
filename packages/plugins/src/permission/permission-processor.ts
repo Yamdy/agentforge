@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Processor, PipelineContext, ProcessorResult, SuspensionSignal, HarnessAPI, PluginRegistration } from '@primo-ai/sdk';
+import type { Processor, ProcessorContext, PipelineContext, HarnessAPI, PluginRegistration } from '@primo-ai/sdk';
 import type { PermissionManager } from '@primo-ai/core';
 
 // ---------------------------------------------------------------------------
@@ -144,15 +144,16 @@ export function createPermissionProcessor(config: PermissionConfig): Processor {
 
   return {
     stage: 'gateTool',
-    execute: async (ctx: PipelineContext): Promise<ProcessorResult> => {
+    execute: async (pCtx: ProcessorContext) => {
+      const ctx = pCtx.state;
       // full-auto mode: allow everything
       if (config.mode === 'full-auto') {
-        return ctx;
+        return;
       }
 
       const toolCall = getCurrentToolCall(ctx);
       if (!toolCall) {
-        return ctx;
+        return;
       }
 
       // Evaluate rules (first-match-wins)
@@ -162,15 +163,17 @@ export function createPermissionProcessor(config: PermissionConfig): Processor {
         switch (matched.action) {
           case 'allow':
             emit({ decision: 'allow', toolName: toolCall.name, rule: matched.rule.tool, mode: config.mode });
-            return ctx;
+            return;
           case 'deny':
             emit({ decision: 'deny', toolName: toolCall.name, rule: matched.rule.tool, mode: config.mode });
-            return { type: 'abort', reason: `Permission denied: tool '${toolCall.name}' blocked by rule (deny)` };
+            pCtx.control.abort(`Permission denied: tool '${toolCall.name}' blocked by rule (deny)`);
+            return; // unreachable but satisfies TS
           case 'ask':
             // In plan-only mode, 'ask' is treated as deny
             if (config.mode === 'plan-only') {
               emit({ decision: 'deny', toolName: toolCall.name, rule: matched.rule.tool, mode: config.mode });
-              return { type: 'abort', reason: `Permission denied: tool '${toolCall.name}' requires approval (ask rule, plan-only mode)` };
+              pCtx.control.abort(`Permission denied: tool '${toolCall.name}' requires approval (ask rule, plan-only mode)`);
+              return;
             }
             // In interactive mode with permissionManager: await interactive decision
             if (config.permissionManager) {
@@ -189,19 +192,19 @@ export function createPermissionProcessor(config: PermissionConfig): Processor {
               const approved = await config.permissionManager.awaitDecision(permission);
               if (approved) {
                 emit({ decision: 'allow', toolName: toolCall.name, rule: matched.rule.tool, mode: config.mode, permissionId });
-                return ctx;
+                return;
               }
               emit({ decision: 'deny', toolName: toolCall.name, rule: matched.rule.tool, mode: config.mode, permissionId });
-              return { type: 'abort', reason: `Permission denied: tool '${toolCall.name}' blocked by user` };
+              pCtx.control.abort(`Permission denied: tool '${toolCall.name}' blocked by user`);
+              return;
             }
             // In interactive mode without permissionManager, 'ask' suspends awaiting human approval
             emit({ decision: 'ask', toolName: toolCall.name, rule: matched.rule.tool, mode: config.mode });
-            return {
-              type: 'suspend',
-              suspensionId: `perm-${toolCall.name}-${Date.now()}`,
-              reason: `Tool '${toolCall.name}' requires approval (ask rule)`,
-              checkpoint: { context: ctx, nextStages: ['executeTools', 'evaluateIteration'], iteration: ctx.iteration.step },
-            } satisfies SuspensionSignal;
+            pCtx.control.suspend(
+              `perm-${toolCall.name}-${Date.now()}`,
+              { context: ctx, nextStages: ['executeTools', 'evaluateIteration'], iteration: ctx.iteration.step },
+            );
+            return;
         }
       }
 
@@ -209,15 +212,15 @@ export function createPermissionProcessor(config: PermissionConfig): Processor {
       if (config.mode === 'plan-only') {
         if (isDangerousTool(toolCall.name)) {
           emit({ decision: 'deny', toolName: toolCall.name, mode: config.mode });
-          return { type: 'abort', reason: `Permission denied: tool '${toolCall.name}' is not allowed in plan-only mode (dangerous tool)` };
+          pCtx.control.abort(`Permission denied: tool '${toolCall.name}' is not allowed in plan-only mode (dangerous tool)`);
+          return;
         }
         emit({ decision: 'allow', toolName: toolCall.name, mode: config.mode });
-        return ctx;
+        return;
       }
 
       // interactive mode with no matching rule: allow by default
       emit({ decision: 'allow', toolName: toolCall.name, mode: config.mode });
-      return ctx;
     },
   };
 }

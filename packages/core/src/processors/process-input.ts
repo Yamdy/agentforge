@@ -1,9 +1,10 @@
-import type { Processor, Dynamic, ResolveContext } from '@primo-ai/sdk';
+import type { Processor, ProcessorContext, Dynamic, ResolveContext } from '@primo-ai/sdk';
 import { resolveDynamic } from '../dynamic-resolver.js';
 
 export const processInputProcessor: Processor = {
   stage: 'processInput',
-  execute: async (ctx) => {
+  execute: async (pCtx: ProcessorContext) => {
+    const ctx = pCtx.state;
     const resolveCtx: ResolveContext = {
       input: ctx.request.input,
       sessionId: ctx.request.sessionId,
@@ -16,6 +17,6 @@ export const processInputProcessor: Processor = {
     if (config.maxIterations != null) {
       config.maxIterations = await resolveDynamic<number>(config.maxIterations as Dynamic<number>, resolveCtx);
     }
-    return { ...ctx, agent: { ...ctx.agent, config } };
+    ctx.agent.config = config;
   },
 };

@@ -214,7 +214,34 @@ export interface PromptFragment {
 }
 
 // ---------------------------------------------------------------------------
-// Processor
+// Processor Control Flow (v2 API)
+// ---------------------------------------------------------------------------
+
+/**
+ * Control flow API for processors to abort or suspend the pipeline.
+ * These methods throw special errors that PipelineRunner catches for flow control.
+ */
+export interface ProcessorControl {
+  /** Abort the pipeline with optional retry from a specific stage. */
+  abort(reason: string, retryFrom?: StageName): never;
+  /** Suspend the pipeline with a checkpoint for later resume. */
+  suspend(suspensionId: string, checkpoint?: Partial<PipelineCheckpoint>): never;
+  /** Signal an error with optional recoverability flag. */
+  error(error: Error, stage: StageName, recoverable?: boolean): never;
+}
+
+/**
+ * Context passed to Processor.execute().
+ * - state: mutable PipelineContext (processors can modify directly)
+ * - control: flow control API (throws on abort/suspend)
+ */
+export interface ProcessorContext {
+  state: PipelineContext;
+  control: ProcessorControl;
+}
+
+// ---------------------------------------------------------------------------
+// Processor Signals (data structures for events and internal use)
 // ---------------------------------------------------------------------------
 
 export interface AbortSignal {
@@ -227,6 +254,7 @@ export interface PipelineCheckpoint {
   context: PipelineContext;
   nextStages: StageName[];
   iteration: number;
+  expiresAt?: string;
 }
 
 export interface SuspensionSignal {
@@ -234,7 +262,6 @@ export interface SuspensionSignal {
   suspensionId: string;
   reason: string;
   checkpoint: PipelineCheckpoint;
-  expiresAt?: string;
 }
 
 export interface ErrorResult {
@@ -244,14 +271,12 @@ export interface ErrorResult {
   recoverable?: boolean;
 }
 
-export type ProcessorResult = PipelineContext | AbortSignal | SuspensionSignal | ErrorResult;
-
 /**
- * Processor -- Business logic unit in the pipeline. CAN read and modify PipelineContext.
- * Use for: context assembly, LLM calls, tool execution, iteration evaluation.
+ * Processor -- Business logic unit in the pipeline.
  *
- * Hook -- Observation/interception point in the pipeline. CANNOT modify Context.
- * Use for: logging, metrics, event emission, permission checks (allow/deny).
+ * Implement execute(ctx: ProcessorContext): Promise<PipelineContext | void>
+ * - Access state via ctx.state, control flow via ctx.control.abort()/suspend()
+ * - Return modified context or void (in-place mutation is ok)
  *
  * Boundary rules:
  * - Need to modify ctx -> Use Processor
@@ -260,9 +285,8 @@ export type ProcessorResult = PipelineContext | AbortSignal | SuspensionSignal |
  */
 export interface Processor {
   stage: StageName;
-  execute(context: PipelineContext): Promise<ProcessorResult>;
-  /** When true, this processor is an extension point placeholder that just returns ctx unchanged.
-   *  PipelineRunner skips hooks for stages where all processors are no-ops. */
+  execute(context: ProcessorContext): Promise<PipelineContext | void>;
+  /** When true, this processor is an extension point placeholder that just returns ctx unchanged. */
   isNoOp?: boolean;
 }
 

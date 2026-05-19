@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { Agent } from '../src/agent.js';
 import { createMockLanguageModel, registerMockProvider } from './helpers.js';
-import type { AbortSignal, AgentConfig, PipelineStage } from '@primo-ai/sdk';
+import type { AgentConfig, StageName } from '@primo-ai/sdk';
 
 describe('Agent streaming through pipeline', () => {
   it('yields streaming chunks via AsyncGenerator through the pipeline', async () => {
@@ -37,7 +37,7 @@ describe('Agent streaming through pipeline', () => {
     expect(runResult.response).toBe(streamResult);
   });
 
-  it('throws when a processor returns an AbortSignal', async () => {
+  it('throws when a processor aborts', async () => {
     registerMockProvider('stream-abort', () =>
       createMockLanguageModel({ text: 'Should not reach' }),
     );
@@ -46,10 +46,9 @@ describe('Agent streaming through pipeline', () => {
 
     agent.use({
       stage: 'processStepOutput',
-      execute: async (_ctx): Promise<AbortSignal> => ({
-        type: 'abort',
-        reason: 'Safety guardrail triggered',
-      }),
+      execute: async (pCtx) => {
+        pCtx.control.abort('Safety guardrail triggered');
+      },
     });
 
     const iterate = async () => {
@@ -76,32 +75,26 @@ describe('Agent streaming through pipeline', () => {
 
     agent.use({
       stage: 'processStepOutput',
-      execute: async (ctx) => {
+      execute: async (pCtx) => {
         retryCount++;
         if (retryCount === 1) {
-          return {
-            type: 'abort' as const,
-            reason: 'Output rejected, retry from invokeLLM',
-            retryFrom: 'invokeLLM' as PipelineStage,
-          };
+          pCtx.control.abort('Output rejected, retry from invokeLLM', 'invokeLLM' as StageName);
         }
-        return ctx;
+        // Otherwise continue normally
       },
     });
 
     agent.use({
       stage: 'prepareStep',
-      execute: async (ctx) => {
+      execute: async () => {
         prepareCount++;
-        return ctx;
       },
     });
 
     agent.use({
       stage: 'invokeLLM',
-      execute: async (ctx) => {
+      execute: async () => {
         invokeCount++;
-        return ctx;
       },
     });
 

@@ -3,6 +3,7 @@ import { PipelineRunner } from '../src/pipeline.js';
 import { LoopOrchestrator } from '../src/loop-orchestrator.js';
 import { HookManager } from '../src/hook-manager.js';
 import { EventBus } from '../src/event-bus.js';
+import { ProcessorContextImpl } from '../src/processor-context.js';
 import type { PipelineContext, Processor, ErrorResult, StreamEvent } from '@primo-ai/sdk';
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
@@ -13,6 +14,10 @@ function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
     session: { custom: {} },
     ...overrides,
   };
+}
+
+function makePctx(overrides?: Partial<PipelineContext>): ProcessorContextImpl {
+  return new ProcessorContextImpl(makeContext(overrides));
 }
 
 // ---------------------------------------------------------------------------
@@ -26,12 +31,9 @@ describe('PipelineRunner - ErrorResult', () => {
 
     runner.register({
       stage: 'invokeLLM',
-      execute: async () => ({
-        type: 'error' as const,
-        error: testError,
-        stage: 'invokeLLM' as const,
-        recoverable: false,
-      }),
+      execute: async (pCtx) => {
+        pCtx.control.error(testError, 'invokeLLM', false);
+      },
     });
 
     const result = await runner.run(makeContext(), ['invokeLLM']);
@@ -50,12 +52,9 @@ describe('PipelineRunner - ErrorResult', () => {
 
     runner.register({
       stage: 'invokeLLM',
-      execute: async () => ({
-        type: 'error' as const,
-        error: testError,
-        stage: 'invokeLLM' as const,
-        recoverable: true,
-      }),
+      execute: async (pCtx) => {
+        pCtx.control.error(testError, 'invokeLLM', true);
+      },
     });
 
     const events: StreamEvent[] = [];
@@ -82,24 +81,21 @@ describe('PipelineRunner - ErrorResult', () => {
 
     runner.register({
       stage: 'processInput',
-      execute: async (ctx) => {
+      execute: async (pCtx) => {
         order.push('processInput');
-        return ctx;
+        // Return normally - no change needed
       },
     });
     runner.register({
       stage: 'invokeLLM',
-      execute: async () => ({
-        type: 'error' as const,
-        error: testError,
-        stage: 'invokeLLM' as const,
-      }),
+      execute: async (pCtx) => {
+        pCtx.control.error(testError, 'invokeLLM');
+      },
     });
     runner.register({
       stage: 'processOutput',
-      execute: async (ctx) => {
+      execute: async (pCtx) => {
         order.push('processOutput');
-        return ctx;
       },
     });
 
@@ -109,6 +105,7 @@ describe('PipelineRunner - ErrorResult', () => {
       type: 'error',
       error: testError,
       stage: 'invokeLLM',
+      recoverable: false,
     });
     expect(order).toEqual(['processInput']);
   });
@@ -124,11 +121,9 @@ describe('PipelineRunner - ErrorResult', () => {
 
     runner.register({
       stage: 'processInput',
-      execute: async () => ({
-        type: 'error' as const,
-        error: testError,
-        stage: 'processInput' as const,
-      }),
+      execute: async (pCtx) => {
+        pCtx.control.error(testError, 'processInput');
+      },
     });
 
     await runner.run(makeContext(), ['processInput']);
@@ -154,11 +149,9 @@ describe('LoopOrchestrator - ErrorResult', () => {
 
     runner.register({
       stage: 'processInput',
-      execute: async () => ({
-        type: 'error' as const,
-        error: testError,
-        stage: 'processInput' as const,
-      }),
+      execute: async (pCtx) => {
+        pCtx.control.error(testError, 'processInput');
+      },
     });
 
     const lo = new LoopOrchestrator(
@@ -185,12 +178,9 @@ describe('LoopOrchestrator - ErrorResult', () => {
 
     runner.register({
       stage: 'invokeLLM',
-      execute: async () => ({
-        type: 'error' as const,
-        error: testError,
-        stage: 'invokeLLM' as const,
-        recoverable: false,
-      }),
+      execute: async (pCtx) => {
+        pCtx.control.error(testError, 'invokeLLM', false);
+      },
     });
 
     const lo = new LoopOrchestrator(
@@ -223,25 +213,19 @@ describe('LoopOrchestrator - ErrorResult', () => {
     let invokeCount = 0;
     runner.register({
       stage: 'invokeLLM',
-      execute: async (ctx) => {
+      execute: async (pCtx) => {
         invokeCount++;
         if (invokeCount === 1) {
-          return {
-            type: 'error' as const,
-            error: testError,
-            stage: 'invokeLLM' as const,
-            recoverable: true,
-          };
+          pCtx.control.error(testError, 'invokeLLM', true);
         }
-        return ctx;
+        // Second call continues normally
       },
     });
     runner.register({
       stage: 'evaluateIteration',
-      execute: async (ctx) => ({
-        ...ctx,
-        iteration: { ...ctx.iteration, loopDirective: { action: 'stop' as const } },
-      }),
+      execute: async (pCtx) => {
+        pCtx.state.iteration.loopDirective = { action: 'stop' };
+      },
     });
 
     const lo = new LoopOrchestrator(
@@ -283,12 +267,9 @@ describe('LoopOrchestrator - ErrorResult', () => {
 
     runner.register({
       stage: 'invokeLLM',
-      execute: async () => ({
-        type: 'error' as const,
-        error: testError,
-        stage: 'invokeLLM' as const,
-        recoverable: false,
-      }),
+      execute: async (pCtx) => {
+        pCtx.control.error(testError, 'invokeLLM', false);
+      },
     });
 
     const lo = new LoopOrchestrator(
@@ -321,25 +302,19 @@ describe('LoopOrchestrator - ErrorResult', () => {
     let callCount = 0;
     runner.register({
       stage: 'invokeLLM',
-      execute: async (ctx) => {
+      execute: async (pCtx) => {
         callCount++;
         if (callCount === 1) {
-          return {
-            type: 'error' as const,
-            error: testError,
-            stage: 'invokeLLM' as const,
-            recoverable: true,
-          };
+          pCtx.control.error(testError, 'invokeLLM', true);
         }
-        return ctx;
+        // Second call continues normally
       },
     });
     runner.register({
       stage: 'evaluateIteration',
-      execute: async (ctx) => ({
-        ...ctx,
-        iteration: { ...ctx.iteration, loopDirective: { action: 'stop' as const } },
-      }),
+      execute: async (pCtx) => {
+        pCtx.state.iteration.loopDirective = { action: 'stop' };
+      },
     });
 
     const lo = new LoopOrchestrator(

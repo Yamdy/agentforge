@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createGoalEchoProcessor } from '../src/harness/goal-echo-processor.js';
-import type { PipelineContext, ProcessorResult } from '@primo-ai/sdk';
+import type { PipelineContext, ProcessorContext } from '@primo-ai/sdk';
+import { ProcessorContextImpl } from '@primo-ai/core';
 
 function makeContext(step = 0): PipelineContext {
   return {
@@ -11,8 +12,8 @@ function makeContext(step = 0): PipelineContext {
   } as PipelineContext;
 }
 
-function isContext(r: ProcessorResult): r is PipelineContext {
-  return 'request' in r && 'agent' in r;
+function makeProcessorContext(step = 0): ProcessorContext {
+  return new ProcessorContextImpl(makeContext(step));
 }
 
 describe('GoalEchoProcessor', () => {
@@ -22,11 +23,9 @@ describe('GoalEchoProcessor', () => {
       echoFrequency: 1,
       progressTracking: false,
     });
-    const result = await processor.execute(makeContext());
-    expect(isContext(result)).toBe(true);
-    if (isContext(result)) {
-      expect(result.agent.promptFragments).toHaveLength(0);
-    }
+    const pCtx = makeProcessorContext();
+    await processor.execute(pCtx);
+    expect(pCtx.state.agent.promptFragments).toHaveLength(0);
   });
 
   it('echoes on step 0', async () => {
@@ -35,12 +34,10 @@ describe('GoalEchoProcessor', () => {
       echoFrequency: 1,
       progressTracking: false,
     });
-    const result = await processor.execute(makeContext(0));
-    expect(isContext(result)).toBe(true);
-    if (isContext(result)) {
-      expect(result.agent.promptFragments).toHaveLength(1);
-      expect(result.agent.promptFragments[0]).toContain('build a REST API');
-    }
+    const pCtx = makeProcessorContext(0);
+    await processor.execute(pCtx);
+    expect(pCtx.state.agent.promptFragments).toHaveLength(1);
+    expect(pCtx.state.agent.promptFragments[0]).toContain('build a REST API');
   });
 
   it('echoes every N iterations', async () => {
@@ -50,18 +47,19 @@ describe('GoalEchoProcessor', () => {
       progressTracking: false,
     });
 
-    const r0 = await processor.execute(makeContext(0));
-    expect(isContext(r0) && r0.agent.promptFragments).toHaveLength(1);
+    const pCtx0 = makeProcessorContext(0);
+    await processor.execute(pCtx0);
+    expect(pCtx0.state.agent.promptFragments).toHaveLength(1);
 
-    const r1ctx = makeContext(1);
-    if (isContext(r0)) r1ctx.session.custom = r0.session.custom;
-    const r1 = await processor.execute(r1ctx);
-    expect(isContext(r1) && r1.agent.promptFragments).toHaveLength(0);
+    const pCtx1 = makeProcessorContext(1);
+    pCtx1.state.session.custom = pCtx0.state.session.custom;
+    await processor.execute(pCtx1);
+    expect(pCtx1.state.agent.promptFragments).toHaveLength(0);
 
-    const r3ctx = makeContext(3);
-    if (isContext(r1)) r3ctx.session.custom = r1.session.custom;
-    const r3 = await processor.execute(r3ctx);
-    expect(isContext(r3) && r3.agent.promptFragments).toHaveLength(1);
+    const pCtx3 = makeProcessorContext(3);
+    pCtx3.state.session.custom = pCtx1.state.session.custom;
+    await processor.execute(pCtx3);
+    expect(pCtx3.state.agent.promptFragments).toHaveLength(1);
   });
 
   it('includes progress assessment when enabled', async () => {
@@ -70,11 +68,9 @@ describe('GoalEchoProcessor', () => {
       echoFrequency: 1,
       progressTracking: true,
     });
-    const result = await processor.execute(makeContext(0));
-    expect(isContext(result)).toBe(true);
-    if (isContext(result)) {
-      expect(result.agent.promptFragments[0]).toContain('Progress Assessment');
-    }
+    const pCtx = makeProcessorContext(0);
+    await processor.execute(pCtx);
+    expect(pCtx.state.agent.promptFragments[0]).toContain('Progress Assessment');
   });
 
   it('preserves original goal across iterations', async () => {
@@ -83,13 +79,14 @@ describe('GoalEchoProcessor', () => {
       echoFrequency: 1,
       progressTracking: false,
     });
-    const r0 = await processor.execute(makeContext(0));
-    expect(isContext(r0) && r0.agent.promptFragments[0]).toContain('build a REST API');
+    const pCtx0 = makeProcessorContext(0);
+    await processor.execute(pCtx0);
+    expect(pCtx0.state.agent.promptFragments[0]).toContain('build a REST API');
 
-    const ctx2 = makeContext(1);
-    ctx2.request.input = 'something different';
-    if (isContext(r0)) ctx2.session.custom = r0.session.custom;
-    const r1 = await processor.execute(ctx2);
-    expect(isContext(r1) && r1.agent.promptFragments[0]).toContain('build a REST API');
+    const pCtx1 = makeProcessorContext(1);
+    pCtx1.state.request.input = 'something different';
+    pCtx1.state.session.custom = pCtx0.state.session.custom;
+    await processor.execute(pCtx1);
+    expect(pCtx1.state.agent.promptFragments[0]).toContain('build a REST API');
   });
 });

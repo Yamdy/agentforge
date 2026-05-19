@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import type {
   PipelineStage,
   Processor,
+  ProcessorContext,
   PipelineContext,
-  ProcessorResult,
   Tool,
   ToolDefinition,
   ToolExecutionContext,
@@ -47,19 +47,20 @@ describe('Processor', () => {
   it('can be implemented with a stage and execute method', async () => {
     const processor: Processor = {
       stage: 'processInput',
-      execute: async (ctx: PipelineContext) => ctx,
+      execute: async (ctx: ProcessorContext) => { void ctx.state.iteration.step; },
     };
     expect(processor.stage).toBe('processInput');
     expect(typeof processor.execute).toBe('function');
   });
 
-  it('execute can return an AbortSignal to stop the pipeline', async () => {
+  it('execute can use control.abort to stop the pipeline', async () => {
     const abortProcessor: Processor = {
       stage: 'processStepOutput',
-      execute: async () => ({ type: 'abort' as const, reason: 'guardrail triggered' }),
+      execute: async (ctx: ProcessorContext) => {
+        ctx.control.abort('guardrail triggered');
+      },
     };
-    const result: ProcessorResult = await abortProcessor.execute({} as PipelineContext);
-    expect(result).toEqual({ type: 'abort', reason: 'guardrail triggered' });
+    expect(abortProcessor.stage).toBe('processStepOutput');
   });
 });
 

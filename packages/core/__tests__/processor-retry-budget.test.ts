@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { Agent } from '../src/agent.js';
 import { createMockLanguageModel, registerMockProvider } from './helpers.js';
-import type { PipelineStage } from '@primo-ai/sdk';
+import type { StageName } from '@primo-ai/sdk';
 
 describe('Processor retryFrom budget', () => {
   beforeEach(() => {
@@ -17,14 +17,10 @@ describe('Processor retryFrom budget', () => {
     const agent = new Agent({ model: 'mock/test', maxIterations });
     agent.use({
       stage: 'processStepOutput',
-      execute: async (ctx) => {
+      execute: async (pCtx) => {
         retryCount++;
         // Always retry — simulates a processor that never resolves
-        return {
-          type: 'abort' as const,
-          reason: 'Always retry',
-          retryFrom: 'processStepOutput' as PipelineStage,
-        };
+        pCtx.control.abort('Always retry', 'processStepOutput' as StageName);
       },
     });
 
@@ -39,16 +35,12 @@ describe('Processor retryFrom budget', () => {
     const agent = new Agent({ model: 'mock/test', maxIterations: 10 });
     agent.use({
       stage: 'processStepOutput',
-      execute: async (ctx) => {
+      execute: async (pCtx) => {
         retryCount++;
         if (retryCount <= 2) {
-          return {
-            type: 'abort' as const,
-            reason: 'Temporary issue',
-            retryFrom: 'processStepOutput' as PipelineStage,
-          };
+          pCtx.control.abort('Temporary issue', 'processStepOutput' as StageName);
         }
-        return ctx;
+        // Otherwise continue normally
       },
     });
 
@@ -63,12 +55,8 @@ describe('Processor retryFrom budget', () => {
     const agent = new Agent({ model: 'mock/test', maxIterations: 50 });
     agent.use({
       stage: 'processStepOutput',
-      execute: async () => {
-        return {
-          type: 'abort' as const,
-          reason: 'stuck',
-          retryFrom: 'invokeLLM' as PipelineStage,
-        };
+      execute: async (pCtx) => {
+        pCtx.control.abort('stuck', 'invokeLLM' as StageName);
       },
     });
     agent.eventBus.subscribe('processor:retry_exhausted', (data: unknown) => {

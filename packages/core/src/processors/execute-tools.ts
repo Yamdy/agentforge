@@ -1,14 +1,15 @@
-import type { Processor, Message, ToolResult } from '@primo-ai/sdk';
+import type { Processor, ProcessorContext, Message, ToolResult } from '@primo-ai/sdk';
 import { SpanAttributeKeys, SpanType } from '@primo-ai/sdk';
 import type { ToolRegistry } from '../tool-registry.js';
 
 export function createExecuteToolsProcessor(registry: ToolRegistry): Processor {
   return {
     stage: 'executeTools',
-    execute: async (ctx) => {
+    execute: async (pCtx: ProcessorContext) => {
+      const ctx = pCtx.state;
       const toolCalls = ctx.iteration.pendingToolCalls;
       if (!toolCalls || toolCalls.length === 0) {
-        return ctx;
+        return;
       }
 
       const toolResults: ToolResult[] = [];
@@ -54,18 +55,9 @@ export function createExecuteToolsProcessor(registry: ToolRegistry): Processor {
       const history: Message[] = [...(ctx.session.messageHistory ?? [])];
       history.push(...toolMessages);
 
-      return {
-        ...ctx,
-        iteration: {
-          ...ctx.iteration,
-          pendingToolCalls: undefined,
-          toolResults,
-        },
-        session: {
-          ...ctx.session,
-          messageHistory: history,
-        },
-      };
+      ctx.iteration.pendingToolCalls = undefined;
+      ctx.iteration.toolResults = toolResults;
+      ctx.session.messageHistory = history;
     },
   };
 }

@@ -111,7 +111,7 @@ export class ContextBuilder {
   createProcessor(): Processor {
     return {
       stage: 'buildContext',
-      execute: (ctx) => this.assemble(ctx),
+      execute: (pCtx) => this.assemble(pCtx.state),
     };
   }
 

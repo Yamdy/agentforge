@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { HarnessAPI, PluginRegistration, EvictionStorage, Processor, PipelineContext, ProcessorResult } from '@primo-ai/sdk';
+import type { HarnessAPI, PluginRegistration, EvictionStorage, Processor, ProcessorContext, PipelineContext } from '@primo-ai/sdk';
 
 export interface EvictionPluginOptions {
   maxSize: number;
@@ -19,9 +19,10 @@ export function evictionPlugin(options: EvictionPluginOptions): (api: HarnessAPI
 
   const processor: Processor = {
     stage: 'executeTools',
-    execute: async (ctx: PipelineContext): Promise<ProcessorResult> => {
+    execute: async (pCtx: ProcessorContext) => {
+      const ctx = pCtx.state;
       const results = ctx.iteration.toolResults;
-      if (!results || results.length === 0) return ctx;
+      if (!results || results.length === 0) return;
 
       for (let i = 0; i < results.length; i++) {
         const result = results[i]!;
@@ -42,8 +43,6 @@ export function evictionPlugin(options: EvictionPluginOptions): (api: HarnessAPI
           output: { preview, reference: ref, evicted: true as const },
         };
       }
-
-      return ctx;
     },
   };
 

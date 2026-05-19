@@ -52,3 +52,12 @@ export {
 } from './errors.js';
 export { PermissionManager } from './pending-permission.js';
 export type { PendingPermission } from './pending-permission.js';
+
+// Control flow v2 API
+export { AbortControlFlow, SuspendControlFlow, ErrorControlFlow, isAbortControlFlow, isSuspendControlFlow, isErrorControlFlow } from './control-flow.js';
+export { ProcessorContextImpl, createProcessorContext } from './processor-context.js';
+
+// Adapters - high-level Processor APIs
+export { modifiers, message, systemPrompt, tools, providerOptions } from './adapters/modifiers.js';
+export { gates, permission, quota, cost } from './adapters/gates.js';
+export type { PermissionDecision, PermissionGateConfig, QuotaGateConfig, CostGateConfig } from './adapters/gates.js';

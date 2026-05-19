@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Processor, PipelineContext, ProcessorResult } from '@primo-ai/sdk';
+import type { Processor, ProcessorContext, PipelineContext } from '@primo-ai/sdk';
 import { SpanAttributeKeys, SpanType } from '@primo-ai/sdk';
 
 interface GoalEchoState {
@@ -25,8 +25,9 @@ export function createGoalEchoProcessor(config: GoalEchoConfig): Processor {
   GoalEchoConfigSchema.parse(config);
   return {
     stage: 'evaluateIteration',
-    execute: async (ctx: PipelineContext): Promise<ProcessorResult> => {
-      if (!config.enabled) return ctx;
+    execute: async (pCtx: ProcessorContext) => {
+      if (!config.enabled) return;
+      const ctx = pCtx.state;
 
       const state = (ctx.session.custom.goalEcho as GoalEchoState | undefined)
         ?? { lastEchoStep: -1, originalGoal: ctx.request.input };
@@ -35,10 +36,8 @@ export function createGoalEchoProcessor(config: GoalEchoConfig): Processor {
       const shouldEcho = step === 0 || (step - state.lastEchoStep) >= config.echoFrequency;
 
       if (!shouldEcho) {
-        return {
-          ...ctx,
-          session: { ...ctx.session, custom: { ...ctx.session.custom, goalEcho: state } },
-        };
+        ctx.session.custom = { ...ctx.session.custom, goalEcho: state };
+        return;
       }
 
       const childSpan = ctx.iteration.span?.startChild(SpanType.GOAL_ECHO);
@@ -56,18 +55,8 @@ export function createGoalEchoProcessor(config: GoalEchoConfig): Processor {
       childSpan?.end();
 
       const newState: GoalEchoState = { ...state, lastEchoStep: step };
-
-      return {
-        ...ctx,
-        agent: {
-          ...ctx.agent,
-          promptFragments: [...ctx.agent.promptFragments, fragment],
-        },
-        session: {
-          ...ctx.session,
-          custom: { ...ctx.session.custom, goalEcho: newState },
-        },
-      };
+      ctx.agent.promptFragments = [...ctx.agent.promptFragments, fragment];
+      ctx.session.custom = { ...ctx.session.custom, goalEcho: newState };
     },
   };
 }

@@ -1,4 +1,4 @@
-import type { Processor, PipelineContext, ProcessorResult } from '@primo-ai/sdk';
+import type { Processor, ProcessorContext, PipelineContext } from '@primo-ai/sdk';
 import { textContentFromBlocks } from '@primo-ai/core';
 import type { MemoryBackend } from './backend.js';
 
@@ -32,16 +32,15 @@ export function createMemoryProcessor(config: MemoryConfig): Processor {
 
   return {
     stage: 'buildContext',
-    execute: async (ctx: PipelineContext): Promise<ProcessorResult> => {
-      if (triggerMode.type === 'agent-controlled') return ctx;
+    execute: async (pCtx: ProcessorContext) => {
+      const ctx = pCtx.state;
+      if (triggerMode.type === 'agent-controlled') return;
 
       const entries = await backend.retrieve(ctx.request.sessionId, {
         limit: windowLimit,
       });
 
-      if (entries.length === 0) return ctx;
-
-      const updates: Partial<Pick<PipelineContext, 'session' | 'agent'>> = {};
+      if (entries.length === 0) return;
 
       if (injectionMode === 'history' || injectionMode === 'both') {
         const memoryMessages = entries.map((e) => ({
@@ -49,23 +48,15 @@ export function createMemoryProcessor(config: MemoryConfig): Processor {
           content: e.content,
         }));
         const existing = ctx.session.messageHistory ?? [];
-        updates.session = {
-          ...ctx.session,
-          messageHistory: [...memoryMessages, ...existing],
-        };
+        ctx.session.messageHistory = [...memoryMessages, ...existing];
       }
 
       if (injectionMode === 'prompt' || injectionMode === 'both') {
         const memoryBlock = entries
           .map((e) => `[${e.role}] ${e.content}`)
           .join('\n');
-        updates.agent = {
-          ...ctx.agent,
-          promptFragments: [...ctx.agent.promptFragments, `<memory>\n${memoryBlock}\n</memory>`],
-        };
+        ctx.agent.promptFragments = [...ctx.agent.promptFragments, `<memory>\n${memoryBlock}\n</memory>`];
       }
-
-      return { ...ctx, ...updates };
     },
   };
 }
@@ -88,16 +79,17 @@ export function createMemoryOutputProcessor(config: MemoryConfig): Processor {
 
   return {
     stage: 'processOutput',
-    execute: async (ctx: PipelineContext): Promise<ProcessorResult> => {
-      if (triggerMode.type === 'agent-controlled') return ctx;
+    execute: async (pCtx: ProcessorContext) => {
+      const ctx = pCtx.state;
+      if (triggerMode.type === 'agent-controlled') return;
 
       const response = ctx.iteration.content
         ? textContentFromBlocks(ctx.iteration.content)
         : ctx.iteration.response;
-      if (!response) return ctx;
+      if (!response) return;
 
       const userInput = ctx.request.input?.trim();
-      if (!userInput) return ctx;
+      if (!userInput) return;
 
       const isCorrection = correctionEnabled && CORRECTION_SIGNALS.test(userInput);
       if (isCorrection) {
@@ -120,22 +112,17 @@ export function createMemoryOutputProcessor(config: MemoryConfig): Processor {
       const lastAssistantContent = ctx.session.custom?.[CUSTOM_KEY] as string | undefined;
 
       if (dedup && response === lastAssistantContent) {
-        return ctx;
+        return;
       }
 
       // Persist to session.custom for suspend/resume survival
-      const updatedCustom = { ...ctx.session.custom, [CUSTOM_KEY]: response };
+      ctx.session.custom = { ...ctx.session.custom, [CUSTOM_KEY]: response };
 
       await backend.store(ctx.request.sessionId, {
         role: 'assistant',
         content: trim(response),
         timestamp: new Date(Date.now() + 1).toISOString(),
       });
-
-      return {
-        ...ctx,
-        session: { ...ctx.session, custom: updatedCustom },
-      };
     },
   };
 }

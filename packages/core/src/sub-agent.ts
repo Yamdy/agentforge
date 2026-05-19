@@ -1,4 +1,4 @@
-import type { PipelineContext, SessionRegion, SubAgentConfig, SubAgentResult, Tool, ToolDefinition, Tracer } from '@primo-ai/sdk';
+import type { ProcessorContext, PipelineContext, SessionRegion, SubAgentConfig, SubAgentResult, Tool, ToolDefinition, Tracer } from '@primo-ai/sdk';
 import { Agent } from './agent.js';
 
 
@@ -39,11 +39,11 @@ export function createSubAgentTool(
           const parentState = parent.getSessionState();
           childAgent.use({
             stage: 'prepareStep',
-            execute: async (ctx: PipelineContext) => {
+            execute: async (pCtx: ProcessorContext) => {
+              const ctx = pCtx.state;
               if (ctx.iteration?.step === 0) {
-                return { ...ctx, session: mergeSessionState(ctx.session, parentState) };
+                ctx.session = mergeSessionState(ctx.session, parentState);
               }
-              return ctx;
             },
           });
         }
@@ -53,10 +53,10 @@ export function createSubAgentTool(
           const summary = await summarizeSessionState(parentState, parent.summarizeFn);
           childAgent.use({
             stage: 'prepareStep',
-            execute: async (ctx: PipelineContext) => ({
-              ...ctx,
-              session: { ...ctx.session, custom: { ...ctx.session.custom, parentContextSummary: summary } },
-            }),
+            execute: async (pCtx: ProcessorContext) => {
+              const ctx = pCtx.state;
+              ctx.session = { ...ctx.session, custom: { ...ctx.session.custom, parentContextSummary: summary } };
+            },
           });
         }
 

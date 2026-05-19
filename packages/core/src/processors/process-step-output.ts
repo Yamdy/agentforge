@@ -1,9 +1,10 @@
-import type { Processor, Message } from '@primo-ai/sdk';
+import type { Processor, ProcessorContext, Message } from '@primo-ai/sdk';
 import { textContentFromBlocks, toolCallsFromBlocks, reasoningFromBlocks } from '../content-blocks.js';
 
 export const processStepOutputProcessor: Processor = {
   stage: 'processStepOutput',
-  execute: async (ctx) => {
+  execute: async (pCtx: ProcessorContext) => {
+    const ctx = pCtx.state;
     // Prefer content[] when available, fallback to legacy fields
     const content = ctx.iteration.content;
     const response = content
@@ -29,9 +30,6 @@ export const processStepOutputProcessor: Processor = {
     }
     history.push(assistantMsg);
 
-    return {
-      ...ctx,
-      session: { ...ctx.session, messageHistory: history },
-    };
+    ctx.session.messageHistory = history;
   },
 };

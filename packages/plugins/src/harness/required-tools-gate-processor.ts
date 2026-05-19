@@ -1,4 +1,4 @@
-import type { Processor, PipelineContext, ProcessorResult } from '@primo-ai/sdk';
+import type { Processor, ProcessorContext, PipelineContext } from '@primo-ai/sdk';
 
 /**
  * Creates a processor that gates the pipeline on the presence of required tools.
@@ -14,19 +14,16 @@ import type { Processor, PipelineContext, ProcessorResult } from '@primo-ai/sdk'
 export function createRequiredToolsGate(tools: string[]): Processor {
   return {
     stage: 'processInput',
-    execute: async (ctx: PipelineContext): Promise<ProcessorResult> => {
-      // Empty required-tools list always passes
-      if (tools.length === 0) return ctx;
+    execute: async (pCtx: ProcessorContext) => {
+      const ctx = pCtx.state;
+      if (tools.length === 0) return;
 
       const available = new Set(ctx.agent.toolDeclarations.map((t) => t.name));
       const missing = tools.filter((name) => !available.has(name));
 
-      if (missing.length === 0) return ctx;
+      if (missing.length === 0) return;
 
-      return {
-        type: 'abort',
-        reason: `Required tools missing: ${missing.join(', ')}`,
-      };
+      pCtx.control.abort(`Required tools missing: ${missing.join(', ')}`);
     },
   };
 }

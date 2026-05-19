@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { PipelineRunner } from '../src/pipeline.js';
-import type { PipelineContext, StreamEvent } from '@primo-ai/sdk';
+import { ProcessorContextImpl } from '../src/processor-context.js';
+import type { PipelineContext, ProcessorContext, StreamEvent } from '@primo-ai/sdk';
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
@@ -12,12 +13,16 @@ function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   };
 }
 
+function makeProcessorContext(overrides?: Partial<PipelineContext>): ProcessorContext {
+  return new ProcessorContextImpl(makeContext(overrides));
+}
+
 describe('PipelineRunner.stream()', () => {
   it('yields stage_start and stage_complete for each stage', async () => {
     const runner = new PipelineRunner();
-    runner.register({ stage: 'processInput', execute: async (ctx) => ctx });
-    runner.register({ stage: 'invokeLLM', execute: async (ctx) => ctx });
-    runner.register({ stage: 'processOutput', execute: async (ctx) => ctx });
+    runner.register({ stage: 'processInput', execute: async () => {} });
+    runner.register({ stage: 'invokeLLM', execute: async () => {} });
+    runner.register({ stage: 'processOutput', execute: async () => {} });
 
     const events: StreamEvent[] = [];
     for await (const event of runner.stream(makeContext(), ['processInput', 'invokeLLM', 'processOutput'])) {
@@ -35,17 +40,13 @@ describe('PipelineRunner.stream()', () => {
     const runner = new PipelineRunner();
     runner.register({
       stage: 'invokeLLM',
-      execute: async (ctx) => ({
-        ...ctx,
-        iteration: {
-          ...ctx.iteration,
-          fullStream: (async function* () {
-            yield { type: 'text-delta', text: 'hello ' };
-            yield { type: 'text-delta', text: 'world' };
-            yield { type: 'finish-step', usage: { inputTokens: { total: 10, noCache: 10 }, outputTokens: { total: 2, text: 2 } } };
-          })(),
-        },
-      }),
+      execute: async (pCtx) => {
+        pCtx.state.iteration.fullStream = (async function* () {
+          yield { type: 'text-delta', text: 'hello ' };
+          yield { type: 'text-delta', text: 'world' };
+          yield { type: 'finish-step', usage: { inputTokens: { total: 10, noCache: 10 }, outputTokens: { total: 2, text: 2 } } };
+        })();
+      },
     });
 
     const events: StreamEvent[] = [];
@@ -64,7 +65,9 @@ describe('PipelineRunner.stream()', () => {
     const runner = new PipelineRunner();
     runner.register({
       stage: 'invokeLLM',
-      execute: async () => ({ type: 'abort' as const, reason: 'policy violation' }),
+      execute: async (pCtx) => {
+        pCtx.control.abort('policy violation');
+      },
     });
 
     const events: StreamEvent[] = [];
@@ -80,7 +83,9 @@ describe('PipelineRunner.stream()', () => {
     const runner = new PipelineRunner();
     runner.register({
       stage: 'invokeLLM',
-      execute: async () => ({ type: 'abort' as const, reason: 'retry', retryFrom: 'invokeLLM' as const }),
+      execute: async (pCtx) => {
+        pCtx.control.abort('retry', 'invokeLLM');
+      },
     });
 
     const events: StreamEvent[] = [];
@@ -94,7 +99,7 @@ describe('PipelineRunner.stream()', () => {
 
   it('works without a tracer (no-op fallback)', async () => {
     const runner = new PipelineRunner();
-    runner.register({ stage: 'processInput', execute: async (ctx) => ctx });
+    runner.register({ stage: 'processInput', execute: async () => {} });
 
     const events: StreamEvent[] = [];
     for await (const event of runner.stream(makeContext(), ['processInput'])) {

@@ -4,7 +4,6 @@ import type {
   PipelineContext,
   PipelineStage,
   Processor,
-  ProcessorResult,
   Span,
   StageName,
   StreamEvent,
@@ -18,6 +17,8 @@ import { NoOpTracer } from '@primo-ai/observability';
 import type { HookManager } from './hook-manager.js';
 import { extractTokenUsage } from './llm-invoker.js';
 import { assembleContentBlocks, textContentFromBlocks, toolCallsFromBlocks, reasoningFromBlocks } from './content-blocks.js';
+import { AbortControlFlow, SuspendControlFlow, ErrorControlFlow } from './control-flow.js';
+import { ProcessorContextImpl } from './processor-context.js';
 
 /**
  * Recursively freezes an object and all nested plain objects / arrays.
@@ -393,15 +394,52 @@ export class PipelineRunner {
 
     let currentCtx = ctx;
     for (const processor of stageProcessors) {
-      const ctxWithSpan = deepFreeze({
+      // Create mutable context for processor (don't freeze before processor execution)
+      const ctxWithSpan = {
         ...currentCtx,
         iteration: { ...currentCtx.iteration, span: stageSpan },
-      });
-      const result: ProcessorResult = await processor.execute(ctxWithSpan);
-      if ('type' in result && (result.type === 'abort' || result.type === 'suspend' || result.type === 'error')) {
-        return result;
+      };
+
+      try {
+        const processorCtx = new ProcessorContextImpl(ctxWithSpan as PipelineContext);
+        const result = await processor.execute(processorCtx);
+        // Freeze result after processor execution for immutability between stages
+        currentCtx = deepFreeze(result ? { ...result } : { ...processorCtx.state });
+      } catch (error) {
+        // Handle control flow exceptions from v2 API
+        if (error instanceof AbortControlFlow) {
+          return {
+            type: 'abort',
+            reason: error.reason,
+            retryFrom: error.retryFrom,
+          };
+        }
+        if (error instanceof SuspendControlFlow) {
+          const checkpoint = error.checkpoint?.context
+            ? { ...error.checkpoint, context: error.checkpoint.context }
+            : {
+                context: currentCtx,
+                nextStages: [],
+                iteration: currentCtx.iteration.step,
+              };
+          return {
+            type: 'suspend',
+            suspensionId: error.suspensionId,
+            reason: `Suspended at stage: ${stage}`,
+            checkpoint: checkpoint as import('@primo-ai/sdk').PipelineCheckpoint,
+          };
+        }
+        if (error instanceof ErrorControlFlow) {
+          return {
+            type: 'error',
+            error: error.originalError,
+            stage: error.stage,
+            recoverable: error.recoverable,
+          };
+        }
+        // Re-throw unexpected errors
+        throw error;
       }
-      currentCtx = deepFreeze({ ...(result as PipelineContext) });
     }
 
     // stage.after hook

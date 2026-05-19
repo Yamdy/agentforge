@@ -1,13 +1,9 @@
-import type { Processor } from '@primo-ai/sdk';
+import type { Processor, ProcessorContext } from '@primo-ai/sdk';
 
 export const prepareStepExtensionPoint: Processor = {
   stage: 'prepareStep',
-  execute: async (ctx) => ({
-    ...ctx,
-    iteration: {
-      ...ctx.iteration,
-      toolResults: undefined,
-      pendingToolCalls: undefined,
-    },
-  }),
+  execute: async (pCtx: ProcessorContext) => {
+    pCtx.state.iteration.toolResults = undefined;
+    pCtx.state.iteration.pendingToolCalls = undefined;
+  },
 };

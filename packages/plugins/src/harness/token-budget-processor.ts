@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Processor, PipelineContext, ProcessorResult, TokenCounter, Message } from '@primo-ai/sdk';
+import type { Processor, ProcessorContext, PipelineContext, TokenCounter, Message } from '@primo-ai/sdk';
 import { SpanAttributeKeys, SpanType } from '@primo-ai/sdk';
 
 export interface TokenBudgetConfig {
@@ -52,7 +52,8 @@ export function createTokenBudgetProcessor(
   TokenBudgetConfigSchema.parse(config);
   return {
     stage: 'gateLLM',
-    execute: async (ctx: PipelineContext): Promise<ProcessorResult> => {
+    execute: async (pCtx: ProcessorContext) => {
+      const ctx = pCtx.state;
       const systemPromptTokens = estimateTokens(ctx.agent.systemPrompt ?? '');
       const toolDeclTokens = ctx.agent.toolDeclarations.reduce(
         (sum, t) => sum + estimateTokens(t.name + t.description), 0,
@@ -72,17 +73,15 @@ export function createTokenBudgetProcessor(
       if (historyTokens <= availableForHistory) {
         childSpan?.setAttribute(SpanAttributeKeys.HARNESS_DECISION, 'allowed');
         childSpan?.end();
-        return ctx;
+        return;
       }
 
       if (config.strategy === 'block') {
         childSpan?.setAttribute(SpanAttributeKeys.HARNESS_DECISION, 'blocked');
         childSpan?.setAttribute(SpanAttributeKeys.HARNESS_REASON, 'Token budget exceeded');
         childSpan?.end();
-        return {
-          type: 'abort',
-          reason: `Token budget exceeded: ${totalUsed} tokens used, ${config.maxContextTokens} max`,
-        };
+        pCtx.control.abort(`Token budget exceeded: ${totalUsed} tokens used, ${config.maxContextTokens} max`);
+        return;
       }
 
       if (config.strategy === 'truncate') {
@@ -90,23 +89,15 @@ export function createTokenBudgetProcessor(
         childSpan?.setAttribute(SpanAttributeKeys.HARNESS_DECISION, 'allowed');
         childSpan?.setAttribute(SpanAttributeKeys.HARNESS_REASON, 'History truncated');
         childSpan?.end();
-        return {
-          ...ctx,
-          session: { ...ctx.session, messageHistory: truncated },
-        };
+        ctx.session.messageHistory = truncated;
+        return;
       }
 
       // strategy === 'compress': signal overrun, cooperative with ContextBuilder
       childSpan?.setAttribute(SpanAttributeKeys.HARNESS_DECISION, 'warned');
       childSpan?.setAttribute(SpanAttributeKeys.HARNESS_REASON, 'Token budget exceeded, flagged for compression');
       childSpan?.end();
-      return {
-        ...ctx,
-        session: {
-          ...ctx.session,
-          custom: { ...ctx.session.custom, tokenBudgetOverrun: true },
-        },
-      };
+      ctx.session.custom = { ...ctx.session.custom, tokenBudgetOverrun: true };
     },
   };
 }

@@ -10,7 +10,8 @@ import { PipelineRunner } from '../src/pipeline.js';
 import { HookManager } from '../src/hook-manager.js';
 import { EventBus } from '../src/event-bus.js';
 import { serialize } from '../src/serialize.js';
-import type { CheckpointStore, PipelineContext } from '@primo-ai/sdk';
+import type { CheckpointStore, PipelineContext, ProcessorContext } from '@primo-ai/sdk';
+import { ProcessorContextImpl } from '../src/processor-context.js';
 
 describe('Checkpoint persistence (P0)', () => {
   let dir: string;
@@ -79,41 +80,39 @@ describe('Auto checkpoint per iteration (P0)', () => {
     // Register a processor that completes in 1 step
     runner.register({
       stage: 'processInput',
-      execute: async (ctx) => ctx,
+      execute: async () => {},
     });
     runner.register({
       stage: 'buildContext',
-      execute: async (ctx) => ctx,
+      execute: async () => {},
     });
     runner.register({
       stage: 'prepareStep',
-      execute: async (ctx) => ctx,
+      execute: async () => {},
     });
     runner.register({
       stage: 'invokeLLM',
-      execute: async (ctx: PipelineContext) => ({
-        ...ctx,
-        iteration: { ...ctx.iteration, response: 'done' },
-      }),
+      execute: async (pCtx: ProcessorContext) => {
+        pCtx.state.iteration.response = 'done';
+      },
     });
     runner.register({
       stage: 'processStepOutput',
-      execute: async (ctx) => ctx,
+      execute: async () => {},
     });
     runner.register({
       stage: 'executeTools',
-      execute: async (ctx) => ctx,
+      execute: async () => {},
     });
     runner.register({
       stage: 'evaluateIteration',
-      execute: async (ctx: PipelineContext) => ({
-        ...ctx,
-        iteration: { ...ctx.iteration, loopDirective: { action: 'stop' } },
-      }),
+      execute: async (pCtx: ProcessorContext) => {
+        pCtx.state.iteration.loopDirective = { action: 'stop' };
+      },
     });
     runner.register({
       stage: 'processOutput',
-      execute: async (ctx) => ctx,
+      execute: async () => {},
     });
 
     const ctx: PipelineContext = {
@@ -151,20 +150,20 @@ describe('Auto checkpoint per iteration (P0)', () => {
     const hm = new HookManager(eventBus);
     const orchestrator = new LoopOrchestrator(runner, hm, store as unknown as CheckpointStore<ReturnType<typeof serialize>>);
 
-    runner.register({ stage: 'processInput', execute: async (ctx) => ctx });
-    runner.register({ stage: 'buildContext', execute: async (ctx) => ctx });
-    runner.register({ stage: 'prepareStep', execute: async (ctx) => ctx });
+    runner.register({ stage: 'processInput', execute: async () => {} });
+    runner.register({ stage: 'buildContext', execute: async () => {} });
+    runner.register({ stage: 'prepareStep', execute: async () => {} });
     runner.register({
       stage: 'invokeLLM',
-      execute: async (ctx: PipelineContext) => ({ ...ctx, iteration: { ...ctx.iteration, response: 'done' } }),
+      execute: async (pCtx: ProcessorContext) => { pCtx.state.iteration.response = 'done'; },
     });
-    runner.register({ stage: 'processStepOutput', execute: async (ctx) => ctx });
-    runner.register({ stage: 'executeTools', execute: async (ctx) => ctx });
+    runner.register({ stage: 'processStepOutput', execute: async () => {} });
+    runner.register({ stage: 'executeTools', execute: async () => {} });
     runner.register({
       stage: 'evaluateIteration',
-      execute: async (ctx: PipelineContext) => ({ ...ctx, iteration: { ...ctx.iteration, loopDirective: { action: 'stop' } } }),
+      execute: async (pCtx: ProcessorContext) => { pCtx.state.iteration.loopDirective = { action: 'stop' }; },
     });
-    runner.register({ stage: 'processOutput', execute: async (ctx) => ctx });
+    runner.register({ stage: 'processOutput', execute: async () => {} });
 
     const ctx: PipelineContext = {
       request: { input: 'test', sessionId: 'no-auto-cp' },

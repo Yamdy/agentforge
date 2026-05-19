@@ -1,4 +1,4 @@
-import type { Message, PipelineContext, Processor } from '@primo-ai/sdk';
+import type { Message, PipelineContext, Processor, ProcessorContext } from '@primo-ai/sdk';
 import type { LLMInvoker } from '../llm-invoker.js';
 import type { ToolRegistry } from '../tool-registry.js';
 import type { HookManager } from '../hook-manager.js';
@@ -109,7 +109,8 @@ function resolveToolSchemas(ctx: PipelineContext, registry: ToolRegistry): Recor
 export function createInvokeLLMProcessor(deps: InvokeLLMDeps): Processor {
   return {
     stage: 'invokeLLM',
-    execute: async (ctx) => {
+    execute: async (pCtx: ProcessorContext) => {
+      const ctx = pCtx.state;
       const systemPrompt = resolveSystemPrompt(ctx);
       const llm = await deps.getLLM(systemPrompt);
 
@@ -152,18 +153,10 @@ export function createInvokeLLMProcessor(deps: InvokeLLMDeps): Processor {
         providerOptions: ctx.agent.providerOptions,
       });
 
-      const result = {
-        ...ctx,
-        iteration: {
-          ...ctx.iteration,
-          fullStream: handle.fullStream,
-          usagePromise: handle.usage,
-          reasoningPromise: handle.reasoning,
-          _modelString: deps.modelString,
-        },
-      };
-
-      return result;
+      ctx.iteration.fullStream = handle.fullStream;
+      ctx.iteration.usagePromise = handle.usage;
+      ctx.iteration.reasoningPromise = handle.reasoning;
+      (ctx.iteration as unknown as { _modelString?: string })._modelString = deps.modelString;
     },
   };
 }
