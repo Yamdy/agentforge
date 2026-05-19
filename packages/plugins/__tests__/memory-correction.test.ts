@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { createMemoryOutputProcessor } from '../src/memory/memory-processor.js';
 import { InMemoryBackend } from '../src/memory/in-memory-backend.js';
-import type { PipelineContext } from '@primo-ai/sdk';
+import type { PipelineContext, Processor } from '@primo-ai/sdk';
+import { ProcessorContextImpl } from '@primo-ai/core';
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
@@ -11,6 +12,12 @@ function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
     session: { custom: {} },
     ...overrides,
   };
+}
+
+async function executeProcessor(processor: Processor, ctx: PipelineContext): Promise<PipelineContext> {
+  const pCtx = new ProcessorContextImpl(ctx);
+  await processor.execute(pCtx);
+  return pCtx.state;
 }
 
 describe('F-C: Memory correctionEnabled behavior', () => {
@@ -23,12 +30,12 @@ describe('F-C: Memory correctionEnabled behavior', () => {
         admissionPolicy: { correctionEnabled: true },
       });
 
-      await processor.execute(makeContext({
+      await executeProcessor(processor, makeContext({
         request: { input: 'What is the capital of France?', sessionId: 's-corr' },
         iteration: { step: 0, response: 'The capital is Paris.' },
       }));
 
-      await processor.execute(makeContext({
+      await executeProcessor(processor, makeContext({
         request: { input: 'Actually no, I meant Germany. What is the capital of Germany?', sessionId: 's-corr' },
         iteration: { step: 0, response: 'The capital of Germany is Berlin.' },
       }));
@@ -47,12 +54,12 @@ describe('F-C: Memory correctionEnabled behavior', () => {
         admissionPolicy: { correctionEnabled: true },
       });
 
-      await processor.execute(makeContext({
+      await executeProcessor(processor, makeContext({
         request: { input: 'Tell me about X', sessionId: 's-meta' },
         iteration: { step: 0, response: 'X is a thing.' },
       }));
 
-      await processor.execute(makeContext({
+      await executeProcessor(processor, makeContext({
         request: { input: 'No wait, I meant Y actually', sessionId: 's-meta' },
         iteration: { step: 0, response: 'Y is different.' },
       }));
@@ -73,12 +80,12 @@ describe('F-C: Memory correctionEnabled behavior', () => {
         triggerMode: { type: 'automatic', onLoad: 'always' },
       });
 
-      await processor.execute(makeContext({
+      await executeProcessor(processor, makeContext({
         request: { input: 'What is the capital of France?', sessionId: 's-nocorr' },
         iteration: { step: 0, response: 'The capital is Paris.' },
       }));
 
-      await processor.execute(makeContext({
+      await executeProcessor(processor, makeContext({
         request: { input: 'Actually, tell me about Germany', sessionId: 's-nocorr' },
         iteration: { step: 0, response: 'The capital of Germany is Berlin.' },
       }));
@@ -102,7 +109,7 @@ describe('F-13: Multilingual and cross-session memory correction', () => {
         admissionPolicy: { correctionEnabled: true },
       });
 
-      await processor.execute(makeContext({
+      await executeProcessor(processor, makeContext({
         request: { input: '不对，应该是 bar', sessionId: 's-zh' },
         iteration: { step: 0, response: 'bar is correct' },
       }));
@@ -123,7 +130,7 @@ describe('F-13: Multilingual and cross-session memory correction', () => {
         admissionPolicy: { correctionEnabled: true },
       });
 
-      await processor.execute(makeContext({
+      await executeProcessor(processor, makeContext({
         request: { input: '不是的，正确答案是 baz', sessionId: 's-zh2' },
         iteration: { step: 0, response: 'baz is right' },
       }));
@@ -143,7 +150,7 @@ describe('F-13: Multilingual and cross-session memory correction', () => {
         admissionPolicy: { correctionEnabled: true },
       });
 
-      await processor.execute(makeContext({
+      await executeProcessor(processor, makeContext({
         request: { input: '違います、正しくは qux', sessionId: 's-ja' },
         iteration: { step: 0, response: 'qux is right' },
       }));
@@ -166,7 +173,7 @@ describe('F-13: Multilingual and cross-session memory correction', () => {
         admissionPolicy: { correctionEnabled: true, crossSessionCorrection: true },
       });
 
-      await processor.execute(makeContext({
+      await executeProcessor(processor, makeContext({
         request: { input: 'Actually that was wrong', sessionId: 's-curr' },
         iteration: { step: 0, response: 'corrected answer' },
       }));
@@ -186,7 +193,7 @@ describe('F-13: Multilingual and cross-session memory correction', () => {
         admissionPolicy: { correctionEnabled: true },
       });
 
-      await processor.execute(makeContext({
+      await executeProcessor(processor, makeContext({
         request: { input: 'Actually that was wrong', sessionId: 's-curr2' },
         iteration: { step: 0, response: 'corrected' },
       }));

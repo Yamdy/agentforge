@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { createMemoryOutputProcessor } from '../src/memory/memory-processor.js';
 import { InMemoryBackend } from '../src/memory/in-memory-backend.js';
-import type { PipelineContext } from '@primo-ai/sdk';
+import type { PipelineContext, Processor } from '@primo-ai/sdk';
+import { ProcessorContextImpl } from '@primo-ai/core';
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
@@ -11,6 +12,12 @@ function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
     session: { custom: {} },
     ...overrides,
   };
+}
+
+async function executeProcessor(processor: Processor, ctx: PipelineContext): Promise<PipelineContext> {
+  const pCtx = new ProcessorContextImpl(ctx);
+  await processor.execute(pCtx);
+  return pCtx.state;
 }
 
 /**
@@ -34,7 +41,7 @@ describe('createMemoryOutputProcessor — suspend/resume closure state', () => {
       iteration: { step: 0, response: 'answer A' },
     });
 
-    const result1 = await processor1.execute(ctx1) as PipelineContext;
+    const result1 = await executeProcessor(processor1, ctx1);
 
     // Verify first turn was stored
     const stored1 = await backend.retrieve('session-sr');
@@ -58,7 +65,7 @@ describe('createMemoryOutputProcessor — suspend/resume closure state', () => {
       session: { custom: savedCustom },
     });
 
-    await processor2.execute(ctx2);
+    await executeProcessor(processor2, ctx2);
 
     const stored2 = await backend.retrieve('session-sr');
     const assistantEntries = stored2.filter(e => e.role === 'assistant');
@@ -75,10 +82,10 @@ describe('createMemoryOutputProcessor — suspend/resume closure state', () => {
       triggerMode: { type: 'automatic', onLoad: 'always' },
     });
 
-    const result1 = await processor1.execute(makeContext({
+    const result1 = await executeProcessor(processor1, makeContext({
       request: { input: 'q1', sessionId: 'session-sr2' },
       iteration: { step: 0, response: 'answer X' },
-    })) as PipelineContext;
+    }));
 
     const savedCustom = { ...result1.session.custom };
 
@@ -88,7 +95,7 @@ describe('createMemoryOutputProcessor — suspend/resume closure state', () => {
       triggerMode: { type: 'automatic', onLoad: 'always' },
     });
 
-    await processor2.execute(makeContext({
+    await executeProcessor(processor2, makeContext({
       request: { input: 'q2', sessionId: 'session-sr2' },
       iteration: { step: 0, response: 'answer Y' },
       session: { custom: savedCustom },
@@ -116,7 +123,7 @@ describe('createMemoryOutputProcessor — suspend/resume closure state', () => {
       session: { custom: {} },
     });
 
-    const result = await processor.execute(ctx) as PipelineContext;
+    const result = await executeProcessor(processor, ctx);
     const stored = await backend.retrieve('session-fresh');
     expect(stored).toHaveLength(2);
   });

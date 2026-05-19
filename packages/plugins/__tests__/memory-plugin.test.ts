@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { memoryPlugin } from '../src/memory/index.js';
 import { InMemoryBackend } from '../src/memory/in-memory-backend.js';
-import type { HarnessAPI, PipelineContext } from '@primo-ai/sdk';
+import type { HarnessAPI, PipelineContext, Processor } from '@primo-ai/sdk';
+import { ProcessorContextImpl } from '@primo-ai/core';
 
 function createHarnessAPI(): { api: HarnessAPI; processors: Map<string, unknown>; tools: Map<string, unknown> } {
   const processors = new Map<string, unknown>();
@@ -30,6 +31,12 @@ function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   };
 }
 
+async function executeProcessor(processor: Processor, ctx: PipelineContext): Promise<PipelineContext> {
+  const pCtx = new ProcessorContextImpl(ctx);
+  await processor.execute(pCtx);
+  return pCtx.state;
+}
+
 describe('memoryPlugin — automatic mode', () => {
   it('registers buildContext and processOutput processors', () => {
     const backend = new InMemoryBackend();
@@ -48,15 +55,15 @@ describe('memoryPlugin — automatic mode', () => {
 
     memoryPlugin({ backend, triggerMode: { type: 'automatic', onLoad: 'always' } })(api);
 
-    const buildCtxProcessor = processors.get('buildContext') as { execute: (ctx: PipelineContext) => Promise<PipelineContext> };
-    const outputProcessor = processors.get('processOutput') as { execute: (ctx: PipelineContext) => Promise<PipelineContext> };
+    const buildCtxProcessor = processors.get('buildContext') as Processor;
+    const outputProcessor = processors.get('processOutput') as Processor;
 
     // First turn: processOutput saves the conversation
     const ctx1 = makeContext({
       request: { input: 'What is TypeScript?', sessionId: 's-e2e' },
       iteration: { step: 0, response: 'A typed superset of JavaScript' },
     });
-    await outputProcessor.execute(ctx1);
+    await executeProcessor(outputProcessor, ctx1);
 
     // Verify stored
     const stored = await backend.retrieve('s-e2e');
@@ -64,7 +71,7 @@ describe('memoryPlugin — automatic mode', () => {
 
     // Second turn: buildContext loads memory
     const ctx2 = makeContext({ request: { input: 'Tell me more', sessionId: 's-e2e' } });
-    const result = await buildCtxProcessor.execute(ctx2);
+    const result = await executeProcessor(buildCtxProcessor, ctx2);
 
     const history = result.session.messageHistory as Array<{ content: string }>;
     expect(history).toHaveLength(2);

@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { createMemoryProcessor, createMemoryOutputProcessor } from '../src/memory/memory-processor.js';
 import { InMemoryBackend } from '../src/memory/in-memory-backend.js';
-import type { PipelineContext } from '@primo-ai/sdk';
+import type { PipelineContext, Processor } from '@primo-ai/sdk';
+import { ProcessorContextImpl } from '@primo-ai/core';
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
@@ -11,6 +12,12 @@ function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
     session: { custom: {} },
     ...overrides,
   };
+}
+
+async function executeProcessor(processor: Processor, ctx: PipelineContext): Promise<PipelineContext> {
+  const pCtx = new ProcessorContextImpl(ctx);
+  await processor.execute(pCtx);
+  return pCtx.state;
 }
 
 describe('MemoryProcessor', () => {
@@ -32,7 +39,7 @@ describe('MemoryProcessor', () => {
       });
 
       const ctx = makeContext();
-      const result = await processor.execute(ctx);
+      const result = await executeProcessor(processor, ctx);
 
       const history = (result as PipelineContext).session.messageHistory as Array<{ role: string; content: string }>;
       expect(history).toHaveLength(2);
@@ -53,7 +60,7 @@ describe('MemoryProcessor', () => {
       });
 
       const ctx = makeContext();
-      const result = await processor.execute(ctx);
+      const result = await executeProcessor(processor, ctx);
 
       const fragments = (result as PipelineContext).agent.promptFragments as string[];
       expect(fragments).toHaveLength(0);
@@ -70,7 +77,7 @@ describe('MemoryProcessor', () => {
       });
 
       const ctx = makeContext();
-      const result = await processor.execute(ctx);
+      const result = await executeProcessor(processor, ctx);
 
       const fragments = (result as PipelineContext).agent.promptFragments as string[];
       expect(fragments).toBeDefined();
@@ -89,7 +96,7 @@ describe('MemoryProcessor', () => {
       });
 
       const ctx = makeContext();
-      const result = await processor.execute(ctx);
+      const result = await executeProcessor(processor, ctx);
 
       expect((result as PipelineContext).session.messageHistory).toBeUndefined();
       const fragments = (result as PipelineContext).agent.promptFragments as string[];
@@ -108,7 +115,7 @@ describe('MemoryProcessor', () => {
         iteration: { step: 0, response: '4' },
       });
 
-      await processor.execute(ctx);
+      await executeProcessor(processor, ctx);
 
       const stored = await backend.retrieve('session-2');
       expect(stored).toHaveLength(2);
@@ -127,7 +134,7 @@ describe('MemoryProcessor', () => {
         iteration: { step: 0, response: undefined },
       });
 
-      await processor.execute(ctx);
+      await executeProcessor(processor, ctx);
 
       const stored = await backend.retrieve('session-3');
       expect(stored).toHaveLength(0);
@@ -158,7 +165,7 @@ describe('MemoryProcessor', () => {
           custom: {},
         },
       });
-      const result = await processor.execute(ctx);
+      const result = await executeProcessor(processor, ctx);
       const history = (result as PipelineContext).session.messageHistory as Array<{ role: string; content: string }>;
 
       expect(history).toHaveLength(3);
@@ -184,7 +191,7 @@ describe('MemoryProcessor', () => {
           toolDeclarations: [],
         },
       });
-      const result = await processor.execute(ctx);
+      const result = await executeProcessor(processor, ctx);
       const fragments = (result as PipelineContext).agent.promptFragments as string[];
 
       expect(fragments).toHaveLength(2);
@@ -203,14 +210,14 @@ describe('MemoryProcessor', () => {
       });
 
       // First turn: user asks, agent answers about topic X
-      await processor.execute(makeContext({
+      await executeProcessor(processor, makeContext({
         request: { input: 'What is the capital of France?', sessionId: 'session-corr' },
         iteration: { step: 0, response: 'The capital is Paris.' },
       }));
 
       // Second turn: user corrects with a different question on same session
       // The agent gave wrong info, user corrects
-      await processor.execute(makeContext({
+      await executeProcessor(processor, makeContext({
         request: { input: 'No, actually tell me about Germany', sessionId: 'session-corr' },
         iteration: { step: 0, response: 'The capital of Germany is Berlin.' },
       }));
@@ -230,12 +237,12 @@ describe('MemoryProcessor', () => {
       // Two turns with identical assistant response
       // Since dedup state lives in session.custom (not a closure),
       // we must thread the returned session.custom into the next call.
-      const result1 = await processor.execute(makeContext({
+      const result1 = await executeProcessor(processor, makeContext({
         request: { input: 'question 1', sessionId: 'session-dedup' },
         iteration: { step: 0, response: 'same answer' },
       })) as PipelineContext;
 
-      await processor.execute(makeContext({
+      await executeProcessor(processor, makeContext({
         request: { input: 'question 2', sessionId: 'session-dedup' },
         iteration: { step: 0, response: 'same answer' },
         session: { custom: result1.session.custom },
@@ -255,7 +262,7 @@ describe('MemoryProcessor', () => {
       });
 
       // Agent monologue should not become persistent memory
-      await processor.execute(makeContext({
+      await executeProcessor(processor, makeContext({
         request: { input: '', sessionId: 'session-empty-user' },
         iteration: { step: 0, response: 'I am thinking...' },
       }));
@@ -284,7 +291,7 @@ describe('MemoryProcessor', () => {
       }
 
       const ctx = makeContext();
-      const result = await processor.execute(ctx);
+      const result = await executeProcessor(processor, ctx);
 
       const history = (result as PipelineContext).session.messageHistory as Array<{ content: string }>;
       expect(history).toHaveLength(2);
@@ -308,7 +315,7 @@ describe('MemoryProcessor', () => {
       });
 
       const ctx = makeContext();
-      const result = await processor.execute(ctx);
+      const result = await executeProcessor(processor, ctx);
 
       const history = (result as PipelineContext).session.messageHistory as Array<{ content: string }>;
       expect(history).toHaveLength(1);
