@@ -394,7 +394,6 @@ await server.start();
 ## 下一步
 
 - [API 参考](/api-reference) — 完整的类型和方法文档
-- [迁移指南](/migration-guide) — 从早期版本迁移
 
 ## 脚本参考
 

@@ -38,7 +38,6 @@ export default defineConfig({
           text: '运维',
           items: [
             { text: '部署', link: '/deployment' },
-            { text: '迁移指南', link: '/migration-guide' },
           ],
         },
       ],
