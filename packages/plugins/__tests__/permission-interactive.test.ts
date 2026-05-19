@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { PipelineContext } from '@primo-ai/sdk';
+import type { PipelineContext, Processor } from '@primo-ai/sdk';
+import { ProcessorContextImpl, AbortControlFlow, SuspendControlFlow } from '@primo-ai/core';
 import { createPermissionProcessor, type PermissionRule } from '../src/permission/index.js';
 import type { PermissionManager } from '@primo-ai/core';
 
@@ -13,12 +14,20 @@ function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   };
 }
 
-function isAbort(result: PipelineContext | { type: string; reason: string }): result is { type: 'abort'; reason: string } {
-  return 'type' in result && result.type === 'abort';
-}
-
-function isSuspend(result: PipelineContext | { type: string; reason: string }): result is { type: 'suspend'; suspensionId: string; reason: string } {
-  return 'type' in result && result.type === 'suspend';
+async function executeProcessor(processor: Processor, ctx: PipelineContext): Promise<{ type: 'ok' | 'abort' | 'suspend'; reason?: string; suspensionId?: string }> {
+  const pCtx = new ProcessorContextImpl(ctx);
+  try {
+    await processor.execute(pCtx);
+    return { type: 'ok' };
+  } catch (e) {
+    if (e instanceof AbortControlFlow) {
+      return { type: 'abort', reason: e.reason };
+    }
+    if (e instanceof SuspendControlFlow) {
+      return { type: 'suspend', reason: e.reason, suspensionId: e.suspensionId };
+    }
+    throw e;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -52,7 +61,7 @@ describe('PermissionProcessor with PermissionManager', () => {
       });
 
       // Execute should not resolve until we resolve the decision
-      const resultPromise = processor.execute(ctx);
+      const resultPromise = executeProcessor(processor, ctx);
 
       // Should not be resolved yet
       expect(resultPromise).toBeInstanceOf(Promise);
@@ -62,9 +71,8 @@ describe('PermissionProcessor with PermissionManager', () => {
 
       const result = await resultPromise;
 
-      // Should return ctx (allow execution)
-      expect(isAbort(result)).toBe(false);
-      expect(isSuspend(result)).toBe(false);
+      // Should return ok (allow execution)
+      expect(result.type).toBe('ok');
 
       // Should have emitted 'ask' then 'allow'
       expect(decisions[0].decision).toBe('ask');
@@ -95,18 +103,16 @@ describe('PermissionProcessor with PermissionManager', () => {
         iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'file_write', args: { path: '/tmp/test' } }] },
       });
 
-      const resultPromise = processor.execute(ctx);
+      const resultPromise = executeProcessor(processor, ctx);
 
       // Deny the permission
       resolveDecision(false);
 
       const result = await resultPromise;
 
-      expect(isAbort(result)).toBe(true);
-      if (isAbort(result)) {
-        expect(result.reason).toContain('file_write');
-        expect(result.reason).toContain('denied');
-      }
+      expect(result.type).toBe('abort');
+      expect(result.reason).toContain('file_write');
+      expect(result.reason).toContain('denied');
 
       // Should have emitted 'ask' then 'deny'
       expect(decisions[0].decision).toBe('ask');
@@ -129,13 +135,11 @@ describe('PermissionProcessor with PermissionManager', () => {
         iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'file_write', args: { path: '/tmp/test' } }] },
       });
 
-      const result = await processor.execute(ctx);
+      const result = await executeProcessor(processor, ctx);
 
       // Should return suspend signal (current behavior)
-      expect(isSuspend(result)).toBe(true);
-      if (isSuspend(result)) {
-        expect(result.reason).toContain('requires approval');
-      }
+      expect(result.type).toBe('suspend');
+      expect(result.suspensionId).toContain('perm-file_write');
     });
   });
 
@@ -159,10 +163,10 @@ describe('PermissionProcessor with PermissionManager', () => {
         iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'file_write', args: { path: '/tmp/test' } }] },
       });
 
-      const result = await processor.execute(ctx);
+      const result = await executeProcessor(processor, ctx);
 
       // full-auto mode: allow everything, permissionManager should never be called
-      expect(isAbort(result)).toBe(false);
+      expect(result.type).toBe('ok');
       expect(permissionManager.awaitDecision).not.toHaveBeenCalled();
     });
   });
@@ -194,23 +198,23 @@ describe('PermissionProcessor with PermissionManager', () => {
         iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'file_write', args: { path: '/tmp/a' } }] },
       });
 
-      const promise1 = processor.execute(ctx1);
+      const promise1 = executeProcessor(processor, ctx1);
       // Resolve first
-      pendingResolvers[0](true);
+      pendingResolvers[0]!(true);
       const result1 = await promise1;
 
-      expect(isAbort(result1)).toBe(false);
+      expect(result1.type).toBe('ok');
 
       // Second call — file_write again
       const ctx2 = makeContext({
         iteration: { step: 1, pendingToolCalls: [{ id: 'call_2', name: 'file_write', args: { path: '/tmp/b' } }] },
       });
 
-      const promise2 = processor.execute(ctx2);
-      pendingResolvers[1](false);
+      const promise2 = executeProcessor(processor, ctx2);
+      pendingResolvers[1]!(false);
       const result2 = await promise2;
 
-      expect(isAbort(result2)).toBe(true);
+      expect(result2.type).toBe('abort');
 
       // awaitDecision should have been called twice with different permissionIds
       expect(permissionManager.awaitDecision).toHaveBeenCalledTimes(2);

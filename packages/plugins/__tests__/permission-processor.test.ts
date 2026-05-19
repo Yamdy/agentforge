@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { PipelineContext } from '@primo-ai/sdk';
+import { ProcessorContextImpl, AbortControlFlow, SuspendControlFlow } from '@primo-ai/core';
 import { createPermissionProcessor, type PermissionRule } from '../src/permission/index.js';
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
@@ -12,12 +13,20 @@ function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   };
 }
 
-function isAbort(result: PipelineContext | { type: 'abort'; reason: string }): result is { type: 'abort'; reason: string } {
-  return 'type' in result && result.type === 'abort';
-}
-
-function isSuspend(result: PipelineContext | { type: string; reason: string }): result is { type: 'suspend'; suspensionId: string; reason: string } {
-  return 'type' in result && result.type === 'suspend';
+async function executeProcessor(processor: { execute: (ctx: unknown) => Promise<unknown> }, ctx: PipelineContext): Promise<{ type: 'ok' | 'abort' | 'suspend'; reason?: string; suspensionId?: string }> {
+  const pCtx = new ProcessorContextImpl(ctx);
+  try {
+    await processor.execute(pCtx);
+    return { type: 'ok' };
+  } catch (e) {
+    if (e instanceof AbortControlFlow) {
+      return { type: 'abort', reason: e.reason };
+    }
+    if (e instanceof SuspendControlFlow) {
+      return { type: 'suspend', reason: e.reason, suspensionId: e.suspensionId };
+    }
+    throw e;
+  }
 }
 
 describe('PermissionProcessor', () => {
@@ -30,9 +39,8 @@ describe('PermissionProcessor', () => {
         iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'shell_exec', args: { command: 'rm -rf /' } }] },
       });
 
-      const result = await processor.execute(ctx);
-
-      expect(isAbort(result)).toBe(false);
+      const result = await executeProcessor(processor, ctx);
+      expect(result.type).toBe('ok');
     });
   });
 
@@ -48,12 +56,9 @@ describe('PermissionProcessor', () => {
         iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'file_write', args: { path: '/etc/hosts', content: 'malicious' } }] },
       });
 
-      const result = await processor.execute(ctx);
-
-      expect(isAbort(result)).toBe(true);
-      if (isAbort(result)) {
-        expect(result.reason).toContain('file_write');
-      }
+      const result = await executeProcessor(processor, ctx);
+      expect(result.type).toBe('abort');
+      expect(result.reason).toContain('file_write');
     });
 
     it('allows read-only tool calls in plan-only mode', async () => {
@@ -67,9 +72,8 @@ describe('PermissionProcessor', () => {
         iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'file_read', args: { path: '/etc/hosts' } }] },
       });
 
-      const result = await processor.execute(ctx);
-
-      expect(isAbort(result)).toBe(false);
+      const result = await executeProcessor(processor, ctx);
+      expect(result.type).toBe('ok');
     });
 
     it('denies shell_exec in plan-only mode even without explicit rules', async () => {
@@ -80,12 +84,9 @@ describe('PermissionProcessor', () => {
         iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'shell_exec', args: { command: 'ls' } }] },
       });
 
-      const result = await processor.execute(ctx);
-
-      expect(isAbort(result)).toBe(true);
-      if (isAbort(result)) {
-        expect(result.reason).toContain('shell_exec');
-      }
+      const result = await executeProcessor(processor, ctx);
+      expect(result.type).toBe('abort');
+      expect(result.reason).toContain('shell_exec');
     });
   });
 
@@ -102,12 +103,9 @@ describe('PermissionProcessor', () => {
         iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'file_read', args: { path: '/etc/hosts' } }] },
       });
 
-      const result = await processor.execute(ctx);
-
-      expect(isAbort(result)).toBe(true);
-      if (isAbort(result)) {
-        expect(result.reason).toContain('file_read');
-      }
+      const result = await executeProcessor(processor, ctx);
+      expect(result.type).toBe('abort');
+      expect(result.reason).toContain('file_read');
     });
 
     it('matches argument paths using pattern glob', async () => {
@@ -122,9 +120,8 @@ describe('PermissionProcessor', () => {
         iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'file_read', args: { path: '/etc/passwd' } }] },
       });
 
-      const result = await processor.execute(ctx);
-
-      expect(isAbort(result)).toBe(true);
+      const result = await executeProcessor(processor, ctx);
+      expect(result.type).toBe('abort');
     });
 
     it('allows tool call when pattern does not match', async () => {
@@ -139,9 +136,8 @@ describe('PermissionProcessor', () => {
         iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'file_read', args: { path: '/home/user/doc.txt' } }] },
       });
 
-      const result = await processor.execute(ctx);
-
-      expect(isAbort(result)).toBe(false);
+      const result = await executeProcessor(processor, ctx);
+      expect(result.type).toBe('ok');
     });
 
     it('first-match-wins: earlier rule takes precedence', async () => {
@@ -156,9 +152,8 @@ describe('PermissionProcessor', () => {
         iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'file_write', args: { path: '/tmp/test' } }] },
       });
 
-      const result = await processor.execute(ctx);
-
-      expect(isAbort(result)).toBe(false);
+      const result = await executeProcessor(processor, ctx);
+      expect(result.type).toBe('ok');
     });
   });
 
@@ -173,9 +168,8 @@ describe('PermissionProcessor', () => {
         iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'file_read', args: { path: '/tmp/data.txt' } }] },
       });
 
-      const result = await processor.execute(ctx);
-
-      expect(isAbort(result)).toBe(false);
+      const result = await executeProcessor(processor, ctx);
+      expect(result.type).toBe('ok');
     });
 
     it('denies tool calls that match a deny rule', async () => {
@@ -188,12 +182,9 @@ describe('PermissionProcessor', () => {
         iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'shell_exec', args: { command: 'rm -rf /' } }] },
       });
 
-      const result = await processor.execute(ctx);
-
-      expect(isAbort(result)).toBe(true);
-      if (isAbort(result)) {
-        expect(result.reason).toContain('shell_exec');
-      }
+      const result = await executeProcessor(processor, ctx);
+      expect(result.type).toBe('abort');
+      expect(result.reason).toContain('shell_exec');
     });
 
     it('suspends for approval on ask rule', async () => {
@@ -206,15 +197,12 @@ describe('PermissionProcessor', () => {
         iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'file_write', args: { path: '/tmp/test' } }] },
       });
 
-      const result = await processor.execute(ctx);
+      const result = await executeProcessor(processor, ctx);
 
       // In interactive mode with 'ask', the processor should return a suspend
       // signal indicating that human approval is required
-      expect(isSuspend(result)).toBe(true);
-      if (isSuspend(result)) {
-        expect(result.reason).toContain('requires approval');
-        expect(result.suspensionId).toBeDefined();
-      }
+      expect(result.type).toBe('suspend');
+      expect(result.suspensionId).toBeDefined();
     });
 
     it('allows tool calls with no matching rules in interactive mode', async () => {
@@ -225,9 +213,8 @@ describe('PermissionProcessor', () => {
         iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'any_tool', args: {} }] },
       });
 
-      const result = await processor.execute(ctx);
-
-      expect(isAbort(result)).toBe(false);
+      const result = await executeProcessor(processor, ctx);
+      expect(result.type).toBe('ok');
     });
   });
 
@@ -247,7 +234,7 @@ describe('PermissionProcessor', () => {
         iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'file_read', args: { path: '/tmp/data' } }] },
       });
 
-      await processor.execute(ctx);
+      await executeProcessor(processor, ctx);
 
       expect(decisions).toHaveLength(1);
       expect(decisions[0].decision).toBe('allow');
@@ -271,7 +258,7 @@ describe('PermissionProcessor', () => {
         iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'shell_exec', args: { command: 'ls' } }] },
       });
 
-      await processor.execute(ctx);
+      await executeProcessor(processor, ctx);
 
       expect(decisions).toHaveLength(1);
       expect(decisions[0].decision).toBe('deny');
@@ -293,7 +280,7 @@ describe('PermissionProcessor', () => {
         iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'file_write', args: { path: '/tmp/test' } }] },
       });
 
-      await processor.execute(ctx);
+      await executeProcessor(processor, ctx);
 
       expect(decisions).toHaveLength(1);
       expect(decisions[0].decision).toBe('ask');
@@ -312,7 +299,7 @@ describe('PermissionProcessor', () => {
         iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'shell_exec', args: { command: 'ls' } }] },
       });
 
-      await processor.execute(ctx);
+      await executeProcessor(processor, ctx);
 
       expect(decisions).toHaveLength(1);
       expect(decisions[0].decision).toBe('deny');

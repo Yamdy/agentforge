@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { permissionPlugin, createPermissionProcessor, type PermissionDecisionEvent } from '../src/permission/index.js';
-import type { HarnessAPI, PipelineContext } from '@primo-ai/sdk';
+import type { HarnessAPI, PipelineContext, Processor } from '@primo-ai/sdk';
+import { ProcessorContextImpl, AbortControlFlow, SuspendControlFlow } from '@primo-ai/core';
 
-function createHarnessAPI(): { api: HarnessAPI; processors: Map<string, unknown>; emitted: Array<{ type: string; data: unknown }> } {
-  const processors = new Map<string, unknown>();
+function createHarnessAPI(): { api: HarnessAPI; processors: Map<string, Processor>; emitted: Array<{ type: string; data: unknown }> } {
+  const processors = new Map<string, Processor>();
   const emitted: Array<{ type: string; data: unknown }> = [];
 
   const api: HarnessAPI = {
@@ -31,12 +32,20 @@ function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   };
 }
 
-function isAbort(result: PipelineContext | { type: string; reason: string }): result is { type: 'abort'; reason: string } {
-  return 'type' in result && result.type === 'abort';
-}
-
-function isSuspend(result: PipelineContext | { type: string; reason: string }): result is { type: 'suspend'; suspensionId: string; reason: string } {
-  return 'type' in result && result.type === 'suspend';
+async function executeProcessor(processor: Processor, ctx: PipelineContext): Promise<{ type: 'ok' | 'abort' | 'suspend'; reason?: string; suspensionId?: string }> {
+  const pCtx = new ProcessorContextImpl(ctx);
+  try {
+    await processor.execute(pCtx);
+    return { type: 'ok' };
+  } catch (e) {
+    if (e instanceof AbortControlFlow) {
+      return { type: 'abort', reason: e.reason };
+    }
+    if (e instanceof SuspendControlFlow) {
+      return { type: 'suspend', reason: e.reason, suspensionId: e.suspensionId };
+    }
+    throw e;
+  }
 }
 
 describe('permissionPlugin', () => {
@@ -72,15 +81,15 @@ describe('permissionPlugin', () => {
       rules: [],
     })(api);
 
-    const processor = processors.get('gateTool') as { stage: string; execute: (ctx: PipelineContext) => Promise<unknown> };
+    const processor = processors.get('gateTool');
     expect(processor).toBeDefined();
 
     const ctx = makeContext({
       iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'shell_exec', args: { command: 'ls' } }] },
     });
 
-    const result = await processor.execute(ctx);
-    expect(isAbort(result)).toBe(true);
+    const result = await executeProcessor(processor!, ctx);
+    expect(result.type).toBe('abort');
   });
 
   it('processor from plugin allows tools in full-auto mode', async () => {
@@ -91,15 +100,15 @@ describe('permissionPlugin', () => {
       rules: [],
     })(api);
 
-    const processor = processors.get('gateTool') as { stage: string; execute: (ctx: PipelineContext) => Promise<unknown> };
+    const processor = processors.get('gateTool');
     expect(processor).toBeDefined();
 
     const ctx = makeContext({
       iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'shell_exec', args: { command: 'rm -rf /' } }] },
     });
 
-    const result = await processor.execute(ctx);
-    expect(isAbort(result)).toBe(false);
+    const result = await executeProcessor(processor!, ctx);
+    expect(result.type).toBe('ok');
   });
 
   it('emits permission.decision event via api.emit when deny rule triggers', async () => {
@@ -110,12 +119,12 @@ describe('permissionPlugin', () => {
       rules: [{ tool: 'shell_exec', action: 'deny' }],
     })(api);
 
-    const processor = processors.get('gateTool') as { stage: string; execute: (ctx: PipelineContext) => Promise<unknown> };
+    const processor = processors.get('gateTool');
     const ctx = makeContext({
       iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'shell_exec', args: { command: 'ls' } }] },
     });
 
-    await processor.execute(ctx);
+    await executeProcessor(processor!, ctx);
 
     expect(emitted).toHaveLength(1);
     expect(emitted[0].type).toBe('permission.decision');
@@ -135,12 +144,12 @@ describe('permissionPlugin', () => {
       rules: [],
     })(api);
 
-    const processor = processors.get('gateTool') as { stage: string; execute: (ctx: PipelineContext) => Promise<unknown> };
+    const processor = processors.get('gateTool');
     const ctx = makeContext({
       iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'read_file', args: { path: '/tmp/x' } }] },
     });
 
-    await processor.execute(ctx);
+    await executeProcessor(processor!, ctx);
 
     expect(emitted).toHaveLength(1);
     expect(emitted[0].type).toBe('permission.decision');
@@ -163,7 +172,7 @@ describe('permissionPlugin', () => {
       iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'shell_exec', args: { command: 'ls' } }] },
     });
 
-    await processor.execute(ctx);
+    await executeProcessor(processor, ctx);
 
     expect(decisions).toHaveLength(1);
     expect(decisions[0].decision).toBe('deny');
@@ -182,14 +191,11 @@ describe('permissionPlugin', () => {
       iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'shell_exec', args: { command: 'ls' } }] },
     });
 
-    const result = await processor.execute(ctx);
+    const result = await executeProcessor(processor, ctx);
 
     // Must return suspend signal, not abort
-    expect(isSuspend(result)).toBe(true);
-    if (isSuspend(result)) {
-      expect(result.suspensionId).toBeDefined();
-      expect(result.reason).toContain('shell_exec');
-    }
+    expect(result.type).toBe('suspend');
+    expect(result.suspensionId).toContain('perm-shell_exec');
   });
 
   it('ask rule in plan-only mode still returns abort (treated as deny)', async () => {
@@ -203,10 +209,10 @@ describe('permissionPlugin', () => {
       iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'shell_exec', args: { command: 'ls' } }] },
     });
 
-    const result = await processor.execute(ctx);
+    const result = await executeProcessor(processor, ctx);
 
     // plan-only treats ask as deny → abort
-    expect(isAbort(result)).toBe(true);
+    expect(result.type).toBe('abort');
   });
 
   it('ask rule emits decision event with decision=ask', async () => {
@@ -221,7 +227,7 @@ describe('permissionPlugin', () => {
       iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'file_write', args: { path: '/etc/passwd' } }] },
     });
 
-    await processor.execute(ctx);
+    await executeProcessor(processor, ctx);
 
     expect(decisions).toHaveLength(1);
     expect(decisions[0].decision).toBe('ask');
