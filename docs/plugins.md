@@ -54,13 +54,38 @@ function myPlugin(api: HarnessAPI): PluginRegistration {
 
 Processors execute business logic at a specific pipeline stage:
 
+#### v2 API (Recommended)
+
+```typescript
+api.registerProcessor('gateTool', {
+  stage: 'gateTool',
+  async executeV2(ctx) {
+    // Access state directly
+    const toolCalls = ctx.state.iteration.pendingToolCalls ?? [];
+
+    // Flow control via ctx.control
+    if (toolCalls.some(tc => dangerousTools.includes(tc.name))) {
+      ctx.control.abort('Dangerous tool not allowed');
+    }
+
+    // In-place mutation (no return needed)
+  },
+});
+```
+
+**v2 API Benefits:**
+- `ctx.state` provides mutable access to `PipelineContext`
+- `ctx.control.abort(reason)` / `ctx.control.suspend(id)` for clean flow control
+- Return `void` for in-place mutation, or return modified `PipelineContext`
+
+#### v1 API (Deprecated)
+
 ```typescript
 api.registerProcessor('processOutput', {
   stage: 'processOutput',
-  execute: async (ctx: PipelineContext) => {
-    // Transform the context
+  async execute(ctx: PipelineContext) {
     console.log('Response length:', ctx.iteration.response?.length);
-    return ctx;  // Must return PipelineContext, AbortSignal, or SuspensionSignal
+    return ctx;
   },
 });
 ```
@@ -161,52 +186,62 @@ const result = await agent.run('Hello');
 await agent.pluginManager.shutdown();
 ```
 
-## Returning AbortSignal
+## Flow Control (v2 API)
+
+### Aborting the Pipeline
 
 Processors can abort the pipeline with an optional retry point:
 
 ```typescript
 api.registerProcessor('gateLLM', {
   stage: 'gateLLM',
-  execute: async (ctx) => {
-    if (ctx.session.totalTokenUsage && ctx.session.totalTokenUsage.input > 100000) {
-      return {
-        type: 'abort',
-        reason: 'Token budget exceeded',
-        retryFrom: 'buildContext',  // Optional: retry from this stage
-      };
+  async executeV2(ctx) {
+    const usage = ctx.state.session.totalTokenUsage;
+    if (usage && usage.input > 100000) {
+      ctx.control.abort('Token budget exceeded', 'buildContext');
     }
-    return ctx;
   },
 });
 ```
 
-## Returning SuspensionSignal
+### Suspending the Pipeline
 
-Processors can suspend the pipeline for human-in-the-loop workflows:
+Processors can suspend for human-in-the-loop workflows:
 
 ```typescript
-import { serialize } from '@primo-ai/core';
+import { randomUUID } from 'node:crypto';
 
 api.registerProcessor('gateTool', {
   stage: 'gateTool',
-  execute: async (ctx) => {
-    const toolCall = ctx.iteration.pendingToolCalls?.[0];
+  async executeV2(ctx) {
+    const toolCall = ctx.state.iteration.pendingToolCalls?.[0];
     if (toolCall?.name === 'dangerous_action') {
-      return {
-        type: 'suspend',
-        suspensionId: crypto.randomUUID(),
-        reason: 'Requires human approval for: ' + toolCall.name,
-        checkpoint: {
-          context: ctx,
-          nextStages: ['executeTools'],
-          iteration: ctx.iteration.step,
-        },
-      };
+      ctx.control.suspend(randomUUID());
     }
-    return ctx;
   },
 });
+```
+
+## Using Adapters
+
+For common patterns, use the high-level adapter APIs:
+
+```typescript
+import { modifiers, gates } from '@primo-ai/core';
+
+// Simple context modification
+api.registerProcessor('invokeLLM', modifiers.message((msgs, ctx) => [
+  { role: 'user', content: 'System context...' },
+  ...msgs,
+]));
+
+// Permission gate
+api.registerProcessor('gateTool', gates.permission({
+  check: (toolName) => dangerousTools.includes(toolName) ? 'ask' : 'allow',
+}));
+```
+
+## Legacy: Returning Signals (v1 API, Deprecated)
 ```
 
 ## Compression Plugin -- Built-in SummarizeFn

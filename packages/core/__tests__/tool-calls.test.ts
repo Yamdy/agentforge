@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { PipelineContext } from '@primo-ai/sdk';
 import type { LanguageModel } from 'ai';
 import { PipelineRunner } from '../src/pipeline.js';
+import { ProcessorContextImpl } from '../src/processor-context.js';
 
 function createMockModelWithToolCall(): LanguageModel {
   return {
@@ -48,7 +49,7 @@ describe('Tool call parsing', () => {
     const runner = new PipelineRunner();
     runner.register({
       stage: 'invokeLLM',
-      execute: async (ctx) => {
+      execute: async (pCtx) => {
         const result = streamText({
           model,
           tools: {
@@ -58,7 +59,7 @@ describe('Tool call parsing', () => {
               execute: async ({ path: _path }) => 'file content',
             }),
           },
-          prompt: ctx.request.input,
+          prompt: pCtx.state.request.input,
         });
 
         const chunks: string[] = [];
@@ -67,26 +68,14 @@ describe('Tool call parsing', () => {
         const toolCalls = await result.toolCalls;
         const usage = await result.usage;
 
-        return {
-          ...ctx,
-          iteration: {
-            ...ctx.iteration,
-            response: chunks.join(''),
-            tokenUsage: { input: usage?.inputTokens ?? 0, output: usage?.outputTokens ?? 0 },
-          },
-          session: {
-            ...ctx.session,
-            custom: {
-              ...ctx.session.custom,
-              toolCalls: toolCalls ?? [],
-            },
-          },
-        };
+        pCtx.state.iteration.response = chunks.join('');
+        pCtx.state.iteration.tokenUsage = { input: usage?.inputTokens ?? 0, output: usage?.outputTokens ?? 0 };
+        pCtx.state.session.custom.toolCalls = toolCalls ?? [];
       },
     });
     runner.register({
       stage: 'processOutput',
-      execute: async (ctx) => { resultContext = ctx; return ctx; },
+      execute: async (pCtx) => { resultContext = pCtx.state; },
     });
 
     await runner.run(

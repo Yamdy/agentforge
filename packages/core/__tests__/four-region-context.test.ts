@@ -103,15 +103,9 @@ describe('Agent with four-region context', () => {
 
     agent.use({
       stage: 'evaluateIteration',
-      execute: async (ctx) => {
+      execute: async (pCtx) => {
         iterations++;
-        return {
-          ...ctx,
-          iteration: {
-            ...ctx.iteration,
-            loopDirective: iterations < 3 ? { action: 'continue' } : { action: 'stop' },
-          },
-        };
+        pCtx.state.iteration.loopDirective = iterations < 3 ? { action: 'continue' } : { action: 'stop' };
       },
     });
 

@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { PipelineRunner } from '../src/pipeline.js';
 import { HookManager } from '../src/hook-manager.js';
 import { EventBus } from '../src/event-bus.js';
-import type { PipelineContext, Processor, StreamEvent, ToolCall, ContentBlock } from '@primo-ai/sdk';
+import { ProcessorContextImpl } from '../src/processor-context.js';
+import type { PipelineContext, ProcessorContext, StreamEvent, ToolCall, ContentBlock } from '@primo-ai/sdk';
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
@@ -23,17 +24,13 @@ describe('Phase 1: ContentBlock[] in PipelineRunner', () => {
       const runner = new PipelineRunner();
       runner.register({
         stage: 'invokeLLM',
-        execute: async (ctx) => ({
-          ...ctx,
-          iteration: {
-            ...ctx.iteration,
-            fullStream: (async function* () {
-              yield { type: 'text-delta', text: 'hello ' };
-              yield { type: 'text-delta', text: 'world' };
-              yield { type: 'finish-step', usage: { inputTokens: { total: 10, noCache: 10 }, outputTokens: { total: 2, text: 2 } } };
-            })(),
-          },
-        }),
+        execute: async (pCtx: ProcessorContext) => {
+          pCtx.state.iteration.fullStream = (async function* () {
+            yield { type: 'text-delta', text: 'hello ' };
+            yield { type: 'text-delta', text: 'world' };
+            yield { type: 'finish-step', usage: { inputTokens: { total: 10, noCache: 10 }, outputTokens: { total: 2, text: 2 } } };
+          })();
+        },
       });
 
       const events: StreamEvent[] = [];
@@ -58,23 +55,19 @@ describe('Phase 1: ContentBlock[] in PipelineRunner', () => {
       const runner = new PipelineRunner();
       runner.register({
         stage: 'invokeLLM',
-        execute: async (ctx) => ({
-          ...ctx,
-          iteration: {
-            ...ctx.iteration,
-            fullStream: (async function* () {
-              yield { type: 'reasoning', textDelta: 'thinking hard' };
-              yield { type: 'text-delta', text: 'result' };
-              yield {
-                type: 'tool-call',
-                toolCallId: 'tc1',
-                toolName: 'search',
-                args: { q: 'test' },
-              };
-              yield { type: 'finish-step', usage: { inputTokens: { total: 5, noCache: 5 }, outputTokens: { total: 3, text: 3 } } };
-            })(),
-          },
-        }),
+        execute: async (pCtx: ProcessorContext) => {
+          pCtx.state.iteration.fullStream = (async function* () {
+            yield { type: 'reasoning', textDelta: 'thinking hard' };
+            yield { type: 'text-delta', text: 'result' };
+            yield {
+              type: 'tool-call',
+              toolCallId: 'tc1',
+              toolName: 'search',
+              args: { q: 'test' },
+            };
+            yield { type: 'finish-step', usage: { inputTokens: { total: 5, noCache: 5 }, outputTokens: { total: 3, text: 3 } } };
+          })();
+        },
       });
 
       const events: StreamEvent[] = [];
@@ -104,16 +97,12 @@ describe('Phase 1: ContentBlock[] in PipelineRunner', () => {
       const runner = new PipelineRunner();
       runner.register({
         stage: 'invokeLLM',
-        execute: async (ctx) => ({
-          ...ctx,
-          iteration: {
-            ...ctx.iteration,
-            fullStream: (async function* () {
-              yield { type: 'text-delta', text: 'run response' };
-              yield { type: 'finish-step', usage: { inputTokens: { total: 3, noCache: 3 }, outputTokens: { total: 1, text: 1 } } };
-            })(),
-          },
-        }),
+        execute: async (pCtx: ProcessorContext) => {
+          pCtx.state.iteration.fullStream = (async function* () {
+            yield { type: 'text-delta', text: 'run response' };
+            yield { type: 'finish-step', usage: { inputTokens: { total: 3, noCache: 3 }, outputTokens: { total: 1, text: 1 } } };
+          })();
+        },
       });
 
       const result = await runner.run(makeContext(), ['invokeLLM']);
@@ -129,22 +118,18 @@ describe('Phase 1: ContentBlock[] in PipelineRunner', () => {
       const runner = new PipelineRunner();
       runner.register({
         stage: 'invokeLLM',
-        execute: async (ctx) => ({
-          ...ctx,
-          iteration: {
-            ...ctx.iteration,
-            fullStream: (async function* () {
-              yield { type: 'text-delta', text: 'calling tool' };
-              yield {
-                type: 'tool-call',
-                toolCallId: 'tc2',
-                toolName: 'echo',
-                args: { msg: 'hi' },
-              };
-              yield { type: 'finish-step', usage: { inputTokens: { total: 5, noCache: 5 }, outputTokens: { total: 2, text: 2 } } };
-            })(),
-          },
-        }),
+        execute: async (pCtx: ProcessorContext) => {
+          pCtx.state.iteration.fullStream = (async function* () {
+            yield { type: 'text-delta', text: 'calling tool' };
+            yield {
+              type: 'tool-call',
+              toolCallId: 'tc2',
+              toolName: 'echo',
+              args: { msg: 'hi' },
+            };
+            yield { type: 'finish-step', usage: { inputTokens: { total: 5, noCache: 5 }, outputTokens: { total: 2, text: 2 } } };
+          })();
+        },
       });
 
       const result = await runner.run(makeContext(), ['invokeLLM']);
@@ -172,18 +157,14 @@ describe('Phase 1: ContentBlock[] in PipelineRunner', () => {
       const runner = new PipelineRunner({ hookManager });
       runner.register({
         stage: 'invokeLLM',
-        execute: async (ctx) => ({
-          ...ctx,
-          iteration: {
-            ...ctx.iteration,
-            fullStream: (async function* () {
-              yield { type: 'text-delta', text: 'hi' };
-              yield { type: 'finish-step', usage: { inputTokens: { total: 1, noCache: 1 }, outputTokens: { total: 1, text: 1 } } };
-            })(),
-            // _modelString triggers llm.after hook
-            _modelString: 'mock/test',
-          } as PipelineContext['iteration'] & { _modelString: string },
-        }),
+        execute: async (pCtx: ProcessorContext) => {
+          pCtx.state.iteration.fullStream = (async function* () {
+            yield { type: 'text-delta', text: 'hi' };
+            yield { type: 'finish-step', usage: { inputTokens: { total: 1, noCache: 1 }, outputTokens: { total: 1, text: 1 } } };
+          })();
+          // _modelString triggers llm.after hook
+          (pCtx.state.iteration as PipelineContext['iteration'] & { _modelString: string })._modelString = 'mock/test';
+        },
       });
 
       const events: StreamEvent[] = [];
@@ -222,8 +203,7 @@ describe('Phase 1: ContentBlock[] in PipelineRunner', () => {
 describe('Phase 1: processStepOutput uses content[]', () => {
   it('prefers content[] over response for assistant message', async () => {
     const { processStepOutputProcessor } = await import('../src/processors/process-step-output.js');
-
-    const ctx: PipelineContext = {
+    const pCtx = new ProcessorContextImpl({
       request: { input: 'test', sessionId: 's1' },
       agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
       iteration: {
@@ -235,13 +215,12 @@ describe('Phase 1: processStepOutput uses content[]', () => {
         response: 'from response field',
       },
       session: { custom: {} },
-    };
+    });
 
-    const result = await processStepOutputProcessor.execute(ctx);
-    const pipelineCtx = result as PipelineContext;
+    await processStepOutputProcessor.execute(pCtx);
 
     // Should prefer content-derived text for assistant message
-    const lastMsg = pipelineCtx.session.messageHistory![pipelineCtx.session.messageHistory!.length - 1] as { role: string; content: string; toolCalls?: unknown };
+    const lastMsg = pCtx.state.session.messageHistory![pCtx.state.session.messageHistory!.length - 1] as { role: string; content: string; toolCalls?: unknown };
     expect(lastMsg.role).toBe('assistant');
     expect(lastMsg.content).toBe('from content blocks');
     expect(lastMsg.toolCalls).toEqual([{ id: 'tc1', name: 'search', args: { q: 'test' } }]);
@@ -249,8 +228,7 @@ describe('Phase 1: processStepOutput uses content[]', () => {
 
   it('falls back to response when content[] is absent', async () => {
     const { processStepOutputProcessor } = await import('../src/processors/process-step-output.js');
-
-    const ctx: PipelineContext = {
+    const pCtx = new ProcessorContextImpl({
       request: { input: 'test', sessionId: 's1' },
       agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
       iteration: {
@@ -259,12 +237,11 @@ describe('Phase 1: processStepOutput uses content[]', () => {
         pendingToolCalls: [{ id: 'tc1', name: 'search', args: {} }],
       },
       session: { custom: {} },
-    };
+    });
 
-    const result = await processStepOutputProcessor.execute(ctx);
-    const pipelineCtx = result as PipelineContext;
+    await processStepOutputProcessor.execute(pCtx);
 
-    const lastMsg = pipelineCtx.session.messageHistory![pipelineCtx.session.messageHistory!.length - 1] as { role: string; content: string; toolCalls?: unknown };
+    const lastMsg = pCtx.state.session.messageHistory![pCtx.state.session.messageHistory!.length - 1] as { role: string; content: string; toolCalls?: unknown };
     expect(lastMsg.content).toBe('legacy response');
     expect(lastMsg.toolCalls).toEqual([{ id: 'tc1', name: 'search', args: {} }]);
   });

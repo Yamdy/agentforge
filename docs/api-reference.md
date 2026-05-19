@@ -155,29 +155,74 @@ processInput → buildContext → [Agentic Loop:
 ] → processOutput
 ```
 
-#### `Processor`
+#### `Processor` (v2 API)
 
 ```ts
 interface Processor {
   stage: PipelineStage;
+  /** @deprecated Use executeV2 instead */
   execute(context: PipelineContext): Promise<ProcessorResult>;
+  /** v2 API: receives ProcessorContext with state + control flow API */
+  executeV2?(context: ProcessorContext): Promise<PipelineContext | void>;
+  isNoOp?: boolean;
 }
 ```
 
-#### `ProcessorResult`
+#### `ProcessorContext`
+
+v2 API 上下文，提供状态访问和流程控制：
 
 ```ts
-type ProcessorResult = PipelineContext | AbortSignal;
+interface ProcessorContext {
+  state: PipelineContext;        // 可变状态
+  control: ProcessorControl;     // 流程控制 API
+}
+
+interface ProcessorControl {
+  abort(reason: string, retryFrom?: StageName): never;   // 中止 pipeline
+  suspend(suspensionId: string, checkpoint?: Partial<PipelineCheckpoint>): never;  // 挂起 pipeline
+}
 ```
 
-#### `AbortSignal`
+**v2 API 用法示例：**
+
+```ts
+const myProcessor: Processor = {
+  stage: 'gateTool',
+  async executeV2(ctx) {
+    const toolCalls = ctx.state.iteration.pendingToolCalls ?? [];
+    if (toolCalls.some(tc => dangerousTools.includes(tc.name))) {
+      ctx.control.abort('Dangerous tool not allowed');
+    }
+  },
+};
+```
+
+#### `ProcessorResult` (v1 API, deprecated)
+
+```ts
+/** @deprecated Use ProcessorContext with ctx.control.abort()/suspend() instead */
+type ProcessorResult = PipelineContext | AbortSignal | SuspensionSignal | ErrorResult;
+```
+
+#### `AbortSignal` / `SuspensionSignal`
+
+数据结构，用于 StreamEvent 和内部传递：
 
 ```ts
 interface AbortSignal {
   type: 'abort';
   reason: string;
-  retryFrom?: PipelineStage;
+  retryFrom?: StageName;
 }
+
+interface SuspensionSignal {
+  type: 'suspend';
+  suspensionId: string;
+  reason: string;
+  checkpoint: PipelineCheckpoint;
+}
+```
 ```
 
 ### Tool 系统
@@ -785,6 +830,103 @@ const caps = detectCapabilities('deepseek/deepseek-v4-flash');
 | `resolveDynamic` | `<T>(value: Dynamic<T>, ctx) => Promise<T>` | 解析 Dynamic 值 |
 | `matchProfile` | `(model, profiles) => ModelProfile \| undefined` | 匹配 ModelProfile |
 | `applyProfile` | `(ctx, profile) => PipelineContext` | 应用 Profile 到上下文 |
+
+### Adapters — 高层 Processor API
+
+提供简化 Processor 开发的高层工厂函数。
+
+```ts
+import { modifiers, gates, AbortControlFlow, SuspendControlFlow } from '@primo-ai/core';
+```
+
+#### `modifiers` — 上下文修改器
+
+创建简单修改上下文的 Processor：
+
+```ts
+// 修改消息历史
+const addContext = modifiers.message((msgs, ctx) => [
+  { role: 'user', content: `Context: ${ctx.request.metadata.context}` },
+  ...msgs,
+]);
+
+// 修改 system prompt
+const addTimestamp = modifiers.systemPrompt((prompt, ctx) =>
+  `${prompt}\n\nCurrent time: ${new Date().toISOString()}`
+);
+
+// 修改工具声明
+const addAdminTools = modifiers.tools((tools, ctx) =>
+  ctx.request.metadata.isAdmin ? [...tools, adminTool] : tools
+);
+
+// 修改 provider options
+const setTemperature = modifiers.providerOptions((opts, ctx) => ({
+  ...opts,
+  openai: { temperature: 0.7 },
+}));
+```
+
+| 工厂 | Stage | 说明 |
+|------|-------|------|
+| `modifiers.message(fn)` | `invokeLLM` | 修改 `session.messageHistory` |
+| `modifiers.systemPrompt(fn)` | `buildContext` | 修改 `agent.config.systemPrompt` |
+| `modifiers.tools(fn)` | `prepareStep` | 修改 `agent.toolDeclarations` |
+| `modifiers.providerOptions(fn)` | `invokeLLM` | 修改 `agent.providerOptions` |
+
+#### `gates` — 流程控制门
+
+创建控制 pipeline 流程的 Processor：
+
+```ts
+// 权限门控
+const permissionGate = gates.permission({
+  check: (toolName, args, ctx) => {
+    if (dangerousTools.includes(toolName)) return 'ask';    // 挂起等待审批
+    if (blockedTools.includes(toolName)) return 'deny';     // 中止
+    return 'allow';                                         // 继续
+  },
+  onDeny: (toolName) => `Tool '${toolName}' is not allowed`,
+});
+
+// Token 配额门控
+const quotaGate = gates.quota({
+  check: (usage, ctx) => !usage || usage.input + usage.output < 10000,
+  onExceeded: (usage) => `Token quota exceeded`,
+});
+
+// 成本门控
+const costGate = gates.cost({
+  maxCost: 1.0,
+  calculateCost: (usage, model) => {
+    const rates = { 'gpt-4': { input: 0.03, output: 0.06 } };
+    const r = rates[model] ?? { input: 0.001, output: 0.002 };
+    return (usage.input * r.input + usage.output * r.output) / 1000;
+  },
+});
+```
+
+| 工厂 | Stage | 说明 |
+|------|-------|------|
+| `gates.permission(config)` | `gateTool` | 工具调用权限检查，返回 `allow/deny/ask` |
+| `gates.quota(config)` | `gateLLM` | Token 配额检查 |
+| `gates.cost(config)` | `gateLLM` | 成本上限检查 |
+
+#### `AbortControlFlow` / `SuspendControlFlow`
+
+控制流错误类，由 `ctx.control.abort()/suspend()` 抛出：
+
+```ts
+import { AbortControlFlow, SuspendControlFlow, isAbortControlFlow, isSuspendControlFlow } from '@primo-ai/core';
+
+try {
+  ctx.control.abort('reason');
+} catch (e) {
+  if (isAbortControlFlow(e)) {
+    console.log(e.reason, e.retryFrom);
+  }
+}
+```
 
 ### 并发与容错
 

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { PluginManager } from '../src/plugin-manager.js';
 import { PipelineRunner } from '../src/pipeline.js';
 import { ToolRegistry } from '../src/tool-registry.js';
-import type { PipelineStage, PipelineContext, Processor, Tool, PluginRegistration, HarnessAPI, Hook } from '@primo-ai/sdk';
+import type { StageName, PipelineContext, Processor, Tool, PluginRegistration, HarnessAPI, Hook } from '@primo-ai/sdk';
 import { z } from 'zod';
 import path from 'node:path';
 
@@ -18,14 +18,13 @@ describe('PluginManager', () => {
   });
 
   it('allows plugin to register a processor via HarnessAPI', async () => {
-    const loggedStages: PipelineStage[] = [];
+    const loggedStages: StageName[] = [];
 
     const plugin = (api: HarnessAPI): PluginRegistration => {
       const logger: Processor = {
         stage: 'processInput',
-        execute: async (ctx) => {
+        execute: async () => {
           loggedStages.push('processInput');
-          return ctx;
         },
       };
       api.registerProcessor('processInput', logger);
@@ -263,9 +262,9 @@ describe('PluginManager', () => {
       const plugin = (api: HarnessAPI): PluginRegistration => {
         api.registerProcessor('processInput', {
           stage: 'processInput',
-          execute: async (ctx) => {
+          execute: async (pCtx) => {
             events.push('processor:processInput');
-            return { ...ctx, session: { ...ctx.session, custom: { ...ctx.session.custom, annotated: true } } };
+            pCtx.state.session.custom.annotated = true;
           },
         });
 

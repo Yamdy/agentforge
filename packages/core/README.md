@@ -16,6 +16,7 @@ This package provides the main building blocks of the AgentForge framework:
 - **StateMachine** -- Agent lifecycle states (pending/running/completed/paused/cancelled/error)
 - **ModelFactory** -- Canonical model resolution with pluggable gateways
 - **ContextBuilder** -- Assembles PipelineContext from config, tools, and prompt fragments
+- **Adapters** -- High-level APIs for common processor patterns (modifiers, gates)
 
 ## Quick Example
 
@@ -105,6 +106,108 @@ Registers a plugin or processor. Accepts a `PluginFactory` function or a `Proces
 | `serialize` / `deserialize` | PipelineContext serialization for checkpoints |
 | `registerProvider` | Register a model provider factory |
 | `AgentForgeError` | Base error class with domain hierarchy |
+| `modifiers` | High-level processor factories for context mutation |
+| `gates` | High-level processor factories for flow control |
+| `AbortControlFlow` | Control flow error for abort |
+| `SuspendControlFlow` | Control flow error for suspend |
+
+## Processor API
+
+Processors implement a single, clean API:
+
+```typescript
+import type { Processor, ProcessorContext } from '@primo-ai/sdk';
+
+const myProcessor: Processor = {
+  stage: 'gateTool',
+  async execute(ctx: ProcessorContext) {
+    // Access state directly
+    const toolCalls = ctx.state.iteration.pendingToolCalls ?? [];
+
+    // Flow control via ctx.control
+    if (toolCalls.some(tc => tc.name === 'dangerous')) {
+      ctx.control.abort('Dangerous tool not allowed');
+    }
+
+    // In-place mutation (no return needed)
+    ctx.state.session.messageHistory = [...];
+  },
+};
+```
+
+**Key features:**
+- `ctx.state` provides mutable access to `PipelineContext`
+- `ctx.control.abort(reason)` / `ctx.control.suspend(id)` for flow control (throws special error)
+- Return `void` for in-place mutation, or return modified `PipelineContext`
+- No need to return signal objects manually
+
+## Adapters API
+
+High-level factories for common processor patterns:
+
+### Modifiers
+
+Simple context mutation:
+
+```typescript
+import { modifiers } from '@primo-ai/core';
+
+// Modify message history
+const addContext = modifiers.message((msgs, ctx) => [
+  { role: 'user', content: `Context: ${ctx.request.metadata.context}` },
+  ...msgs,
+]);
+
+// Modify system prompt
+const addTimestamp = modifiers.systemPrompt((prompt, ctx) =>
+  `${prompt}\n\nCurrent time: ${new Date().toISOString()}`
+);
+
+// Modify tools
+const addAdminTools = modifiers.tools((tools, ctx) =>
+  ctx.request.metadata.isAdmin ? [...tools, adminTool] : tools
+);
+
+// Modify provider options
+const setTemperature = modifiers.providerOptions((opts, ctx) => ({
+  ...opts,
+  openai: { temperature: 0.7 },
+}));
+```
+
+### Gates
+
+Flow control (abort/suspend):
+
+```typescript
+import { gates } from '@primo-ai/core';
+
+// Permission gate
+const permissionGate = gates.permission({
+  check: (toolName, args, ctx) => {
+    if (dangerousTools.includes(toolName)) return 'ask';
+    if (blockedTools.includes(toolName)) return 'deny';
+    return 'allow';
+  },
+  onDeny: (toolName) => `Tool '${toolName}' is not allowed`,
+});
+
+// Token quota gate
+const quotaGate = gates.quota({
+  check: (usage, ctx) => !usage || usage.input + usage.output < 10000,
+  onExceeded: (usage) => `Token quota exceeded: ${usage?.input ?? 0} tokens`,
+});
+
+// Cost gate
+const costGate = gates.cost({
+  maxCost: 1.0, // $1 max
+  calculateCost: (usage, model) => {
+    const rates = { 'gpt-4': { input: 0.03, output: 0.06 } };
+    const r = rates[model] ?? { input: 0.001, output: 0.002 };
+    return (usage.input * r.input + usage.output * r.output) / 1000;
+  },
+});
+```
 
 ## Dependencies
 

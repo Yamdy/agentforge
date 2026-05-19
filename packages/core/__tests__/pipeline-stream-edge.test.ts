@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { PipelineRunner } from '../src/pipeline.js';
-import type { PipelineContext, StreamEvent } from '@primo-ai/sdk';
+import type { PipelineContext, ProcessorContext, StreamEvent } from '@primo-ai/sdk';
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
@@ -17,16 +17,12 @@ describe('PipelineRunner stream edge cases', () => {
     const runner = new PipelineRunner();
     runner.register({
       stage: 'invokeLLM',
-      execute: async (ctx) => ({
-        ...ctx,
-        iteration: {
-          ...ctx.iteration,
-          fullStream: (async function* () {
-            yield { type: 'tool-call', toolCallId: 'tc-1', toolName: 'echo', args: { input: 'hi' } };
-            yield { type: 'finish-step', usage: { inputTokens: { total: 5, noCache: 5 }, outputTokens: { total: 3, text: 3 } } };
-          })(),
-        },
-      }),
+      execute: async (pCtx: ProcessorContext) => {
+        pCtx.state.iteration.fullStream = (async function* () {
+          yield { type: 'tool-call', toolCallId: 'tc-1', toolName: 'echo', args: { input: 'hi' } };
+          yield { type: 'finish-step', usage: { inputTokens: { total: 5, noCache: 5 }, outputTokens: { total: 3, text: 3 } } };
+        })();
+      },
     });
 
     const events: StreamEvent[] = [];
@@ -49,17 +45,13 @@ describe('PipelineRunner stream edge cases', () => {
     const runner = new PipelineRunner();
     runner.register({
       stage: 'invokeLLM',
-      execute: async (ctx) => ({
-        ...ctx,
-        iteration: {
-          ...ctx.iteration,
-          fullStream: (async function* () {
-            yield { type: 'reasoning', textDelta: 'thinking...' };
-            yield { type: 'text-delta', text: 'answer' };
-            yield { type: 'finish-step', usage: { inputTokens: { total: 5, noCache: 5 }, outputTokens: { total: 3, text: 3 } } };
-          })(),
-        },
-      }),
+      execute: async (pCtx: ProcessorContext) => {
+        pCtx.state.iteration.fullStream = (async function* () {
+          yield { type: 'reasoning', textDelta: 'thinking...' };
+          yield { type: 'text-delta', text: 'answer' };
+          yield { type: 'finish-step', usage: { inputTokens: { total: 5, noCache: 5 }, outputTokens: { total: 3, text: 3 } } };
+        })();
+      },
     });
 
     const events: StreamEvent[] = [];
@@ -76,17 +68,13 @@ describe('PipelineRunner stream edge cases', () => {
     const runner = new PipelineRunner();
     runner.register({
       stage: 'invokeLLM',
-      execute: async (ctx) => ({
-        ...ctx,
-        iteration: {
-          ...ctx.iteration,
-          fullStream: (async function* () {
-            yield { type: 'text-delta', text: 'answer' };
-            yield { type: 'finish-step', usage: { inputTokens: { total: 5, noCache: 5 }, outputTokens: { total: 3, text: 3 } } };
-          })(),
-          reasoningPromise: Promise.resolve('deferred reasoning'),
-        },
-      }),
+      execute: async (pCtx: ProcessorContext) => {
+        pCtx.state.iteration.fullStream = (async function* () {
+          yield { type: 'text-delta', text: 'answer' };
+          yield { type: 'finish-step', usage: { inputTokens: { total: 5, noCache: 5 }, outputTokens: { total: 3, text: 3 } } };
+        })();
+        pCtx.state.iteration.reasoningPromise = Promise.resolve('deferred reasoning');
+      },
     });
 
     const events: StreamEvent[] = [];
@@ -102,16 +90,12 @@ describe('PipelineRunner stream edge cases', () => {
     const runner = new PipelineRunner();
     runner.register({
       stage: 'invokeLLM',
-      execute: async (ctx) => ({
-        ...ctx,
-        iteration: {
-          ...ctx.iteration,
-          fullStream: (async function* () {
-            yield { type: 'text-delta', text: 'answer' };
-          })(),
-          usagePromise: Promise.resolve({ input: 42, output: 7 }),
-        },
-      }),
+      execute: async (pCtx: ProcessorContext) => {
+        pCtx.state.iteration.fullStream = (async function* () {
+          yield { type: 'text-delta', text: 'answer' };
+        })();
+        pCtx.state.iteration.usagePromise = Promise.resolve({ input: 42, output: 7 });
+      },
     });
 
     const events: StreamEvent[] = [];
@@ -127,15 +111,11 @@ describe('PipelineRunner stream edge cases', () => {
     const runner = new PipelineRunner();
     runner.register({
       stage: 'invokeLLM',
-      execute: async (ctx) => ({
-        ...ctx,
-        iteration: {
-          ...ctx.iteration,
-          fullStream: (async function* () {
-            yield { type: 'error', error: new Error('stream broke') };
-          })(),
-        },
-      }),
+      execute: async (pCtx: ProcessorContext) => {
+        pCtx.state.iteration.fullStream = (async function* () {
+          yield { type: 'error', error: new Error('stream broke') };
+        })();
+      },
     });
 
     const gen = runner.stream(makeContext(), ['invokeLLM']);
@@ -174,10 +154,9 @@ describe('PipelineRunner stream edge cases', () => {
     const runner = new PipelineRunner();
     runner.register({
       stage: 'processOutput',
-      execute: async (ctx) => ({
-        ...ctx,
-        iteration: { ...ctx.iteration, response: 'final answer' },
-      }),
+      execute: async (pCtx: ProcessorContext) => {
+        pCtx.state.iteration.response = 'final answer';
+      },
     });
 
     const events: StreamEvent[] = [];

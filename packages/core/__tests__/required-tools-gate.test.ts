@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createEvaluateIterationProcessor } from '../src/processors/evaluate-iteration.js';
 import { EventBus } from '../src/event-bus.js';
 import type { PipelineContext, Message, AgentConfig, ToolCall, ToolResult, Span } from '@primo-ai/sdk';
+import { ProcessorContextImpl } from '../src/processor-context.js';
 
 function makeContext(overrides?: {
   config?: Partial<AgentConfig>;
@@ -50,9 +51,9 @@ describe('requiredTools gate', () => {
       config: { requiredTools: ['search', 'calculate'] },
       history: [assistantWithToolCalls(['search'])],
     });
-
-    const result = await processor.execute(ctx) as PipelineContext;
-    expect(result.iteration.loopDirective?.action).toBe('continue');
+    const pCtx = new ProcessorContextImpl(ctx);
+    await processor.execute(pCtx);
+    expect(pCtx.state.iteration.loopDirective?.action).toBe('continue');
   });
 
   it('stops loop when all required tools have been called', async () => {
@@ -65,9 +66,9 @@ describe('requiredTools gate', () => {
         assistantWithToolCalls(['calculate']),
       ],
     });
-
-    const result = await processor.execute(ctx) as PipelineContext;
-    expect(result.iteration.loopDirective?.action).toBe('stop');
+    const pCtx = new ProcessorContextImpl(ctx);
+    await processor.execute(pCtx);
+    expect(pCtx.state.iteration.loopDirective?.action).toBe('stop');
   });
 
   it('counts pendingToolCalls from current iteration', async () => {
@@ -77,25 +78,25 @@ describe('requiredTools gate', () => {
       history: [],
       pendingToolCalls: [{ id: 'tc-0', name: 'search', args: {} }],
     });
-
-    const result = await processor.execute(ctx) as PipelineContext;
-    expect(result.iteration.loopDirective?.action).toBe('stop');
+    const pCtx = new ProcessorContextImpl(ctx);
+    await processor.execute(pCtx);
+    expect(pCtx.state.iteration.loopDirective?.action).toBe('stop');
   });
 
   it('no-ops when requiredTools is undefined', async () => {
     const processor = createEvaluateIterationProcessor();
     const ctx = makeContext({ config: {} });
-
-    const result = await processor.execute(ctx) as PipelineContext;
-    expect(result.iteration.loopDirective?.action).toBe('stop');
+    const pCtx = new ProcessorContextImpl(ctx);
+    await processor.execute(pCtx);
+    expect(pCtx.state.iteration.loopDirective?.action).toBe('stop');
   });
 
   it('no-ops when requiredTools is empty array', async () => {
     const processor = createEvaluateIterationProcessor();
     const ctx = makeContext({ config: { requiredTools: [] } });
-
-    const result = await processor.execute(ctx) as PipelineContext;
-    expect(result.iteration.loopDirective?.action).toBe('stop');
+    const pCtx = new ProcessorContextImpl(ctx);
+    await processor.execute(pCtx);
+    expect(pCtx.state.iteration.loopDirective?.action).toBe('stop');
   });
 
   it('token overflow still stops even when requiredTools incomplete', async () => {
@@ -104,9 +105,9 @@ describe('requiredTools gate', () => {
       config: { requiredTools: ['never_called'] },
       tokenUsage: { input: 90_000, output: 20_000 },
     });
-
-    const result = await processor.execute(ctx) as PipelineContext;
-    expect(result.iteration.loopDirective?.action).toBe('stop');
+    const pCtx = new ProcessorContextImpl(ctx);
+    await processor.execute(pCtx);
+    expect(pCtx.state.iteration.loopDirective?.action).toBe('stop');
   });
 
   it('emits required_tools:incomplete event via EventBus', async () => {
@@ -120,7 +121,7 @@ describe('requiredTools gate', () => {
       history: [assistantWithToolCalls(['search'])],
     });
 
-    await processor.execute(ctx);
+    await processor.execute(new ProcessorContextImpl(ctx));
     expect(emitted).toHaveLength(1);
     expect((emitted[0] as { uncalled: string[] }).uncalled).toEqual(['calculate']);
     expect((emitted[0] as { sessionId: string }).sessionId).toBe('s1');
@@ -137,7 +138,7 @@ describe('requiredTools gate', () => {
       history: [assistantWithToolCalls(['search'])],
     });
 
-    await processor.execute(ctx);
+    await processor.execute(new ProcessorContextImpl(ctx));
     expect(emitted).toHaveLength(0);
   });
 
@@ -159,7 +160,7 @@ describe('requiredTools gate', () => {
     });
     ctx.iteration.span = mockSpan as unknown as Span;
 
-    await processor.execute(ctx);
+    await processor.execute(new ProcessorContextImpl(ctx));
     expect(attributes['required_tools.incomplete']).toBe(true);
     expect(attributes['required_tools.uncalled']).toContain('calculate');
     expect(attributes['required_tools.uncalled']).toContain('fetch');
@@ -183,7 +184,7 @@ describe('requiredTools gate', () => {
     });
     ctx.iteration.span = mockSpan as unknown as Span;
 
-    await processor.execute(ctx);
+    await processor.execute(new ProcessorContextImpl(ctx));
     expect(attributes['required_tools.incomplete']).toBeUndefined();
   });
 
@@ -193,11 +194,11 @@ describe('requiredTools gate', () => {
       config: { requiredTools: ['search', 'calculate'] },
       history: [assistantWithToolCalls(['search'])],
     });
-
-    const result = await processor.execute(ctx) as PipelineContext;
-    expect(result.agent.promptFragments).toHaveLength(1);
-    expect(result.agent.promptFragments[0]).toContain('calculate');
-    expect(result.agent.promptFragments[0]).toContain('Required tools not yet called');
+    const pCtx = new ProcessorContextImpl(ctx);
+    await processor.execute(pCtx);
+    expect(pCtx.state.agent.promptFragments).toHaveLength(1);
+    expect(pCtx.state.agent.promptFragments[0]).toContain('calculate');
+    expect(pCtx.state.agent.promptFragments[0]).toContain('Required tools not yet called');
   });
 
   it('does not inject promptFragments when all required tools satisfied', async () => {
@@ -206,9 +207,9 @@ describe('requiredTools gate', () => {
       config: { requiredTools: ['search'] },
       history: [assistantWithToolCalls(['search'])],
     });
-
-    const result = await processor.execute(ctx) as PipelineContext;
-    expect(result.agent.promptFragments).toHaveLength(0);
+    const pCtx = new ProcessorContextImpl(ctx);
+    await processor.execute(pCtx);
+    expect(pCtx.state.agent.promptFragments).toHaveLength(0);
   });
 
   it('continues when requiredTools satisfied and toolResults present', async () => {
@@ -218,9 +219,9 @@ describe('requiredTools gate', () => {
       history: [assistantWithToolCalls(['search'])],
       toolResults: [{ toolCallId: 'tc-0', result: 'found' }],
     });
-
-    const result = await processor.execute(ctx) as PipelineContext;
-    expect(result.iteration.loopDirective?.action).toBe('continue');
+    const pCtx = new ProcessorContextImpl(ctx);
+    await processor.execute(pCtx);
+    expect(pCtx.state.iteration.loopDirective?.action).toBe('continue');
   });
 
   it('stops when requiredTools satisfied and no toolResults', async () => {
@@ -229,9 +230,9 @@ describe('requiredTools gate', () => {
       config: { requiredTools: ['search'] },
       history: [assistantWithToolCalls(['search'])],
     });
-
-    const result = await processor.execute(ctx) as PipelineContext;
-    expect(result.iteration.loopDirective?.action).toBe('stop');
+    const pCtx = new ProcessorContextImpl(ctx);
+    await processor.execute(pCtx);
+    expect(pCtx.state.iteration.loopDirective?.action).toBe('stop');
   });
 
   it('emits required_tools:unknown for unregistered tool names', async () => {
@@ -246,7 +247,7 @@ describe('requiredTools gate', () => {
       toolDeclarations: [{ name: 'search', description: 'Search tool' }],
     });
 
-    await processor.execute(ctx);
+    await processor.execute(new ProcessorContextImpl(ctx));
     expect(emitted).toHaveLength(1);
     expect((emitted[0] as { unknown: string[] }).unknown).toEqual(['nonExistent']);
   });
@@ -263,15 +264,14 @@ describe('requiredTools gate', () => {
       toolDeclarations: [{ name: 'search', description: 'Search tool' }],
     });
 
-    await processor.execute(ctx);
-    await processor.execute(ctx);
+    await processor.execute(new ProcessorContextImpl(ctx));
+    await processor.execute(new ProcessorContextImpl(ctx));
     expect(emitted).toHaveLength(1);
   });
 
   // ---- requiredToolPolicy: 'enforce' ----
 
   it('with enforce policy, injects synthetic pendingToolCalls for exhausted tools instead of stopping', async () => {
-    // Simulate 3 retries exhausted by calling processor 3 times with no tool calls in history
     const processor = createEvaluateIterationProcessor();
     const baseCtx = makeContext({
       config: { requiredTools: ['search', 'calculate'], requiredToolPolicy: 'enforce' },
@@ -279,23 +279,26 @@ describe('requiredTools gate', () => {
     });
 
     // First two calls: advisory continue (not exhausted yet)
-    let result = await processor.execute(baseCtx) as PipelineContext;
-    expect(result.iteration.loopDirective?.action).toBe('continue');
+    let pCtx = new ProcessorContextImpl(baseCtx);
+    await processor.execute(pCtx);
+    expect(pCtx.state.iteration.loopDirective?.action).toBe('continue');
 
-    result = await processor.execute(baseCtx) as PipelineContext;
-    expect(result.iteration.loopDirective?.action).toBe('continue');
+    pCtx = new ProcessorContextImpl(baseCtx);
+    await processor.execute(pCtx);
+    expect(pCtx.state.iteration.loopDirective?.action).toBe('continue');
 
     // Third call: exhausted — enforce mode should inject synthetic calls and continue
-    result = await processor.execute(baseCtx) as PipelineContext;
-    expect(result.iteration.loopDirective?.action).toBe('continue');
-    expect(result.iteration.pendingToolCalls).toBeDefined();
-    expect(result.iteration.pendingToolCalls!.length).toBe(2);
+    pCtx = new ProcessorContextImpl(baseCtx);
+    await processor.execute(pCtx);
+    expect(pCtx.state.iteration.loopDirective?.action).toBe('continue');
+    expect(pCtx.state.iteration.pendingToolCalls).toBeDefined();
+    expect(pCtx.state.iteration.pendingToolCalls!.length).toBe(2);
 
-    const callNames = result.iteration.pendingToolCalls!.map(tc => tc.name);
+    const callNames = pCtx.state.iteration.pendingToolCalls!.map(tc => tc.name);
     expect(callNames).toContain('search');
     expect(callNames).toContain('calculate');
 
-    for (const tc of result.iteration.pendingToolCalls!) {
+    for (const tc of pCtx.state.iteration.pendingToolCalls!) {
       expect(tc.id).toMatch(/^required-/);
       expect(tc.args).toEqual({});
     }
@@ -309,13 +312,14 @@ describe('requiredTools gate', () => {
     });
 
     // Exhaust retries
-    await processor.execute(baseCtx);
-    await processor.execute(baseCtx);
-    const result = await processor.execute(baseCtx) as PipelineContext;
+    await processor.execute(new ProcessorContextImpl(baseCtx));
+    await processor.execute(new ProcessorContextImpl(baseCtx));
+    const pCtx = new ProcessorContextImpl(baseCtx);
+    await processor.execute(pCtx);
 
-    expect(result.iteration.loopDirective?.action).toBe('stop');
-    expect(result.iteration.pendingToolCalls).toBeUndefined();
-    expect(result.agent.promptFragments.length).toBeGreaterThan(0);
+    expect(pCtx.state.iteration.loopDirective?.action).toBe('stop');
+    expect(pCtx.state.iteration.pendingToolCalls).toBeUndefined();
+    expect(pCtx.state.agent.promptFragments.length).toBeGreaterThan(0);
   });
 
   it('with advise policy (implicit default when undefined), stops loop when exhausted', async () => {
@@ -326,12 +330,13 @@ describe('requiredTools gate', () => {
     });
 
     // Exhaust retries
-    await processor.execute(baseCtx);
-    await processor.execute(baseCtx);
-    const result = await processor.execute(baseCtx) as PipelineContext;
+    await processor.execute(new ProcessorContextImpl(baseCtx));
+    await processor.execute(new ProcessorContextImpl(baseCtx));
+    const pCtx = new ProcessorContextImpl(baseCtx);
+    await processor.execute(pCtx);
 
-    expect(result.iteration.loopDirective?.action).toBe('stop');
-    expect(result.iteration.pendingToolCalls).toBeUndefined();
+    expect(pCtx.state.iteration.loopDirective?.action).toBe('stop');
+    expect(pCtx.state.iteration.pendingToolCalls).toBeUndefined();
   });
 
   it('with enforce policy, emits required_tools:enforced event when injecting synthetic calls', async () => {
@@ -346,9 +351,9 @@ describe('requiredTools gate', () => {
     });
 
     // Exhaust retries
-    await processor.execute(baseCtx);
-    await processor.execute(baseCtx);
-    await processor.execute(baseCtx);
+    await processor.execute(new ProcessorContextImpl(baseCtx));
+    await processor.execute(new ProcessorContextImpl(baseCtx));
+    await processor.execute(new ProcessorContextImpl(baseCtx));
 
     expect(emitted).toHaveLength(1);
     expect((emitted[0] as { tools: string[] }).tools).toEqual(['search']);
@@ -363,14 +368,15 @@ describe('requiredTools gate', () => {
     });
 
     // Exhaust retries (calculate never called)
-    await processor.execute(baseCtx);
-    await processor.execute(baseCtx);
-    const result = await processor.execute(baseCtx) as PipelineContext;
+    await processor.execute(new ProcessorContextImpl(baseCtx));
+    await processor.execute(new ProcessorContextImpl(baseCtx));
+    const pCtx = new ProcessorContextImpl(baseCtx);
+    await processor.execute(pCtx);
 
-    expect(result.iteration.loopDirective?.action).toBe('continue');
-    expect(result.iteration.pendingToolCalls).toBeDefined();
-    expect(result.iteration.pendingToolCalls!.length).toBe(1);
-    expect(result.iteration.pendingToolCalls![0].name).toBe('calculate');
+    expect(pCtx.state.iteration.loopDirective?.action).toBe('continue');
+    expect(pCtx.state.iteration.pendingToolCalls).toBeDefined();
+    expect(pCtx.state.iteration.pendingToolCalls!.length).toBe(1);
+    expect(pCtx.state.iteration.pendingToolCalls![0].name).toBe('calculate');
   });
 
   it('enforce policy sets span attributes for enforced tools', async () => {
@@ -392,9 +398,9 @@ describe('requiredTools gate', () => {
     baseCtx.iteration.span = mockSpan as unknown as Span;
 
     // Exhaust retries
-    await processor.execute(baseCtx);
-    await processor.execute(baseCtx);
-    await processor.execute(baseCtx);
+    await processor.execute(new ProcessorContextImpl(baseCtx));
+    await processor.execute(new ProcessorContextImpl(baseCtx));
+    await processor.execute(new ProcessorContextImpl(baseCtx));
 
     expect(attributes['required_tools.enforced']).toBe('search');
   });

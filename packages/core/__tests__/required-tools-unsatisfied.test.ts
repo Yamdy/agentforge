@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { EventBus } from '../src/event-bus.js';
 import { createEvaluateIterationProcessor } from '../src/processors/evaluate-iteration.js';
 import type { PipelineContext, Span } from '@primo-ai/sdk';
+import { ProcessorContextImpl } from '../src/processor-context.js';
 
 function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
   return {
@@ -67,7 +68,7 @@ describe('F-I: requiredTools unsatisfied observability', () => {
       },
     });
 
-    await processor.execute(ctx);
+    await processor.execute(new ProcessorContextImpl(ctx));
 
     expect(events.length).toBeGreaterThanOrEqual(1);
     const data = events[0].data as Record<string, unknown>;
@@ -113,7 +114,7 @@ describe('F-I: requiredTools unsatisfied observability', () => {
       },
     });
 
-    await processor.execute(ctx);
+    await processor.execute(new ProcessorContextImpl(ctx));
 
     expect(events).toHaveLength(0);
   });
@@ -142,7 +143,7 @@ describe('F-I: requiredTools unsatisfied observability', () => {
       },
     });
 
-    await processor.execute(ctx);
+    await processor.execute(new ProcessorContextImpl(ctx));
 
     expect(events).toHaveLength(0);
   });

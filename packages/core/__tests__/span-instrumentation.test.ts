@@ -84,7 +84,7 @@ describe('PipelineRunner span names', () => {
     const tracer = collector.createTracer();
     const runner = new PipelineRunner({ tracer });
 
-    runner.register({ stage: 'processInput', execute: async (ctx) => ctx });
+    runner.register({ stage: 'processInput', execute: async () => {} });
 
     await runner.run(makeContext(), ['processInput']);
 

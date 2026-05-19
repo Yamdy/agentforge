@@ -4,6 +4,7 @@ import type { PipelineContext } from '@primo-ai/sdk';
 import type { ToolRegistry } from '../src/tool-registry.js';
 import type { HookManager } from '../src/hook-manager.js';
 import type { LLMInvoker } from '../src/llm-invoker.js';
+import { ProcessorContextImpl } from '../src/processor-context.js';
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
@@ -64,7 +65,7 @@ describe('F-9/F-11: system prompt assembly', () => {
       } as unknown as PipelineContext['agent'],
     });
 
-    await processor.execute(ctx);
+    await processor.execute(new ProcessorContextImpl(ctx));
 
     // BUG: currently invokeLLM reads ctx.agent.config.systemPrompt ("raw config prompt")
     // FIX: should read ctx.agent.systemPrompt ("raw config prompt\n\ninjected fragment from plugin")
@@ -98,7 +99,7 @@ describe('F-9/F-11: system prompt assembly', () => {
     // No systemPrompt assembled (no buildContext stage ran)
     const ctx = makeContext();
 
-    await processor.execute(ctx);
+    await processor.execute(new ProcessorContextImpl(ctx));
 
     expect(capturedSystemPrompt).toBe('raw config prompt');
   });
@@ -144,7 +145,7 @@ describe('F-9/F-11: system prompt assembly', () => {
       } as unknown as PipelineContext['agent'],
     });
 
-    await processor.execute(ctx);
+    await processor.execute(new ProcessorContextImpl(ctx));
 
     // The system prompt should include the evaluateIteration-added fragment
     expect(capturedSystemPrompt).toContain('Required tools not yet called');

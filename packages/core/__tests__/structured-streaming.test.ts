@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { PipelineRunner } from '../src/pipeline.js';
 import type { PipelineContext, StreamEvent, ContentBlock } from '@primo-ai/sdk';
+import { ProcessorContextImpl } from '../src/processor-context.js';
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
@@ -21,16 +22,12 @@ describe('Phase 3: Structured Streaming Events', () => {
       const runner = new PipelineRunner();
       runner.register({
         stage: 'invokeLLM',
-        execute: async (ctx) => ({
-          ...ctx,
-          iteration: {
-            ...ctx.iteration,
-            fullStream: (async function* () {
+        execute: async (pCtx) => {
+          pCtx.state.iteration.fullStream = (async function* () {
               yield { type: 'text-delta', text: 'hello' };
               yield { type: 'finish-step', usage: { inputTokens: { total: 5, noCache: 5 }, outputTokens: { total: 1, text: 1 } } };
-            })(),
-          },
-        }),
+            })();
+        },
       });
 
       const events: StreamEvent[] = [];
@@ -48,17 +45,13 @@ describe('Phase 3: Structured Streaming Events', () => {
       const runner = new PipelineRunner();
       runner.register({
         stage: 'invokeLLM',
-        execute: async (ctx) => ({
-          ...ctx,
-          iteration: {
-            ...ctx.iteration,
-            fullStream: (async function* () {
+        execute: async (pCtx) => {
+          pCtx.state.iteration.fullStream = (async function* () {
               yield { type: 'text-delta', text: 'hel' };
               yield { type: 'text-delta', text: 'lo' };
               yield { type: 'finish-step', usage: { inputTokens: { total: 5, noCache: 5 }, outputTokens: { total: 2, text: 2 } } };
-            })(),
-          },
-        }),
+            })();
+        },
       });
 
       const events: StreamEvent[] = [];
@@ -78,17 +71,13 @@ describe('Phase 3: Structured Streaming Events', () => {
       const runner = new PipelineRunner();
       runner.register({
         stage: 'invokeLLM',
-        execute: async (ctx) => ({
-          ...ctx,
-          iteration: {
-            ...ctx.iteration,
-            fullStream: (async function* () {
+        execute: async (pCtx) => {
+          pCtx.state.iteration.fullStream = (async function* () {
               yield { type: 'reasoning', textDelta: 'thinking...' };
               yield { type: 'text-delta', text: 'answer' };
               yield { type: 'finish-step', usage: { inputTokens: { total: 10, noCache: 10 }, outputTokens: { total: 2, text: 2 } } };
-            })(),
-          },
-        }),
+            })();
+        },
       });
 
       const events: StreamEvent[] = [];
@@ -109,17 +98,13 @@ describe('Phase 3: Structured Streaming Events', () => {
       const runner = new PipelineRunner();
       runner.register({
         stage: 'invokeLLM',
-        execute: async (ctx) => ({
-          ...ctx,
-          iteration: {
-            ...ctx.iteration,
-            fullStream: (async function* () {
+        execute: async (pCtx) => {
+          pCtx.state.iteration.fullStream = (async function* () {
               yield { type: 'text-delta', text: 'calling' };
               yield { type: 'tool-call', toolCallId: 'tc1', toolName: 'search', args: { q: 'a' } };
               yield { type: 'finish-step', usage: { inputTokens: { total: 10, noCache: 10 }, outputTokens: { total: 2, text: 2 } } };
-            })(),
-          },
-        }),
+            })();
+        },
       });
 
       const events: StreamEvent[] = [];
@@ -137,16 +122,12 @@ describe('Phase 3: Structured Streaming Events', () => {
       const runner = new PipelineRunner();
       runner.register({
         stage: 'invokeLLM',
-        execute: async (ctx) => ({
-          ...ctx,
-          iteration: {
-            ...ctx.iteration,
-            fullStream: (async function* () {
+        execute: async (pCtx) => {
+          pCtx.state.iteration.fullStream = (async function* () {
               yield { type: 'text-delta', text: 'hi' };
               yield { type: 'finish-step', usage: { inputTokens: { total: 5, noCache: 5 }, outputTokens: { total: 1, text: 1 } } };
-            })(),
-          },
-        }),
+            })();
+        },
       });
 
       const events: StreamEvent[] = [];
@@ -164,17 +145,13 @@ describe('Phase 3: Structured Streaming Events', () => {
       const runner = new PipelineRunner();
       runner.register({
         stage: 'invokeLLM',
-        execute: async (ctx) => ({
-          ...ctx,
-          iteration: {
-            ...ctx.iteration,
-            fullStream: (async function* () {
+        execute: async (pCtx) => {
+          pCtx.state.iteration.fullStream = (async function* () {
               yield { type: 'text-delta', text: 'hello' };
               yield { type: 'tool-call', toolCallId: 'tc1', toolName: 'search', args: {} };
               yield { type: 'finish-step', usage: { inputTokens: { total: 5, noCache: 5 }, outputTokens: { total: 1, text: 1 } } };
-            })(),
-          },
-        }),
+            })();
+        },
       });
 
       const events: StreamEvent[] = [];
@@ -196,16 +173,12 @@ describe('Phase 3: Structured Streaming Events', () => {
       const runner = new PipelineRunner();
       runner.register({
         stage: 'invokeLLM',
-        execute: async (ctx) => ({
-          ...ctx,
-          iteration: {
-            ...ctx.iteration,
-            fullStream: (async function* () {
+        execute: async (pCtx) => {
+          pCtx.state.iteration.fullStream = (async function* () {
               yield { type: 'text-delta', text: 'response' };
               yield { type: 'finish-step', usage: { inputTokens: { total: 10, noCache: 10 }, outputTokens: { total: 3, text: 3 } } };
-            })(),
-          },
-        }),
+            })();
+        },
       });
 
       const events: StreamEvent[] = [];

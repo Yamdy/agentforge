@@ -8,7 +8,8 @@ import { PipelineRunner } from '../src/pipeline.js';
 import { HookManager } from '../src/hook-manager.js';
 import { EventBus } from '../src/event-bus.js';
 import { JsonlCheckpointStore } from '../src/checkpoint-store.js';
-import type { PipelineContext, Processor, PipelineStage, ErrorHookInput } from '@primo-ai/sdk';
+import { ProcessorContextImpl } from '../src/processor-context.js';
+import type { PipelineContext, Processor, StageName, ErrorHookInput, ProcessorContext } from '@primo-ai/sdk';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -24,15 +25,19 @@ function makeCtx(overrides?: Partial<PipelineContext>): PipelineContext {
   };
 }
 
+function makePctx(overrides?: Partial<PipelineContext>): ProcessorContext {
+  return new ProcessorContextImpl(makeCtx(overrides));
+}
+
 /** Register all loop stages as pass-through processors */
-function registerPassThroughProcessors(runner: PipelineRunner, overrides?: Partial<Record<PipelineStage, Processor>>) {
-  const stages: PipelineStage[] = [
+function registerPassThroughProcessors(runner: PipelineRunner, overrides?: Partial<Record<StageName, Processor>>) {
+  const stages: StageName[] = [
     'processInput', 'buildContext', 'prepareStep', 'invokeLLM',
     'processStepOutput', 'gateTool', 'executeTools', 'evaluateIteration', 'processOutput',
   ];
   for (const stage of stages) {
     const override = overrides?.[stage];
-    runner.register(override ?? { stage, execute: async (ctx) => ctx });
+    runner.register(override ?? { stage, execute: async () => {} });
   }
 }
 
@@ -41,17 +46,15 @@ function registerCompletingProcessors(runner: PipelineRunner) {
   registerPassThroughProcessors(runner, {
     invokeLLM: {
       stage: 'invokeLLM',
-      execute: async (ctx: PipelineContext) => ({
-        ...ctx,
-        iteration: { ...ctx.iteration, response: 'done' },
-      }),
+      execute: async (pCtx) => {
+        pCtx.state.iteration.response = 'done';
+      },
     },
     evaluateIteration: {
       stage: 'evaluateIteration',
-      execute: async (ctx: PipelineContext) => ({
-        ...ctx,
-        iteration: { ...ctx.iteration, loopDirective: { action: 'stop' as const } },
-      }),
+      execute: async (pCtx) => {
+        pCtx.state.iteration.loopDirective = { action: 'stop' as const };
+      },
     },
   });
 }
@@ -154,13 +157,13 @@ describe('G2: default gateTool processor', () => {
     const gateToolProcessor = processors.find((p: Processor) => p.stage === 'gateTool');
     expect(gateToolProcessor).toBeDefined();
 
-    const ctx = makeCtx({
+    const pCtx = makePctx({
       iteration: { step: 0, pendingToolCalls: [{ id: 'call_1', name: 'any_tool', args: {} }] },
     });
 
-    const result = await gateToolProcessor!.execute(ctx);
-    expect(result).toEqual(ctx);
-    expect('type' in (result as unknown as Record<string, unknown>)).toBe(false);
+    await gateToolProcessor!.execute(pCtx);
+    // gateTool is a no-op pass-through: state unchanged
+    expect(pCtx.state.iteration.pendingToolCalls).toEqual([{ id: 'call_1', name: 'any_tool', args: {} }]);
   });
 
   it('gateTool processor with no pending tool calls passes through', async () => {
@@ -168,9 +171,9 @@ describe('G2: default gateTool processor', () => {
     const processors = (agent.pipelineRunner as unknown as { processors: Processor[] }).processors;
     const gateToolProcessor = processors.find((p: Processor) => p.stage === 'gateTool');
 
-    const ctx = makeCtx({ iteration: { step: 0 } });
-    const result = await gateToolProcessor!.execute(ctx);
-    expect(result).toEqual(ctx);
+    const pCtx = makePctx({ iteration: { step: 0 } });
+    await gateToolProcessor!.execute(pCtx);
+    expect(pCtx.state.iteration.step).toBe(0);
   });
 });
 
@@ -184,7 +187,7 @@ describe('G3: configurable token overflow threshold', () => {
     const processor = createEvaluateIterationProcessor({});
 
     // 90k < 100k default, has tool results → continue (not overflow stop)
-    const ctx = makeCtx({
+    const pCtx = makePctx({
       iteration: {
         step: 0,
         tokenUsage: { input: 60_000, output: 30_000 },
@@ -197,8 +200,8 @@ describe('G3: configurable token overflow threshold', () => {
       },
     });
 
-    const result = await processor.execute(ctx);
-    expect((result as PipelineContext).iteration.loopDirective?.action).toBe('continue');
+    await processor.execute(pCtx);
+    expect(pCtx.state.iteration.loopDirective?.action).toBe('continue');
   });
 
   it('evaluateIteration respects configurable maxTotalTokens — overflow triggers stop', async () => {
@@ -208,7 +211,7 @@ describe('G3: configurable token overflow threshold', () => {
     });
 
     // 90k > 50k threshold → overflow stop (overrides hasToolResults)
-    const ctx = makeCtx({
+    const pCtx = makePctx({
       iteration: {
         step: 0,
         tokenUsage: { input: 60_000, output: 30_000 },
@@ -221,8 +224,8 @@ describe('G3: configurable token overflow threshold', () => {
       },
     });
 
-    const result = await processor.execute(ctx);
-    expect((result as PipelineContext).iteration.loopDirective?.action).toBe('stop');
+    await processor.execute(pCtx);
+    expect(pCtx.state.iteration.loopDirective?.action).toBe('stop');
   });
 
   it('evaluateIteration with high maxTotalTokens — no overflow, tool results → continue', async () => {
@@ -232,7 +235,7 @@ describe('G3: configurable token overflow threshold', () => {
     });
 
     // 90k < 200k threshold → no overflow, has tool results → continue
-    const ctx = makeCtx({
+    const pCtx = makePctx({
       iteration: {
         step: 0,
         tokenUsage: { input: 60_000, output: 30_000 },
@@ -245,8 +248,8 @@ describe('G3: configurable token overflow threshold', () => {
       },
     });
 
-    const result = await processor.execute(ctx);
-    expect((result as PipelineContext).iteration.loopDirective?.action).toBe('continue');
+    await processor.execute(pCtx);
+    expect(pCtx.state.iteration.loopDirective?.action).toBe('continue');
   });
 });
 
@@ -287,7 +290,7 @@ describe('G4: PipelineRunner fires error hook on stage failure', () => {
     const errorHookCalls: ErrorHookInput[] = [];
     hm.register({ point: 'error', handler: (input: unknown) => { errorHookCalls.push(input as ErrorHookInput); } });
 
-    runner.register({ stage: 'processInput', execute: async (ctx) => ctx });
+    runner.register({ stage: 'processInput', execute: async () => {} });
     runner.register({
       stage: 'buildContext',
       execute: async () => { throw new Error('buildContext boom'); },

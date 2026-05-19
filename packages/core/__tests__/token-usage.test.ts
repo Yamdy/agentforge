@@ -4,6 +4,7 @@ import type { PipelineContext } from '@primo-ai/sdk';
 import { PipelineRunner } from '../src/pipeline.js';
 import { createMockLanguageModel } from './helpers.js';
 import { registerProvider } from '../src/model-resolver.js';
+import { ProcessorContextImpl } from '../src/processor-context.js';
 
 describe('Token usage extraction', () => {
   it('stores input/output token counts in pipeline context', async () => {
@@ -14,27 +15,21 @@ describe('Token usage extraction', () => {
     const runner = new PipelineRunner();
     runner.register({
       stage: 'invokeLLM',
-      execute: async (ctx) => {
-        const result = streamText({ model, prompt: ctx.request.input });
+      execute: async (pCtx) => {
+        const result = streamText({ model, prompt: pCtx.state.request.input });
         const chunks: string[] = [];
         for await (const c of result.textStream) { chunks.push(c); }
         const usage = await result.usage;
-        return {
-          ...ctx,
-          iteration: {
-            ...ctx.iteration,
-            response: chunks.join(''),
-            tokenUsage: {
-              input: typeof usage?.inputTokens === 'number' ? usage.inputTokens : (usage?.inputTokens as unknown as { total?: number })?.total ?? 0,
-              output: typeof usage?.outputTokens === 'number' ? usage.outputTokens : (usage?.outputTokens as unknown as { total?: number })?.total ?? 0,
-            },
-          },
+        pCtx.state.iteration.response = chunks.join('');
+        pCtx.state.iteration.tokenUsage = {
+          input: typeof usage?.inputTokens === 'number' ? usage.inputTokens : (usage?.inputTokens as unknown as { total?: number })?.total ?? 0,
+          output: typeof usage?.outputTokens === 'number' ? usage.outputTokens : (usage?.outputTokens as unknown as { total?: number })?.total ?? 0,
         };
       },
     });
     runner.register({
       stage: 'processOutput',
-      execute: async (ctx) => { resultContext = ctx; return ctx; },
+      execute: async (pCtx) => { resultContext = pCtx.state; },
     });
 
     await runner.run(

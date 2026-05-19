@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 const stageLogger: Processor = {
   stage: 'processInput',
-  execute: async (ctx) => ctx,
+  execute: async () => {},
 };
 
 const pingTool: Tool<{ message: string }, string> = {

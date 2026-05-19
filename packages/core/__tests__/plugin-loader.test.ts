@@ -77,7 +77,7 @@ describe('PluginLoader', () => {
       const factory: PluginFactory = (api) => {
         api.registerProcessor('processOutput', {
           stage: 'processOutput',
-          execute: async (ctx) => ctx,
+          execute: async () => {},
         });
       };
       pm.initializePlugin(factory);

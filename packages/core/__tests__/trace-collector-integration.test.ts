@@ -3,6 +3,7 @@ import { PipelineRunner } from '../src/pipeline.js';
 import type { PipelineContext, Span } from '@primo-ai/sdk';
 import { TraceCollector, formatTraceJson, formatTraceConsole } from '@primo-ai/observability';
 import { SpanType } from '@primo-ai/sdk';
+import { ProcessorContextImpl } from '../src/processor-context.js';
 
 function makeContext(): PipelineContext {
   return {
@@ -19,9 +20,9 @@ describe('TraceCollector + PipelineRunner integration', () => {
     const tracer = collector.createTracer();
     const runner = new PipelineRunner({ tracer });
 
-    runner.register({ stage: 'processInput', execute: async (ctx) => ctx });
-    runner.register({ stage: 'invokeLLM', execute: async (ctx) => ctx });
-    runner.register({ stage: 'processOutput', execute: async (ctx) => ctx });
+    runner.register({ stage: 'processInput', execute: async () => {} });
+    runner.register({ stage: 'invokeLLM', execute: async () => {} });
+    runner.register({ stage: 'processOutput', execute: async () => {} });
 
     await runner.run(makeContext(), ['processInput', 'invokeLLM', 'processOutput']);
 
@@ -39,7 +40,7 @@ describe('TraceCollector + PipelineRunner integration', () => {
     const tracer = collector.createTracer();
     const runner = new PipelineRunner({ tracer });
 
-    runner.register({ stage: 'processInput', execute: async (ctx) => ctx });
+    runner.register({ stage: 'processInput', execute: async () => {} });
 
     await runner.run(makeContext(), ['processInput']);
 
@@ -57,8 +58,8 @@ describe('TraceCollector + PipelineRunner integration', () => {
     const tracer = collector.createTracer();
     const runner = new PipelineRunner({ tracer });
 
-    runner.register({ stage: 'processInput', execute: async (ctx) => ctx });
-    runner.register({ stage: 'invokeLLM', execute: async (ctx) => ctx });
+    runner.register({ stage: 'processInput', execute: async () => {} });
+    runner.register({ stage: 'invokeLLM', execute: async () => {} });
 
     await runner.run(makeContext(), ['processInput', 'invokeLLM']);
 
@@ -73,8 +74,8 @@ describe('TraceCollector + PipelineRunner integration', () => {
     const tracer = collector.createTracer();
     const runner = new PipelineRunner({ tracer });
 
-    runner.register({ stage: 'processInput', execute: async (ctx) => ctx });
-    runner.register({ stage: 'invokeLLM', execute: async (ctx) => ctx });
+    runner.register({ stage: 'processInput', execute: async () => {} });
+    runner.register({ stage: 'invokeLLM', execute: async () => {} });
 
     await runner.run(makeContext(), ['processInput', 'invokeLLM']);
 
@@ -91,7 +92,7 @@ describe('TraceCollector + PipelineRunner integration', () => {
     const tracer = collector.createTracer();
     const runner = new PipelineRunner({ tracer });
 
-    runner.register({ stage: 'processInput', execute: async (ctx) => ctx });
+    runner.register({ stage: 'processInput', execute: async () => {} });
 
     await runner.run(makeContext(), ['processInput']);
 
@@ -112,10 +113,9 @@ describe('TraceCollector + PipelineRunner integration', () => {
 
     runner.register({
       stage: 'processInput',
-      execute: async (ctx) => {
-        const span = ctx.iteration.span as Span;
-        span.setAttribute('input.length', ctx.request.input.length);
-        return ctx;
+      execute: async (pCtx) => {
+        const span = pCtx.state.iteration.span as Span;
+        span.setAttribute('input.length', pCtx.state.request.input.length);
       },
     });
 
@@ -133,10 +133,9 @@ describe('TraceCollector + PipelineRunner integration', () => {
 
     runner.register({
       stage: 'invokeLLM',
-      execute: async (ctx) => ({
-        ...ctx,
-        iteration: { ...ctx.iteration, _modelString: 'gpt-4o' },
-      }),
+      execute: async (pCtx) => {
+        (pCtx.state.iteration as unknown as Record<string, unknown>)._modelString = 'gpt-4o';
+      },
     });
 
     await runner.run(makeContext(), ['invokeLLM']);
@@ -158,14 +157,10 @@ describe('TraceCollector + PipelineRunner integration', () => {
 
     runner.register({
       stage: 'invokeLLM',
-      execute: async (ctx) => ({
-        ...ctx,
-        iteration: {
-          ...ctx.iteration,
-          _modelString: 'gpt-4',
-          fullStream: mockStream,
-        },
-      }),
+      execute: async (pCtx) => {
+        pCtx.state.iteration.fullStream = mockStream;
+        (pCtx.state.iteration as unknown as Record<string, unknown>)._modelString = 'gpt-4';
+      },
     });
 
     await runner.run(makeContext(), ['invokeLLM']);

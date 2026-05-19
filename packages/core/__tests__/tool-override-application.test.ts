@@ -4,6 +4,7 @@ import type { PipelineContext } from '@primo-ai/sdk';
 import type { ToolRegistry } from '../src/tool-registry.js';
 import type { HookManager } from '../src/hook-manager.js';
 import type { LLMInvoker } from '../src/llm-invoker.js';
+import { ProcessorContextImpl } from '../src/processor-context.js';
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
@@ -77,7 +78,7 @@ describe('F-10: tool override application', () => {
       },
     });
 
-    await processor.execute(ctx);
+    await processor.execute(new ProcessorContextImpl(ctx));
 
     // BUG: currently invokeLLM uses registry.toAiSdkToolSchemas() which returns
     // all 3 tools with original descriptions. FIX: should use ctx.agent.toolDeclarations.
@@ -127,7 +128,7 @@ describe('F-10: tool override application', () => {
       },
     });
 
-    await processor.execute(ctx);
+    await processor.execute(new ProcessorContextImpl(ctx));
 
     // Should still use registry schemas as fallback
     expect(capturedTools).toBeDefined();

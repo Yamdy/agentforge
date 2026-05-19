@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { extractTokenUsage, LLMInvoker } from '../src/llm-invoker.js';
 import { createEvaluateIterationProcessor } from '../src/processors/evaluate-iteration.js';
 import { createMockLanguageModel } from './helpers.js';
+import { ProcessorContextImpl } from '../src/processor-context.js';
 import type { TokenUsage, PipelineContext } from '@primo-ai/sdk';
 import { streamText } from 'ai';
 
@@ -106,7 +107,7 @@ describe('evaluate-iteration token:usage_unavailable event', () => {
 
     const processor = createEvaluateIterationProcessor({ eventBus: eventBus as any });
 
-    const ctx = {
+    const ctx: PipelineContext = {
       request: { input: 'test', sessionId: 's1' },
       agent: {
         config: { model: 'test' },
@@ -120,14 +121,15 @@ describe('evaluate-iteration token:usage_unavailable event', () => {
       session: {
         custom: {},
       },
-    } as PipelineContext;
+    };
 
-    const result = await processor.execute(ctx) as PipelineContext;
+    const pCtx = new ProcessorContextImpl(ctx);
+    await processor.execute(pCtx);
 
     expect(emitted.length).toBeGreaterThanOrEqual(1);
     expect(emitted.some(e => e.type === 'token:usage_unavailable')).toBe(true);
     // Result should still have a valid totalTokenUsage with zero fallback
-    expect(result.session.totalTokenUsage).toEqual({ input: 0, output: 0 });
+    expect(pCtx.state.session.totalTokenUsage).toEqual({ input: 0, output: 0 });
   });
 
   it('does not emit token:usage_unavailable when tokenUsage is present', async () => {
@@ -136,7 +138,7 @@ describe('evaluate-iteration token:usage_unavailable event', () => {
 
     const processor = createEvaluateIterationProcessor({ eventBus: eventBus as any });
 
-    const ctx = {
+    const ctx: PipelineContext = {
       request: { input: 'test', sessionId: 's2' },
       agent: {
         config: { model: 'test' },
@@ -150,11 +152,12 @@ describe('evaluate-iteration token:usage_unavailable event', () => {
       session: {
         custom: {},
       },
-    } as PipelineContext;
+    };
 
-    const result = await processor.execute(ctx) as PipelineContext;
+    const pCtx = new ProcessorContextImpl(ctx);
+    await processor.execute(pCtx);
 
     expect(emitted.some(e => e.type === 'token:usage_unavailable')).toBe(false);
-    expect(result.session.totalTokenUsage).toEqual({ input: 50, output: 25 });
+    expect(pCtx.state.session.totalTokenUsage).toEqual({ input: 50, output: 25 });
   });
 });
