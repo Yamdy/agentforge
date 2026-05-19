@@ -8,7 +8,7 @@ import {
   registerMockProvider,
 } from './helpers.js';
 import { z } from 'zod';
-import type { PipelineContext } from '@primo-ai/sdk';
+import type { PipelineContext, ProcessorContext, ProcessorControl } from '@primo-ai/sdk';
 
 /**
  * Fix 1: Sub-agent stale closure -- mergeSessionState
@@ -20,6 +20,18 @@ import type { PipelineContext } from '@primo-ai/sdk';
  * Solution: Gate the merge on ctx.iteration.step === 0.
  */
 describe('Sub-agent stale closure: mergeSessionState gated by step === 0', () => {
+  // Mock control for ProcessorContext
+  const mockControl: ProcessorControl = {
+    abort: () => { throw new Error('abort'); },
+    suspend: () => { throw new Error('suspend'); },
+    error: () => { throw new Error('error'); },
+  };
+
+  // Helper to wrap PipelineContext as ProcessorContext
+  function wrapContext(ctx: PipelineContext): ProcessorContext {
+    return { state: ctx, control: mockControl };
+  }
+
   /**
    * Helper: intercept Agent.prototype.use to capture the prepareStep processor
    * registered by createSubAgentTool, so we can invoke it with synthetic contexts.
@@ -30,9 +42,9 @@ describe('Sub-agent stale closure: mergeSessionState gated by step === 0', () =>
     contextPolicy: 'inherit' | 'isolated' | 'summary-only',
     parentState: Record<string, unknown>,
   ): Promise<{
-    processors: Array<{ stage: string; execute: (ctx: PipelineContext) => Promise<PipelineContext> }>;
+    processors: Array<{ stage: string; execute: (ctx: ProcessorContext) => Promise<PipelineContext | void> }>;
   }> {
-    const processors: Array<{ stage: string; execute: (ctx: PipelineContext) => Promise<PipelineContext> }> = [];
+    const processors: Array<{ stage: string; execute: (ctx: ProcessorContext) => Promise<PipelineContext | void> }> = [];
     const originalUse = Agent.prototype.use;
     Agent.prototype.use = function (processor: any) {
       if (processor && processor.stage === 'prepareStep') {
@@ -98,8 +110,8 @@ describe('Sub-agent stale closure: mergeSessionState gated by step === 0', () =>
       session: { custom: {} },
     } as unknown as PipelineContext;
 
-    const result = await processor.execute(ctxStep0);
-    expect(result.session.totalTokenUsage).toEqual({ input: 100, output: 50 });
+    await processor.execute(wrapContext(ctxStep0));
+    expect(ctxStep0.session.totalTokenUsage).toEqual({ input: 100, output: 50 });
   });
 
   it('step 1: child accumulated totalTokenUsage is NOT overwritten by stale parent', async () => {
@@ -120,10 +132,10 @@ describe('Sub-agent stale closure: mergeSessionState gated by step === 0', () =>
       },
     } as unknown as PipelineContext;
 
-    const result = await processor.execute(ctxStep1);
+    await processor.execute(wrapContext(ctxStep1));
 
     // Child's accumulated values must NOT be overwritten by stale parent state
-    expect(result.session.totalTokenUsage).toEqual({ input: 200, output: 100 });
+    expect(ctxStep1.session.totalTokenUsage).toEqual({ input: 200, output: 100 });
   });
 
   it('step 2: child values still preserved', async () => {
@@ -142,9 +154,9 @@ describe('Sub-agent stale closure: mergeSessionState gated by step === 0', () =>
       },
     } as unknown as PipelineContext;
 
-    const result = await processor.execute(ctxStep2);
-    expect(result.session.totalTokenUsage).toEqual({ input: 500, output: 300 });
-    expect(result.session.custom.childKey).toBe('childVal');
+    await processor.execute(wrapContext(ctxStep2));
+    expect(ctxStep2.session.totalTokenUsage).toEqual({ input: 500, output: 300 });
+    expect(ctxStep2.session.custom.childKey).toBe('childVal');
   });
 
   it('isolated policy: no prepareStep processor is registered', async () => {
@@ -175,8 +187,8 @@ describe('Sub-agent stale closure: mergeSessionState gated by step === 0', () =>
       session: { custom: {} },
     } as unknown as PipelineContext;
 
-    const result = await processor.execute(ctxStep0);
-    const history = result.session.messageHistory;
+    await processor.execute(wrapContext(ctxStep0));
+    const history = ctxStep0.session.messageHistory;
     expect(history).toHaveLength(2);
     expect(history).toContainEqual({ role: 'user', content: 'parent q' });
     expect(history).toContainEqual({ role: 'assistant', content: 'parent a' });
@@ -208,13 +220,13 @@ describe('Sub-agent stale closure: mergeSessionState gated by step === 0', () =>
       },
     } as unknown as PipelineContext;
 
-    const result = await processor.execute(ctxStep1);
+    await processor.execute(wrapContext(ctxStep1));
     // Must have exactly 4 messages, not re-merged
-    expect(result.session.messageHistory).toHaveLength(4);
-    expect(result.session.messageHistory).toContainEqual(
+    expect(ctxStep1.session.messageHistory).toHaveLength(4);
+    expect(ctxStep1.session.messageHistory).toContainEqual(
       expect.objectContaining({ content: 'child input' }),
     );
-    expect(result.session.messageHistory).toContainEqual(
+    expect(ctxStep1.session.messageHistory).toContainEqual(
       expect.objectContaining({ content: 'child response' }),
     );
   });

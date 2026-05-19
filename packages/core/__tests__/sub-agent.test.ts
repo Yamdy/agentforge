@@ -9,9 +9,21 @@ import {
 } from './helpers.js';
 import { TestExporter } from '@primo-ai/observability';
 import { z } from 'zod';
-import type { PipelineContext } from '@primo-ai/sdk';
+import type { PipelineContext, ProcessorContext, ProcessorControl } from '@primo-ai/sdk';
 
 describe('SubAgent', () => {
+  // Mock control for ProcessorContext
+  const mockControl: ProcessorControl = {
+    abort: () => { throw new Error('abort'); },
+    suspend: () => { throw new Error('suspend'); },
+    error: () => { throw new Error('error'); },
+  };
+
+  // Helper to wrap PipelineContext as ProcessorContext
+  function wrapContext(ctx: PipelineContext): ProcessorContext {
+    return { state: ctx, control: mockControl };
+  }
+
   beforeEach(() => {
     // Register child provider — returns simple text
     registerMockProvider('sub', () =>
@@ -180,7 +192,7 @@ describe('SubAgent', () => {
 
   it('inherit policy: child accumulated history is not overwritten by parent state', async () => {
     // Capture the processor registered via childAgent.use()
-    const capturedProcessors: Array<{ stage: string; execute: (ctx: PipelineContext) => Promise<PipelineContext> }> = [];
+    const capturedProcessors: Array<{ stage: string; execute: (ctx: ProcessorContext) => Promise<PipelineContext | void> }> = [];
     const originalUse = Agent.prototype.use;
     Agent.prototype.use = function (processor: any) {
       if (processor.stage === 'prepareStep') {
@@ -239,6 +251,7 @@ describe('SubAgent', () => {
 
     // Simulate iteration 1: child has accumulated its own messages
     const ctxWithChildHistory = {
+      iteration: { step: 1 },
       session: {
         messageHistory: [
           { role: 'user', content: 'parent q' },
@@ -248,12 +261,12 @@ describe('SubAgent', () => {
         ],
         custom: {},
       },
-    };
+    } as unknown as PipelineContext;
 
-    const result = await processor.execute(ctxWithChildHistory as unknown as PipelineContext);
+    await processor.execute(wrapContext(ctxWithChildHistory));
 
     // The child's own messages must be preserved, not overwritten by parent
-    const history = result.session.messageHistory;
+    const history = ctxWithChildHistory.session.messageHistory;
     expect(history).toHaveLength(4);
     expect(history).toContainEqual(expect.objectContaining({ content: 'child input' }));
     expect(history).toContainEqual(expect.objectContaining({ content: 'child response' }));
@@ -274,7 +287,7 @@ describe('SubAgent', () => {
       { role: 'assistant', content: 'answer 1' },
     ];
 
-    const capturedProcessors: Array<{ stage: string; execute: (ctx: PipelineContext) => Promise<PipelineContext> }> = [];
+    const capturedProcessors: Array<{ stage: string; execute: (ctx: ProcessorContext) => Promise<PipelineContext | void> }> = [];
     const originalUse = Agent.prototype.use;
     Agent.prototype.use = function (processor: any) {
       if (processor.stage === 'prepareStep') capturedProcessors.push(processor);
@@ -316,8 +329,8 @@ describe('SubAgent', () => {
     const ctx = {
       session: { messageHistory: [], custom: {} },
     } as unknown as PipelineContext;
-    const result = await processor.execute(ctx);
-    expect(result.session.custom.parentContextSummary).toBe('user: question 1\nassistant: answer 1');
+    await processor.execute(wrapContext(ctx));
+    expect(ctx.session.custom.parentContextSummary).toBe('user: question 1\nassistant: answer 1');
   });
 
   it('summary-only with custom summarizeFn: calls function with correct data', async () => {
@@ -340,7 +353,7 @@ describe('SubAgent', () => {
       return `CUSTOM: ${history.map((m) => m.content).join('|')}`;
     });
 
-    const capturedProcessors: Array<{ stage: string; execute: (ctx: PipelineContext) => Promise<PipelineContext> }> = [];
+    const capturedProcessors: Array<{ stage: string; execute: (ctx: ProcessorContext) => Promise<PipelineContext | void> }> = [];
     const originalUse = Agent.prototype.use;
     Agent.prototype.use = function (processor: any) {
       if (processor.stage === 'prepareStep') capturedProcessors.push(processor);
@@ -386,8 +399,8 @@ describe('SubAgent', () => {
     const ctx = {
       session: { messageHistory: [], custom: {} },
     } as unknown as PipelineContext;
-    const result = await processor.execute(ctx);
-    expect(result.session.custom.parentContextSummary).toBe('CUSTOM: hello|world');
+    await processor.execute(wrapContext(ctx));
+    expect(ctx.session.custom.parentContextSummary).toBe('CUSTOM: hello|world');
   });
 
   it('summary-only with error in summarizeFn: error is caught and propagated', async () => {
@@ -454,7 +467,7 @@ describe('SubAgent', () => {
     const getSessionState = vi.fn(() => ({ messageHistory: [] }));
     const eventBus = new EventBus();
 
-    const capturedProcessors: Array<{ stage: string; execute: (ctx: PipelineContext) => Promise<PipelineContext> }> = [];
+    const capturedProcessors: Array<{ stage: string; execute: (ctx: ProcessorContext) => Promise<PipelineContext | void> }> = [];
     const originalUse = Agent.prototype.use;
     Agent.prototype.use = function (processor: any) {
       if (processor.stage === 'prepareStep') capturedProcessors.push(processor);
@@ -495,8 +508,8 @@ describe('SubAgent', () => {
     const ctx = {
       session: { messageHistory: [], custom: {} },
     } as unknown as PipelineContext;
-    const result = await processor.execute(ctx);
-    expect(result.session.custom.parentContextSummary).toBe('');
+    await processor.execute(wrapContext(ctx));
+    expect(ctx.session.custom.parentContextSummary).toBe('');
   });
 
   it('emits task:start and task:end events via EventBus', async () => {
