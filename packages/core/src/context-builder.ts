@@ -111,7 +111,11 @@ export class ContextBuilder {
   createProcessor(): Processor {
     return {
       stage: 'buildContext',
-      execute: (pCtx) => this.assemble(pCtx.state),
+      execute: async (pCtx) => {
+        const result = await this.assemble(pCtx.state);
+        // Update pCtx.state in place with the assembled context
+        Object.assign(pCtx.state, result);
+      },
     };
   }
 

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { ContextBuilder } from '../src/context-builder.js';
-import type { PipelineContext, Message, CompressionStrategy } from '@primo-ai/sdk';
+import { ProcessorContextImpl } from '../src/processor-context.js';
+import type { PipelineContext, Message, CompressionStrategy, ProcessorContext } from '@primo-ai/sdk';
 import type { ToolRegistry } from '../src/tool-registry.js';
 
 function makeMockRegistry(): ToolRegistry {
@@ -24,6 +25,10 @@ function makeContext(history?: Message[], overrides?: Partial<PipelineContext>):
   };
 }
 
+function makeProcessorContext(history?: Message[], overrides?: Partial<PipelineContext>): ProcessorContext {
+  return new ProcessorContextImpl(makeContext(history, overrides));
+}
+
 function makeMessages(count: number): Message[] {
   return Array.from({ length: count }, (_, i) => ({
     role: 'user' as const,
@@ -36,37 +41,37 @@ describe('ContextBuilder default semantic truncation', () => {
     const cb = new ContextBuilder({ registry: makeMockRegistry(), budget: { maxTokens: 100 } });
     const processor = cb.createProcessor();
     const history = makeMessages(60);
-    const ctx = makeContext(history, {
+    const pCtx = makeProcessorContext(history, {
       agent: { config: { model: 'test' }, promptFragments: [], toolDeclarations: [] },
     });
-    const result = await processor.execute(ctx) as PipelineContext;
-    expect(result.session.messageHistory!.length).toBeLessThan(60);
-    expect(result.session.messageHistory!.length).toBeGreaterThan(0);
+    await processor.execute(pCtx);
+    expect(pCtx.state.session.messageHistory!.length).toBeLessThan(60);
+    expect(pCtx.state.session.messageHistory!.length).toBeGreaterThan(0);
   });
 
   it('returns all messages when under budget', async () => {
     const cb = new ContextBuilder({ registry: makeMockRegistry(), budget: { maxTokens: 10000 } });
     const processor = cb.createProcessor();
     const history = makeMessages(10);
-    const ctx = makeContext(history);
-    const result = await processor.execute(ctx) as PipelineContext;
-    expect(result.session.messageHistory).toHaveLength(10);
+    const pCtx = makeProcessorContext(history);
+    await processor.execute(pCtx);
+    expect(pCtx.state.session.messageHistory).toHaveLength(10);
   });
 
   it('returns ctx unchanged when messageHistory is undefined', async () => {
     const cb = new ContextBuilder({ registry: makeMockRegistry() });
     const processor = cb.createProcessor();
-    const ctx = makeContext(undefined);
-    const result = await processor.execute(ctx) as PipelineContext;
-    expect(result.session.messageHistory).toBeUndefined();
+    const pCtx = makeProcessorContext(undefined);
+    await processor.execute(pCtx);
+    expect(pCtx.state.session.messageHistory).toBeUndefined();
   });
 
   it('returns ctx unchanged when messageHistory is empty', async () => {
     const cb = new ContextBuilder({ registry: makeMockRegistry() });
     const processor = cb.createProcessor();
-    const ctx = makeContext([]);
-    const result = await processor.execute(ctx) as PipelineContext;
-    expect(result.session.messageHistory).toHaveLength(0);
+    const pCtx = makeProcessorContext([]);
+    await processor.execute(pCtx);
+    expect(pCtx.state.session.messageHistory).toHaveLength(0);
   });
 });
 
@@ -76,9 +81,9 @@ describe('ContextBuilder with custom CompressionStrategy', () => {
     const cb = new ContextBuilder({ registry: makeMockRegistry(), compressionStrategy: keep3, budget: { maxTokens: 100 } });
     const processor = cb.createProcessor();
     const history = makeMessages(20);
-    const ctx = makeContext(history);
-    const result = await processor.execute(ctx) as PipelineContext;
-    expect(result.session.messageHistory).toHaveLength(3);
+    const pCtx = makeProcessorContext(history);
+    await processor.execute(pCtx);
+    expect(pCtx.state.session.messageHistory).toHaveLength(3);
   });
 
   it('supports async CompressionStrategy', async () => {
@@ -89,9 +94,9 @@ describe('ContextBuilder with custom CompressionStrategy', () => {
     const cb = new ContextBuilder({ registry: makeMockRegistry(), compressionStrategy: asyncStrategy, budget: { maxTokens: 10 } });
     const processor = cb.createProcessor();
     const history = makeMessages(10);
-    const ctx = makeContext(history);
-    const result = await processor.execute(ctx) as PipelineContext;
-    expect(result.session.messageHistory).toHaveLength(3);
+    const pCtx = makeProcessorContext(history);
+    await processor.execute(pCtx);
+    expect(pCtx.state.session.messageHistory).toHaveLength(3);
   });
 
   it('receives TokenCounter and budget in strategy', async () => {
@@ -109,8 +114,8 @@ describe('ContextBuilder with custom CompressionStrategy', () => {
     });
     const processor = cb.createProcessor();
     const history = makeMessages(10);
-    const ctx = makeContext(history);
-    await processor.execute(ctx);
+    const pCtx = makeProcessorContext(history);
+    await processor.execute(pCtx);
     expect(receivedTc).toBe(true);
     expect(receivedBudget).toBe(true);
   });
