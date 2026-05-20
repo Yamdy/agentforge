@@ -40,6 +40,9 @@ export { ContextBuilder, type ContextBuilderOptions } from './context-builder.js
 export { HarnessAPIImpl, type HarnessDeps } from './harness.js';
 export { TiktokenCounter } from './token-counter.js';
 export type { StreamEvent } from '@primo-ai/sdk';
+
+// Presets
+export * from './presets/index.js';
 export { OpenAICompatibleGateway } from './gateways/openai-compatible-gateway.js';
 export {
   AgentForgeError,
