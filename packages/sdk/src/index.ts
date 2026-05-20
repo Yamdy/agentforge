@@ -883,6 +883,72 @@ export interface TaskManager {
 }
 
 // ---------------------------------------------------------------------------
+// Task Queue — Long-running Task Management
+// ---------------------------------------------------------------------------
+
+/** Status of a task in the queue through its lifecycle. */
+export type TaskStatus = 'pending' | 'running' | 'suspended' | 'completed' | 'failed' | 'cancelled';
+
+/** Event types emitted by task queue operations. */
+export type TaskEvent = 'progress' | 'complete' | 'error' | 'suspend';
+
+/** Configuration for the task queue. */
+export interface TaskQueueConfig {
+  /** Maximum concurrent tasks. Default: 4. */
+  maxConcurrency?: number;
+  /** Persistence mode. Default: 'memory'. */
+  persistence?: 'memory' | 'file';
+  /** Interval in milliseconds between automatic checkpoints. */
+  checkpointInterval?: number;
+}
+
+/** Options for enqueuing a task. */
+export interface TaskOptions {
+  /** Priority (higher = more important). Default: 0. */
+  priority?: number;
+  /** Timeout in milliseconds. */
+  timeout?: number;
+  /** Parent session for hierarchical tasks. */
+  parentSessionId?: string;
+  /** Enable automatic checkpointing. Default: true. */
+  autoCheckpoint?: boolean;
+}
+
+/** Handle to a task in the queue. */
+export interface TaskQueueHandle {
+  /** Unique task identifier. */
+  taskId: string;
+  /** Current status. */
+  status: TaskStatus;
+  /** Progress percentage (0-1). */
+  progress?: number;
+  /** Task result (when completed). */
+  result?: unknown;
+  /** Error (when failed). */
+  error?: Error;
+  /** Subscribe to task events. */
+  on(event: TaskEvent, handler: (data: unknown) => void): void;
+  /** Cancel the task. */
+  cancel(): void;
+}
+
+/** Task queue for managing long-running agent tasks. */
+export interface TaskQueue {
+  /** Enqueue a task for execution. */
+  enqueue(agentId: string, input: unknown, options?: TaskOptions): Promise<TaskQueueHandle>;
+  /** Get task status. */
+  getStatus(taskId: string): Promise<TaskStatus>;
+  /** Get task result (throws if not completed). */
+  getResult(taskId: string): Promise<unknown>;
+  /** Cancel a running task. */
+  cancel(taskId: string): Promise<void>;
+  /** Resume a suspended task. */
+  resume(taskId: string): Promise<TaskQueueHandle>;
+  /** List tasks matching filter. */
+  list(filter?: { status?: TaskStatus; agentId?: string }): Promise<TaskQueueHandle[]>;
+}
+
+// ---------------------------------------------------------------------------
 // Eviction
 // ---------------------------------------------------------------------------
 
@@ -932,6 +998,75 @@ export interface AgentProfile {
   systemPrompt?: string;
   model?: string;
   maxIterations?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Orchestration — Multi-Agent Coordination
+// ---------------------------------------------------------------------------
+
+/** Result of a single orchestration step. */
+export interface OrchestrationStepResult {
+  stepName: string;
+  response: string;
+  tokenUsage: TokenUsage;
+  sessionId: string;
+  error?: Error;
+}
+
+/** Function that aggregates results from parallel execution. */
+export type AggregatorFunction = (results: OrchestrationStepResult[]) => string | Promise<string>;
+
+/** Function that classifies input and returns a route key. */
+export type RouterClassifier = (input: string, context: PipelineContext) => string | Promise<string>;
+
+/** Options for an orchestration step. */
+export interface OrchestrationStepOptions {
+  /** Parallel mode: function to aggregate results */
+  aggregator?: AggregatorFunction;
+  /** Failure strategy: 'fail-fast' stops on first error, 'continue' collects all results */
+  failureStrategy?: 'fail-fast' | 'continue';
+  /** Timeout in milliseconds */
+  timeout?: number;
+  /** Maximum parallel executions (parallel mode only) */
+  maxConcurrency?: number;
+}
+
+/** Configuration for a router step. */
+export interface RouterConfig {
+  routes: Record<string, AgentConfig>;
+  default?: AgentConfig;
+  classifier: RouterClassifier;
+}
+
+/** Configuration for a single orchestration step. */
+export interface OrchestrationStepConfig {
+  name: string;
+  /** Sequential mode: single agent */
+  agent?: AgentConfig;
+  /** Parallel mode: multiple agents */
+  agents?: AgentConfig[];
+  /** Conditional mode: router configuration */
+  router?: RouterConfig;
+  /** Step options */
+  options?: OrchestrationStepOptions;
+}
+
+/** Result of running an orchestration pipeline. */
+export interface OrchestrationResult {
+  response: string;
+  steps: OrchestrationStepResult[];
+  totalTokenUsage: TokenUsage;
+  sessionId: string;
+}
+
+/** Options for running an orchestration pipeline. */
+export interface OrchestrationOptions {
+  /** Abort signal for cancellation */
+  signal?: AbortSignal;
+  /** Session ID for persistence */
+  sessionId?: string;
+  /** Maximum total iterations across all agents */
+  maxTotalIterations?: number;
 }
 
 // ---------------------------------------------------------------------------
