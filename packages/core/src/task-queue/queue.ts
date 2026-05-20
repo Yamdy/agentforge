@@ -15,6 +15,7 @@ import type {
   TaskEvent,
   TaskOptions,
   CheckpointStore,
+  PipelineCheckpoint,
 } from '@primo-ai/sdk';
 import { EventBus } from '../event-bus.js';
 import { ConcurrencyController } from '../concurrency-controller.js';
@@ -33,6 +34,8 @@ interface InternalTaskState {
   createdAt: number;
   abortController?: AbortController;
   eventHandlers: Map<TaskEvent, Set<(data: unknown) => void>>;
+  /** Flag to signal cancellation during acquire wait */
+  cancelRequested?: boolean;
 }
 
 export class TaskQueueImpl implements TaskQueue {
@@ -79,9 +82,12 @@ export class TaskQueueImpl implements TaskQueue {
     this.tasks.set(taskId, state);
     this.eventBus?.emit('task:enqueued', { taskId, agentId, input });
 
-    // Execute in background
+    // Execute in background with proper error handling
     this.executeTask(taskId, options).catch((err) => {
-      this.handleTaskError(taskId, err);
+      // Only handle if not already handled in executeTask
+      if (state.status === 'pending') {
+        this.handleTaskError(taskId, err);
+      }
     });
 
     return this.createHandle(state);
@@ -104,11 +110,18 @@ export class TaskQueueImpl implements TaskQueue {
 
   async cancel(taskId: string): Promise<void> {
     const state = this.tasks.get(taskId);
-    if (state && (state.status === 'pending' || state.status === 'running')) {
-      state.abortController?.abort();
-      state.status = 'cancelled';
-      this.eventBus?.emit('task:cancelled', { taskId });
+    if (!state) return;
+
+    // Check if task can be cancelled
+    if (state.status !== 'pending' && state.status !== 'running') {
+      return;
     }
+
+    // Signal cancellation (works for both waiting-to-acquire and running states)
+    state.cancelRequested = true;
+    state.abortController?.abort();
+    state.status = 'cancelled';
+    this.eventBus?.emit('task:cancelled', { taskId });
   }
 
   async resume(taskId: string): Promise<TaskQueueHandle> {
@@ -122,9 +135,14 @@ export class TaskQueueImpl implements TaskQueue {
       throw new Error(`Task not found: ${taskId}`);
     }
 
+    // Reset cancellation flag
+    state.cancelRequested = false;
     state.status = 'pending';
-    this.executeTask(taskId, { resumeFrom: checkpoint }).catch((err) => {
-      this.handleTaskError(taskId, err);
+
+    this.executeTask(taskId, { resumeFrom: checkpoint as PipelineCheckpoint }).catch((err) => {
+      if (state.status === 'pending') {
+        this.handleTaskError(taskId, err);
+      }
     });
 
     return this.createHandle(state);
@@ -140,20 +158,72 @@ export class TaskQueueImpl implements TaskQueue {
       states = states.filter((s) => s.agentId === filter.agentId);
     }
 
+    // Sort by priority (higher first), then by creation time
+    states.sort((a, b) => {
+      if (a.priority !== b.priority) {
+        return b.priority - a.priority;
+      }
+      return a.createdAt - b.createdAt;
+    });
+
     return states.map((s) => this.createHandle(s));
   }
 
   private async executeTask(
     taskId: string,
-    options?: TaskOptions & { resumeFrom?: unknown },
+    options?: TaskOptions & { resumeFrom?: PipelineCheckpoint },
   ): Promise<void> {
     const state = this.tasks.get(taskId);
     if (!state) return;
 
-    // Acquire concurrency slot
-    const releaseSlot = await this.concurrencyController.acquire(this.defaultSlotKey);
+    // Check if cancelled before acquiring slot
+    if (state.cancelRequested) {
+      return;
+    }
+
+    // Race acquire with cancellation check
+    let releaseSlot: (() => void) | undefined;
 
     try {
+      // Use a promise that can be cancelled
+      const acquirePromise = this.concurrencyController.acquire(this.defaultSlotKey);
+
+      // Wait for either acquire or cancellation
+      releaseSlot = await Promise.race([
+        acquirePromise,
+        new Promise<undefined>((resolve) => {
+          // Poll for cancellation
+          const checkCancel = setInterval(() => {
+            if (state.cancelRequested) {
+              clearInterval(checkCancel);
+              resolve(undefined);
+            }
+          }, 10);
+          // Also clean up on acquire success
+          acquirePromise.then(() => {
+            clearInterval(checkCancel);
+          });
+        }),
+      ]);
+
+      // If cancelled during acquire wait, exit early
+      if (!releaseSlot || state.cancelRequested) {
+        return;
+      }
+    } catch (err) {
+      // Acquire failed, check if cancelled
+      if (state.cancelRequested) {
+        return;
+      }
+      throw err;
+    }
+
+    try {
+      // Double-check cancellation after acquiring slot
+      if (state.cancelRequested) {
+        return;
+      }
+
       state.status = 'running';
       state.abortController = new AbortController();
       this.eventBus?.emit('task:started', { taskId, agentId: state.agentId });
@@ -163,21 +233,55 @@ export class TaskQueueImpl implements TaskQueue {
         throw new Error(`Agent not found: ${state.agentId}`);
       }
 
-      const result = await agent.run(state.input as string, state.abortController.signal);
+      // Handle resume from checkpoint
+      let input: string;
+      if (options?.resumeFrom) {
+        // Deserialize checkpoint to get the context
+        // PipelineCheckpoint has { context, nextStages, iteration }
+        const checkpoint = options.resumeFrom;
+        const restoredContext = checkpoint.context;
+        // Use the restored input from checkpoint if available
+        input = restoredContext?.request?.input ?? (state.input as string);
+      } else {
+        input = state.input as string;
+      }
 
-      // Check if cancelled during execution
-      if (state.abortController.signal.aborted) {
-        state.status = 'cancelled';
-        this.eventBus?.emit('task:cancelled', { taskId });
+      // Set up timeout if specified
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
+      if (options?.timeout) {
+        timeoutId = setTimeout(() => {
+          state.abortController?.abort();
+        }, options.timeout);
+      }
+
+      try {
+        const result = await agent.run(input, state.abortController.signal);
+
+        // Clear timeout on success
+        if (timeoutId) clearTimeout(timeoutId);
+
+        // Check if cancelled during execution
+        if (state.abortController.signal.aborted || state.cancelRequested) {
+          state.status = 'cancelled';
+          this.eventBus?.emit('task:cancelled', { taskId });
+          return;
+        }
+
+        state.status = 'completed';
+        state.result = result;
+        this.emitTaskEvent(state, 'complete', result);
+        this.eventBus?.emit('task:completed', { taskId, result });
+      } catch (err) {
+        if (timeoutId) clearTimeout(timeoutId);
+        throw err;
+      }
+    } catch (err) {
+      // Don't override if already cancelled
+      if (state.status === 'cancelled') {
         return;
       }
 
-      state.status = 'completed';
-      state.result = result;
-      this.emitTaskEvent(state, 'complete', result);
-      this.eventBus?.emit('task:completed', { taskId, result });
-    } catch (err) {
-      if (state.abortController?.signal.aborted) {
+      if (state.abortController?.signal.aborted || state.cancelRequested) {
         state.status = 'cancelled';
         this.eventBus?.emit('task:cancelled', { taskId });
       } else {
@@ -233,7 +337,7 @@ export class TaskQueueImpl implements TaskQueue {
 
   private handleTaskError(taskId: string, err: unknown): void {
     const state = this.tasks.get(taskId);
-    if (state) {
+    if (state && state.status !== 'cancelled') {
       state.status = 'failed';
       state.error = err instanceof Error ? err : new Error(String(err));
       this.eventBus?.emit('task:error', { taskId, error: state.error });

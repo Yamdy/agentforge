@@ -49,8 +49,8 @@ export class TaskNotificationManager {
     for (const ws of this.websockets) {
       try {
         ws.send(message);
-      } catch {
-        // Ignore WebSocket errors
+      } catch (err) {
+        console.error('[TaskNotificationManager] WebSocket send failed:', err);
       }
     }
 
@@ -62,8 +62,8 @@ export class TaskNotificationManager {
           body: message,
           headers: { 'Content-Type': 'application/json' },
         });
-      } catch {
-        // Ignore webhook errors
+      } catch (err) {
+        console.error('[TaskNotificationManager] Webhook failed:', url, err);
       }
     }
 
@@ -73,8 +73,8 @@ export class TaskNotificationManager {
       for (const handler of handlers) {
         try {
           handler(data);
-        } catch {
-          // Ignore handler errors
+        } catch (err) {
+          console.error('[TaskNotificationManager] Event handler failed:', err);
         }
       }
     }
