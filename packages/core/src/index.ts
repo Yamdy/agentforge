@@ -64,3 +64,6 @@ export { ProcessorContextImpl, createProcessorContext } from './processor-contex
 export { modifiers, message, systemPrompt, tools, providerOptions } from './adapters/modifiers.js';
 export { gates, permission, quota, cost } from './adapters/gates.js';
 export type { PermissionDecision, PermissionGateConfig, QuotaGateConfig, CostGateConfig } from './adapters/gates.js';
+
+// Task Queue
+export { TaskQueueImpl } from './task-queue/index.js';
