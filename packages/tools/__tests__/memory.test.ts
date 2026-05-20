@@ -143,15 +143,15 @@ describe('createMemoryTools', () => {
   });
 
   describe('integration with store', () => {
-    const { storeTool, retrieveTool, listTool } = createMemoryTools();
-
     it('stores and retrieves value', async () => {
+      const { storeTool, retrieveTool } = createMemoryTools();
       await storeTool.execute({ key: 'test-key', value: 'test-value' });
       const result = await retrieveTool.execute({ key: 'test-key' });
       expect(result.value).toBe('test-value');
     });
 
     it('lists stored entries', async () => {
+      const { storeTool, listTool } = createMemoryTools();
       await storeTool.execute({ key: 'key-a', value: 'value-a' });
       await storeTool.execute({ key: 'key-b', value: 'value-b' });
 
