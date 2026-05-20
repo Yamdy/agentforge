@@ -10,7 +10,7 @@ type Task = QueuedTask<string>;
 
 describe('PersistentQueue', () => {
   describe('InMemoryPersistentQueue', () => {
-    let queue: InMemoryPersistentQueue;
+    let queue: InMemoryPersistentQueue<string>;
 
     beforeEach(() => {
       queue = new InMemoryPersistentQueue();
@@ -77,7 +77,7 @@ describe('PersistentQueue', () => {
   });
 
   describe('JsonlPersistentQueue', () => {
-    let queue: JsonlPersistentQueue;
+    let queue: JsonlPersistentQueue<string>;
     let tempDir: string;
 
     beforeEach(async () => {
@@ -93,7 +93,7 @@ describe('PersistentQueue', () => {
       const id = await queue.enqueue({ payload: 'persistent-task' });
 
       // Create new instance with same directory
-      const queue2 = new JsonlPersistentQueue(tempDir);
+      const queue2 = new JsonlPersistentQueue<string>(tempDir);
       const task = await queue2.dequeue();
       expect(task?.id).toBe(id);
       expect(task?.payload).toBe('persistent-task');
@@ -107,7 +107,7 @@ describe('PersistentQueue', () => {
       await queue.dequeue();
 
       // New instance should recover both: id1 (in-flight) and id2 (queued)
-      const queue2 = new JsonlPersistentQueue(tempDir);
+      const queue2 = new JsonlPersistentQueue<string>(tempDir);
       const pending: Task[] = await queue2.recoverPending();
 
       // id1 was dequeued but not completed, should be recovered
@@ -122,7 +122,7 @@ describe('PersistentQueue', () => {
       await queue.complete(id);
 
       // New instance should not recover completed task
-      const queue2 = new JsonlPersistentQueue(tempDir);
+      const queue2 = new JsonlPersistentQueue<string>(tempDir);
       const pending: Task[] = await queue2.recoverPending();
       expect(pending).toHaveLength(0);
     });

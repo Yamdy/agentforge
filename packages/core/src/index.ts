@@ -67,6 +67,12 @@ export type { PermissionDecision, PermissionGateConfig, QuotaGateConfig, CostGat
 
 // Task Queue
 export { TaskQueueImpl } from './task-queue/index.js';
+export {
+  InMemoryPersistentQueue,
+  JsonlPersistentQueue,
+  type QueuedTask,
+  type EnqueueOptions,
+} from './task-queue/persistent-queue.js';
 
 // Runner - structured concurrency
 export { Runner, type RunnerState, type RunnerOptions, type TaskHandle } from './runner.js';

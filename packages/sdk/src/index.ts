@@ -1087,3 +1087,39 @@ export interface OrchestrationOptions {
 // ---------------------------------------------------------------------------
 
 export { SimpleProcessorContext } from './simple-context.js';
+
+// ---------------------------------------------------------------------------
+// Runner — Structured Concurrency for Agent Tasks
+// ---------------------------------------------------------------------------
+
+/** State of the Runner controlling task execution. */
+export type RunnerStateTag = 'Idle' | 'Running' | 'Shell' | 'ShellThenRun';
+
+/** Handle to a queued task in the Runner. */
+export interface RunnerTaskHandle {
+  id: string;
+}
+
+/** Options for Runner operations. */
+export interface RunnerOptions {
+  onInterrupt?: () => unknown;
+}
+
+/** Status of a task in the persistent queue. */
+export type PersistentTaskStatus = 'pending' | 'in_flight' | 'completed';
+
+/** A task in the persistent queue. */
+export interface PersistentQueuedTask<T = unknown> {
+  id: string;
+  payload: T;
+  metadata?: Record<string, unknown>;
+  status: PersistentTaskStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Options for enqueuing a task. */
+export interface PersistentEnqueueOptions<T = unknown> {
+  payload: T;
+  metadata?: Record<string, unknown>;
+}
