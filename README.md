@@ -1,39 +1,46 @@
 <p align="center">
-  <img src="agentforge-logo-v4.jpg" alt="AgentForge" width="120" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="agentforge-logo-v4.jpg">
+    <img src="agentforge-logo-v4.jpg" alt="AgentForge" width="120" />
+  </picture>
 </p>
 
-<h1 align="center">AgentForge</h1>
+<h3 align="center">AgentForge</h3>
 
 <p align="center">
-  <strong>TypeScript Agent framework where Pipeline is everything.</strong>
+  <strong>The batteries-included TypeScript Agent framework.</strong><br/>
+  Pipeline-driven · Multi-agent orchestration · Any LLM provider
 </p>
 
 <p align="center">
-  Every pipeline stage is simultaneously an <em>extension point</em>, an <em>observability span</em>, and a <em>hook interception point</em>.<br/>
-  10 built-in stages · 15+ plugins · any LLM provider
+  <a href="https://agentforge-docs.vercel.app/">Docs</a> ·
+  <a href="#quick-start">Quick Start</a> ·
+  <a href="#why-agentforge">Comparison</a> ·
+  <a href="docs/feature-tree.md">Feature Tree</a> ·
+  <a href="#production">Production</a>
 </p>
 
 <p align="center">
-  <a href="https://agentforge-docs.vercel.app/"><img src="https://img.shields.io/badge/docs-agentforge--docs.vercel.app-brightgreen" alt="docs" /></a>
-  <a href="https://www.npmjs.com/package/@primo-ai/core"><img src="https://img.shields.io/npm/v/@primo-ai/core?label=%40primo-ai%2Fcore" alt="npm" /></a>
-  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="license" /></a>
-  <img src="https://img.shields.io/badge/TypeScript-5.7-blue?logo=typescript&logoColor=white" alt="TypeScript" />
+  <a href="https://www.npmjs.com/package/@primo-ai/core"><img src="https://img.shields.io/npm/v/@primo-ai/core?label=%40primo-ai%2Fcore&style=flat-square" alt="npm" /></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="license" /></a>
+  <img src="https://img.shields.io/badge/TypeScript-5.7-blue?logo=typescript&logoColor=white&style=flat-square" alt="TypeScript" />
   <a href="https://github.com/Yamdy/agentforge/stargazers"><img src="https://img.shields.io/github/stars/Yamdy/agentforge?style=social" alt="stars" /></a>
 </p>
 
 ---
 
-## ✨ Highlights
+## Why AgentForge?
 
-| | |
-|---|---|
-| 🔌 **Pipeline = Extension Point** | Every stage is a pluggable Processor — inject, reorder, or replace any step |
-| 📡 **Pipeline = Observability Span** | Every stage is a traced Span — zero-config OpenTelemetry integration |
-| 🪝 **Pipeline = Hook** | Every stage is a hook target — intercept before/after with full context access |
-| 🤖 **A2A Protocol** | Native Agent-to-Agent JSON-RPC with streaming — multi-agent out of the box |
-| 📊 **Embedded Studio** | Built-in observability UI — traces, metrics, sessions dashboard with `--studio` flag |
-| 🛡️ **15+ Production Plugins** | memory, compression, permission, costCap, tokenBudget, rateLimit, PII, moderation... |
-| ⏸️ **Session Persistence** | Suspend/resume + checkpoint recovery + File/SQLite storage |
+Every pipeline stage is simultaneously an **extension point**, an **observability span**, and a **hook interception point** — one mechanism, three capabilities.
+
+- [**Pipeline Engine**](docs/feature-tree.md#sf-1-agent-pipeline-engine) — 10-stage processor pipeline with preLoop / loop / postLoop sections, 4 control flows (abort / retry / suspend / error)
+- [**Multi-Agent Orchestration**](docs/feature-tree.md#sf-4-multi-agent-orchestration) — Sequential, Parallel, and Router executors — declare complex workflows in a fluent pipeline
+- [**LLM Integration**](docs/feature-tree.md#sf-2-llm-integration) — Gateway chain with OpenAI, Anthropic, Google, DeepSeek, and any OpenAI-compatible endpoint. Built-in compat rules and model fallback
+- [**16 Built-in Tools**](docs/feature-tree.md#sf-3-tool-system) — File, web, system, utility, memory — plus MCP protocol for external tools and sub-agent-as-tool
+- [**15+ Production Plugins**](docs/feature-tree.md#sf-7-plugin-system) — Memory, compression, permission, skill, MCP, eviction, validation, cost cap, token budget, rate limit, PII, moderation
+- [**Task Queue**](docs/feature-tree.md#sf-10-task-management) — Priority-based concurrency control with auto-checkpoint recovery for long-running tasks
+- [**Session Persistence**](docs/feature-tree.md#sf-6-session--persistence) — Suspend / resume with JSONL and SQLite backends. 11 event types for full replay. Built for HITL workflows
+- [**A2A Protocol**](docs/feature-tree.md#sf-9-server--deployment) — Native Agent-to-Agent JSON-RPC with streaming, agent cards, and artifact exchange
 
 ## Quick Start
 
@@ -43,72 +50,60 @@ npm install @primo-ai/core
 
 ```typescript
 import { Agent, registerProvider } from '@primo-ai/core';
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 
-// Register any OpenAI-compatible provider
-registerProvider('deepseek', (modelId) => {
-  const sdk = createOpenAICompatible({
+registerProvider('deepseek', (modelId) =>
+  createOpenAICompatible({
     baseURL: 'https://api.deepseek.com',
     apiKey: process.env.DEEPSEEK_API_KEY!,
-  });
-  return sdk.languageModel(modelId);
-});
+  }).languageModel(modelId)
+);
 
-// Create and run an agent
-const agent = new Agent({
+const { response } = await new Agent({
   model: 'deepseek/deepseek-v4-flash',
   systemPrompt: 'You are a helpful assistant.',
-  maxIterations: 5,
-});
-
-const { response } = await agent.run('Hello!');
-console.log(response);
+}).run('Hello!');
 ```
 
 <details>
-<summary>📦 Using OpenAI / Anthropic / Google</summary>
+<summary>Using OpenAI / Anthropic / Google</summary>
 
 ```typescript
-import { Agent, registerProvider } from '@primo-ai/core';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createAnthropic } from '@ai-sdk/anthropic';
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
 
-registerProvider('openai',   (m) => createOpenAI({ apiKey: process.env.OPENAI_API_KEY! }).languageModel(m));
+registerProvider('openai',    (m) => createOpenAI({ apiKey: process.env.OPENAI_API_KEY! }).languageModel(m));
 registerProvider('anthropic', (m) => createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY! }).languageModel(m));
-registerProvider('google',   (m) => createGoogleGenerativeAI({ apiKey: process.env.GOOGLE_API_KEY! }).languageModel(m));
 
-const agent = new Agent({ model: 'openai/gpt-4o', systemPrompt: 'You are a helpful assistant.' });
+const agent = new Agent({ model: 'anthropic/claude-sonnet-4-6-20250514', systemPrompt: 'You are a helpful assistant.' });
 ```
 
 </details>
 
-## Why AgentForge?
+## Examples
 
-| | AgentForge | AgentScope | DeepAgents | Mastra |
-|---|---|---|---|---|
-| Language | TypeScript | Python | Python | TypeScript |
-| Pipeline extensibility | ✅ Processor + Span + Hook | ⚠️ Pipeline only | ⚠️ LangGraph nodes | ⚠️ Middleware only |
-| Production guardrails | ✅ costCap, tokenBudget, rateLimit, PII, moderation | ❌ Not built-in | ❌ Not built-in | ⚠️ Partial |
-| A2A protocol | ✅ Native + streaming | ✅ Native | ❌ Third-party only | ⚠️ Manual |
-| Suspend & resume | ✅ Checkpoint + JSONL | ⚠️ SQLite session | ⚠️ LangGraph checkpoint | ⚠️ Basic |
-| Plugin system | ✅ 15+ built-in, 1-line register | ⚠️ Toolkit + MCP | ⚠️ Skills + MCP | ⚠️ Limited |
-
-## Progressive Examples
-
-### 📡 Observe pipeline events
-
-Every stage emits events — subscribe with zero setup.
+### Multi-agent orchestration
 
 ```typescript
-agent.eventSystem.subscribe('invokeLLM:after', (data) => {
-  console.log('LLM call complete', data);
-});
+import { createPipeline } from '@primo-ai/core';
+
+const result = await createPipeline()
+  .step({ name: 'research', agent: researcherAgent })
+  .step({
+    name: 'parallel-review',
+    agents: [criticAgent, factCheckerAgent],
+    options: { aggregator: (r) => r.map(x => x.response).join('\n---\n') },
+  })
+  .step({
+    name: 'route',
+    router: {
+      classifier: (input) => input.includes('code') ? 'coder' : 'writer',
+      routes: { coder: coderAgent, writer: writerAgent },
+    },
+  })
+  .run('Explain quicksort');
 ```
 
-### 🔌 Add plugins
-
-Swap in production plugins with one line each.
+### Add production plugins
 
 ```typescript
 import { memoryPlugin, compressionPlugin, permissionPlugin } from '@primo-ai/plugins';
@@ -116,7 +111,6 @@ import { memoryPlugin, compressionPlugin, permissionPlugin } from '@primo-ai/plu
 const agent = new Agent({
   model: 'deepseek/deepseek-v4-flash',
   systemPrompt: 'You are a helpful assistant.',
-  maxIterations: 10,
   plugins: [
     memoryPlugin({ backend: 'sqlite' }),
     compressionPlugin({ maxTokens: 8000 }),
@@ -125,38 +119,20 @@ const agent = new Agent({
 });
 ```
 
-### 🤖 Multi-agent via A2A
-
-Two agents talking over the Agent-to-Agent protocol.
+### Task Queue
 
 ```typescript
-import { AgentForgeServer, A2AClient, buildAgentCard, a2aRoutes } from '@primo-ai/server';
+import { TaskQueueImpl } from '@primo-ai/core';
 
-// Start a researcher agent on port 3001
-const server = new AgentForgeServer({ port: 3001 });
-server.registry.register('researcher', {
-  model: 'deepseek/deepseek-v4-flash',
-  systemPrompt: 'You are a research assistant.',
-  maxIterations: 2,
+const queue = new TaskQueueImpl({ maxConcurrency: 4, persistence: 'file' });
+const handle = await queue.enqueue('analyst', { input: 'Analyze this dataset...' }, {
+  priority: 5, timeout: 600_000, autoCheckpoint: true,
 });
-server.hono.route('/a2a', a2aRoutes({ registry: server.registry, agentId: 'researcher' }));
-await server.start();
 
-// Send a task from another agent
-const card = buildAgentCard({
-  name: 'researcher',
-  description: 'Research assistant that generates summaries',
-  version: '1.0.0',
-  url: 'http://localhost:3001/a2a',
-  skills: [{ id: 'summarize', name: 'Summarize', description: 'Summarize a topic', tags: ['research'] }],
-});
-const client = new A2AClient({ card });
-const result = await client.sendMessage('Summarize neural networks in 2 sentences.');
+handle.on('complete', (data) => console.log('Done:', data));
 ```
 
-### 🛠️ Custom processor
-
-Write your own pipeline stage in 10 lines.
+### Custom processor
 
 ```typescript
 import { createFactInjectionProcessor } from '@primo-ai/plugins';
@@ -164,83 +140,65 @@ import { createFactInjectionProcessor } from '@primo-ai/plugins';
 const agent = new Agent({
   model: 'deepseek/deepseek-v4-flash',
   systemPrompt: 'You are a helpful assistant.',
-  plugins: [
-    {
-      name: 'inject-time',
-      processors: [
-        {
-          stage: 'buildContext',
-          processor: createFactInjectionProcessor({
-            facts: { currentTime: () => new Date().toISOString() },
-          }),
-        },
-      ],
-    },
-  ],
+  plugins: [{
+    name: 'inject-time',
+    processors: [{
+      stage: 'buildContext',
+      processor: createFactInjectionProcessor({
+        facts: { currentTime: () => new Date().toISOString() },
+      }),
+    }],
+  }],
 });
 ```
 
+> [!TIP]
+> Every stage emits events — subscribe with zero setup: `agent.eventSystem.subscribe('invokeLLM:after', handler)`
+
+## Comparison
+
+| | AgentForge | Mastra | AgentScope | CrewAI |
+|---|---|---|---|---|
+| Language | TypeScript | TypeScript | Python | Python |
+| Pipeline model | Processor + Span + Hook | Middleware only | Pipeline only | Task-based |
+| Multi-agent | Sequential / Parallel / Router | Manual | Basic | Crew + Flow |
+| Production guardrails | costCap, tokenBudget, rateLimit, PII, moderation | Partial | Not built-in | Not built-in |
+| A2A protocol | Native + streaming | Manual | Native | Not built-in |
+| Task queue | Priority + concurrency + checkpoint | Basic | Not built-in | Not built-in |
+| Session persistence | JSONL + SQLite + checkpoint | Basic | SQLite | Basic |
+| Plugin system | 15+ built-in, 1-line register | Limited | Toolkit + MCP | Tools + MCP |
+
 ## Architecture
 
-### Pipeline Stages
-
-```mermaid
-flowchart LR
-    A[processInput] --> B[buildContext]
-    B --> C[prepareStep]
-    C --> D[gateLLM]
-    D --> E[invokeLLM]
-    E --> F[processStepOutput]
-    F --> G[gateTool]
-    G --> H{Tools needed?}
-    H -- Yes --> I[executeTools]
-    I --> C
-    H -- No --> J[evaluateIteration]
-    J --> K{Continue?}
-    K -- Yes --> C
-    K -- No --> L[processOutput]
-
-    style A fill:#1e1b4b,stroke:#6366f1,color:#fff
-    style L fill:#1e1b4b,stroke:#6366f1,color:#fff
-    style C fill:#312e81,stroke:#818cf8,color:#fff
-    style D fill:#312e81,stroke:#818cf8,color:#fff
-    style E fill:#312e81,stroke:#818cf8,color:#fff
-    style F fill:#312e81,stroke:#818cf8,color:#fff
-    style G fill:#312e81,stroke:#818cf8,color:#fff
-    style I fill:#312e81,stroke:#818cf8,color:#fff
-    style J fill:#312e81,stroke:#818cf8,color:#fff
 ```
-
-The agentic loop repeats until `iteration.loopDirective` is `stop`. Any processor can return an `AbortSignal` to abort with optional `retryFrom` a specific stage.
-
-### Pipeline Context
+processInput → buildContext → [Agentic Loop:
+  prepareStep → gateLLM → invokeLLM → processStepOutput → gateTool → executeTools → evaluateIteration
+] → processOutput
+```
 
 Every stage receives a `PipelineContext` with four regions:
 
-| Region | Purpose | Contents |
-|--------|---------|----------|
-| `request` | Immutable input | user message, sessionId |
-| `agent` | Configuration | model, systemPrompt, tools, promptFragments |
-| `iteration` | Per-step state | step number, response, loopDirective, span |
-| `session` | Cross-iteration state | messageHistory, tokenUsage, plugin custom data |
-
-### Package Structure
+| Region | Purpose |
+|--------|---------|
+| `request` | Immutable input (message, sessionId) |
+| `agent` | Config, system prompt, tool declarations, prompt fragments |
+| `iteration` | Per-step state (response, tool calls, loop directive, span) |
+| `session` | Cross-step state (history, token usage, plugin data) |
 
 ```
 packages/
   sdk/             -- Pure type definitions (zero dependencies)
-  tools/           -- Built-in tool implementations
-  observability/   -- Span, Tracer, Metrics + OpenTelemetry bridge
-  core/            -- Agent, PipelineRunner, LLMInvoker, ToolRegistry, SessionManager
+  tools/           -- 16 built-in tools (file · web · system · utility · memory)
+  observability/   -- Span · Tracer · Metrics + OpenTelemetry bridge
+  core/            -- Agent · Pipeline · LLMInvoker · Orchestration · TaskQueue · Session
   plugins/         -- 15+ processor plugins
-  server/          -- Hono HTTP server, WebSocket, A2A protocol, CLI
+  server/          -- HTTP server · A2A protocol · CLI · Studio UI
 ```
-
-Dependency flow: `sdk` ← `tools` / `observability` ← `core` ← `plugins` ← `server`.
 
 ## Production
 
-### Configuration
+<details>
+<summary>Configuration</summary>
 
 Multi-level JSONC config (highest priority first):
 
@@ -261,52 +219,48 @@ Multi-level JSONC config (highest priority first):
 }
 ```
 
-### CLI
+</details>
+
+<details>
+<summary>CLI</summary>
 
 ```bash
 npx agentforge serve --port 3000 --api-key secret   # Start server
-npx agentforge serve --studio                        # Start with observability UI at /studio
+npx agentforge serve --studio                        # With observability UI at /studio
 npx agentforge run --agent assistant --input "Hello" # Single invocation
 npx agentforge dev --config .agentforge/config.jsonc # Dev mode with watch
 ```
 
-### API Endpoints
+</details>
+
+<details>
+<summary>API Endpoints</summary>
 
 ```
-GET  /health/live              -- Liveness probe
-GET  /health/ready             -- Readiness probe
-POST /agents/:id/run           -- Run an agent
-GET  /agents/:id/stream        -- Stream agent output (SSE)
-GET  /sessions                 -- List sessions
-GET  /sessions/:id             -- Get session details
-GET  /sessions/:id/messages    -- Get message history
-GET  /sessions/:id/events      -- Session event stream (SSE)
-POST /sessions/:id/abort       -- Abort running session
-POST /sessions/:id/prompt      -- Continue session (sync)
-POST /sessions/:id/prompt/stream -- Continue session (SSE)
-GET  /permissions/pending      -- List pending permissions
-POST /permissions/pending/:id/respond -- Approve/deny
-GET  /providers                -- List model gateways
-GET  /mcp                      -- List MCP servers
-POST /mcp                      -- Add MCP server
-GET  /api/studio/traces        -- List traces
-GET  /api/studio/traces/:id    -- Trace detail with span tree
-GET  /api/studio/metrics       -- Metrics snapshot
-GET  /api/studio/metrics/kpi   -- KPI data (runs, latency, tokens, cost)
-GET  /api/studio/agents        -- Registered agents with model info
-GET  /api/studio/sessions      -- List sessions with status/limit/offset
-GET  /api/studio/sessions/:id  -- Session detail
-GET  /api/studio/sessions/:id/events -- Session events with fromSeq/toSeq/types
-GET  /studio/*                 -- Embedded observability SPA
+GET  /health/live                    GET  /sessions
+POST /agents/:id/run                 GET  /sessions/:id
+GET  /agents/:id/stream (SSE)        GET  /sessions/:id/messages
+POST /sessions/:id/prompt            POST /sessions/:id/abort
+GET  /permissions/pending            POST /permissions/pending/:id/respond
+GET  /providers                      GET  /mcp / POST /mcp
+GET  /api/studio/traces              GET  /api/studio/metrics
+GET  /api/studio/sessions            GET  /studio/* (SPA)
 ```
 
-### Docker
+</details>
+
+<details>
+<summary>Docker</summary>
 
 ```bash
 docker compose up
 ```
 
 Container exposes port 3000 with health checks. Mount your config at `/app/.agentforge/`.
+
+</details>
+
+---
 
 ## Contributing
 

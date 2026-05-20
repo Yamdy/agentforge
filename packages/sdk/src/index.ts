@@ -1004,6 +1004,18 @@ export interface AgentProfile {
 // Orchestration — Multi-Agent Coordination
 // ---------------------------------------------------------------------------
 
+/** Minimal interface for an agent instance (duck-typed for orchestration). */
+export interface AgentInstance {
+  run(input: string, options?: unknown): Promise<{
+    response: string;
+    tokenUsage: TokenUsage;
+    sessionId: string;
+  }>;
+}
+
+/** Either an agent configuration or an agent instance. */
+export type AgentLike = AgentConfig | AgentInstance;
+
 /** Result of a single orchestration step. */
 export interface OrchestrationStepResult {
   stepName: string;
@@ -1033,18 +1045,18 @@ export interface OrchestrationStepOptions {
 
 /** Configuration for a router step. */
 export interface RouterConfig {
-  routes: Record<string, AgentConfig>;
-  default?: AgentConfig;
+  routes: Record<string, AgentLike>;
+  default?: AgentLike;
   classifier: RouterClassifier;
 }
 
 /** Configuration for a single orchestration step. */
 export interface OrchestrationStepConfig {
   name: string;
-  /** Sequential mode: single agent */
-  agent?: AgentConfig;
-  /** Parallel mode: multiple agents */
-  agents?: AgentConfig[];
+  /** Sequential mode: single agent (config or instance) */
+  agent?: AgentLike;
+  /** Parallel mode: multiple agents (configs or instances) */
+  agents?: AgentLike[];
   /** Conditional mode: router configuration */
   router?: RouterConfig;
   /** Step options */
@@ -1061,8 +1073,8 @@ export interface OrchestrationResult {
 
 /** Options for running an orchestration pipeline. */
 export interface OrchestrationOptions {
-  /** Abort signal for cancellation */
-  signal?: AbortSignal;
+  /** Abort signal for cancellation (global AbortSignal) */
+  signal?: globalThis.AbortSignal;
   /** Session ID for persistence */
   sessionId?: string;
   /** Maximum total iterations across all agents */

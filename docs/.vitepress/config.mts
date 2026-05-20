@@ -2,7 +2,7 @@ import { defineConfig } from 'vitepress';
 
 export default defineConfig({
   title: 'AgentForge',
-  description: 'TypeScript Agent 框架 — Processor Pipeline 模型',
+  description: 'TypeScript Agent 框架 — Pipeline 驱动，多智能体编排',
   lang: 'zh-CN',
 
   cleanUrls: true,
@@ -23,6 +23,7 @@ export default defineConfig({
           text: '开始',
           items: [
             { text: '快速入门', link: '/getting-started' },
+            { text: '特性树', link: '/feature-tree' },
             { text: '配置', link: '/configuration' },
           ],
         },

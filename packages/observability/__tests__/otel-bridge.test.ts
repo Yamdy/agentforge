@@ -68,11 +68,9 @@ describe('OTelBridge (with provider)', () => {
     expect(invokeLlm.spanContext().traceId).toBe(agentRun.spanContext().traceId);
     expect(executeTools.spanContext().traceId).toBe(agentRun.spanContext().traceId);
 
-    // Parent-child hierarchy via parentSpanContext
-    const invokeLlmParent = (invokeLlm as unknown as { parentSpanContext: { spanId: string } | undefined }).parentSpanContext;
-    const executeToolsParent = (executeTools as unknown as { parentSpanContext: { spanId: string } | undefined }).parentSpanContext;
-    expect(invokeLlmParent?.spanId).toBe(agentRun.spanContext().spanId);
-    expect(executeToolsParent?.spanId).toBe(invokeLlm.spanContext().spanId);
+    // Parent-child hierarchy via parentSpanId
+    expect(invokeLlm.parentSpanId).toBe(agentRun.spanContext().spanId);
+    expect(executeTools.parentSpanId).toBe(invokeLlm.spanContext().spanId);
   });
 
   it('propagates attributes and events to OTel spans', async () => {

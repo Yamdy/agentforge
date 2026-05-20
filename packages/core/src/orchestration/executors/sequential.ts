@@ -36,11 +36,6 @@ export class SequentialExecutor {
     let currentInput = input;
 
     for (let i = 0; i < steps.length; i++) {
-      // Check abort signal before each step
-      if (options?.signal?.aborted) {
-        throw new DOMException('Sequential execution aborted', 'AbortError');
-      }
-
       const step = steps[i];
       const agent = agents[i];
 

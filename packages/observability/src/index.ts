@@ -6,3 +6,4 @@ export { InMemoryMetrics, type HistogramStats, type MetricsSnapshot } from './me
 export { TestExporter } from './exporter.js';
 export { OTelBridge, type OTelBridgeOptions, type EventBusLike } from './otel-bridge.js';
 export { TraceCollector, formatTraceJson, formatTraceConsole, formatTraceOtlp, type Trace, type TraceNode, type OtlpOptions } from './trace-collector.js';
+export { SafeOtlpSpanExporter, createOtlpTracerProvider, type OtlpExporterOptions, type OtlpExporterConfig } from './otel-exporter.js';

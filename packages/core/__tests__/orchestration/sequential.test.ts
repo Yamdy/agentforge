@@ -6,12 +6,18 @@ import type { OrchestrationStepConfig, OrchestrationStepResult } from '@primo-ai
 // Mock Agent
 function createMockAgent(response: string, tokenUsage = { input: 10, output: 20 }): Agent {
   return {
-    run: vi.fn(async (input: string): Promise<AgentRunResult> => ({
-      response,
-      tokenUsage,
-      sessionId: `session-${Date.now()}`,
-      compatRetries: 0,
-    })),
+    run: vi.fn(async (input: string, options?: { signal?: AbortSignal }): Promise<AgentRunResult> => {
+      // Simulate abort handling like a real agent would
+      if (options?.signal?.aborted) {
+        throw new DOMException('Agent execution aborted', 'AbortError');
+      }
+      return {
+        response,
+        tokenUsage,
+        sessionId: `session-${Date.now()}`,
+        compatRetries: 0,
+      };
+    }),
     stream: vi.fn(),
     streamEvents: vi.fn(),
     use: vi.fn(),

@@ -1,116 +1,273 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { OrchestrationPipeline, createPipeline } from '../../src/orchestration/pipeline.js';
 import { AgentRouter } from '../../src/orchestration/executors/router.js';
 import type { Agent, AgentRunResult } from '../../src/index.js';
+import type { PipelineContext } from '@primo-ai/sdk';
 
-function createMockAgent(response: string, tokenUsage = { input: 10, output: 20 }, delay = 0): Agent {
+// Mock Agent
+function createMockAgent(
+  response: string,
+  tokenUsage = { input: 10, output: 20 },
+  delay = 0
+): Agent {
   return {
-    run: vi.fn(async (input: string, options?: unknown): Promise<AgentRunResult> => {
-      if (delay > 0) await new Promise(r => setTimeout(r, delay));
-      return { response, tokenUsage, sessionId: `s-${Date.now()}`, compatRetries: 0 };
-    }),
-    stream: vi.fn(), streamEvents: vi.fn(), use: vi.fn(), reset: vi.fn(),
+    run: vi.fn(
+      async (
+        input: string,
+        options?: unknown
+      ): Promise<AgentRunResult> => {
+        if (delay > 0) {
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+        return {
+          response,
+          tokenUsage,
+          sessionId: `session-${Date.now()}`,
+          compatRetries: 0,
+        };
+      }
+    ),
+    stream: vi.fn(),
+    streamEvents: vi.fn(),
+    use: vi.fn(),
+    reset: vi.fn(),
   } as unknown as Agent;
 }
 
 describe('OrchestrationPipeline', () => {
-  it('should add sequential step', () => {
-    const p = new OrchestrationPipeline().step('s1', createMockAgent('R'));
-    expect(p.getStepCount()).toBe(1);
-    expect(p.getStepNames()).toEqual(['s1']);
+  describe('step', () => {
+    it('should add sequential step with single agent', () => {
+      const agent = createMockAgent('Response');
+      const pipeline = new OrchestrationPipeline().step('step1', agent);
+
+      expect(pipeline.getStepCount()).toBe(1);
+      expect(pipeline.getStepNames()).toEqual(['step1']);
+    });
+
+    it('should add parallel step with agent array', () => {
+      const agent1 = createMockAgent('Response 1');
+      const agent2 = createMockAgent('Response 2');
+      const pipeline = new OrchestrationPipeline().step('parallel', [agent1, agent2]);
+
+      expect(pipeline.getStepCount()).toBe(1);
+      expect(pipeline.getStepNames()).toEqual(['parallel']);
+    });
+
+    it('should add router step', () => {
+      const agent = createMockAgent('Response');
+      const router = new AgentRouter({
+        routes: { code: agent },
+        classifier: async () => 'code',
+      });
+      const pipeline = new OrchestrationPipeline().step('router', router);
+
+      expect(pipeline.getStepCount()).toBe(1);
+      expect(pipeline.getStepNames()).toEqual(['router']);
+    });
+
+    it('should support method chaining', () => {
+      const agent1 = createMockAgent('Response 1');
+      const agent2 = createMockAgent('Response 2');
+      const pipeline = new OrchestrationPipeline()
+        .step('step1', agent1)
+        .step('step2', agent2);
+
+      expect(pipeline.getStepCount()).toBe(2);
+      expect(pipeline.getStepNames()).toEqual(['step1', 'step2']);
+    });
   });
 
-  it('should add parallel step', () => {
-    const p = new OrchestrationPipeline().step('par', [createMockAgent('R1'), createMockAgent('R2')]);
-    expect(p.getStepCount()).toBe(1);
+  describe('run', () => {
+    it('should execute sequential steps in order', async () => {
+      const agent1 = createMockAgent('First');
+      const agent2 = createMockAgent('Second');
+      const pipeline = new OrchestrationPipeline()
+        .step('step1', agent1)
+        .step('step2', agent2);
+
+      const result = await pipeline.run('input');
+
+      expect(result.steps).toHaveLength(2);
+      expect(result.steps[0].response).toBe('First');
+      expect(result.steps[1].response).toBe('Second');
+      expect(result.response).toBe('Second');
+    });
+
+    it('should chain output between steps', async () => {
+      const agent1 = createMockAgent('First output');
+      const agent2 = createMockAgent('Second output');
+      const pipeline = new OrchestrationPipeline()
+        .step('step1', agent1)
+        .step('step2', agent2);
+
+      await pipeline.run('initial input');
+
+      // First agent gets initial input
+      expect(agent1.run).toHaveBeenCalledWith('initial input', { signal: undefined });
+      // Second agent gets first agent's output (chained)
+      expect(agent2.run).toHaveBeenCalledWith('First output', { signal: undefined });
+    });
+
+    it('should execute parallel steps concurrently', async () => {
+      const agent1 = createMockAgent('Response 1', { input: 10, output: 20 }, 50);
+      const agent2 = createMockAgent('Response 2', { input: 20, output: 40 }, 50);
+      const pipeline = new OrchestrationPipeline().step('parallel', [agent1, agent2]);
+
+      const startTime = Date.now();
+      const result = await pipeline.run('input');
+      const duration = Date.now() - startTime;
+
+      expect(result.steps).toHaveLength(1);
+      // Parallel execution should be faster than sequential
+      expect(duration).toBeLessThan(100);
+      // Token usage should be aggregated
+      expect(result.steps[0].tokenUsage).toEqual({ input: 30, output: 60 });
+    });
+
+    it('should execute router step and route to correct agent', async () => {
+      const codeAgent = createMockAgent('Code response');
+      const researchAgent = createMockAgent('Research response');
+      const router = new AgentRouter({
+        routes: {
+          code: codeAgent,
+          research: researchAgent,
+        },
+        classifier: async (input) => (input.includes('code') ? 'code' : 'research'),
+      });
+      const pipeline = new OrchestrationPipeline().step('classify', router);
+
+      const result = await pipeline.run('Write some code');
+
+      expect(result.steps[0].response).toBe('Code response');
+      expect(codeAgent.run).toHaveBeenCalled();
+      expect(researchAgent.run).not.toHaveBeenCalled();
+    });
+
+    it('should aggregate token usage across all steps', async () => {
+      const agent1 = createMockAgent('First', { input: 100, output: 50 });
+      const agent2 = createMockAgent('Second', { input: 200, output: 100 });
+      const pipeline = new OrchestrationPipeline()
+        .step('step1', agent1)
+        .step('step2', agent2);
+
+      const result = await pipeline.run('input');
+
+      expect(result.totalTokenUsage).toEqual({ input: 300, output: 150 });
+    });
+
+    it('should generate session ID if not provided', async () => {
+      const agent = createMockAgent('Response');
+      const pipeline = new OrchestrationPipeline().step('step1', agent);
+
+      const result = await pipeline.run('input');
+
+      expect(result.sessionId).toMatch(/^orchestration-\d+$/);
+    });
+
+    it('should use provided session ID', async () => {
+      const agent = createMockAgent('Response');
+      const pipeline = new OrchestrationPipeline().step('step1', agent);
+
+      const result = await pipeline.run('input', { sessionId: 'custom-session' });
+
+      expect(result.sessionId).toBe('custom-session');
+    });
+
+    it('should handle errors with fail-fast strategy', async () => {
+      const agent1 = createMockAgent('First');
+      const errorAgent = {
+        run: vi.fn(async () => {
+          throw new Error('Agent failed');
+        }),
+        stream: vi.fn(),
+        streamEvents: vi.fn(),
+        use: vi.fn(),
+        reset: vi.fn(),
+      } as unknown as Agent;
+      const agent3 = createMockAgent('Third');
+
+      const pipeline = new OrchestrationPipeline()
+        .step('step1', agent1)
+        .step('step2', errorAgent, { failureStrategy: 'fail-fast' })
+        .step('step3', agent3);
+
+      await expect(pipeline.run('input')).rejects.toThrow('Agent failed');
+      // Third agent should not be called
+      expect(agent3.run).not.toHaveBeenCalled();
+    });
+
+    it('should continue on error with continue strategy', async () => {
+      const agent1 = createMockAgent('First');
+      const errorAgent = {
+        run: vi.fn(async () => {
+          throw new Error('Agent failed');
+        }),
+        stream: vi.fn(),
+        streamEvents: vi.fn(),
+        use: vi.fn(),
+        reset: vi.fn(),
+      } as unknown as Agent;
+      const agent3 = createMockAgent('Third');
+
+      const pipeline = new OrchestrationPipeline()
+        .step('step1', agent1)
+        .step('step2', errorAgent, { failureStrategy: 'continue' })
+        .step('step3', agent3);
+
+      const result = await pipeline.run('input');
+
+      expect(result.steps).toHaveLength(3);
+      expect(result.steps[0].response).toBe('First');
+      expect(result.steps[1].error).toBeInstanceOf(Error);
+      expect(result.steps[2].response).toBe('Third');
+    });
+
+    it('should respect abort signal', async () => {
+      const agent = createMockAgent('Response');
+      const pipeline = new OrchestrationPipeline().step('step1', agent);
+      const controller = new AbortController();
+      controller.abort();
+
+      await expect(pipeline.run('input', { signal: controller.signal })).rejects.toThrow();
+    });
   });
 
-  it('should add router step', () => {
-    const router = new AgentRouter({ routes: { code: createMockAgent('R') }, classifier: async () => 'code' });
-    const p = new OrchestrationPipeline().step('route', router);
-    expect(p.getStepCount()).toBe(1);
+  describe('createPipeline', () => {
+    it('should create a new pipeline', () => {
+      const pipeline = createPipeline();
+      expect(pipeline).toBeInstanceOf(OrchestrationPipeline);
+    });
+
+    it('should pass options to pipeline constructor', () => {
+      const factory = vi.fn();
+      const pipeline = createPipeline({ agentFactory: factory });
+      expect(pipeline).toBeInstanceOf(OrchestrationPipeline);
+    });
   });
 
-  it('should execute sequential steps', async () => {
-    const a1 = createMockAgent('First');
-    const a2 = createMockAgent('Second');
-    const result = await new OrchestrationPipeline().step('s1', a1).step('s2', a2).run('input');
-    expect(result.steps).toHaveLength(2);
-    expect(result.steps[0].response).toBe('First');
-    expect(result.steps[1].response).toBe('Second');
-  });
+  describe('mixed orchestration', () => {
+    it('should support mixed sequential, parallel, and router steps', async () => {
+      const plannerAgent = createMockAgent('Plan: Research X');
+      const researcher1 = createMockAgent('Research result 1', { input: 50, output: 30 });
+      const researcher2 = createMockAgent('Research result 2', { input: 60, output: 40 });
+      const summarizerAgent = createMockAgent('Summary: ...');
 
-  it('should chain output between steps', async () => {
-    const a1 = createMockAgent('First output');
-    const a2 = createMockAgent('Second output');
-    await new OrchestrationPipeline().step('s1', a1).step('s2', a2).run('initial');
-    expect(a1.run).toHaveBeenCalledWith('initial', { signal: undefined });
-    expect(a2.run).toHaveBeenCalledWith('First output', { signal: undefined });
-  });
+      const pipeline = new OrchestrationPipeline()
+        .step('plan', plannerAgent)
+        .step('research', [researcher1, researcher2])
+        .step('summarize', summarizerAgent);
 
-  it('should execute parallel concurrently', async () => {
-    const a1 = createMockAgent('R1', { input: 10, output: 20 }, 50);
-    const a2 = createMockAgent('R2', { input: 20, output: 40 }, 50);
-    const start = Date.now();
-    const result = await new OrchestrationPipeline().step('par', [a1, a2]).run('input');
-    expect(Date.now() - start).toBeLessThan(100);
-    expect(result.steps[0].tokenUsage).toEqual({ input: 30, output: 60 });
-  });
+      const result = await pipeline.run('Research topic X');
 
-  it('should execute router step', async () => {
-    const codeAgent = createMockAgent('Code response');
-    const router = new AgentRouter({ routes: { code: codeAgent }, classifier: async (i) => i.includes('code') ? 'code' : 'other' });
-    const result = await new OrchestrationPipeline().step('route', router).run('Write code');
-    expect(result.steps[0].response).toBe('Code response');
-  });
+      expect(result.steps).toHaveLength(3);
+      expect(result.steps[0].stepName).toBe('plan');
+      expect(result.steps[1].stepName).toBe('research');
+      expect(result.steps[2].stepName).toBe('summarize');
 
-  it('should aggregate token usage', async () => {
-    const result = await new OrchestrationPipeline().step('s1', createMockAgent('R', { input: 100, output: 50 })).step('s2', createMockAgent('R', { input: 200, output: 100 })).run('input');
-    expect(result.totalTokenUsage).toEqual({ input: 300, output: 150 });
-  });
-
-  it('should generate session ID', async () => {
-    const result = await new OrchestrationPipeline().step('s1', createMockAgent('R')).run('input');
-    expect(result.sessionId).toMatch(/^orchestration-\d+$/);
-  });
-
-  it('should use provided session ID', async () => {
-    const result = await new OrchestrationPipeline().step('s1', createMockAgent('R')).run('input', { sessionId: 'custom' });
-    expect(result.sessionId).toBe('custom');
-  });
-
-  it('should fail-fast on error', async () => {
-    const errorAgent = { run: vi.fn(async () => { throw new Error('Failed'); }), stream: vi.fn(), streamEvents: vi.fn(), use: vi.fn(), reset: vi.fn() } as unknown as Agent;
-    const a3 = createMockAgent('Third');
-    await expect(new OrchestrationPipeline().step('s1', createMockAgent('R')).step('s2', errorAgent, { failureStrategy: 'fail-fast' }).step('s3', a3).run('input')).rejects.toThrow('Failed');
-    expect(a3.run).not.toHaveBeenCalled();
-  });
-
-  it('should continue on error', async () => {
-    const errorAgent = { run: vi.fn(async () => { throw new Error('Failed'); }), stream: vi.fn(), streamEvents: vi.fn(), use: vi.fn(), reset: vi.fn() } as unknown as Agent;
-    const result = await new OrchestrationPipeline().step('s1', createMockAgent('First')).step('s2', errorAgent, { failureStrategy: 'continue' }).step('s3', createMockAgent('Third')).run('input');
-    expect(result.steps).toHaveLength(3);
-    expect(result.steps[1].error).toBeInstanceOf(Error);
-    expect(result.steps[2].response).toBe('Third');
-  });
-
-  it('should respect abort signal', async () => {
-    const ctrl = new AbortController();
-    ctrl.abort();
-    await expect(new OrchestrationPipeline().step('s1', createMockAgent('R')).run('input', { signal: ctrl.signal })).rejects.toThrow();
-  });
-
-  it('createPipeline should work', () => {
-    expect(createPipeline()).toBeInstanceOf(OrchestrationPipeline);
-  });
-
-  it('should support mixed steps', async () => {
-    const planner = createMockAgent('Plan');
-    const r1 = createMockAgent('R1', { input: 50, output: 30 });
-    const r2 = createMockAgent('R2', { input: 60, output: 40 });
-    const summarizer = createMockAgent('Summary');
-    const result = await new OrchestrationPipeline().step('plan', planner).step('research', [r1, r2]).step('summarize', summarizer).run('Research X');
-    expect(result.steps).toHaveLength(3);
-    expect(r1.run).toHaveBeenCalledWith('Plan', { signal: undefined });
+      // Verify chaining: researcher gets planner output
+      expect(researcher1.run).toHaveBeenCalledWith('Plan: Research X', { signal: undefined });
+      // Summarizer gets research results
+      expect(summarizerAgent.run).toHaveBeenCalled();
+    });
   });
 });
