@@ -96,6 +96,15 @@ describe('resolveSkillDirectories', () => {
     const userIdx = dirs.lastIndexOf('/home/user/.agents/skills');
     expect(customIdx).toBeGreaterThan(userIdx);
   });
+
+  // skills.paths from config
+  it('supports skills.paths configuration', () => {
+    const opts: DiscoveryOptions = { extraSkillDirs: ['/company/skills', '/team/skills'] };
+    const dirs = resolveSkillDirectories('/home/user/project', '/home/user', opts);
+
+    expect(dirs).toContain('/company/skills');
+    expect(dirs).toContain('/team/skills');
+  });
 });
 
 // ===========================================================================

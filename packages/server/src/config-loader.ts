@@ -112,8 +112,13 @@ export async function loadAndRegister(
     }));
   }
 
-  // Discover skills
-  const skillDirs = resolveSkillDirectories(process.cwd(), process.env.HOME ?? '', discoveryOpts);
+  // Discover skills — merge config skills.paths with discovery options
+  const skillPaths = (config as { skills?: { paths?: string[] } }).skills?.paths ?? [];
+  const skillDirs = resolveSkillDirectories(
+    process.cwd(),
+    process.env.HOME ?? '',
+    { ...discoveryOpts, extraSkillDirs: [...(discoveryOpts?.extraSkillDirs ?? []), ...skillPaths] },
+  );
   const skills = await discoverSkills(skillDirs, nodeFs);
 
   // Discover MCP servers

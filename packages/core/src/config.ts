@@ -175,4 +175,5 @@ const HarnessConfigSchema = z.object({
     url: z.string(),
     apiKey: z.string().optional(),
   })).optional(),
+  skills: z.object({ paths: z.array(z.string()).optional() }).optional(),
 }).passthrough();

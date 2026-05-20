@@ -717,6 +717,7 @@ export interface HarnessConfig {
   modelProfiles?: ModelProfile[];
   modelGateways?: GatewayConfig[];
   hooks?: { profile?: HookProfile; disabledHooks?: string[] };
+  skills?: { paths?: string[] };
   // Phase 2 — harness processor configurations
   costCap?: {
     maxCost: number;
