@@ -130,6 +130,42 @@ Multi-level JSONC config (highest priority first):
 
 Arrays `plugins` and `modelGateways` use concat merge; all other arrays are overridden.
 
+### Skill Discovery
+
+AgentForge automatically discovers skills from multiple directories (lowest to highest priority):
+
+1. `{project}/.agentforge/skills/` — project-level AgentForge skills
+2. `{project}/.agents/skills/` — project-level ecosystem skills (Claude Code compatible)
+3. `~/.agentforge/skills/` — user-level AgentForge skills
+4. `~/.agents/skills/` — user-level ecosystem skills (Claude Code compatible)
+5. `skills.paths` — additional directories configured in `config.jsonc` (highest priority)
+
+To configure extra skill directories, add to `config.jsonc`:
+
+```jsonc
+{
+  "skills": {
+    "paths": [
+      "/path/to/shared/skills",
+      "./relative/skills"
+    ]
+  }
+}
+```
+
+Each skill is a directory containing a `SKILL.md` file with YAML frontmatter:
+
+```markdown
+---
+name: my-skill
+description: A useful skill
+triggers:
+  - pattern: "keyword"
+---
+
+Skill instructions here...
+```
+
 ### Session Persistence
 
 SessionManagerImpl.restore() handles all 11 event types. Agent supports optional SessionManager dependency injection. JSONL file storage with tree branching via `parentSessionId`. Supports suspend/resume + checkpoint for HITL workflows.
