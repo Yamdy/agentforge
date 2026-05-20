@@ -27,7 +27,7 @@ export { TaskManagerImpl } from './task-manager.js';
 export { StateMachine, type AgentState } from './state-machine.js';
 export { ModelFactory } from './model-factory.js';
 export { LoopOrchestrator, RunMode, type LoopOptions } from './loop-orchestrator.js';
-export { serialize, deserialize } from './serialize.js';
+export { serialize, deserialize, type SerializableContext } from './serialize.js';
 export { InMemoryCheckpointStore, JsonlCheckpointStore } from './checkpoint-store.js';
 export {
   InMemorySyncEventStore,

@@ -7,6 +7,7 @@ import type {
   StageMutation,
   StageName,
   StreamEvent,
+  SnapshotService,
 } from '@primo-ai/sdk';
 import type { PipelineRunner } from './pipeline.js';
 import type { HookManager } from './hook-manager.js';
@@ -71,6 +72,8 @@ export class LoopOrchestrator {
   private preLoopStages: StageName[];
   private loopStages: StageName[];
   private postLoopStages: StageName[];
+  /** Optional snapshot service for file system auditing on suspend */
+  private snapshotService?: SnapshotService;
 
   // ---------------------------------------------------------------------------
   // RunMode (concurrent control)
@@ -139,6 +142,7 @@ export class LoopOrchestrator {
     checkpointStore?: CheckpointStore<ReturnType<typeof serialize>>,
     eventBus?: EventBus,
     stageConfig?: PipelineStageConfig,
+    snapshotService?: SnapshotService,
   ) {
     this.checkpointStore = checkpointStore ?? new JsonlCheckpointStore<ReturnType<typeof serialize>>(
       join(process.cwd(), '.agentforge', 'checkpoints'),
@@ -147,6 +151,7 @@ export class LoopOrchestrator {
     this.preLoopStages = stageConfig?.preLoop ?? PRE_LOOP_STAGES;
     this.loopStages = stageConfig?.loop ?? LOOP_STAGES;
     this.postLoopStages = stageConfig?.postLoop ?? POST_LOOP_STAGES;
+    this.snapshotService = snapshotService;
   }
 
   get state(): AgentState {
