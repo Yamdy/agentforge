@@ -9,3 +9,5 @@
  */
 
 export { TaskQueueImpl } from './queue.js';
+export { autoCheckpointPlugin } from './checkpoint-plugin.js';
+export { TaskNotificationManager } from './notification.js';
