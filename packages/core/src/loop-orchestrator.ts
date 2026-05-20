@@ -7,7 +7,6 @@ import type {
   StageMutation,
   StageName,
   StreamEvent,
-  SuspensionSignal,
 } from '@primo-ai/sdk';
 import type { PipelineRunner } from './pipeline.js';
 import type { HookManager } from './hook-manager.js';
@@ -16,6 +15,7 @@ import { applyReactiveRules } from './processors/provider-history-compat.js';
 import { StateMachine, type AgentState } from './state-machine.js';
 import { serialize, deserialize } from './serialize.js';
 import { InMemoryCheckpointStore, JsonlCheckpointStore } from './checkpoint-store.js';
+import { Runner } from './runner.js';
 import { join } from 'node:path';
 
 const PRE_LOOP_STAGES: PipelineStage[] = ['processInput', 'buildContext'];
@@ -64,6 +64,8 @@ interface LoopRunState {
 
 export class LoopOrchestrator {
   readonly stateMachine = new StateMachine();
+  /** Runner instance for structured concurrency control */
+  readonly taskRunner = new Runner();
   private checkpointStore: CheckpointStore<ReturnType<typeof serialize>>;
   private eventBus?: EventBus;
   private preLoopStages: StageName[];
@@ -191,16 +193,20 @@ export class LoopOrchestrator {
     if (this._mode === RunMode.Shell) {
       return this.enqueueRun(ctx, options);
     }
-    const runState: LoopRunState = { compatRetries: 0 };
-    let finalCtx = ctx;
 
-    for await (const event of this.streamCore(ctx, options, runState)) {
-      if (event.type === 'complete') {
-        finalCtx = (event as { context: PipelineContext }).context;
+    // Use Runner.ensureRunning for structured concurrency
+    return this.taskRunner.ensureRunning(async () => {
+      const runState: LoopRunState = { compatRetries: 0 };
+      let finalCtx = ctx;
+
+      for await (const event of this.streamCore(ctx, options, runState)) {
+        if (event.type === 'complete') {
+          finalCtx = (event as { context: PipelineContext }).context;
+        }
       }
-    }
 
-    return { context: finalCtx, compatRetries: runState.compatRetries };
+      return { context: finalCtx, compatRetries: runState.compatRetries };
+    });
   }
 
   async resumeLoop(sessionId: string, options: LoopOptions): Promise<LoopResult> {

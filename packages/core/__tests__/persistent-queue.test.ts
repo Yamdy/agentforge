@@ -5,6 +5,9 @@ import { tmpdir } from 'node:os';
 import { InMemoryPersistentQueue, JsonlPersistentQueue } from '../src/task-queue/persistent-queue.js';
 import type { QueuedTask } from '../src/task-queue/persistent-queue.js';
 
+// Type alias to help TypeScript infer types correctly
+type Task = QueuedTask<string>;
+
 describe('PersistentQueue', () => {
   describe('InMemoryPersistentQueue', () => {
     let queue: InMemoryPersistentQueue;
@@ -56,11 +59,11 @@ describe('PersistentQueue', () => {
       // Dequeue first task (simulates crash before completion)
       await queue.dequeue();
 
-      const pending = await queue.recoverPending();
+      const pending: Task[] = await queue.recoverPending();
       // Both id1 (in_flight) and id2 (pending) should be recovered
       expect(pending).toHaveLength(2);
-      expect(pending.find(t => t.id === id1)?.status).toBe('in_flight');
-      expect(pending.find(t => t.id === id2)?.status).toBe('pending');
+      expect(pending.find((t: Task) => t.id === id1)?.status).toBe('in_flight');
+      expect(pending.find((t: Task) => t.id === id2)?.status).toBe('pending');
     });
 
     it('generates unique IDs', async () => {
@@ -105,12 +108,12 @@ describe('PersistentQueue', () => {
 
       // New instance should recover both: id1 (in-flight) and id2 (queued)
       const queue2 = new JsonlPersistentQueue(tempDir);
-      const pending = await queue2.recoverPending();
+      const pending: Task[] = await queue2.recoverPending();
 
       // id1 was dequeued but not completed, should be recovered
       // id2 was never dequeued, should also be recovered
       expect(pending.length).toBeGreaterThanOrEqual(1);
-      expect(pending.find(t => t.id === id1)).toBeDefined();
+      expect(pending.find((t: Task) => t.id === id1)).toBeDefined();
     });
 
     it('persists completion status', async () => {
@@ -120,7 +123,7 @@ describe('PersistentQueue', () => {
 
       // New instance should not recover completed task
       const queue2 = new JsonlPersistentQueue(tempDir);
-      const pending = await queue2.recoverPending();
+      const pending: Task[] = await queue2.recoverPending();
       expect(pending).toHaveLength(0);
     });
 
