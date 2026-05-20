@@ -154,6 +154,7 @@ Router:     Input → Classifier → {Agent A | Agent B | Agent C} → Output
 | IR-5.1 | Event System | EventBus 发布订阅 + ReplayBackend 事件回放 + REPLAY_SENTINEL | `core/event-system.ts`, `core/event-bus.ts` |
 | IR-5.2 | Hook Manager | 9 个拦截点，优先级排序，minimal/standard/strict 三档 | `core/hook-manager.ts` |
 | IR-5.3 | Span/Tracer/Metrics | SpanImpl 树形链路 + InMemoryMetrics + OTelBridge OTel 桥接 + TraceCollector | `observability/` |
+| IR-5.7 | OTLP Export | SafeOtlpSpanExporter 安全导出 + createOtlpTracerProvider 工厂，环境变量配置，优雅降级 | `observability/otel-exporter.ts` |
 | IR-5.4 | Harness Gates | Cost Cap / Token Budget / Rate Limit / Required Tools Gate 四类内置门控 | `plugins/harness/` |
 | IR-5.5 | Goal Echo & Fact Injection | 目标回声（防止 Agent 漂移）+ 事实注入（上下文增强） | `plugins/harness/` |
 | IR-5.6 | Output Validation | 输出校验策略（json-schema/regex/custom），block/warn/fix 三种处理模式 | `plugins/validation/` |
@@ -176,6 +177,26 @@ Router:     Input → Classifier → {Agent A | Agent B | Agent C} → Output
 | Method 1: Callback/Hook | 固定位置拦截 | HookManager, tool before/after hooks |
 | Method 2: Flow as Data | 可配置管道阶段 | LoopOrchestrator stage arrays + PipelineStageConfig |
 | Method 3: Side Observing | 非侵入事件发射 | EventSystem (emit + replay) |
+
+### OTLP 导出配置
+
+通过环境变量配置 OTLP HTTP 导出，支持 Jaeger、Zipkin、Grafana Tempo 等 OTLP 兼容后端：
+
+```bash
+# 必填：OTLP 端点
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+
+# 可选：服务名称（默认 agentforge）
+OTEL_SERVICE_NAME=my-agent-service
+
+# 可选：禁用 OTel SDK
+OTEL_SDK_DISABLED=false
+```
+
+**特性**：
+- 优雅降级：未配置端点时静默禁用，不影响主流程
+- 安全导出：网络错误不抛异常，返回失败状态
+- 批量发送：BatchSpanProcessor 默认 5s 间隔，512 条批量
 
 ---
 
