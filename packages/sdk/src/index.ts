@@ -883,6 +883,72 @@ export interface TaskManager {
 }
 
 // ---------------------------------------------------------------------------
+// Task Queue — Long-running Task Management
+// ---------------------------------------------------------------------------
+
+/** Status of a task in the queue through its lifecycle. */
+export type TaskStatus = 'pending' | 'running' | 'suspended' | 'completed' | 'failed' | 'cancelled';
+
+/** Event types emitted by task queue operations. */
+export type TaskEvent = 'progress' | 'complete' | 'error' | 'suspend';
+
+/** Configuration for the task queue. */
+export interface TaskQueueConfig {
+  /** Maximum concurrent tasks. Default: 4. */
+  maxConcurrency?: number;
+  /** Persistence mode. Default: 'memory'. */
+  persistence?: 'memory' | 'file';
+  /** Interval in milliseconds between automatic checkpoints. */
+  checkpointInterval?: number;
+}
+
+/** Options for enqueuing a task. */
+export interface TaskOptions {
+  /** Priority (higher = more important). Default: 0. */
+  priority?: number;
+  /** Timeout in milliseconds. */
+  timeout?: number;
+  /** Parent session for hierarchical tasks. */
+  parentSessionId?: string;
+  /** Enable automatic checkpointing. Default: true. */
+  autoCheckpoint?: boolean;
+}
+
+/** Handle to a task in the queue. */
+export interface TaskQueueHandle {
+  /** Unique task identifier. */
+  taskId: string;
+  /** Current status. */
+  status: TaskStatus;
+  /** Progress percentage (0-1). */
+  progress?: number;
+  /** Task result (when completed). */
+  result?: unknown;
+  /** Error (when failed). */
+  error?: Error;
+  /** Subscribe to task events. */
+  on(event: TaskEvent, handler: (data: unknown) => void): void;
+  /** Cancel the task. */
+  cancel(): void;
+}
+
+/** Task queue for managing long-running agent tasks. */
+export interface TaskQueue {
+  /** Enqueue a task for execution. */
+  enqueue(agentId: string, input: unknown, options?: TaskOptions): Promise<TaskQueueHandle>;
+  /** Get task status. */
+  getStatus(taskId: string): Promise<TaskStatus>;
+  /** Get task result (throws if not completed). */
+  getResult(taskId: string): Promise<unknown>;
+  /** Cancel a running task. */
+  cancel(taskId: string): Promise<void>;
+  /** Resume a suspended task. */
+  resume(taskId: string): Promise<TaskQueueHandle>;
+  /** List tasks matching filter. */
+  list(filter?: { status?: TaskStatus; agentId?: string }): Promise<TaskQueueHandle[]>;
+}
+
+// ---------------------------------------------------------------------------
 // Eviction
 // ---------------------------------------------------------------------------
 
