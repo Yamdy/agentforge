@@ -784,6 +784,60 @@ export interface CheckpointStore<T = unknown> {
 }
 
 // ---------------------------------------------------------------------------
+// Snapshot Service (FileSystem Auditing)
+// ---------------------------------------------------------------------------
+
+/** Abstract interface for file system operations. Enables testing and remote FS support. */
+export interface FileSystemAdapter {
+  readFile(path: string): Promise<string | Uint8Array>;
+  writeFile(path: string, content: string | Uint8Array): Promise<void>;
+  deleteFile(path: string): Promise<void>;
+  listFiles(pattern: string): Promise<string[]>;
+  hashFile(path: string): Promise<string>;
+  exists(path: string): Promise<boolean>;
+}
+
+/** Snapshot of a single file's state. */
+export interface FileSnapshot {
+  path: string;
+  hash: string;
+}
+
+/** Complete snapshot of tracked files at a point in time. */
+export interface Snapshot {
+  id: string;
+  createdAt: string;
+  files: FileSnapshot[];
+  metadata?: Record<string, unknown>;
+}
+
+/** Difference between two file states. */
+export interface FilePatch {
+  path: string;
+  oldHash?: string;
+  newHash?: string;
+  type: 'created' | 'modified' | 'deleted';
+}
+
+/** Persistent storage for snapshots. */
+export interface SnapshotStore {
+  save(snapshot: Snapshot): Promise<void>;
+  load(snapshotId: string): Promise<Snapshot | undefined>;
+  delete(snapshotId: string): Promise<void>;
+  list(): Promise<string[]>;
+}
+
+/** Service for tracking, diffing, and reverting file system changes. */
+export interface SnapshotService {
+  /** Start tracking files matching patterns. Returns snapshot ID. */
+  track(): Promise<string>;
+  /** Get the differences between current state and a snapshot. */
+  patch(snapshotId: string): Promise<FilePatch[]>;
+  /** Revert files to the state captured in a snapshot. */
+  revert(snapshotId: string): Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
 // Event Replay (EventSystem)
 // ---------------------------------------------------------------------------
 

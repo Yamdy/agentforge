@@ -51,3 +51,9 @@ export class ToolExecutionError extends RecoverableError {
     super(message, { code: 'TOOL_ERROR', cause });
   }
 }
+
+export class SnapshotError extends FatalError {
+  constructor(message: string, options?: { snapshotId?: string; cause?: Error }) {
+    super(message, { code: 'SNAPSHOT_ERROR', cause: options?.cause });
+  }
+}

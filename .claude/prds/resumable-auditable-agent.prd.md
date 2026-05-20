@@ -71,7 +71,7 @@
 | # | Milestone | Outcome | Status | Plan |
 |---|-----------|---------|--------|------|
 | 1 | Runner 模式 | Agent 可中断、可恢复、崩溃后可恢复 | complete | `.claude/plans/resumable-auditable-agent.plan.md` |
-| 2 | Snapshot 服务 | 文件修改可追踪、可回滚 | pending | — |
+| 2 | Snapshot 服务 | 文件修改可追踪、可回滚 | complete | `.claude/plans/milestone-2-snapshot-service.plan.md` |
 | 3 | 集成与测试 | 端到端可恢复、可审计能力 | pending | — |
 
 ## Open Questions

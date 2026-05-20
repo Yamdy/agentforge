@@ -28,6 +28,7 @@
     "@primo-ai/sdk": "workspace:*",
     "@primo-ai/tools": "workspace:*",
     "ai": "^6.0.177",
+    "glob": "^13.0.6",
     "js-tiktoken": "^1.0.21",
     "zod": "^4.4.3"
   },

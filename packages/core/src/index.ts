@@ -77,3 +77,9 @@ export {
 // Runner - structured concurrency
 export { Runner, type RunnerState, type RunnerOptions, type TaskHandle } from './runner.js';
 export { Latch } from './latch.js';
+
+// Snapshot Service - file system auditing
+export { NodeFsAdapter } from './file-system-adapter.js';
+export { InMemorySnapshotStore, JsonlSnapshotStore } from './snapshot-store.js';
+export { SnapshotServiceImpl, type SnapshotServiceOptions } from './snapshot-service.js';
+export { SnapshotError } from './errors.js';
