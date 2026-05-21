@@ -7,11 +7,22 @@ import type {
   RememberOptions,
   RecallOptions,
 } from './types.js';
+import { EpisodicMemory } from './episodic-memory.js';
 
 let seqCounter = 0;
 function nextId(): string {
   seqCounter++;
   return `mem-${Date.now()}-${seqCounter}`;
+}
+
+function computeRecency(timestamp: string): number {
+  const ageMs = Date.now() - new Date(timestamp).getTime();
+  const maxAgeMs = 30 * 24 * 60 * 60 * 1000; // 30 days
+  return Math.max(0, 1 - ageMs / maxAgeMs);
+}
+
+function compositeScore(relevance: number, recency: number, importance: number): number {
+  return 0.4 * relevance + 0.3 * recency + 0.3 * importance;
 }
 
 export interface MemorySystemOptions {
@@ -20,10 +31,12 @@ export interface MemorySystemOptions {
 
 export class MemorySystem {
   private storage: MemoryStorage;
+  private episodic: EpisodicMemory;
   private knownScopes = new Set<string>();
 
   constructor(options: MemorySystemOptions) {
     this.storage = options.storage;
+    this.episodic = new EpisodicMemory(this.storage);
   }
 
   // ── remember() ─────────────────────────────────────────────
@@ -32,24 +45,18 @@ export class MemorySystem {
     content: string,
     options: RememberOptions = {},
   ): Promise<string> {
-    const id = nextId();
-    const now = new Date().toISOString();
     const type = options.type ?? 'fact';
 
     if (type === 'event') {
-      const event: MemoryEvent = {
-        id,
-        timestamp: now,
-        type: 'user_input',
-        content,
-        importance: options.importance ?? 0.5,
-      };
       const scope = options.scope ?? 'default';
       this.knownScopes.add(scope);
-      await this.storage.appendEvent(scope, event);
-      return id;
+      return this.episodic.addEvent(scope, content, {
+        importance: options.importance,
+      });
     }
 
+    const id = nextId();
+    const now = new Date().toISOString();
     const fact: Fact = {
       id,
       content,
@@ -71,42 +78,58 @@ export class MemorySystem {
     query: string,
     options: RecallOptions = {},
   ): Promise<MemoryEntry[]> {
-    const { topK = 10, scope } = options;
+    const { topK = 10, scope, timeRange } = options;
     const results: MemoryEntry[] = [];
 
-    // Search facts across all known scopes (or scoped)
-    const searchScope = scope;
-    const facts = await this.storage.searchFacts(query, { topK, scope: searchScope });
+    // Search facts
+    const facts = await this.storage.searchFacts(query, { topK, scope });
     for (const f of facts) {
+      const recency = computeRecency(f.lastAccessed);
       results.push({
         id: f.id,
         content: f.content,
         type: 'fact',
-        score: f.importance,
+        score: compositeScore(1, recency, f.importance),
+        importance: f.importance,
         timestamp: f.createdAt,
       });
     }
 
-    // Search events in relevant scopes
+    // Search events via EpisodicMemory
     const eventScopes = scope ? [scope] : [...this.knownScopes];
     for (const s of eventScopes) {
-      const events = await this.storage.getEvents(s, { limit: topK });
+      const events = await this.episodic.query(s, { timeRange, limit: topK });
       for (const e of events) {
         if (e.content.toLowerCase().includes(query.toLowerCase())) {
+          const recency = computeRecency(e.timestamp);
           results.push({
             id: e.id,
             content: e.content,
             type: 'event',
-            score: e.importance,
+            score: compositeScore(1, recency, e.importance),
+            importance: e.importance,
             timestamp: e.timestamp,
           });
         }
       }
     }
 
+    // Aggregate scores for duplicate content (sum scores)
+    const aggregated = new Map<string, MemoryEntry>();
+    for (const r of results) {
+      const key = r.content.toLowerCase();
+      const existing = aggregated.get(key);
+      if (existing) {
+        existing.score = Math.max(existing.score, r.score);
+        existing.importance = Math.max(existing.importance, r.importance);
+      } else {
+        aggregated.set(key, { ...r });
+      }
+    }
+
     // Sort by score descending, then slice to topK
-    results.sort((a, b) => b.score - a.score);
-    return results.slice(0, topK);
+    const sorted = [...aggregated.values()].sort((a, b) => b.score - a.score);
+    return sorted.slice(0, topK);
   }
 
   // ── forget() ───────────────────────────────────────────────

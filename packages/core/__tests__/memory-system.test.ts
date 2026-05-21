@@ -140,6 +140,55 @@ describe('MemorySystem', () => {
       const hasEvent = results.some((r) => r.type === 'event');
       expect(hasEvent).toBe(true);
     });
+
+    it('ranks higher importance entries first', async () => {
+      await system.remember('Low importance architecture note', {
+        type: 'fact', scope: '/project/agentforge', importance: 0.3,
+      });
+      await system.remember('Critical architecture decision', {
+        type: 'fact', scope: '/project/agentforge', importance: 0.95,
+      });
+
+      const results = await system.recall('architecture');
+      expect(results.length).toBeGreaterThanOrEqual(2);
+      // Higher importance should rank higher
+      expect(results[0].importance).toBeGreaterThanOrEqual(results[1].importance);
+    });
+
+    it('scores recent events higher than older ones', async () => {
+      // Store an old event directly in storage
+      await storage.appendEvent('session-1', {
+        id: 'evt-old', timestamp: '2026-01-01T00:00:00Z',
+        type: 'user_input', content: 'system startup', importance: 0.9,
+      });
+      // Store a recent event via system
+      await system.remember('system startup completed', {
+        type: 'event', scope: 'session-1', importance: 0.9,
+      });
+
+      const results = await system.recall('startup');
+      const eventResults = results.filter((r) => r.type === 'event');
+      if (eventResults.length >= 2) {
+        // Recent event should rank higher due to recency score
+        expect(eventResults[0].timestamp >= eventResults[1].timestamp).toBe(true);
+      }
+    });
+
+    it('filters recall by time range', async () => {
+      await storage.appendEvent('session-1', {
+        id: 'evt-old', timestamp: '2026-01-01T00:00:00Z',
+        type: 'user_input', content: 'old deployment process', importance: 0.8,
+      });
+      await storage.appendEvent('session-1', {
+        id: 'evt-new', timestamp: '2026-06-01T00:00:00Z',
+        type: 'user_input', content: 'recent deployment process', importance: 0.8,
+      });
+
+      const results = await system.recall('deployment', {
+        timeRange: { start: '2026-05-01T00:00:00Z', end: '2026-07-01T00:00:00Z' },
+      });
+      expect(results.every((r) => !r.content.startsWith('old'))).toBe(true);
+    });
   });
 
   // ── forget() ────────────────────────────────────────

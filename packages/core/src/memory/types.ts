@@ -78,6 +78,7 @@ export interface MemoryEntry {
   content: string;
   type: 'fact' | 'event' | 'working';
   score: number;
+  importance: number;
   timestamp: string;
 }
 
