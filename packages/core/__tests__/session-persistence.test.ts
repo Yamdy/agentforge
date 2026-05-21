@@ -85,10 +85,10 @@ describe('SessionPersistence', () => {
     // second succeeds (queue recovered), third also succeeds
     isolatedBus.emit('agent:start', { sessionId: 's1', input: 'first' });
     isolatedBus.emit('agent:start', { sessionId: 's1', input: 'second' });
-    await flushAsync();
-
     isolatedBus.emit('agent:end', { sessionId: 's1', status: 'ok' });
-    await flushAsync();
+
+    // stop() drains the write queue, awaiting all pending writes
+    await flakyPersistence.stop();
 
     const events: SessionEvent[] = [];
     for await (const e of storage.read('s1')) {
@@ -99,8 +99,6 @@ describe('SessionPersistence', () => {
     expect(events).toHaveLength(2);
     expect(events[0].type).toBe('agent:start');
     expect(events[1].type).toBe('agent:end');
-
-    await flakyPersistence.stop();
   });
 
   it('stop unsubscribes from future events', async () => {
