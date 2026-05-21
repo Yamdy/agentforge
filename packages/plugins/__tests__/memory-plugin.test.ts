@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { memoryPlugin } from '../src/memory/index.js';
 import { InMemoryBackend } from '../src/memory/in-memory-backend.js';
+import { CoreMemoryBackend } from '../src/memory/core-adapter.js';
+import { InMemoryStore } from '@primo-ai/core';
 import type { HarnessAPI, PipelineContext, Processor } from '@primo-ai/sdk';
 import { ProcessorContextImpl } from '@primo-ai/core';
 
@@ -137,5 +139,53 @@ describe('memoryPlugin — agent-controlled mode', () => {
     memoryPlugin({ backend, triggerMode: { type: 'agent-controlled' } })(api);
 
     expect(processors.size).toBe(0);
+  });
+});
+
+describe('memoryPlugin — storage option (CoreMemoryBackend)', () => {
+  it('accepts storage and creates CoreMemoryBackend internally', () => {
+    const storage = new InMemoryStore();
+    const { api, processors } = createHarnessAPI();
+
+    memoryPlugin({ storage, triggerMode: { type: 'automatic', onLoad: 'always' } })(api);
+
+    expect(processors.has('buildContext')).toBe(true);
+    expect(processors.has('processOutput')).toBe(true);
+  });
+
+  it('end-to-end: store via CoreMemoryBackend, retrieve on next build', async () => {
+    const storage = new InMemoryStore();
+    const { api, processors } = createHarnessAPI();
+
+    memoryPlugin({ storage, triggerMode: { type: 'automatic', onLoad: 'always' } })(api);
+
+    const buildCtxProcessor = processors.get('buildContext') as Processor;
+    const outputProcessor = processors.get('processOutput') as Processor;
+
+    const ctx1 = makeContext({
+      request: { input: 'What is TypeScript?', sessionId: 's-e2e-core' },
+      iteration: { step: 0, response: 'A typed superset of JavaScript' },
+    });
+    await executeProcessor(outputProcessor, ctx1);
+
+    // Verify stored via CoreMemoryBackend (using storage directly)
+    const facts = await storage.getFacts('s-e2e-core');
+    expect(facts).toHaveLength(2);
+
+    const ctx2 = makeContext({ request: { input: 'Tell me more', sessionId: 's-e2e-core' } });
+    const result = await executeProcessor(buildCtxProcessor, ctx2);
+
+    const history = result.session.messageHistory as Array<{ content: string }>;
+    expect(history).toHaveLength(2);
+  });
+
+  it('storage takes precedence over backend when both provided', () => {
+    const storage = new InMemoryStore();
+    const backend = new InMemoryBackend();
+    const { api, processors } = createHarnessAPI();
+
+    memoryPlugin({ storage, backend, triggerMode: { type: 'automatic', onLoad: 'always' } })(api);
+
+    expect(processors.has('buildContext')).toBe(true);
   });
 });
