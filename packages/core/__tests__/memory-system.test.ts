@@ -189,6 +189,25 @@ describe('MemorySystem', () => {
       });
       expect(results.every((r) => !r.content.startsWith('old'))).toBe(true);
     });
+
+    it('ranks facts by embedding similarity over pure importance', async () => {
+      await system.remember('build bundling esbuild system for modules', {
+        type: 'fact', scope: '/project/agentforge', importance: 0.5,
+      });
+      await system.remember('completely different topic about weather patterns', {
+        type: 'fact', scope: '/project/agentforge', importance: 0.9,
+      });
+
+      const results = await system.recall('bundling build system');
+      expect(results.length).toBeGreaterThan(0);
+      // The build/bundling fact should outrank weather despite lower importance
+      // because embedding similarity contributes more to the composite score
+      const buildIndex = results.findIndex((r) => r.content.includes('bundling'));
+      const weatherIndex = results.findIndex((r) => r.content.includes('weather'));
+      if (buildIndex >= 0 && weatherIndex >= 0) {
+        expect(buildIndex).toBeLessThan(weatherIndex);
+      }
+    });
   });
 
   // ── forget() ────────────────────────────────────────

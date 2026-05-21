@@ -1,28 +1,22 @@
 import type {
   MemoryStorage,
   WorkingMemory,
-  MemoryEvent,
   Fact,
   MemoryEntry,
   RememberOptions,
   RecallOptions,
 } from './types.js';
 import { EpisodicMemory } from './episodic-memory.js';
-
-let seqCounter = 0;
-function nextId(): string {
-  seqCounter++;
-  return `mem-${Date.now()}-${seqCounter}`;
-}
+import { SemanticMemory } from './semantic-memory.js';
 
 function computeRecency(timestamp: string): number {
   const ageMs = Date.now() - new Date(timestamp).getTime();
-  const maxAgeMs = 30 * 24 * 60 * 60 * 1000; // 30 days
+  const maxAgeMs = 30 * 24 * 60 * 60 * 1000;
   return Math.max(0, 1 - ageMs / maxAgeMs);
 }
 
-function compositeScore(relevance: number, recency: number, importance: number): number {
-  return 0.4 * relevance + 0.3 * recency + 0.3 * importance;
+function compositeScore(semanticSimilarity: number, recency: number, importance: number): number {
+  return 0.5 * semanticSimilarity + 0.3 * recency + 0.2 * importance;
 }
 
 export interface MemorySystemOptions {
@@ -32,11 +26,13 @@ export interface MemorySystemOptions {
 export class MemorySystem {
   private storage: MemoryStorage;
   private episodic: EpisodicMemory;
+  private semantic: SemanticMemory;
   private knownScopes = new Set<string>();
 
   constructor(options: MemorySystemOptions) {
     this.storage = options.storage;
     this.episodic = new EpisodicMemory(this.storage);
+    this.semantic = new SemanticMemory(this.storage);
   }
 
   // ── remember() ─────────────────────────────────────────────
@@ -55,21 +51,12 @@ export class MemorySystem {
       });
     }
 
-    const id = nextId();
-    const now = new Date().toISOString();
-    const fact: Fact = {
-      id,
-      content,
-      scope: options.scope ?? '/default',
+    const scope = options.scope ?? '/default';
+    this.knownScopes.add(scope);
+    return this.semantic.addFact(scope, content, {
       categories: options.categories ?? [],
       importance: options.importance ?? 0.5,
-      createdAt: now,
-      lastAccessed: now,
-      accessCount: 1,
-    };
-    this.knownScopes.add(fact.scope);
-    await this.storage.upsertFact(fact.scope, fact);
-    return id;
+    });
   }
 
   // ── recall() ───────────────────────────────────────────────
@@ -81,17 +68,20 @@ export class MemorySystem {
     const { topK = 10, scope, timeRange } = options;
     const results: MemoryEntry[] = [];
 
-    // Search facts
-    const facts = await this.storage.searchFacts(query, { topK, scope });
-    for (const f of facts) {
-      const recency = computeRecency(f.lastAccessed);
+    // Search facts via SemanticMemory (semantic similarity)
+    const semanticResults = await this.semantic.searchSemantic(query, {
+      topK: topK * 2,
+      scope,
+    });
+    for (const sr of semanticResults) {
+      const recency = computeRecency(sr.lastAccessed);
       results.push({
-        id: f.id,
-        content: f.content,
+        id: sr.id,
+        content: sr.content,
         type: 'fact',
-        score: compositeScore(1, recency, f.importance),
-        importance: f.importance,
-        timestamp: f.createdAt,
+        score: compositeScore(sr.similarity, recency, sr.importance),
+        importance: sr.importance,
+        timestamp: sr.createdAt,
       });
     }
 
@@ -114,7 +104,7 @@ export class MemorySystem {
       }
     }
 
-    // Aggregate scores for duplicate content (sum scores)
+    // Aggregate scores for duplicate content
     const aggregated = new Map<string, MemoryEntry>();
     for (const r of results) {
       const key = r.content.toLowerCase();
@@ -127,7 +117,6 @@ export class MemorySystem {
       }
     }
 
-    // Sort by score descending, then slice to topK
     const sorted = [...aggregated.values()].sort((a, b) => b.score - a.score);
     return sorted.slice(0, topK);
   }
