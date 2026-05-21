@@ -16,6 +16,7 @@ import { PluginManager, type PluginFactory } from './plugin-manager.js';
 import { LLMInvoker } from './llm-invoker.js';
 import { ModelFactory } from './model-factory.js';
 import { BuiltInGateway, getDefaultBuiltInGateway } from './gateways/builtin-gateway.js';
+import { OTelBridge, createOtlpTracerProvider } from '@primo-ai/observability';
 import { AuthError, ModelNotFoundError } from './errors.js';
 import { LoopOrchestrator } from './loop-orchestrator.js';
 import { JsonlCheckpointStore } from './checkpoint-store.js';
@@ -64,6 +65,26 @@ export interface AgentRunResult {
   content?: import('@primo-ai/sdk').ContentBlock[];
 }
 
+/**
+ * Auto-detect OTel tracing from environment variables.
+ * When OTEL_EXPORTER_OTLP_ENDPOINT is set and OTEL_SDK_DISABLED is not 'true',
+ * creates an OTLP tracer and wraps it via OTelBridge.
+ * Returns undefined if no OTel configuration is detected or initialization fails.
+ */
+export function autoDetectOtelTracer(): Tracer | undefined {
+  if (process.env.OTEL_SDK_DISABLED === 'true') return undefined;
+  if (!process.env.OTEL_EXPORTER_OTLP_ENDPOINT && !process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT) {
+    return undefined;
+  }
+  try {
+    const provider = createOtlpTracerProvider({ enabled: true });
+    if (!provider) return undefined;
+    return new OTelBridge({ tracerProvider: provider });
+  } catch {
+    return undefined;
+  }
+}
+
 export class Agent {
   private config: AgentConfig;
   private runner: PipelineRunner;
@@ -85,8 +106,8 @@ export class Agent {
     this.config = config;
     this.modelFactory = deps?.modelFactory ?? new ModelFactory();
     this.modelFactory.registerGateway(getDefaultBuiltInGateway());
-    this._tracer = deps?.tracer;
-    this.runner = deps?.runner ?? new PipelineRunner({ tracer: deps?.tracer });
+    this._tracer = deps?.tracer ?? autoDetectOtelTracer();
+    this.runner = deps?.runner ?? new PipelineRunner({ tracer: this._tracer });
     this.registry = deps?.registry ?? new ToolRegistry();
     this.contextBuilder = deps?.contextBuilder ?? new ContextBuilder({ registry: this.registry });
     this._pluginManager = deps?.pluginManager ?? new PluginManager(this.runner, this.registry, this.contextBuilder);
