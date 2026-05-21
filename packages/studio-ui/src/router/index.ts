@@ -23,6 +23,11 @@ const router = createRouter({
       name: 'sessions',
       component: () => import('../views/SessionListPage.vue'),
     },
+    {
+      path: '/permissions',
+      name: 'permissions',
+      component: () => import('../views/PermissionsPage.vue'),
+    },
   ],
 });
 

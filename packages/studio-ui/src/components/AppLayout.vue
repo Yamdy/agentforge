@@ -1,14 +1,17 @@
 <script setup lang="ts">
 import { useRouter, useRoute } from 'vue-router';
 import ThemeToggle from './ThemeToggle.vue';
+import { usePermissions } from '../composables/usePermissions';
 
 const router = useRouter();
 const route = useRoute();
+const { pendingCount } = usePermissions();
 
 const navItems = [
   { name: 'Dashboard', path: '/' },
   { name: 'Traces', path: '/traces' },
   { name: 'Sessions', path: '/sessions' },
+  { name: 'Permissions', path: '/permissions' },
 ];
 
 function isActive(path: string): boolean {
@@ -35,6 +38,7 @@ function navigate(path: string) {
           @click="navigate(item.path)"
         >
           {{ item.name }}
+          <span v-if="item.name === 'Permissions' && pendingCount > 0" class="badge">{{ pendingCount }}</span>
         </button>
       </nav>
     </aside>
@@ -103,6 +107,20 @@ function navigate(path: string) {
 .nav-item.active {
   background: var(--sidebar-active-bg, #3a3a5e);
   font-weight: 600;
+}
+
+.badge {
+  background: #dc2626;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 10px;
+  padding: 0 7px;
+  line-height: 18px;
+  margin-left: 8px;
+  display: inline-block;
+  min-width: 18px;
+  text-align: center;
 }
 
 .main-area {

@@ -1,0 +1,22 @@
+{
+  // AgentForge project configuration
+  // See https://agentforge.dev/docs for more options
+
+  "agents": [
+    {
+      "id": "default",
+      "model": "claude-sonnet-4-20250514",
+      "systemPrompt": "You are a helpful assistant powered by AgentForge.",
+      "provider": "anthropic",
+      "maxSteps": 10
+    }
+  ],
+
+  "providerGateways": [
+    {
+      "id": "anthropic",
+      "type": "built-in",
+      "apiKeyEnv": "ANTHROPIC_API_KEY"
+    }
+  ]
+}

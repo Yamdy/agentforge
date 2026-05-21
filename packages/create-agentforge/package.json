@@ -1,0 +1,20 @@
+{
+  "name": "@primo-ai/create-agentforge",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": { "create-agentforge": "./dist/bin.js" },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node -e \"require('fs').mkdirSync('templates',{recursive:true})\" && cp -r src/templates/. templates",
+    "test": "vitest run",
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5",
+    "@types/node": "^22.15.0"
+  },
+  "files": ["dist", "templates"]
+}
