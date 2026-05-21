@@ -4,6 +4,7 @@ import type {
   MemoryEntry,
   RememberOptions,
   RecallOptions,
+  ConsolidationResult,
 } from './types.js';
 import { EpisodicMemory } from './episodic-memory.js';
 import { SemanticMemory } from './semantic-memory.js';
@@ -132,6 +133,40 @@ export class MemorySystem {
       }
     }
     return false;
+  }
+
+  // ── consolidate() ──────────────────────────────────────────
+
+  async consolidate(_options?: {
+    scope?: string;
+    dedupThreshold?: number;
+    strategy?: 'keep_latest' | 'merge';
+  }): Promise<ConsolidationResult> {
+    return { deduped: 0, merged: 0, forgotten: 0, newFacts: 0 };
+  }
+
+  // ── Retention (Ebbinghaus) ──────────────────────────────────
+
+  computeRetention(_lastAccessed: string, _accessCount: number): number {
+    return 0;
+  }
+
+  // ── forgetStale() ───────────────────────────────────────────
+
+  async forgetStale(_options?: {
+    scope?: string;
+    retentionThreshold?: number;
+  }): Promise<number> {
+    return 0;
+  }
+
+  // ── reflect() ──────────────────────────────────────────────
+
+  async reflect(_options?: {
+    scope: string;
+    timeRange?: { start: string; end: string };
+  }): Promise<ConsolidationResult> {
+    return { deduped: 0, merged: 0, forgotten: 0, newFacts: 0 };
   }
 
   // ── Working Memory ─────────────────────────────────────────
