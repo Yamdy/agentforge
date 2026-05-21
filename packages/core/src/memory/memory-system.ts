@@ -1,7 +1,6 @@
 import type {
   MemoryStorage,
   WorkingMemory,
-  Fact,
   MemoryEntry,
   RememberOptions,
   RecallOptions,
