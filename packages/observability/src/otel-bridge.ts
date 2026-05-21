@@ -1,7 +1,10 @@
 import type { Span, SpanContext, Tracer } from '@primo-ai/sdk';
-import type { Span as OTelSpanType, Tracer as OTelTracerType, Context } from '@opentelemetry/api';
-import { context, trace } from '@opentelemetry/api';
+import type { Span as OTelSpanType, Tracer as OTelTracerType, Context, SpanContext as OTelSpanContext } from '@opentelemetry/api';
+import { context, trace, propagation, ROOT_CONTEXT } from '@opentelemetry/api';
 import { NoOpSpan } from './noop.js';
+
+// W3C traceparent: version-traceId-spanId-flags
+const TRACEPARENT_RE = /^00-([0-9a-f]{32})-([0-9a-f]{16})-0[01]$/;
 
 export interface EventBusLike {
   emit(eventType: string, data?: unknown): void;
@@ -78,13 +81,52 @@ export class OTelBridge implements Tracer {
     this.eventBus = options?.eventBus;
   }
 
-  startSpan(name: string): Span {
+  startSpan(name: string, parentContext?: SpanContext): Span {
     if (!this.otelTracer) return new NoOpSpan(name);
-    const otelSpan = this.otelTracer.startSpan(name);
-    return new OTelAdapterSpan(name, otelSpan, this.otelTracer, context.active(), this.eventBus);
+
+    let parentCtx: Context = context.active();
+    if (parentContext) {
+      const otelCtx: OTelSpanContext = {
+        traceId: parentContext.traceId,
+        spanId: parentContext.spanId,
+        traceFlags: 1, // sampled
+        isRemote: true,
+      };
+      parentCtx = trace.setSpanContext(parentCtx, otelCtx);
+    }
+
+    const otelSpan = this.otelTracer.startSpan(name, undefined, parentCtx);
+    return new OTelAdapterSpan(name, otelSpan, this.otelTracer, parentCtx, this.eventBus);
   }
 
   getCurrentSpan(): Span | undefined {
     return undefined;
+  }
+
+  // ── W3C traceparent propagation ──────────────────────────────
+
+  /**
+   * Extract SpanContext from W3C traceparent (and optional tracestate) headers.
+   * Returns undefined if traceparent is missing or malformed.
+   */
+  extractTraceContext(headers: Record<string, string>): SpanContext | undefined {
+    const tp = headers.traceparent;
+    if (!tp) return undefined;
+    const m = TRACEPARENT_RE.exec(tp);
+    if (!m) return undefined;
+    const ctx: SpanContext = { traceId: m[1]!, spanId: m[2]! };
+    const tracestate = headers.tracestate;
+    if (tracestate) {
+      (ctx as unknown as Record<string, unknown>).tracestate = tracestate;
+    }
+    return ctx;
+  }
+
+  /**
+   * Inject W3C traceparent header from a span into outgoing headers.
+   */
+  injectTraceContext(span: Span, headers: Record<string, string>): void {
+    const ctx = span.spanContext();
+    headers.traceparent = `00-${ctx.traceId}-${ctx.spanId}-01`;
   }
 }
