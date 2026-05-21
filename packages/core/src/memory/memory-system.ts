@@ -19,6 +19,22 @@ function compositeScore(semanticSimilarity: number, recency: number, importance:
   return 0.5 * semanticSimilarity + 0.3 * recency + 0.2 * importance;
 }
 
+function cosineSimilarity(a: number[], b: number[]): number {
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  if (normA === 0 || normB === 0) return 0;
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const BASE_INTERVAL_DAYS = 7;
+
 export interface MemorySystemOptions {
   storage: MemoryStorage;
 }
@@ -137,36 +153,116 @@ export class MemorySystem {
 
   // ── consolidate() ──────────────────────────────────────────
 
-  async consolidate(_options?: {
+  async consolidate(options?: {
     scope?: string;
     dedupThreshold?: number;
     strategy?: 'keep_latest' | 'merge';
   }): Promise<ConsolidationResult> {
-    return { deduped: 0, merged: 0, forgotten: 0, newFacts: 0 };
+    const scope = options?.scope ?? '/';
+    const threshold = options?.dedupThreshold ?? 0.85;
+    const strategy = options?.strategy ?? 'keep_latest';
+
+    const facts = await this.storage.getFacts(scope);
+    if (facts.length < 2) return { deduped: 0, merged: 0, forgotten: 0, newFacts: 0 };
+
+    let deduped = 0;
+    let merged = 0;
+    const deleted = new Set<string>();
+
+    for (let i = 0; i < facts.length; i++) {
+      if (deleted.has(facts[i].id)) continue;
+      for (let j = i + 1; j < facts.length; j++) {
+        if (deleted.has(facts[j].id)) continue;
+        const embA = facts[i].embedding;
+        const embB = facts[j].embedding;
+        if (!embA || !embB || embA.length === 0 || embB.length === 0) continue;
+
+        const similarity = cosineSimilarity(embA, embB);
+        if (similarity < threshold) continue;
+
+        if (strategy === 'merge') {
+          const newer = facts[i].lastAccessed >= facts[j].lastAccessed ? facts[i] : facts[j];
+          const older = newer === facts[i] ? facts[j] : facts[i];
+          const combinedContent =
+            newer.content.length >= older.content.length
+              ? newer.content
+              : older.content;
+          await this.storage.upsertFact(scope, {
+            ...newer,
+            content: combinedContent,
+            importance: Math.max(facts[i].importance, facts[j].importance),
+            categories: [...new Set([...facts[i].categories, ...facts[j].categories])],
+          });
+          await this.storage.deleteFact(scope, older.id);
+          deleted.add(older.id);
+          merged++;
+        } else {
+          const older = facts[i].lastAccessed <= facts[j].lastAccessed ? facts[i] : facts[j];
+          await this.storage.deleteFact(scope, older.id);
+          deleted.add(older.id);
+          deduped++;
+        }
+      }
+    }
+
+    return { deduped, merged, forgotten: 0, newFacts: 0 };
   }
 
   // ── Retention (Ebbinghaus) ──────────────────────────────────
 
-  computeRetention(_lastAccessed: string, _accessCount: number): number {
-    return 0;
+  computeRetention(lastAccessed: string, accessCount: number): number {
+    const elapsedDays = (Date.now() - new Date(lastAccessed).getTime()) / MS_PER_DAY;
+    const effectiveInterval = BASE_INTERVAL_DAYS * Math.max(accessCount, 1);
+    return Math.max(0, Math.min(1, Math.exp(-elapsedDays / effectiveInterval)));
   }
 
   // ── forgetStale() ───────────────────────────────────────────
 
-  async forgetStale(_options?: {
+  async forgetStale(options?: {
     scope?: string;
     retentionThreshold?: number;
   }): Promise<number> {
-    return 0;
+    const scope = options?.scope ?? '/';
+    const threshold = options?.retentionThreshold ?? 0.1;
+
+    const facts = await this.storage.getFacts(scope);
+    let removed = 0;
+    for (const fact of facts) {
+      const retention = this.computeRetention(fact.lastAccessed, fact.accessCount);
+      if (retention < threshold) {
+        await this.storage.deleteFact(scope, fact.id);
+        removed++;
+      }
+    }
+    return removed;
   }
 
   // ── reflect() ──────────────────────────────────────────────
 
-  async reflect(_options?: {
+  async reflect(options?: {
     scope: string;
     timeRange?: { start: string; end: string };
   }): Promise<ConsolidationResult> {
-    return { deduped: 0, merged: 0, forgotten: 0, newFacts: 0 };
+    const scope = options?.scope ?? 'session-1';
+    const events = await this.episodic.query(scope, {
+      timeRange: options?.timeRange,
+      limit: 500,
+    });
+
+    if (events.length === 0) return { deduped: 0, merged: 0, forgotten: 0, newFacts: 0 };
+
+    const combined = events.map((e) => e.content).join('\n');
+    const factScope = scope.startsWith('/') ? scope : `/${scope}`;
+
+    const summaryFact = combined.length > 500
+      ? combined.slice(0, 497) + '...'
+      : combined;
+
+    await this.semantic.addFact(factScope, summaryFact, {
+      importance: Math.max(...events.map((e) => e.importance)),
+    });
+
+    return { deduped: 0, merged: 0, forgotten: 0, newFacts: 1 };
   }
 
   // ── Working Memory ─────────────────────────────────────────
