@@ -244,4 +244,77 @@ describe('SessionManager', () => {
       expect(grandChildren[0].sessionId).toBe(grandchild.sessionId);
     });
   });
+
+  describe('resumeInPlace', () => {
+    it('resumes a suspended session with the same sessionId', async () => {
+      const record = await manager.start('task to resume');
+      const sessionId = record.sessionId;
+
+      await manager.suspend(sessionId, 'waiting for human input');
+
+      const resumed: string[] = [];
+      bus.subscribe('session:resumed', (data) => {
+        resumed.push((data as { sessionId: string }).sessionId);
+      });
+
+      await manager.resumeInPlace(sessionId);
+
+      const list = await storage.list();
+      const session = list.find((r) => r.sessionId === sessionId);
+      expect(session).toBeDefined();
+      expect(session!.status).toBe('active');
+
+      expect(resumed).toHaveLength(1);
+      expect(resumed[0]).toBe(sessionId);
+
+      const children = await storage.list({ parentSessionId: sessionId });
+      expect(children).toHaveLength(0);
+
+      await persistence.stop();
+      const events: SessionEvent[] = [];
+      for await (const e of storage.read(sessionId)) {
+        events.push(e);
+      }
+      const resumedEvent = events.find((e) => e.type === 'session:resumed');
+      expect(resumedEvent).toBeDefined();
+    });
+
+    it('throws when session is not in suspended state', async () => {
+      const record = await manager.start('active session');
+      await expect(manager.resumeInPlace(record.sessionId)).rejects.toThrow(/suspended/);
+    });
+
+    it('throws when session does not exist', async () => {
+      await expect(manager.resumeInPlace('nonexistent-session')).rejects.toThrow(/not found/);
+    });
+
+    it('maintains event sequence continuity across suspend/resumeInPlace', async () => {
+      const record = await manager.start('sequence test');
+      const sessionId = record.sessionId;
+
+      bus.emit('iteration:end', { sessionId, step: 0, response: 'first' });
+      await manager.suspend(sessionId, 'waiting');
+
+      await manager.resumeInPlace(sessionId);
+
+      bus.emit('iteration:end', { sessionId, step: 1, response: 'after resume' });
+
+      await persistence.stop();
+
+      const allEvents: SessionEvent[] = [];
+      for await (const e of storage.read(sessionId)) allEvents.push(e);
+
+      expect(allEvents).toHaveLength(5);
+      const types = allEvents.map((e) => e.type);
+      expect(types).toEqual([
+        'agent:start',
+        'iteration:end',
+        'session:suspended',
+        'session:resumed',
+        'iteration:end',
+      ]);
+      const seqs = allEvents.map((e) => e.seq);
+      expect(seqs).toEqual([1, 2, 3, 4, 5]);
+    });
+  });
 });

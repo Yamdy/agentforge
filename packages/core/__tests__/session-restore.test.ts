@@ -14,6 +14,7 @@ function createMockSessionManager(restoredCtx: PipelineContext): SessionManager 
     restore: vi.fn().mockResolvedValue(restoredCtx),
     suspend: vi.fn().mockResolvedValue(undefined),
     resume: vi.fn().mockResolvedValue('child-session-id'),
+    resumeInPlace: vi.fn().mockResolvedValue(undefined),
     list: vi.fn().mockResolvedValue([]),
   };
 }

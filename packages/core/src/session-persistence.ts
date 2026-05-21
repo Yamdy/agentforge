@@ -14,6 +14,7 @@ const SUBSCRIBED_EVENTS = [
   'iteration:end',
   'error',
   'session:suspended',
+  'session:resumed',
 ];
 
 export class SessionPersistence {

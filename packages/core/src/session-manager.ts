@@ -156,6 +156,19 @@ export class SessionManagerImpl implements SessionManager {
     return child.sessionId;
   }
 
+  async resumeInPlace(sessionId: string): Promise<void> {
+    const meta = await this.storage.get(sessionId);
+    if (!meta) {
+      throw new Error(`Session not found: ${sessionId}`);
+    }
+    if (meta.status !== 'suspended') {
+      throw new Error(`Session is not suspended: ${sessionId} (current: ${meta.status})`);
+    }
+
+    await this.storage.updateMeta(sessionId, { status: 'active' });
+    this.bus.emit('session:resumed', { sessionId });
+  }
+
   async list(filter?: { parentSessionId?: string }): Promise<SessionRecord[]> {
     return this.storage.list(filter);
   }

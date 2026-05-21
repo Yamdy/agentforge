@@ -435,6 +435,7 @@ export type StreamEvent =
   | { type: 'session.started'; sessionId: string }
   | { type: 'session.completed'; sessionId: string; tokenUsage: TokenUsage }
   | { type: 'session.aborted'; sessionId: string }
+  | { type: 'session.resumed'; sessionId: string }
   // Permission events
   | { type: 'permission.request'; sessionId: string; permissionId: string; toolName: string; args: Record<string, unknown>; reason: string }
   | { type: 'permission.resolved'; sessionId: string; permissionId: string; decision: 'allow' | 'deny' }
@@ -867,7 +868,10 @@ export interface SessionManager {
   start(input: string, options?: { parentSessionId?: string }): Promise<SessionRecord>;
   restore(sessionId: string): Promise<PipelineContext>;
   suspend(sessionId: string, reason: string): Promise<void>;
+  /** Create a child session to continue a completed session (returns new sessionId). */
   resume(sessionId: string, input?: string): Promise<string>;
+  /** Resume a suspended session in-place (same sessionId, suspended → active). */
+  resumeInPlace(sessionId: string): Promise<void>;
   list(filter?: { parentSessionId?: string }): Promise<SessionRecord[]>;
 }
 
