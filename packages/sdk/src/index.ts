@@ -288,6 +288,8 @@ export interface Processor {
   execute(context: ProcessorContext): Promise<PipelineContext | void>;
   /** When true, this processor is an extension point placeholder that just returns ctx unchanged. */
   isNoOp?: boolean;
+  /** Execution priority within the stage (descending, default 100). Higher runs first. */
+  priority?: number;
 }
 
 // ---------------------------------------------------------------------------

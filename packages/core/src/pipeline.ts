@@ -387,6 +387,9 @@ export class PipelineRunner {
     if (stageProcessors.length === 0) return ctx;
     if (stageProcessors.every((p) => p.isNoOp)) return ctx;
 
+    // Sort by priority descending (default 100), stable for same priority
+    stageProcessors.sort((a, b) => (b.priority ?? 100) - (a.priority ?? 100));
+
     // stage.before hook
     if (this.hookManager) {
       await this.hookManager.invoke('stage.before', { stage, context: ctx }, {});
