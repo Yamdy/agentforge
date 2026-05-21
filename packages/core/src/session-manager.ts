@@ -1,11 +1,16 @@
-import type { SessionStorage, SessionRecord, SessionManager, PipelineContext, SessionEvent, Message } from '@primo-ai/sdk';
+import type { SessionStorage, SessionRecord, SessionManager, PipelineContext, SessionEvent, Message, SnapshotService, FilePatch } from '@primo-ai/sdk';
 import type { EventBus } from './event-bus.js';
 
 export class SessionManagerImpl implements SessionManager {
+  private snapshotService?: SnapshotService;
+
   constructor(
     private storage: SessionStorage,
     private bus: EventBus,
-  ) {}
+    snapshotService?: SnapshotService,
+  ) {
+    this.snapshotService = snapshotService;
+  }
 
   async start(input: string, options?: { parentSessionId?: string }): Promise<SessionRecord> {
     const sessionId = crypto.randomUUID();
@@ -46,6 +51,7 @@ export class SessionManagerImpl implements SessionManager {
     let lastResponse: string | undefined;
     const custom: Record<string, unknown> = {};
     let toolCallIdx = 0;
+    const snapshotIds: string[] = [];
 
     for (const event of events) {
       const payload = event.payload as Record<string, unknown> | undefined;
@@ -114,6 +120,10 @@ export class SessionManagerImpl implements SessionManager {
           custom.suspendReason = payload.reason;
           break;
         }
+        case 'snapshot:track': {
+          if (payload.snapshotId) snapshotIds.push(payload.snapshotId as string);
+          break;
+        }
         case 'stage:before':
         case 'stage:after':
         case 'llm:before':
@@ -126,7 +136,7 @@ export class SessionManagerImpl implements SessionManager {
       request: { input, sessionId },
       agent: { config: agentConfig as unknown as PipelineContext['agent']['config'], promptFragments, toolDeclarations },
       iteration: { step: lastStep, response: lastResponse },
-      session: { messageHistory, totalTokenUsage, custom },
+      session: { messageHistory, totalTokenUsage, custom: { ...custom, snapshotIds } },
     };
   }
 
@@ -148,5 +158,43 @@ export class SessionManagerImpl implements SessionManager {
 
   async list(filter?: { parentSessionId?: string }): Promise<SessionRecord[]> {
     return this.storage.list(filter);
+  }
+
+  async getSessionSnapshots(sessionId: string): Promise<string[]> {
+    const events: SessionEvent[] = [];
+    for await (const event of this.storage.read(sessionId)) {
+      events.push(event);
+    }
+
+    const snapshotIds: string[] = [];
+    for (const event of events) {
+      if (event.type === 'snapshot:track') {
+        const payload = event.payload as Record<string, unknown> | undefined;
+        if (payload?.snapshotId) {
+          snapshotIds.push(payload.snapshotId as string);
+        }
+      }
+    }
+
+    return snapshotIds;
+  }
+
+  async getSessionPatches(sessionId: string): Promise<FilePatch[]> {
+    if (!this.snapshotService) {
+      return [];
+    }
+
+    const snapshotIds = await this.getSessionSnapshots(sessionId);
+    if (snapshotIds.length === 0) {
+      return [];
+    }
+
+    // Use the most recent snapshot
+    const latestSnapshotId = snapshotIds[snapshotIds.length - 1];
+    if (!latestSnapshotId) {
+      return [];
+    }
+
+    return this.snapshotService.patch(latestSnapshotId);
   }
 }
