@@ -87,6 +87,7 @@ export { SnapshotError } from './errors.js';
 // Memory System - three-layer cognitive memory
 export {
   MemorySystem,
+  EpisodicMemory,
   InMemoryStore,
   WorkingMemoryImpl,
   createMemoryRecallProcessor,
@@ -106,4 +107,5 @@ export type {
   RecallOptions,
   ConsolidationResult,
   MemoryStorage,
+  EventSummary,
 } from './memory/index.js';
