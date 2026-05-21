@@ -1,5 +1,4 @@
 import type { Metrics } from '@primo-ai/sdk';
-import { metrics as otelMetrics } from '@opentelemetry/api';
 import { InMemoryMetrics, type HistogramStats, type MetricsSnapshot } from './metrics.js';
 
 // Duck-typed OTel Meter interface subset (avoids hard dependency on @opentelemetry/sdk-metrics types)

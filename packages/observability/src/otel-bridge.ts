@@ -1,10 +1,8 @@
 import type { Span, SpanContext, Tracer } from '@primo-ai/sdk';
 import type { Span as OTelSpanType, Tracer as OTelTracerType, Context, SpanContext as OTelSpanContext } from '@opentelemetry/api';
-import { context, trace, propagation, ROOT_CONTEXT } from '@opentelemetry/api';
+import { context, trace } from '@opentelemetry/api';
 import { NoOpSpan } from './noop.js';
-
-// W3C traceparent: version-traceId-spanId-flags
-const TRACEPARENT_RE = /^00-([0-9a-f]{32})-([0-9a-f]{16})-0[01]$/;
+import { extractTraceContext, injectTraceContext as injectW3C } from './w3c-trace-context.js';
 
 export interface EventBusLike {
   emit(eventType: string, data?: unknown): void;
@@ -22,6 +20,7 @@ class OTelAdapterSpan implements Span {
   private readonly otelTracer: OTelTracerType;
   private readonly otelContext: Context;
   private readonly eventBus?: EventBusLike;
+  private readonly _traceFlags: number;
 
   constructor(
     name: string,
@@ -35,6 +34,7 @@ class OTelAdapterSpan implements Span {
     this.otelTracer = otelTracer;
     this.otelContext = otelContext;
     this.eventBus = eventBus;
+    this._traceFlags = otelSpan.spanContext().traceFlags;
   }
 
   startChild(childName: string): Span {
@@ -68,6 +68,11 @@ class OTelAdapterSpan implements Span {
     const ctx = this.otelSpan.spanContext();
     return { spanId: ctx.spanId, traceId: ctx.traceId };
   }
+
+  /** Read the sampling flag from the underlying OTel span context. */
+  get isSampled(): boolean {
+    return (this._traceFlags & 1) === 1;
+  }
 }
 
 export class OTelBridge implements Tracer {
@@ -89,7 +94,7 @@ export class OTelBridge implements Tracer {
       const otelCtx: OTelSpanContext = {
         traceId: parentContext.traceId,
         spanId: parentContext.spanId,
-        traceFlags: 1, // sampled
+        traceFlags: 1,
         isRemote: true,
       };
       parentCtx = trace.setSpanContext(parentCtx, otelCtx);
@@ -107,26 +112,18 @@ export class OTelBridge implements Tracer {
 
   /**
    * Extract SpanContext from W3C traceparent (and optional tracestate) headers.
-   * Returns undefined if traceparent is missing or malformed.
+   * Delegates to the shared w3c-trace-context module.
    */
   extractTraceContext(headers: Record<string, string>): SpanContext | undefined {
-    const tp = headers.traceparent;
-    if (!tp) return undefined;
-    const m = TRACEPARENT_RE.exec(tp);
-    if (!m) return undefined;
-    const ctx: SpanContext = { traceId: m[1]!, spanId: m[2]! };
-    const tracestate = headers.tracestate;
-    if (tracestate) {
-      (ctx as unknown as Record<string, unknown>).tracestate = tracestate;
-    }
-    return ctx;
+    return extractTraceContext(headers) as SpanContext | undefined;
   }
 
   /**
    * Inject W3C traceparent header from a span into outgoing headers.
+   * Reads the sampling flag from the underlying OTel span when available.
    */
   injectTraceContext(span: Span, headers: Record<string, string>): void {
-    const ctx = span.spanContext();
-    headers.traceparent = `00-${ctx.traceId}-${ctx.spanId}-01`;
+    const sampled = span instanceof OTelAdapterSpan ? span.isSampled : true;
+    injectW3C(span, headers, sampled);
   }
 }

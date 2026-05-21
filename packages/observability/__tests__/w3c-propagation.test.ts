@@ -44,6 +44,19 @@ describe('W3C traceparent propagation', () => {
       expect(child.parentSpanId).toBe(parent.spanContext().spanId);
     });
 
+    it('child span uses hex format when generateHexIds is true', () => {
+      const tracer = new TracerImpl(undefined, { generateHexIds: true });
+      const parent = tracer.startSpan('parent');
+      const child = parent.startChild('child') as SpanImpl;
+
+      expect(parent.spanContext().traceId).toMatch(/^[0-9a-f]{32}$/);
+      expect(parent.spanContext().spanId).toMatch(/^[0-9a-f]{16}$/);
+      // Child must also use hex format, not UUID
+      expect(child.spanContext().traceId).toBe(parent.spanContext().traceId);
+      expect(child.spanContext().spanId).toMatch(/^[0-9a-f]{16}$/);
+      expect(child.parentSpanId).toBe(parent.spanContext().spanId);
+    });
+
     it('parentContext with external IDs propagates traceId to children', () => {
       const tracer = new TracerImpl();
       const parent = tracer.startSpan('incoming', {

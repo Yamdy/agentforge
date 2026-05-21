@@ -8,3 +8,4 @@ export { OTelBridge, type OTelBridgeOptions, type EventBusLike } from './otel-br
 export { TraceCollector, formatTraceJson, formatTraceConsole, formatTraceOtlp, type Trace, type TraceNode, type OtlpOptions } from './trace-collector.js';
 export { SafeOtlpSpanExporter, createOtlpTracerProvider, type OtlpExporterOptions, type OtlpExporterConfig } from './otel-exporter.js';
 export { OtelMetricsBridge, type OtelMetricsBridgeOptions } from './otel-metrics-bridge.js';
+export { extractTraceContext, injectTraceContext, generateHex32, generateHex16, type TraceContext } from './w3c-trace-context.js';
