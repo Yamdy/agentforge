@@ -102,6 +102,16 @@ export interface ConsolidationResult {
   newFacts: number;
 }
 
+export interface EmbeddingProvider {
+  embed(text: string): number[];
+  dimensions: number;
+}
+
+export interface GraphResult {
+  nodes: Entity[];
+  edges: Relation[];
+}
+
 // ── Storage Backend ─────────────────────────────────────────────
 
 export interface MemoryStorage {

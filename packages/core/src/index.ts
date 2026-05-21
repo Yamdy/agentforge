@@ -88,6 +88,8 @@ export { SnapshotError } from './errors.js';
 export {
   MemorySystem,
   EpisodicMemory,
+  SemanticMemory,
+  SimpleEmbedder,
   InMemoryStore,
   SqliteStore,
   WorkingMemoryImpl,
@@ -109,4 +111,7 @@ export type {
   ConsolidationResult,
   MemoryStorage,
   EventSummary,
+  EmbeddingProvider,
+  GraphResult,
+  SemanticSearchResult,
 } from './memory/index.js';
