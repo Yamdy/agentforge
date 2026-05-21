@@ -83,3 +83,27 @@ export { NodeFsAdapter } from './file-system-adapter.js';
 export { InMemorySnapshotStore, JsonlSnapshotStore } from './snapshot-store.js';
 export { SnapshotServiceImpl, type SnapshotServiceOptions } from './snapshot-service.js';
 export { SnapshotError } from './errors.js';
+
+// Memory System - three-layer cognitive memory
+export {
+  MemorySystem,
+  InMemoryStore,
+  WorkingMemoryImpl,
+  createMemoryRecallProcessor,
+  createMemoryStoreProcessor,
+} from './memory/index.js';
+export type {
+  MemorySystemOptions,
+  WorkingMemory,
+  MemoryEvent,
+  EventQuery,
+  Fact,
+  SearchOptions,
+  Entity,
+  Relation,
+  MemoryEntry,
+  RememberOptions,
+  RecallOptions,
+  ConsolidationResult,
+  MemoryStorage,
+} from './memory/index.js';
