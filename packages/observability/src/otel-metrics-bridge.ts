@@ -1,10 +1,24 @@
 import type { Metrics } from '@primo-ai/sdk';
-import { metrics } from '@opentelemetry/api';
+import { metrics as otelMetrics } from '@opentelemetry/api';
 import { InMemoryMetrics, type HistogramStats, type MetricsSnapshot } from './metrics.js';
 
+// Duck-typed OTel Meter interface subset (avoids hard dependency on @opentelemetry/sdk-metrics types)
+interface OtelMeter {
+  createCounter(name: string, options?: { description?: string }): {
+    add(v: number, attrs?: Record<string, string>): void;
+  };
+  createGauge(name: string, options?: { description?: string }): {
+    record(v: number, attrs?: Record<string, string>): void;
+  };
+  createHistogram(name: string, options?: { description?: string }): {
+    record(v: number, attrs?: Record<string, string>): void;
+  };
+}
+
 export interface OtelMetricsBridgeOptions {
-  meterProvider?: unknown; // OTel MeterProvider — optional, graceful degrade when absent
-  serviceName?: string;
+  meterProvider?: {
+    getMeter(name: string, version?: string, options?: unknown): OtelMeter;
+  };
 }
 
 /**
@@ -16,11 +30,15 @@ export interface OtelMetricsBridgeOptions {
  */
 export class OtelMetricsBridge implements Metrics {
   private inner: InMemoryMetrics;
-  private _otelEnabled: boolean;
+  private _otelMeter: OtelMeter | null;
 
-  constructor(options: OtelMetricsBridgeOptions) {
+  constructor(options: OtelMetricsBridgeOptions = {}) {
     this.inner = new InMemoryMetrics();
-    this._otelEnabled = options.meterProvider != null;
+    if (options.meterProvider) {
+      this._otelMeter = options.meterProvider.getMeter('@primo-ai/observability', '0.1.5');
+    } else {
+      this._otelMeter = null;
+    }
   }
 
   // ── Metrics interface ────────────────────────────────────────
@@ -28,11 +46,10 @@ export class OtelMetricsBridge implements Metrics {
   increment(name: string, delta = 1, labels?: Record<string, string>): void {
     this.inner.increment(name, delta, labels);
 
-    if (this._otelEnabled) {
+    if (this._otelMeter) {
       try {
         const attrs = labels ?? {};
-        const counter = this._getOtelCounter(name);
-        counter.add(delta, attrs);
+        this._getOtelCounter(name).add(delta, attrs);
       } catch {
         // OTel error: silently fall through — metrics are still in InMemoryMetrics
       }
@@ -42,11 +59,10 @@ export class OtelMetricsBridge implements Metrics {
   gauge(name: string, value: number, labels?: Record<string, string>): void {
     this.inner.gauge(name, value, labels);
 
-    if (this._otelEnabled) {
+    if (this._otelMeter) {
       try {
         const attrs = labels ?? {};
-        const hist = this._getOtelHistogram(name);
-        hist.record(value, attrs);
+        this._getOtelGauge(name).record(value, attrs);
       } catch {
         // OTel error: silently fall through
       }
@@ -56,11 +72,10 @@ export class OtelMetricsBridge implements Metrics {
   histogram(name: string, value: number, labels?: Record<string, string>): void {
     this.inner.histogram(name, value, labels);
 
-    if (this._otelEnabled) {
+    if (this._otelMeter) {
       try {
         const attrs = labels ?? {};
-        const hist = this._getOtelHistogram(name);
-        hist.record(value, attrs);
+        this._getOtelHistogram(name).record(value, attrs);
       } catch {
         // OTel error: silently fall through
       }
@@ -85,36 +100,40 @@ export class OtelMetricsBridge implements Metrics {
     return this.inner.snapshot();
   }
 
+  /** Clears all metrics in both InMemoryMetrics and OTel instrument caches. */
   reset(): void {
     this.inner.reset();
+    this._counterCache.clear();
+    this._gaugeCache.clear();
+    this._histCache.clear();
   }
 
   // ── Private helpers ──────────────────────────────────────────
 
-  private _counterCache = new Map<string, { add: (v: number, attrs?: Record<string, string>) => void }>();
-  private _histCache = new Map<string, { record: (v: number, attrs?: Record<string, string>) => void }>();
-
-  private _getOtelMeter(): {
-    createCounter(name: string, options?: { description?: string }): { add: (v: number, attrs?: Record<string, string>) => void };
-    createHistogram(name: string, options?: { description?: string }): { record: (v: number, attrs?: Record<string, string>) => void };
-  } {
-    return metrics.getMeter('@primo-ai/observability', '0.1.5') as ReturnType<typeof this._getOtelMeter>;
-  }
+  private _counterCache = new Map<string, ReturnType<OtelMeter['createCounter']>>();
+  private _gaugeCache = new Map<string, ReturnType<OtelMeter['createGauge']>>();
+  private _histCache = new Map<string, ReturnType<OtelMeter['createHistogram']>>();
 
   private _getOtelCounter(name: string) {
     const cached = this._counterCache.get(name);
     if (cached) return cached;
-    const meter = this._getOtelMeter();
-    const counter = meter.createCounter(name, { description: name });
+    const counter = this._otelMeter!.createCounter(name, { description: name });
     this._counterCache.set(name, counter);
     return counter;
+  }
+
+  private _getOtelGauge(name: string) {
+    const cached = this._gaugeCache.get(name);
+    if (cached) return cached;
+    const gauge = this._otelMeter!.createGauge(name, { description: name });
+    this._gaugeCache.set(name, gauge);
+    return gauge;
   }
 
   private _getOtelHistogram(name: string) {
     const cached = this._histCache.get(name);
     if (cached) return cached;
-    const meter = this._getOtelMeter();
-    const histogram = meter.createHistogram(name, { description: name });
+    const histogram = this._otelMeter!.createHistogram(name, { description: name });
     this._histCache.set(name, histogram);
     return histogram;
   }
