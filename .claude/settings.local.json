@@ -175,7 +175,14 @@
       "Bash(sed 's/:.*//g')",
       "Bash(sed 's/\\(.*//')",
       "Bash(sed 's/.*error //')",
-      "Bash(sed 's/:.*//')"
+      "Bash(sed 's/:.*//')",
+      "mcp__context7__resolve-library-id",
+      "mcp__context7__query-docs",
+      "Bash(xargs cat)",
+      "Bash(ECC_DISABLED_HOOKS=pre:edit-write:gateguard-fact-force pnpm --filter @primo-ai/core exec tsc --noEmit)",
+      "Bash(sed -i 's/let queue: InMemoryPersistentQueue;/let queue: InMemoryPersistentQueue<string>;/' __tests__/persistent-queue.test.ts)",
+      "Bash(sed -i 's/let queue: JsonlPersistentQueue;/let queue: JsonlPersistentQueue<string>;/' __tests__/persistent-queue.test.ts)",
+      "Bash(ECC_GATEGUARD=off pnpm --filter @primo-ai/core vitest run __tests__/loop-orchestrator-snapshot.test.ts)"
     ]
   }
 }
