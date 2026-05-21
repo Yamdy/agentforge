@@ -5,7 +5,7 @@ export { SqliteStore } from './storage/sqlite.js';
 export { WorkingMemoryImpl } from './working-memory.js';
 export { EpisodicMemory } from './episodic-memory.js';
 export type { EventSummary } from './episodic-memory.js';
-export { SemanticMemory, SimpleEmbedder } from './semantic-memory.js';
+export { SemanticMemory, SimpleEmbedder, cosineSimilarity } from './semantic-memory.js';
 export type { SemanticSearchResult } from './semantic-memory.js';
 export { createMemoryRecallProcessor, createMemoryStoreProcessor } from './memory-processor.js';
 export type {

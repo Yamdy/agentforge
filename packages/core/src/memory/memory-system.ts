@@ -7,7 +7,7 @@ import type {
   ConsolidationResult,
 } from './types.js';
 import { EpisodicMemory } from './episodic-memory.js';
-import { SemanticMemory } from './semantic-memory.js';
+import { SemanticMemory, cosineSimilarity } from './semantic-memory.js';
 
 function computeRecency(timestamp: string): number {
   const ageMs = Date.now() - new Date(timestamp).getTime();
@@ -17,19 +17,6 @@ function computeRecency(timestamp: string): number {
 
 function compositeScore(semanticSimilarity: number, recency: number, importance: number): number {
   return 0.5 * semanticSimilarity + 0.3 * recency + 0.2 * importance;
-}
-
-function cosineSimilarity(a: number[], b: number[]): number {
-  let dot = 0;
-  let normA = 0;
-  let normB = 0;
-  for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
-  }
-  if (normA === 0 || normB === 0) return 0;
-  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
