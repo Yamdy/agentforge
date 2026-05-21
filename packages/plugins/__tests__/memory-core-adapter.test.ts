@@ -57,7 +57,8 @@ describe('CoreMemoryBackend', () => {
       await backend.store('s1', makeEntry({ content: 'mid', timestamp: t1 }));
       await backend.store('s1', makeEntry({ content: 'new', timestamp: t2 }));
 
-      const results = await backend.retrieve('s1', { since: t1 });
+      // since is exclusive (>), t1 itself is excluded; use t0 to get mid+new
+      const results = await backend.retrieve('s1', { since: t0 });
       expect(results).toHaveLength(2);
       expect(results.map((r) => r.content)).toEqual(['new', 'mid']);
     });
@@ -100,9 +101,12 @@ describe('CoreMemoryBackend', () => {
     it('deletes entries matching the predicate within a session', async () => {
       const storage = new InMemoryStore();
       const backend = new CoreMemoryBackend({ storage });
-      await backend.store('s1', makeEntry({ role: 'user', content: 'keep me' }));
-      await backend.store('s1', makeEntry({ role: 'user', content: 'delete me' }));
-      await backend.store('s1', makeEntry({ role: 'assistant', content: 'also keep' }));
+      const t0 = new Date('2026-01-01T00:00:00Z').toISOString();
+      const t1 = new Date('2026-01-02T00:00:00Z').toISOString();
+      const t2 = new Date('2026-01-03T00:00:00Z').toISOString();
+      await backend.store('s1', makeEntry({ role: 'user', content: 'keep me', timestamp: t0 }));
+      await backend.store('s1', makeEntry({ role: 'user', content: 'delete me', timestamp: t1 }));
+      await backend.store('s1', makeEntry({ role: 'assistant', content: 'also keep', timestamp: t2 }));
 
       const count = await backend.deleteEntries('s1', (e) => e.content.includes('delete'));
       expect(count).toBe(1);
