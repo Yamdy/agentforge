@@ -89,6 +89,7 @@ export {
   MemorySystem,
   EpisodicMemory,
   InMemoryStore,
+  SqliteStore,
   WorkingMemoryImpl,
   createMemoryRecallProcessor,
   createMemoryStoreProcessor,

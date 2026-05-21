@@ -1,24 +1,8 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { SqliteStore } from '../src/memory/storage/sqlite.js';
 import type { MemoryStorage, WorkingMemory, MemoryEvent, Fact } from '../src/memory/types.js';
 
-let SqliteStore: new (dbPath: string) => MemoryStorage;
-let hasSQLite = false;
-
-beforeAll(async () => {
-  try {
-    const path = '../src/memory/storage/sqlite.js';
-    const mod = await import(path);
-    SqliteStore = mod.SqliteStore;
-    await import('better-sqlite3');
-    hasSQLite = true;
-  } catch {
-    hasSQLite = false;
-  }
-});
-
-const describeIf = hasSQLite ? describe : describe.skip;
-
-describeIf('SqliteStore', () => {
+describe('SqliteStore', () => {
   let store: MemoryStorage;
 
   const defaultWorkingMemory: WorkingMemory = {
@@ -40,12 +24,8 @@ describeIf('SqliteStore', () => {
     },
   };
 
-  beforeAll(() => {
+  beforeEach(() => {
     store = new SqliteStore(':memory:');
-  });
-
-  afterAll(() => {
-    // cleanup handled by :memory: disposal
   });
 
   // ── Working Memory ──────────────────────────────────
