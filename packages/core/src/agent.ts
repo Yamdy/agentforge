@@ -218,6 +218,11 @@ export class Agent {
         autoCheckpoint: this._autoCheckpoint,
       });
 
+      // Wire to SessionManager so suspend→resume restores audit trail in place
+      if (this.sessionManager) {
+        await this.sessionManager.resumeInPlace(sessionId);
+      }
+
       return {
         response: finalCtx.iteration.response as string ?? '',
         tokenUsage: finalCtx.session.totalTokenUsage ?? { input: 0, output: 0 },
