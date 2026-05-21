@@ -13,8 +13,11 @@ import { Resource } from '@opentelemetry/resources';
 import {
   BasicTracerProvider,
   BatchSpanProcessor,
+  AlwaysOnSampler,
+  AlwaysOffSampler,
+  TraceIdRatioBasedSampler,
 } from '@opentelemetry/sdk-trace-base';
-import type { ReadableSpan, SpanExporter } from '@opentelemetry/sdk-trace-base';
+import type { ReadableSpan, SpanExporter, Sampler } from '@opentelemetry/sdk-trace-base';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -36,6 +39,8 @@ export interface OtlpExporterConfig {
   enabled: boolean;
   /** Traces exporter options */
   traces?: OtlpExporterOptions;
+  /** Sampling strategy. Default: 'always_on'. Use { ratio: 0.0-1.0 } for probabilistic. */
+  sampler?: 'always_on' | 'always_off' | { ratio: number };
 }
 
 // ---------------------------------------------------------------------------
@@ -70,6 +75,33 @@ function resolveServiceName(options?: OtlpExporterOptions): string {
   if (options?.serviceName) return options.serviceName;
   if (envValue) return envValue;
   return 'agentforge';
+}
+
+// ── Sampling ──────────────────────────────────────────────────
+
+const VALID_SAMPLERS = new Set(['always_on', 'always_off', 'parentbased_traceidratio', 'traceidratio']);
+
+/**
+ * Resolve the sampler type from env or config.
+ * Returns 'always_on', 'always_off', or 'parentbased_traceidratio'.
+ */
+export function resolveSampler(): string {
+  const env = getEnvString('OTEL_TRACES_SAMPLER');
+  if (!env) return 'always_on';
+  if (VALID_SAMPLERS.has(env)) return env;
+  return 'always_on';
+}
+
+/**
+ * Resolve the sampler ratio from env OTEL_TRACES_SAMPLER_ARG.
+ * Returns a value between 0.0 and 1.0. Default: 1.0.
+ */
+export function resolveSamplerRatio(): number {
+  const raw = getEnvString('OTEL_TRACES_SAMPLER_ARG');
+  if (!raw) return 1.0;
+  const n = parseFloat(raw);
+  if (Number.isNaN(n)) return 1.0;
+  return Math.max(0, Math.min(1, n));
 }
 
 // ---------------------------------------------------------------------------
@@ -174,8 +206,11 @@ export function createOtlpTracerProvider(config: OtlpExporterConfig): BasicTrace
     'service.name': serviceName,
   });
 
+  const sampler = resolveSamplerFromConfig(config);
+
   const provider = new BasicTracerProvider({
     resource,
+    sampler,
     spanProcessors: [
       new BatchSpanProcessor(exporter, {
         maxExportBatchSize: 512,
@@ -186,4 +221,22 @@ export function createOtlpTracerProvider(config: OtlpExporterConfig): BasicTrace
   });
 
   return provider;
+}
+
+/**
+ * Build an OTel Sampler from config + env vars.
+ */
+function resolveSamplerFromConfig(config: OtlpExporterConfig): Sampler {
+  // Config-level sampler takes precedence over env
+  if (config.sampler) {
+    if (config.sampler === 'always_on') return new AlwaysOnSampler();
+    if (config.sampler === 'always_off') return new AlwaysOffSampler();
+    return new TraceIdRatioBasedSampler(config.sampler.ratio);
+  }
+
+  const envSampler = resolveSampler();
+  if (envSampler === 'always_off') return new AlwaysOffSampler();
+  if (envSampler === 'always_on') return new AlwaysOnSampler();
+  // parentbased_traceidratio or traceidratio
+  return new TraceIdRatioBasedSampler(resolveSamplerRatio());
 }
