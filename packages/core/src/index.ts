@@ -18,6 +18,7 @@ export { SessionPersistence } from './session-persistence.js';
 export { SessionManagerImpl } from './session-manager.js';
 export { createSubAgentTool } from './sub-agent.js';
 export { deepMerge } from './config-merge.js';
+export { HarnessDecisionRecorder, type HarnessDecision, type HarnessDecisionsBag } from './harness-decisions.js';
 export { resolveDynamic } from './dynamic-resolver.js';
 export { matchProfile, applyProfile } from './model-profile.js';
 export { ConfigLoader, type ConfigSource } from './config.js';

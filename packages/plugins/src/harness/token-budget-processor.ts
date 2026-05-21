@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { Processor, ProcessorContext, PipelineContext, TokenCounter, Message } from '@primo-ai/sdk';
 import { SpanAttributeKeys, SpanType } from '@primo-ai/sdk';
+import { HarnessDecisionRecorder } from '@primo-ai/core';
 
 export interface TokenBudgetConfig {
   maxContextTokens: number;
@@ -52,6 +53,7 @@ export function createTokenBudgetProcessor(
   TokenBudgetConfigSchema.parse(config);
   return {
     stage: 'gateLLM',
+    priority: 90,
     execute: async (pCtx: ProcessorContext) => {
       const ctx = pCtx.state;
       const systemPromptTokens = estimateTokens(ctx.agent.systemPrompt ?? '');
@@ -80,6 +82,13 @@ export function createTokenBudgetProcessor(
         childSpan?.setAttribute(SpanAttributeKeys.HARNESS_DECISION, 'blocked');
         childSpan?.setAttribute(SpanAttributeKeys.HARNESS_REASON, 'Token budget exceeded');
         childSpan?.end();
+        HarnessDecisionRecorder.record(ctx, {
+          processor: 'token-budget',
+          stage: 'gateLLM',
+          decision: 'block',
+          reason: `Token budget exceeded: ${totalUsed} > ${config.maxContextTokens}`,
+          timestamp: new Date().toISOString(),
+        });
         pCtx.control.abort(`Token budget exceeded: ${totalUsed} tokens used, ${config.maxContextTokens} max`);
         return;
       }

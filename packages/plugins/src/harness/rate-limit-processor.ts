@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { Processor, ProcessorContext, PipelineContext } from '@primo-ai/sdk';
+import { HarnessDecisionRecorder } from '@primo-ai/core';
 
 export interface RateLimitConfig {
   /** Maximum number of requests allowed within the window. */
@@ -54,6 +55,7 @@ export function createRateLimitProcessor(config: RateLimitConfig): Processor {
 
   return {
     stage: 'gateLLM',
+    priority: 80,
     execute: async (pCtx: ProcessorContext) => {
       const ctx = pCtx.state;
       const now = Date.now();
@@ -72,6 +74,13 @@ export function createRateLimitProcessor(config: RateLimitConfig): Processor {
       // Check limit
       if (entries.length >= config.maxRequests) {
         if (config.strategy === 'queue') {
+          HarnessDecisionRecorder.record(ctx, {
+            processor: 'rate-limit',
+            stage: 'gateLLM',
+            decision: 'queue',
+            reason: `Rate limited: ${entries.length}/${config.maxRequests}`,
+            timestamp: new Date().toISOString(),
+          });
           ctx.session.custom = {
             ...ctx.session.custom,
             rateLimitQueued: true,
@@ -83,6 +92,13 @@ export function createRateLimitProcessor(config: RateLimitConfig): Processor {
         }
 
         // block
+        HarnessDecisionRecorder.record(ctx, {
+          processor: 'rate-limit',
+          stage: 'gateLLM',
+          decision: 'block',
+          reason: `Rate limit exceeded: ${entries.length}/${config.maxRequests}`,
+          timestamp: new Date().toISOString(),
+        });
         pCtx.control.abort(`Rate limit exceeded for ${key}: ${entries.length}/${config.maxRequests} requests in the last ${config.windowMs}ms`);
         return;
       }

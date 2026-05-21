@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { Processor, ProcessorContext, PipelineContext } from '@primo-ai/sdk';
 import { SpanAttributeKeys, SpanType } from '@primo-ai/sdk';
+import { HarnessDecisionRecorder } from '@primo-ai/core';
 
 export interface CostCapConfig {
   /** Maximum cumulative cost in dollars. */
@@ -36,6 +37,7 @@ export function createCostCapProcessor(config: CostCapConfig): Processor {
   CostCapConfigSchema.parse(config);
   return {
     stage: 'gateLLM',
+    priority: 100,
     execute: async (pCtx: ProcessorContext) => {
       const ctx = pCtx.state;
       const state = (ctx.session.custom.costCap as CostCapState | undefined)
@@ -65,14 +67,35 @@ export function createCostCapProcessor(config: CostCapConfig): Processor {
           childSpan?.setAttribute(SpanAttributeKeys.HARNESS_DECISION, 'blocked');
           childSpan?.setAttribute(SpanAttributeKeys.HARNESS_REASON, `Cost cap exceeded: $${projectedCost.toFixed(4)} > $${config.maxCost}`);
           childSpan?.end();
+          HarnessDecisionRecorder.record(ctx, {
+            processor: 'cost-cap',
+            stage: 'gateLLM',
+            decision: 'block',
+            reason: `Cost cap exceeded: $${projectedCost.toFixed(4)} > $${config.maxCost}`,
+            timestamp: new Date().toISOString(),
+          });
           pCtx.control.abort(`Cost cap exceeded: projected $${projectedCost.toFixed(4)} exceeds budget $${config.maxCost}`);
           return;
         }
 
         childSpan?.setAttribute(SpanAttributeKeys.HARNESS_DECISION, 'warned');
         childSpan?.setAttribute(SpanAttributeKeys.HARNESS_REASON, `Cost approaching cap: $${projectedCost.toFixed(4)} / $${config.maxCost}`);
+        HarnessDecisionRecorder.record(ctx, {
+          processor: 'cost-cap',
+          stage: 'gateLLM',
+          decision: 'warn',
+          reason: `Cost approaching cap: $${projectedCost.toFixed(4)} / $${config.maxCost}`,
+          timestamp: new Date().toISOString(),
+        });
       } else {
         childSpan?.setAttribute(SpanAttributeKeys.HARNESS_DECISION, 'allowed');
+        HarnessDecisionRecorder.record(ctx, {
+          processor: 'cost-cap',
+          stage: 'gateLLM',
+          decision: 'allow',
+          reason: 'Cost within budget',
+          timestamp: new Date().toISOString(),
+        });
       }
 
       childSpan?.end();
