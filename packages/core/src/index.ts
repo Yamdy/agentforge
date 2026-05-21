@@ -27,6 +27,7 @@ export { FallbackRunner, type FallbackInvoker, type FallbackRunnerOptions } from
 export { TaskManagerImpl } from './task-manager.js';
 export { StateMachine, type AgentState } from './state-machine.js';
 export { CircuitBreaker, type CircuitBreakerState, type CircuitBreakerConfig, type CircuitBreakerSnapshot } from './circuit-breaker.js';
+export { InMemoryRetryStateStore, JsonlRetryStateStore, type RetryStateStore, type RetryStateEntry } from './retry-state-store.js';
 export { ModelFactory } from './model-factory.js';
 export { LoopOrchestrator, RunMode, type LoopOptions } from './loop-orchestrator.js';
 export { serialize, deserialize, type SerializableContext } from './serialize.js';
