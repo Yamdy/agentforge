@@ -15,18 +15,23 @@ function isRetryable(error: unknown): boolean {
   return true;
 }
 
+class CircuitBreakerOpenError extends Error {
+  statusCode = 503;
+  constructor() { super('Circuit breaker is open'); this.name = 'CircuitBreakerOpenError'; }
+}
+
 export async function streamWithRetry<T>(
   fn: () => Promise<T>,
   options: RetryOptions,
   breaker?: CircuitBreaker,
 ): Promise<T> {
-  if (breaker && !breaker.checkBeforeCall()) {
-    throw new Error('Circuit breaker is open');
-  }
-
   let lastError: unknown;
 
   for (let attempt = 0; attempt <= options.maxRetries; attempt++) {
+    if (breaker && !breaker.checkBeforeCall()) {
+      throw new CircuitBreakerOpenError();
+    }
+
     try {
       const result = await fn();
       breaker?.recordSuccess();

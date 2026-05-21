@@ -128,13 +128,21 @@ export class LLMInvoker {
     // Retry only the initial streamText() call (connection phase).
     // Subsequent stream iteration errors are not retried here.
     const maxRetries = this.options.retryOptions?.maxRetries ?? 3;
+    const breaker = this.options.circuitBreaker;
     let result: ReturnType<typeof streamText>;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      if (breaker && !breaker.checkBeforeCall()) {
+        span?.end();
+        throw new Error('Circuit breaker is open');
+      }
+
       try {
         result = streamText(streamOpts as unknown as Parameters<typeof streamText>[0]);
+        breaker?.recordSuccess();
         break;
       } catch (error) {
+        breaker?.recordFailure();
         if (attempt >= maxRetries) {
           span?.end();
           throw error;

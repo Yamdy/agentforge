@@ -18,6 +18,12 @@ export interface InitCommand {
 // Argument parsing
 // ---------------------------------------------------------------------------
 
+function validateProjectName(name: string): void {
+  if (!name || name.includes('/') || name.includes('\\') || name.includes('..')) {
+    throw new Error(`Invalid project name: ${name}. Project name must not contain path separators.`);
+  }
+}
+
 export function parseArgs(argv: string[]): InitCommand | null {
   if (argv.length === 0) return null;
 
@@ -26,6 +32,7 @@ export function parseArgs(argv: string[]): InitCommand | null {
 
   const projectName = argv[1];
   if (!projectName || projectName.startsWith('--')) return null;
+  validateProjectName(projectName);
 
   let profile = 'default';
   let studio = true;
@@ -135,6 +142,8 @@ export async function run(argv: string[]): Promise<void> {
   }
 
   const cwd = process.cwd();
+
+  validateProjectName(cmd.projectName);
 
   await scaffold({
     projectName: cmd.projectName,

@@ -26,7 +26,7 @@ export function createCircuitBreakerProcessor(config: CircuitBreakerConfig = {})
           reason: `Circuit breaker is ${breaker.state}`,
           timestamp: new Date().toISOString(),
         });
-        pCtx.control.abort(`Circuit breaker is ${breaker.state}`);
+        pCtx.control.abort(`Circuit breaker is ${breaker.state}`, 'gateLLM');
       }
     },
   };
@@ -45,7 +45,7 @@ export function createCircuitBreakerProcessorWithBreaker(breaker: CircuitBreaker
           reason: `Circuit breaker is ${breaker.state}`,
           timestamp: new Date().toISOString(),
         });
-        pCtx.control.abort(`Circuit breaker is ${breaker.state}`);
+        pCtx.control.abort(`Circuit breaker is ${breaker.state}`, 'gateLLM');
       }
     },
   };
