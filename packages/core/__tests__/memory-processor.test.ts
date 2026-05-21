@@ -4,6 +4,7 @@ import { InMemoryStore } from '../src/memory/storage/in-memory.js';
 import { createMemoryRecallProcessor, createMemoryStoreProcessor } from '../src/memory/memory-processor.js';
 import { createProcessorContext } from '../src/processor-context.js';
 import { WorkingMemoryImpl } from '../src/memory/working-memory.js';
+import type { MemoryEvent } from '../src/memory/types.js';
 import type { PipelineContext } from '@primo-ai/sdk';
 
 function createEmptyPipelineContext(): PipelineContext {
@@ -105,9 +106,10 @@ describe('Memory Processor', () => {
       await processor.execute(pCtx);
 
       // Access internal storage of the system to verify
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const events = await (system as any).storage.getEvents('session-1');
       expect(events.length).toBeGreaterThan(0);
-      const userEvent = events.find((e: any) => e.content === 'What is TDD?');
+      const userEvent = events.find((e: MemoryEvent) => e.content === 'What is TDD?');
       expect(userEvent).toBeDefined();
     });
 

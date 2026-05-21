@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { WorkingMemoryImpl } from '../src/memory/working-memory.js';
-import type { WorkingMemory } from '../src/memory/types.js';
 
 describe('WorkingMemoryImpl', () => {
   let wm: WorkingMemoryImpl;
