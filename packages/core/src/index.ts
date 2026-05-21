@@ -26,6 +26,7 @@ export { ConcurrencyController } from './concurrency-controller.js';
 export { FallbackRunner, type FallbackInvoker, type FallbackRunnerOptions } from './fallback-runner.js';
 export { TaskManagerImpl } from './task-manager.js';
 export { StateMachine, type AgentState } from './state-machine.js';
+export { CircuitBreaker, type CircuitBreakerState, type CircuitBreakerConfig, type CircuitBreakerSnapshot } from './circuit-breaker.js';
 export { ModelFactory } from './model-factory.js';
 export { LoopOrchestrator, RunMode, type LoopOptions } from './loop-orchestrator.js';
 export { serialize, deserialize, type SerializableContext } from './serialize.js';
