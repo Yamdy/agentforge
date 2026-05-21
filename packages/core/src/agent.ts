@@ -48,6 +48,8 @@ export interface AgentDependencies {
   contextBuilder?: ContextBuilder;
   /** Override default pipeline stage order. */
   stageConfig?: PipelineStageConfig;
+  /** OTel sampling config passed to auto-detected tracer. Ignored when `tracer` is provided. */
+  otelSampler?: 'always_on' | 'always_off' | { ratio: number };
 }
 
 export interface RunOptions {
@@ -71,13 +73,15 @@ export interface AgentRunResult {
  * creates an OTLP tracer and wraps it via OTelBridge.
  * Returns undefined if no OTel configuration is detected or initialization fails.
  */
-export function autoDetectOtelTracer(): Tracer | undefined {
+export function autoDetectOtelTracer(
+  sampler?: 'always_on' | 'always_off' | { ratio: number },
+): Tracer | undefined {
   if (process.env.OTEL_SDK_DISABLED === 'true') return undefined;
   if (!process.env.OTEL_EXPORTER_OTLP_ENDPOINT && !process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT) {
     return undefined;
   }
   try {
-    const provider = createOtlpTracerProvider({ enabled: true });
+    const provider = createOtlpTracerProvider({ enabled: true, sampler });
     if (!provider) return undefined;
     return new OTelBridge({ tracerProvider: provider });
   } catch {
@@ -106,7 +110,7 @@ export class Agent {
     this.config = config;
     this.modelFactory = deps?.modelFactory ?? new ModelFactory();
     this.modelFactory.registerGateway(getDefaultBuiltInGateway());
-    this._tracer = deps?.tracer ?? autoDetectOtelTracer();
+    this._tracer = deps?.tracer ?? autoDetectOtelTracer(deps?.otelSampler);
     this.runner = deps?.runner ?? new PipelineRunner({ tracer: this._tracer });
     this.registry = deps?.registry ?? new ToolRegistry();
     this.contextBuilder = deps?.contextBuilder ?? new ContextBuilder({ registry: this.registry });

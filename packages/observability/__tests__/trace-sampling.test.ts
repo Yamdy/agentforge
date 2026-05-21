@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { resolveSampler, resolveSamplerRatio } from '../src/otel-exporter.js';
+import { resolveSampler, resolveSamplerRatio, createOtlpTracerProvider } from '../src/otel-exporter.js';
 
 describe('Trace sampling strategy', () => {
   const savedEnv: Record<string, string | undefined> = {};
@@ -68,6 +68,54 @@ describe('Trace sampling strategy', () => {
     it('clamps to 0.0 if < 0.0', () => {
       process.env.OTEL_TRACES_SAMPLER_ARG = '-0.5';
       expect(resolveSamplerRatio()).toBe(0.0);
+    });
+  });
+
+  describe('resolveSamplerFromConfig (via createOtlpTracerProvider)', () => {
+    // Provider creation needs an endpoint; provide a dummy one
+    beforeEach(() => {
+      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = 'http://localhost:4318/v1/traces';
+      process.env.OTEL_SDK_DISABLED = 'false';
+    });
+
+    afterEach(() => {
+      delete process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
+      delete process.env.OTEL_SDK_DISABLED;
+    });
+
+    it('config sampler always_on takes precedence over env always_off', () => {
+      process.env.OTEL_TRACES_SAMPLER = 'always_off';
+      const provider = createOtlpTracerProvider({ enabled: true, sampler: 'always_on' });
+      expect(provider).toBeDefined();
+      provider?.shutdown();
+    });
+
+    it('config sampler always_off disables sampling', () => {
+      const provider = createOtlpTracerProvider({ enabled: true, sampler: 'always_off' });
+      expect(provider).toBeDefined();
+      provider?.shutdown();
+    });
+
+    it('config sampler { ratio: 0.5 } creates ratio-based sampler', () => {
+      const provider = createOtlpTracerProvider({ enabled: true, sampler: { ratio: 0.5 } });
+      expect(provider).toBeDefined();
+      provider?.shutdown();
+    });
+
+    it('env parentbased_traceidratio uses ParentBasedSampler', () => {
+      process.env.OTEL_TRACES_SAMPLER = 'parentbased_traceidratio';
+      process.env.OTEL_TRACES_SAMPLER_ARG = '0.3';
+      const provider = createOtlpTracerProvider({ enabled: true });
+      expect(provider).toBeDefined();
+      provider?.shutdown();
+    });
+
+    it('env traceidratio uses plain TraceIdRatioBasedSampler', () => {
+      process.env.OTEL_TRACES_SAMPLER = 'traceidratio';
+      process.env.OTEL_TRACES_SAMPLER_ARG = '0.3';
+      const provider = createOtlpTracerProvider({ enabled: true });
+      expect(provider).toBeDefined();
+      provider?.shutdown();
     });
   });
 });

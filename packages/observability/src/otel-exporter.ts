@@ -16,6 +16,7 @@ import {
   AlwaysOnSampler,
   AlwaysOffSampler,
   TraceIdRatioBasedSampler,
+  ParentBasedSampler,
 } from '@opentelemetry/sdk-trace-base';
 import type { ReadableSpan, SpanExporter, Sampler } from '@opentelemetry/sdk-trace-base';
 
@@ -237,6 +238,9 @@ function resolveSamplerFromConfig(config: OtlpExporterConfig): Sampler {
   const envSampler = resolveSampler();
   if (envSampler === 'always_off') return new AlwaysOffSampler();
   if (envSampler === 'always_on') return new AlwaysOnSampler();
-  // parentbased_traceidratio or traceidratio
+  if (envSampler === 'parentbased_traceidratio') {
+    return new ParentBasedSampler({ root: new TraceIdRatioBasedSampler(resolveSamplerRatio()) });
+  }
+  // traceidratio
   return new TraceIdRatioBasedSampler(resolveSamplerRatio());
 }

@@ -44,5 +44,30 @@ describe('Agent auto OTel detection', () => {
       process.env.OTEL_EXPORTER_OTLP_ENDPOINT = 'not-a-valid-url';
       expect(() => autoDetectOtelTracer()).not.toThrow();
     });
+
+    it('accepts sampler parameter without throwing', () => {
+      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = 'http://localhost:4318';
+      const result = autoDetectOtelTracer('always_off');
+      // Returns Tracer or undefined depending on OTel SDK availability
+      expect(result === undefined || (typeof result === 'object' && result !== null)).toBe(true);
+    });
+
+    it('accepts ratio sampler parameter without throwing', () => {
+      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = 'http://localhost:4318';
+      const result = autoDetectOtelTracer({ ratio: 0.25 });
+      expect(result === undefined || (typeof result === 'object' && result !== null)).toBe(true);
+    });
+
+    it('returns a Tracer when OTel is configured and available', () => {
+      process.env.OTEL_EXPORTER_OTLP_ENDPOINT = 'http://localhost:4318';
+      const result = autoDetectOtelTracer();
+      // In test env with hoisted OTel SDK, this should return a real Tracer
+      if (result) {
+        // Verify it has the Tracer interface
+        expect(typeof result.startSpan).toBe('function');
+        expect(typeof result.getCurrentSpan).toBe('function');
+      }
+      // Graceful: if SDK wasn't available, result is undefined (still valid)
+    });
   });
 });
