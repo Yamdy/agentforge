@@ -18,6 +18,8 @@ import { serialize, deserialize } from './serialize.js';
 import { InMemoryCheckpointStore, JsonlCheckpointStore } from './checkpoint-store.js';
 import { Runner } from './runner.js';
 import { join } from 'node:path';
+import type { CircuitBreaker } from './circuit-breaker.js';
+import type { RetryStateStore } from './retry-state-store.js';
 
 const PRE_LOOP_STAGES: PipelineStage[] = ['processInput', 'buildContext'];
 const LOOP_STAGES: PipelineStage[] = [
@@ -56,6 +58,10 @@ export interface LoopOptions {
   autoCheckpoint?: boolean;
   /** Max times a processor can retryFrom the same stage per loop (default: 3) */
   maxProcessorRetries?: number;
+  /** Persistent retry state store for survival across process restarts */
+  retryStateStore?: RetryStateStore;
+  /** Circuit breaker to prevent cascading failures */
+  circuitBreaker?: CircuitBreaker;
 }
 
 /** Mutable state shared between loop methods for retry statistics. */
@@ -256,6 +262,13 @@ export class LoopOrchestrator {
     const maxProcessorRetries = options.maxProcessorRetries ?? 3;
     const runState = sharedRunState ?? { compatRetries: 0 };
     const processorRetryCounts = new Map<PipelineStage, number>();
+    // Load persisted retry counts from store (survives process restart)
+    if (options.retryStateStore) {
+      const entries = await options.retryStateStore.list(sessionId);
+      for (const e of entries) {
+        processorRetryCounts.set(e.key as PipelineStage, e.count);
+      }
+    }
 
     this.resetToRunning();
 
@@ -297,6 +310,7 @@ export class LoopOrchestrator {
                   throw new Error(`Processor retry budget exhausted for ${abortEvent.retryFrom}: ${abortEvent.reason}`);
                 }
                 processorRetryCounts.set(abortEvent.retryFrom, count);
+                await options.retryStateStore?.increment(sessionId, abortEvent.retryFrom);
                 loopCtx = { ...loopCtx, iteration: { ...loopCtx.iteration, loopDirective: { action: 'retry', retryFrom: abortEvent.retryFrom } } };
                 loopBreak = true;
                 break;

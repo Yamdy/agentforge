@@ -4,4 +4,5 @@ export { createTokenBudgetProcessor, type TokenBudgetConfig } from './token-budg
 export { createCostCapProcessor, type CostCapConfig } from './cost-cap-processor.js';
 export { createRateLimitProcessor, type RateLimitConfig } from './rate-limit-processor.js';
 export { createRequiredToolsGate } from './required-tools-gate-processor.js';
+export { createCircuitBreakerProcessor, createCircuitBreakerProcessorWithBreaker, type CircuitBreakerConfig } from './circuit-breaker-processor.js';
 export { setGateDecision, setCostAttributes, setBudgetAttributes } from './span-attributes.js';

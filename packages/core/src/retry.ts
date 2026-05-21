@@ -1,3 +1,5 @@
+import type { CircuitBreaker } from './circuit-breaker.js';
+
 export interface RetryOptions {
   maxRetries: number;
   baseDelay: number;
@@ -16,14 +18,22 @@ function isRetryable(error: unknown): boolean {
 export async function streamWithRetry<T>(
   fn: () => Promise<T>,
   options: RetryOptions,
+  breaker?: CircuitBreaker,
 ): Promise<T> {
+  if (breaker && !breaker.checkBeforeCall()) {
+    throw new Error('Circuit breaker is open');
+  }
+
   let lastError: unknown;
 
   for (let attempt = 0; attempt <= options.maxRetries; attempt++) {
     try {
-      return await fn();
+      const result = await fn();
+      breaker?.recordSuccess();
+      return result;
     } catch (error) {
       lastError = error;
+      breaker?.recordFailure();
 
       if (!isRetryable(error) || attempt >= options.maxRetries) {
         throw error;

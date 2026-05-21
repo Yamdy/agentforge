@@ -3,11 +3,13 @@ import type { LanguageModel } from 'ai';
 import type { TokenUsage, Tracer } from '@primo-ai/sdk';
 import { SpanType } from '@primo-ai/sdk';
 import { streamWithRetry, type RetryOptions } from './retry.js';
+import type { CircuitBreaker } from './circuit-breaker.js';
 
 export interface LLMInvokerOptions {
   model: LanguageModel;
   system?: string;
   retryOptions?: RetryOptions;
+  circuitBreaker?: CircuitBreaker;
   tracer?: Tracer;
   eventBus?: { emit: (type: string, data: unknown) => void };
 }
@@ -98,7 +100,7 @@ export class LLMInvoker {
           response: chunks.join(''),
           tokenUsage: extractTokenUsage(usage),
         };
-      }, this.options.retryOptions ?? { maxRetries: 3, baseDelay: 1000 });
+      }, this.options.retryOptions ?? { maxRetries: 3, baseDelay: 1000 }, this.options.circuitBreaker);
     } finally {
       span?.end();
     }
