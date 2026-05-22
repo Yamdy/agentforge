@@ -8,6 +8,7 @@ export class SessionManagerImpl implements SessionManager {
     private storage: SessionStorage,
     private bus: EventBus,
     snapshotService?: SnapshotService,
+    private permissionManager?: { applyDecision(id: string, approved: boolean): void },
   ) {
     this.snapshotService = snapshotService;
   }
@@ -72,6 +73,12 @@ export class SessionManagerImpl implements SessionManager {
           if (payload.toolDeclarations) toolDeclarations = payload.toolDeclarations as Array<{ name: string; description: string }>;
           break;
         }
+        case 'permission:decided':
+          if (this.permissionManager) {
+            const pd = payload as Record<string,unknown>;
+            this.permissionManager.applyDecision(String(pd.permissionId ?? ''), Boolean(pd.approved));
+          }
+          break;
         case 'iteration:end':
         case 'iteration.end': {
           lastStep = (payload.step as number) + 1;

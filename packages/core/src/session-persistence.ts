@@ -15,6 +15,8 @@ const SUBSCRIBED_EVENTS = [
   'error',
   'session:suspended',
   'session:resumed',
+  'permission:requested',
+  'permission:decided',
 ];
 
 export class SessionPersistence {
