@@ -1,6 +1,7 @@
 import type { HarnessConfig } from '@primo-ai/sdk';
 import { z } from 'zod';
 import { deepMerge } from './config-merge.js';
+import { ConfigEnvVarError } from './errors.js';
 
 // ---------------------------------------------------------------------------
 // ConfigSource — layers to load
@@ -87,7 +88,10 @@ export class ConfigLoader {
       {} as Record<string, unknown>,
     );
 
-    const result = HarnessConfigSchema.safeParse(merged);
+    // Expand environment variable references in string values
+    const expanded = expandEnvVars(merged, '');
+
+    const result = HarnessConfigSchema.safeParse(expanded);
     if (!result.success) {
       const issues = result.error.issues
         .map((i) => `  ${i.path.join('.')}: ${i.message}`)
@@ -157,6 +161,104 @@ function stripJsonc(input: string): string {
   // Strip trailing commas before } or ]
   result = result.replace(/,\s*([}\]])/g, '$1');
 
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Environment variable expansion in config values
+// ---------------------------------------------------------------------------
+
+/**
+ * Recursively walk a merged config object and expand `${VAR_NAME}` and
+ * `${VAR_NAME:-default}` references in every string leaf value.
+ *
+ * - `$$` escapes to a single literal `$` (the first `$` escapes the second)
+ * - Undefined variables with no default throw `ConfigEnvVarError`
+ */
+function expandEnvVars(
+  obj: Record<string, unknown>,
+  path: string,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const currentPath = path ? `${path}.${key}` : key;
+    if (typeof value === 'string') {
+      result[key] = expandVarsInString(value, currentPath);
+    } else if (Array.isArray(value)) {
+      result[key] = expandVarsInArray(value, currentPath);
+    } else if (value !== null && typeof value === 'object') {
+      result[key] = expandEnvVars(
+        value as Record<string, unknown>,
+        currentPath,
+      );
+    } else {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
+function expandVarsInArray(arr: unknown[], path: string): unknown[] {
+  return arr.map((item, index) => {
+    const currentPath = `${path}[${index}]`;
+    if (typeof item === 'string') {
+      return expandVarsInString(item, currentPath);
+    }
+    if (Array.isArray(item)) {
+      return expandVarsInArray(item, currentPath);
+    }
+    if (item !== null && typeof item === 'object') {
+      return expandEnvVars(item as Record<string, unknown>, currentPath);
+    }
+    return item;
+  });
+}
+
+/**
+ * Expand `${VAR_NAME}` / `${VAR_NAME:-default}` references inside a single
+ * string.  `$$` produces a literal `$`.
+ */
+function expandVarsInString(value: string, path: string): string {
+  let result = '';
+  let i = 0;
+  while (i < value.length) {
+    // $$ escape — produces a single literal $
+    if (value[i] === '$' && i + 1 < value.length && value[i + 1] === '$') {
+      result += '$';
+      i += 2;
+      continue;
+    }
+
+    // ${...} — environment variable expansion
+    if (value[i] === '$' && i + 1 < value.length && value[i + 1] === '{') {
+      const close = value.indexOf('}', i + 2);
+      if (close !== -1) {
+        const inner = value.slice(i + 2, close);
+        const colonDashIdx = inner.indexOf(':-');
+        let varName: string;
+        let defaultValue: string | undefined;
+        if (colonDashIdx !== -1) {
+          varName = inner.slice(0, colonDashIdx);
+          defaultValue = inner.slice(colonDashIdx + 2);
+        } else {
+          varName = inner;
+        }
+        const envVal = process.env[varName];
+        if (envVal !== undefined) {
+          result += envVal;
+        } else if (defaultValue !== undefined) {
+          result += defaultValue;
+        } else {
+          throw new ConfigEnvVarError(varName, path);
+        }
+        i = close + 1;
+        continue;
+      }
+    }
+
+    result += value[i];
+    i++;
+  }
   return result;
 }
 

@@ -290,6 +290,16 @@ export class SqliteSessionStorage implements SessionStorage {
     return messages;
   }
 
+  async verifyIntegrity(sessionId: string): Promise<import('@primo-ai/sdk').IntegrityReport> {
+    // SQLite storage relies on database constraints; checksum verification is a no-op (all valid).
+    return { sessionId, valid: true, totalEvents: 0, invalidEvents: 0, errors: [] };
+  }
+
+  async cleanup(): Promise<number> {
+    // TTL-based cleanup not yet implemented for SQLite storage.
+    return 0;
+  }
+
   // ---------------------------------------------------------------------------
   // Lifecycle
   // ---------------------------------------------------------------------------

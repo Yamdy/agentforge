@@ -8,6 +8,7 @@ import { permissionRoutes } from './routes/permissions.js';
 import { providerRoutes } from './routes/providers.js';
 import { mcpRoutes } from './routes/mcp.js';
 import { authMiddleware } from './middleware/auth.js';
+import { rateLimitMiddleware, type RateLimitOptions } from './middleware/rate-limit.js';
 import { requestLogger } from './middleware/logger.js';
 import { WebSocketBridge } from './bridge/bridge.js';
 import { a2aRoutes, type A2ARoutesOptions } from './a2a/routes.js';
@@ -46,6 +47,8 @@ export interface ServerOptions {
   registry?: AgentRegistry;
   enableWebSocket?: boolean;
   cors?: CorsOptions;
+  /** Rate-limit configuration (sliding window, IP+route based). */
+  rateLimit?: RateLimitOptions;
   a2a?: A2AOptions;
   requestTimeout?: number;
   shutdownTimeout?: number;
@@ -106,7 +109,13 @@ export class AgentForgeServer {
       }));
     }
 
+    // Logger middleware (before rate-limit so 429s get logged)
     this.app.use('*', requestLogger);
+
+    // Rate-limit middleware (after logger so 429 responses are logged)
+    if (options?.rateLimit) {
+      this.app.use('*', rateLimitMiddleware(options.rateLimit));
+    }
 
     this.app.onError((err, _c) => {
       return new Response(JSON.stringify({ error: err.message }), {

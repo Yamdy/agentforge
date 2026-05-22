@@ -69,6 +69,39 @@ describe('SnapshotService', () => {
       expect(snapshot?.files).toHaveLength(1);
       expect(snapshot?.files[0]?.path).toBe(join(dir, 'sub', 'nested.txt'));
     });
+
+    it('stores file content when storeContent is true', async () => {
+      await writeFile(join(dir, 'a.txt'), 'hello world', 'utf-8');
+      await writeFile(join(dir, 'b.txt'), 'second file', 'utf-8');
+
+      const snapshotId = await service.track(true);
+      const snapshot = await service.getSnapshot(snapshotId);
+
+      expect(snapshot?.hasContent).toBe(true);
+      expect(snapshot?.files).toHaveLength(2);
+      expect(snapshot?.files[0]?.content).toBe('hello world');
+      expect(snapshot?.files[1]?.content).toBe('second file');
+    });
+
+    it('does not store content by default', async () => {
+      await writeFile(join(dir, 'a.txt'), 'some content', 'utf-8');
+
+      const snapshotId = await service.track();
+      const snapshot = await service.getSnapshot(snapshotId);
+
+      expect(snapshot?.hasContent).toBe(false);
+      expect(snapshot?.files[0]?.content).toBeUndefined();
+    });
+
+    it('sets hasContent correctly on the snapshot', async () => {
+      await writeFile(join(dir, 'a.txt'), 'content', 'utf-8');
+
+      const withContent = await service.track(true);
+      expect((await service.getSnapshot(withContent))?.hasContent).toBe(true);
+
+      const withoutContent = await service.track();
+      expect((await service.getSnapshot(withoutContent))?.hasContent).toBe(false);
+    });
   });
 
   describe('patch', () => {
@@ -173,7 +206,62 @@ describe('SnapshotService', () => {
     // Note: Restoring modified/deleted files requires storing file content
     // in snapshots, which is a Phase 2 feature. For MVP, revert only deletes
     // newly created files.
-    it.todo('restores modified file (requires content storage)');
-    it.todo('restores deleted file (requires content storage)');
+    it('restores modified file (requires content storage)', async () => {
+      const filePath = join(dir, 'a.txt');
+      await writeFile(filePath, 'original content', 'utf-8');
+      const snapshotId = await service.track(true);
+
+      // Modify the file
+      await writeFile(filePath, 'modified content', 'utf-8');
+
+      await service.revert(snapshotId);
+
+      const result = await readFile(filePath, 'utf-8');
+      expect(result).toBe('original content');
+    });
+
+    it('restores deleted file (requires content storage)', async () => {
+      const filePath = join(dir, 'a.txt');
+      await writeFile(filePath, 'original content', 'utf-8');
+      const snapshotId = await service.track(true);
+
+      // Delete the file
+      await rm(filePath);
+
+      await service.revert(snapshotId);
+
+      const result = await readFile(filePath, 'utf-8');
+      expect(result).toBe('original content');
+    });
+
+    it('restores both modified and deleted files together', async () => {
+      const fileA = join(dir, 'a.txt');
+      const fileB = join(dir, 'b.txt');
+      await writeFile(fileA, 'content a', 'utf-8');
+      await writeFile(fileB, 'content b', 'utf-8');
+      const snapshotId = await service.track(true);
+
+      // Modify a.txt, delete b.txt
+      await writeFile(fileA, 'modified a', 'utf-8');
+      await rm(fileB);
+
+      await service.revert(snapshotId);
+
+      expect(await readFile(fileA, 'utf-8')).toBe('content a');
+      expect(await readFile(fileB, 'utf-8')).toBe('content b');
+    });
+
+    it('does not restore modified file when content was not stored', async () => {
+      const filePath = join(dir, 'a.txt');
+      await writeFile(filePath, 'original', 'utf-8');
+      const snapshotId = await service.track(); // no content storage
+
+      await writeFile(filePath, 'modified', 'utf-8');
+      await service.revert(snapshotId);
+
+      // File should still be in modified state since content wasn't stored
+      const result = await readFile(filePath, 'utf-8');
+      expect(result).toBe('modified');
+    });
   });
 });

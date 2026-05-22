@@ -28,6 +28,13 @@ export class SessionManagerImpl implements SessionManager {
 
     this.bus.emit('agent:start', { sessionId, input });
 
+    // Probabilistic GC: ~10% chance to trigger cleanup on each start()
+    if (Math.random() < 0.1) {
+      this.storage.cleanup().catch((err) => {
+        this.bus.emit('session:cleanup_error', { error: err instanceof Error ? err.message : String(err) });
+      });
+    }
+
     return record;
   }
 

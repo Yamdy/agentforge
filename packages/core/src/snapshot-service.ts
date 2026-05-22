@@ -31,8 +31,9 @@ export class SnapshotServiceImpl implements SnapshotService {
   /**
    * Create a snapshot of all files matching the configured patterns.
    * Returns the snapshot ID for later reference.
+   * When storeContent is true, file contents are stored for revert.
    */
-  async track(): Promise<string> {
+  async track(storeContent?: boolean): Promise<string> {
     const files: FileSnapshot[] = [];
 
     // Scan all patterns and collect files
@@ -41,7 +42,12 @@ export class SnapshotServiceImpl implements SnapshotService {
 
       for (const filePath of filePaths) {
         const hash = await this.adapter.hashFile(filePath);
-        files.push({ path: filePath, hash });
+        const entry: FileSnapshot = { path: filePath, hash };
+        if (storeContent) {
+          const raw = await this.adapter.readFile(filePath);
+          entry.content = typeof raw === 'string' ? raw : new TextDecoder().decode(raw);
+        }
+        files.push(entry);
       }
     }
 
@@ -53,6 +59,7 @@ export class SnapshotServiceImpl implements SnapshotService {
       id: snapshotId,
       createdAt: new Date().toISOString(),
       files,
+      hasContent: storeContent === true,
     };
 
     await this.store.save(snapshot);
@@ -152,12 +159,20 @@ export class SnapshotServiceImpl implements SnapshotService {
           }
           break;
         }
-        case 'modified':
+        case 'modified': {
+          // Restore file content from the snapshot
+          const original = originalFiles.get(patch.path);
+          if (original?.content !== undefined) {
+            await this.adapter.writeFile(patch.path, original.content);
+          }
+          break;
+        }
         case 'deleted': {
-          // Restore the original file content from disk
-          // Note: We read the current state from snapshot metadata
-          // For full restore, we need to store content in snapshot
-          // For now, we skip content restore (design limitation)
+          // Recreate the file from snapshot content
+          const original = originalFiles.get(patch.path);
+          if (original?.content !== undefined) {
+            await this.adapter.writeFile(patch.path, original.content);
+          }
           break;
         }
       }

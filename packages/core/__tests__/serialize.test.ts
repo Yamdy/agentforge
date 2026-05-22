@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { serialize, deserialize } from '../src/serialize.js';
+import { serialize, deserialize, SerializationVersionError, migrate_v1_to_v2 } from '../src/serialize.js';
+import type { SerializableContext } from '../src/serialize.js';
 import type { PipelineContext } from '@primo-ai/sdk';
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
@@ -96,5 +97,86 @@ describe('deserialize', () => {
     expect(restored.agent.toolDeclarations).toEqual([{ name: 'echo', description: 'echo tool' }]);
     expect(restored.iteration.loopDirective).toEqual({ action: 'stop' });
     expect(restored.session.totalTokenUsage).toEqual({ input: 200, output: 100 });
+  });
+});
+
+// ============================================================
+// C4: Serialization Versioning
+// ============================================================
+
+describe('serialize versioning', () => {
+  it('includes version: 1 in serialized output', () => {
+    const ctx = makeContext();
+    const serialized = serialize(ctx);
+
+    expect(serialized).toHaveProperty('version');
+    expect(serialized.version).toBe(1);
+  });
+
+  it('version 1 round-trips through deserialize', () => {
+    const ctx = makeContext();
+    const serialized = serialize(ctx);
+    const restored = deserialize(serialized);
+
+    expect(restored.request.input).toBe('hello');
+    expect(restored.iteration.response).toBe('done');
+  });
+
+  it('treats missing version field as v1 (backward compat)', () => {
+    const ctx = makeContext();
+    const serialized = serialize(ctx);
+    // Simulate legacy data — strip version
+    const { version, ...legacyData } = serialized as SerializableContext & { version: number };
+
+    // Should not throw
+    const restored = deserialize(legacyData);
+    expect(restored.request.input).toBe('hello');
+  });
+
+  it('throws SerializationVersionError for unknown future version (e.g. 42)', () => {
+    const ctx = makeContext();
+    const serialized = serialize(ctx);
+    const futureData = { ...serialized, version: 42 };
+
+    expect(() => deserialize(futureData)).toThrow(SerializationVersionError);
+  });
+
+  it('SerializationVersionError extends AgentForgeError', () => {
+    const ctx = makeContext();
+    const serialized = serialize(ctx);
+    const futureData = { ...serialized, version: 99 };
+
+    try {
+      deserialize(futureData);
+      // Force fail if no error was thrown
+      expect.fail('Expected SerializationVersionError to be thrown');
+    } catch (e) {
+      expect(e).toBeInstanceOf(Error);
+      expect((e as Error).name).toBe('SerializationVersionError');
+      // Check message includes the unsupported version
+      expect((e as Error).message).toContain('99');
+    }
+  });
+
+  it('version field survives JSON round-trip', () => {
+    const ctx = makeContext();
+    const serialized = serialize(ctx);
+    const json = JSON.stringify(serialized);
+    const parsed = JSON.parse(json);
+
+    expect(parsed.version).toBe(1);
+  });
+});
+
+describe('migrate_v1_to_v2', () => {
+  it('is a function', () => {
+    expect(typeof migrate_v1_to_v2).toBe('function');
+  });
+
+  it('accepts and returns a SerializableContext unchanged', () => {
+    const ctx = makeContext();
+    const serialized = serialize(ctx);
+    const result = migrate_v1_to_v2(serialized);
+    expect(result).toBe(serialized);
   });
 });

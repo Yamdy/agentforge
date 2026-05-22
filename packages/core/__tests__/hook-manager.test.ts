@@ -111,8 +111,8 @@ describe('HookManager', () => {
     expect(calls).toEqual(['hook-ran']);
   });
 
-  it('invoke on empty point returns without error', async () => {
-    await expect(manager.invoke('agent.start', {}, {})).resolves.toBeUndefined();
+  it('invoke on empty point returns empty array without error', async () => {
+    await expect(manager.invoke('agent.start', {}, {})).resolves.toEqual([]);
   });
 
   it('hooks on different points are independent', async () => {
@@ -150,5 +150,210 @@ describe('HookManager', () => {
     await manager.invoke('tool.after', {}, {});
 
     expect(events).toEqual(['agent:start', 'llm:before', 'tool:after']);
+  });
+
+  // -------------------------------------------------------------------------
+  // CompositeHook
+  // -------------------------------------------------------------------------
+
+  describe('CompositeHook', () => {
+    describe('parallel mode', () => {
+      it('runs all hooks via Promise.allSettled and collects results', async () => {
+        const calls: string[] = [];
+        manager.register({
+          hooks: [
+            { point: 'stage.before', handler: () => { calls.push('a'); } },
+            { point: 'stage.before', handler: () => { calls.push('b'); } },
+          ],
+          mode: 'parallel',
+        });
+        const results = await manager.invoke('stage.before', {}, {});
+        expect(calls.sort()).toEqual(['a', 'b']);
+        expect(results).toHaveLength(2);
+      });
+
+      it('runs all hooks even when some throw (standard profile)', async () => {
+        const calls: string[] = [];
+        manager.register({
+          hooks: [
+            { point: 'stage.before', handler: () => { throw new Error('fail'); } },
+            { point: 'stage.before', handler: () => { calls.push('survivor'); } },
+          ],
+          mode: 'parallel',
+        });
+        const results = await manager.invoke('stage.before', {}, {});
+        expect(calls).toEqual(['survivor']);
+        expect(results).toHaveLength(2);
+      });
+
+      it('circuit-breaks on error in strict profile', async () => {
+        const calls: string[] = [];
+        manager.setProfile('strict');
+        manager.register({
+          hooks: [
+            { point: 'stage.before', handler: () => { throw new Error('fail'); } },
+            { point: 'stage.before', priority: 10, handler: () => { calls.push('should-not-run'); } },
+          ],
+          mode: 'parallel',
+        });
+        await manager.invoke('stage.before', {}, {});
+        expect(calls).toEqual([]);
+      });
+    });
+
+    describe('sequential mode', () => {
+      it('runs hooks in priority order', async () => {
+        const order: string[] = [];
+        manager.register({
+          hooks: [
+            { point: 'stage.before', handler: () => { order.push('low'); }, priority: 10 },
+            { point: 'stage.before', handler: () => { order.push('high'); }, priority: 1 },
+            { point: 'stage.before', handler: () => { order.push('mid'); }, priority: 5 },
+          ],
+          mode: 'sequential',
+        });
+        await manager.invoke('stage.before', {}, {});
+        expect(order).toEqual(['high', 'mid', 'low']);
+      });
+
+      it('isolates errors — later hooks still run (standard profile)', async () => {
+        const calls: string[] = [];
+        manager.register({
+          hooks: [
+            { point: 'stage.after', handler: () => { throw new Error('boom'); } },
+            { point: 'stage.after', handler: () => { calls.push('after-boom'); } },
+          ],
+          mode: 'sequential',
+        });
+        await manager.invoke('stage.after', {}, {});
+        expect(calls).toEqual(['after-boom']);
+      });
+
+      it('returns array of results with one entry per hook', async () => {
+        manager.register({
+          hooks: [
+            { point: 'stage.before', handler: () => {} },
+            { point: 'stage.before', handler: () => {} },
+            { point: 'stage.before', handler: () => {} },
+          ],
+          mode: 'sequential',
+        });
+        const results = await manager.invoke('stage.before', {}, {});
+        expect(results).toHaveLength(3);
+        results.forEach(r => expect(r).toBeUndefined());
+      });
+    });
+
+    describe('first-wins mode', () => {
+      it('stops at first successful hook', async () => {
+        const calls: string[] = [];
+        manager.register({
+          hooks: [
+            { point: 'stage.before', handler: () => { calls.push('first'); } },
+            { point: 'stage.before', handler: () => { calls.push('second'); } },
+          ],
+          mode: 'first-wins',
+        });
+        const results = await manager.invoke('stage.before', {}, {});
+        expect(calls).toEqual(['first']);
+        expect(results).toHaveLength(1);
+      });
+
+      it('continues to next hook if current throws (standard profile)', async () => {
+        const calls: string[] = [];
+        manager.register({
+          hooks: [
+            { point: 'stage.before', handler: () => { calls.push('fail'); throw new Error('fail'); } },
+            { point: 'stage.before', handler: () => { calls.push('win'); } },
+          ],
+          mode: 'first-wins',
+        });
+        const results = await manager.invoke('stage.before', {}, {});
+        expect(calls).toEqual(['fail', 'win']);
+        expect(results).toHaveLength(1);
+      });
+
+      it('returns empty array if all hooks throw', async () => {
+        manager.register({
+          hooks: [
+            { point: 'stage.before', handler: () => { throw new Error('e1'); } },
+            { point: 'stage.before', handler: () => { throw new Error('e2'); } },
+          ],
+          mode: 'first-wins',
+        });
+        const results = await manager.invoke('stage.before', {}, {});
+        expect(results).toEqual([]);
+      });
+    });
+
+    it('register accepts both Hook and CompositeHook at the same point', async () => {
+      const calls: string[] = [];
+      manager.register({ point: 'stage.before', handler: () => { calls.push('single'); } });
+      manager.register({
+        hooks: [
+          { point: 'stage.before', handler: () => { calls.push('composite-a'); } },
+          { point: 'stage.before', handler: () => { calls.push('composite-b'); } },
+        ],
+        mode: 'parallel',
+      });
+      await manager.invoke('stage.before', {}, {});
+      expect(calls).toContain('single');
+      expect(calls).toContain('composite-a');
+      expect(calls).toContain('composite-b');
+    });
+
+    it('CompositeHook respects disabledHookNames', async () => {
+      const calls: string[] = [];
+      const hm = new HookManager(eventBus, { disabledHooks: ['skip-me'] });
+      hm.register({
+        hooks: [
+          { point: 'stage.before', name: 'skip-me', handler: () => { calls.push('should-not-run'); } },
+          { point: 'stage.before', name: 'run-me', handler: () => { calls.push('ran'); } },
+        ],
+        mode: 'sequential',
+      });
+      await hm.invoke('stage.before', {}, {});
+      expect(calls).toEqual(['ran']);
+    });
+
+    it('first-wins respects priority order', async () => {
+      const order: string[] = [];
+      manager.register({
+        hooks: [
+          { point: 'stage.before', priority: 10, handler: () => { order.push('low'); } },
+          { point: 'stage.before', priority: 1, handler: () => { order.push('high'); } },
+        ],
+        mode: 'first-wins',
+      });
+      await manager.invoke('stage.before', {}, {});
+      // High priority (lower number) runs first and wins
+      expect(order).toEqual(['high']);
+    });
+
+    it('minimal profile skips CompositeHook at non-error points', async () => {
+      const calls: string[] = [];
+      const hm = new HookManager(eventBus, { profile: 'minimal' });
+      hm.register({
+        hooks: [
+          { point: 'stage.before', handler: () => { calls.push('should-not-run'); } },
+        ],
+        mode: 'sequential',
+      });
+      await hm.invoke('stage.before', {}, {});
+      expect(calls).toEqual([]);
+    });
+
+    it('minimal profile still runs CompositeHook at error point', async () => {
+      const calls: string[] = [];
+      const hm = new HookManager(eventBus, { profile: 'minimal' });
+      hm.register({
+        hooks: [
+          { point: 'error', handler: () => { calls.push('error-ran'); } },
+        ],
+        mode: 'sequential',
+      });
+      await hm.invoke('error', {}, {});
+      expect(calls).toEqual(['error-ran']);
+    });
   });
 });

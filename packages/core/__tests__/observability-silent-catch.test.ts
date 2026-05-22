@@ -130,6 +130,8 @@ describe('F-D.4: SessionPersistence write failure is observable', () => {
       async get() { return undefined; },
       async delete() {},
       async getMessages() { return []; },
+      async verifyIntegrity() { return { sessionId: '', valid: true, totalEvents: 0, invalidEvents: 0, errors: [] }; },
+      async cleanup() { return 0; },
     };
 
     new SessionPersistence(bus, failingStorage);

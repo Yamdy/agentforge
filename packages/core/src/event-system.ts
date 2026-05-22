@@ -30,6 +30,11 @@ export class EventSystem {
     return this._bus.subscribe(eventType, handler);
   }
 
+  /** Async emit — delegates to EventBus.emitAsync. */
+  emitAsync(eventType: string, data?: unknown): Promise<void[]> {
+    return this._bus.emitAsync(eventType, data);
+  }
+
   async query(sessionId: string): Promise<SessionEvent[]> {
     if (!this.backend) return [];
     return this.backend.query(sessionId);

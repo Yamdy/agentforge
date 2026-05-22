@@ -477,6 +477,12 @@ export interface Hook<TInput = unknown, TOutput = unknown> {
   priority?: number;
 }
 
+/** A group of hooks executed as a unit with a specific orchestration mode. */
+export interface CompositeHook {
+  hooks: Hook[];
+  mode: 'parallel' | 'sequential' | 'first-wins';
+}
+
 export interface AgentHookInput {
   sessionId: string;
   request: RequestRegion;
@@ -528,7 +534,7 @@ export interface ToolRegistryAPI {
 
 /** Interception & events */
 export interface InterceptionAPI {
-  registerHook(hook: Hook): void;
+  registerHook(hook: Hook | CompositeHook): void;
   subscribe(eventType: string, handler: (data?: unknown) => void): () => void;
   emit(eventType: string, data?: unknown): void;
 }
@@ -763,6 +769,16 @@ export interface SessionEvent {
   timestamp: string;
   type: string;
   payload: unknown;
+  /** SHA-256 checksum of JSON.stringify({seq,timestamp,type,payload}). Auto-computed by FilesystemSessionStorage.append(). */
+  checksum?: string;
+}
+
+export interface IntegrityReport {
+  sessionId: string;
+  valid: boolean;
+  totalEvents: number;
+  invalidEvents: number;
+  errors: Array<{ seq: number; expected: string; actual: string }>;
 }
 
 export interface SessionStorage {
@@ -773,6 +789,9 @@ export interface SessionStorage {
   get(sessionId: string): Promise<SessionRecord | undefined>;
   delete(sessionId: string): Promise<void>;
   getMessages(sessionId: string, options?: { limit?: number; before?: string }): Promise<Message[]>;
+  verifyIntegrity(sessionId: string): Promise<IntegrityReport>;
+  /** Delete expired sessions based on TTL. Returns number of sessions deleted. */
+  cleanup(): Promise<number>;
 }
 
 // ---------------------------------------------------------------------------
@@ -804,6 +823,8 @@ export interface FileSystemAdapter {
 export interface FileSnapshot {
   path: string;
   hash: string;
+  /** File content captured at snapshot time when storeContent=true. Used for revert. */
+  content?: string;
 }
 
 /** Complete snapshot of tracked files at a point in time. */
@@ -811,6 +832,7 @@ export interface Snapshot {
   id: string;
   createdAt: string;
   files: FileSnapshot[];
+  hasContent: boolean;
   metadata?: Record<string, unknown>;
 }
 
@@ -833,7 +855,7 @@ export interface SnapshotStore {
 /** Service for tracking, diffing, and reverting file system changes. */
 export interface SnapshotService {
   /** Start tracking files matching patterns. Returns snapshot ID. */
-  track(): Promise<string>;
+  track(storeContent?: boolean): Promise<string>;
   /** Get the differences between current state and a snapshot. */
   patch(snapshotId: string): Promise<FilePatch[]>;
   /** Revert files to the state captured in a snapshot. */

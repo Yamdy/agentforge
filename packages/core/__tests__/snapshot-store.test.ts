@@ -13,6 +13,7 @@ function makeSnapshot(overrides?: Partial<Snapshot>): Snapshot {
       { path: '/test/file1.txt', hash: 'hash1' },
       { path: '/test/file2.txt', hash: 'hash2' },
     ],
+    hasContent: false,
     ...overrides,
   };
 }

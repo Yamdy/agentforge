@@ -77,6 +77,8 @@ describe('SessionPersistence', () => {
       get: (sessionId) => storage.get(sessionId),
       delete: (sessionId) => storage.delete(sessionId),
       getMessages: (sessionId, options) => storage.getMessages(sessionId, options),
+      verifyIntegrity: async () => ({ sessionId: '', valid: true, totalEvents: 0, invalidEvents: 0, errors: [] }),
+      cleanup: async () => 0,
     };
 
     const flakyPersistence = new SessionPersistence(isolatedBus, flakyStorage);

@@ -57,3 +57,26 @@ export class SnapshotError extends FatalError {
     super(message, { code: 'SNAPSHOT_ERROR', cause: options?.cause });
   }
 }
+
+export class ConfigEnvVarError extends FatalError {
+  readonly variableName: string;
+  readonly path: string;
+
+  constructor(variableName: string, path: string) {
+    super(
+      `Environment variable "${variableName}" is not set (referenced at config path: "${path}")`,
+      { code: 'CONFIG_ENV_VAR' },
+    );
+    this.variableName = variableName;
+    this.path = path;
+  }
+}
+
+export class SerializationVersionError extends FatalError {
+  readonly version: number;
+
+  constructor(version: number) {
+    super(`Unsupported serialization version: ${version}`, { code: 'SERIALIZATION_VERSION' });
+    this.version = version;
+  }
+}

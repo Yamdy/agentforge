@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { createHash } from 'node:crypto';
 import { FilesystemSessionStorage } from '../src/session-storage.js';
-import type { SessionEvent } from '@primo-ai/sdk';
+import type { SessionEvent, IntegrityReport } from '@primo-ai/sdk';
+import { EventBus } from '../src/event-bus.js';
 
 describe('FilesystemSessionStorage', () => {
   let basePath: string;
@@ -37,7 +39,9 @@ describe('FilesystemSessionStorage', () => {
       }
 
       expect(events).toHaveLength(1);
-      expect(events[0]).toEqual(event);
+      expect(events[0]).toMatchObject(event);
+      expect(events[0].checksum).toBeDefined();
+      expect(typeof events[0].checksum).toBe('string');
     });
 
     it('writes multiple events and reads them in order', async () => {
@@ -55,9 +59,13 @@ describe('FilesystemSessionStorage', () => {
       }
 
       expect(events).toHaveLength(3);
-      expect(events[0]).toEqual(e1);
-      expect(events[1]).toEqual(e2);
-      expect(events[2]).toEqual(e3);
+      expect(events[0]).toMatchObject(e1);
+      expect(events[1]).toMatchObject(e2);
+      expect(events[2]).toMatchObject(e3);
+      // Verify checksums are present
+      expect(events[0].checksum).toBeDefined();
+      expect(events[1].checksum).toBeDefined();
+      expect(events[2].checksum).toBeDefined();
     });
 
     it('read on non-existent session yields empty', async () => {
@@ -284,6 +292,201 @@ describe('FilesystemSessionStorage', () => {
       expect(messages).toHaveLength(2);
       expect(messages[0]).toEqual({ role: 'user', content: 'Hello' });
       expect(messages[1]).toEqual({ role: 'assistant', content: 'Dot notation response' });
+    });
+  });
+
+  describe('C1: checksum integrity', () => {
+    const computeChecksum = (event: SessionEvent): string => {
+      return createHash('sha256').update(JSON.stringify({ seq: event.seq, timestamp: event.timestamp, type: event.type, payload: event.payload })).digest('hex');
+    };
+
+    it('append auto-computes checksum', async () => {
+      const event = makeEvent(1, 'agent:start', { sessionId: 's1' });
+      await storage.append('s1', event);
+      const expectedChecksum = computeChecksum(event);
+
+      const raw = readFileSync(join(basePath, 's1', 'events.jsonl'), 'utf-8');
+      const parsed = JSON.parse(raw.trim()) as SessionEvent;
+      expect(parsed.checksum).toBe(expectedChecksum);
+    });
+
+    it('read validates checksum by default and emits integrity_error on mismatch', async () => {
+      const bus = new EventBus();
+      storage = new FilesystemSessionStorage(basePath, { eventBus: bus });
+
+      const received: unknown[] = [];
+      bus.subscribe('session:integrity_error', (data) => received.push(data));
+
+      const event = makeEvent(1, 'agent:start', { sessionId: 's1' });
+      await storage.append('s1', event);
+
+      // Tamper the event file
+      const eventsPath = join(basePath, 's1', 'events.jsonl');
+      const content = readFileSync(eventsPath, 'utf-8');
+      const tampered = content.replace('"seq":1', '"seq":999');
+      writeFileSync(eventsPath, tampered, 'utf-8');
+
+      // Flush knownEvents cache
+      const events: SessionEvent[] = [];
+      for await (const e of storage.read('s1')) {
+        events.push(e);
+      }
+
+      expect(events).toHaveLength(0);
+      expect(received).toHaveLength(1);
+    });
+
+    it('read skips checksum validation when configured', async () => {
+      storage = new FilesystemSessionStorage(basePath, { skipChecksum: true });
+
+      const event = makeEvent(1, 'agent:start', { sessionId: 's1' });
+      await storage.append('s1', event);
+
+      const eventsPath = join(basePath, 's1', 'events.jsonl');
+      const content = readFileSync(eventsPath, 'utf-8');
+      const tampered = content.replace('"seq":1', '"seq":999');
+      writeFileSync(eventsPath, tampered, 'utf-8');
+
+      const events: SessionEvent[] = [];
+      for await (const e of storage.read('s1')) {
+        events.push(e);
+      }
+
+      expect(events).toHaveLength(1);
+      expect((events[0] as unknown as Record<string, unknown>).seq).toBe(999);
+    });
+
+    it('verifyIntegrity returns valid=true for untampered events', async () => {
+      await storage.append('s1', makeEvent(1, 'agent:start', { sessionId: 's1' }));
+      await storage.append('s1', makeEvent(2, 'agent:end', { status: 'ok' }));
+
+      const report = await storage.verifyIntegrity('s1');
+      expect(report.valid).toBe(true);
+      expect(report.totalEvents).toBe(2);
+      expect(report.invalidEvents).toBe(0);
+      expect(report.errors).toHaveLength(0);
+    });
+
+    it('verifyIntegrity detects tampered events', async () => {
+      await storage.append('s1', makeEvent(1, 'agent:start', { sessionId: 's1' }));
+      await storage.append('s1', makeEvent(2, 'agent:end', { status: 'ok' }));
+
+      // Tamper the file
+      const eventsPath = join(basePath, 's1', 'events.jsonl');
+      const content = readFileSync(eventsPath, 'utf-8');
+      const tampered = content.replace('"status":"ok"', '"status":"hacked"');
+      writeFileSync(eventsPath, tampered, 'utf-8');
+
+      const report = await storage.verifyIntegrity('s1');
+      expect(report.valid).toBe(false);
+      expect(report.totalEvents).toBe(2);
+      expect(report.invalidEvents).toBe(1);
+      expect(report.errors).toHaveLength(1);
+      expect(report.errors[0].seq).toBe(2);
+    });
+
+    it('verifyIntegrity returns invalid for events missing checksum', async () => {
+      // Write an event without checksum directly
+      const event = makeEvent(1, 'test', {});
+      delete (event as { checksum?: string }).checksum;
+      const raw = JSON.stringify(event) + '\n';
+      const dir = join(basePath, 's1');
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'events.jsonl'), raw, 'utf-8');
+
+      const report = await storage.verifyIntegrity('s1');
+      expect(report.valid).toBe(false);
+      expect(report.invalidEvents).toBe(1);
+      expect(report.errors[0].expected).toBe('checksum_missing');
+    });
+
+    it('verifyIntegrity for non-existent session returns empty report', async () => {
+      const report = await storage.verifyIntegrity('no-such-session');
+      expect(report.valid).toBe(true);
+      expect(report.totalEvents).toBe(0);
+      expect(report.invalidEvents).toBe(0);
+    });
+  });
+
+  describe('C3: session TTL and GC', () => {
+    beforeEach(async () => {
+      // Set up storage with 1-hour TTL
+      storage = new FilesystemSessionStorage(basePath, { ttl: 3600 });
+    });
+
+    it('list filters out expired completed sessions', async () => {
+      // Create an expired session by setting updatedAt far in the past
+      const oldDate = new Date(Date.now() - 7200_000).toISOString(); // 2 hours ago
+      await storage.updateMeta('expired-session', { status: 'completed' });
+      // Manually override the updatedAt
+      writeFileSync(
+        join(basePath, 'expired-session', 'meta.json'),
+        JSON.stringify({ sessionId: 'expired-session', status: 'completed', createdAt: oldDate, updatedAt: oldDate }),
+        'utf-8',
+      );
+
+      await storage.updateMeta('active-session', { status: 'active' });
+
+      const all = await storage.list();
+      const ids = all.map(r => r.sessionId);
+      expect(ids).not.toContain('expired-session');
+      expect(ids).toContain('active-session');
+    });
+
+    it('cleanup deletes expired sessions and returns count', async () => {
+      const oldDate = new Date(Date.now() - 7200_000).toISOString();
+      await storage.updateMeta('expired-1', { status: 'completed' });
+      writeFileSync(
+        join(basePath, 'expired-1', 'meta.json'),
+        JSON.stringify({ sessionId: 'expired-1', status: 'completed', createdAt: oldDate, updatedAt: oldDate }),
+        'utf-8',
+      );
+
+      await storage.updateMeta('expired-2', { status: 'error' });
+      writeFileSync(
+        join(basePath, 'expired-2', 'meta.json'),
+        JSON.stringify({ sessionId: 'expired-2', status: 'error', createdAt: oldDate, updatedAt: oldDate }),
+        'utf-8',
+      );
+
+      await storage.updateMeta('fresh', { status: 'active' });
+
+      const deleted = await storage.cleanup();
+      expect(deleted).toBe(2);
+
+      const remaining = await storage.list();
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0].sessionId).toBe('fresh');
+    });
+
+    it('cleanup does not delete sessions within TTL', async () => {
+      const recentDate = new Date(Date.now() - 1800_000).toISOString(); // 30 min ago
+      await storage.updateMeta('recent-session', { status: 'completed' });
+      writeFileSync(
+        join(basePath, 'recent-session', 'meta.json'),
+        JSON.stringify({ sessionId: 'recent-session', status: 'completed', createdAt: recentDate, updatedAt: recentDate }),
+        'utf-8',
+      );
+
+      const deleted = await storage.cleanup();
+      expect(deleted).toBe(0);
+
+      const all = await storage.list();
+      expect(all).toHaveLength(1);
+    });
+
+    it('cleanup with no TTL does nothing', async () => {
+      storage = new FilesystemSessionStorage(basePath); // no ttl
+      const oldDate = new Date(Date.now() - 7200_000).toISOString();
+      await storage.updateMeta('old-session', { status: 'completed' });
+      writeFileSync(
+        join(basePath, 'old-session', 'meta.json'),
+        JSON.stringify({ sessionId: 'old-session', status: 'completed', createdAt: oldDate, updatedAt: oldDate }),
+        'utf-8',
+      );
+
+      const deleted = await storage.cleanup();
+      expect(deleted).toBe(0);
     });
   });
 });

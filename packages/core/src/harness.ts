@@ -1,5 +1,6 @@
 import type {
   CompressionStrategy,
+  CompositeHook,
   HarnessAPI,
   Hook,
   Processor,
@@ -53,7 +54,7 @@ export class HarnessAPIImpl implements HarnessAPI {
     this.commands.set(name, handler);
   }
 
-  registerHook(hook: Hook): void {
+  registerHook(hook: Hook | CompositeHook): void {
     this.deps.hookManager.register(hook);
   }
 
