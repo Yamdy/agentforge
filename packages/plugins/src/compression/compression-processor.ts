@@ -42,7 +42,7 @@ async function applySummarize(
   if (messages.length <= 1) return messages;
   if (!phase.summarizeFn) return messages;
   const summary = await phase.summarizeFn(messages);
-  return [{ role: 'assistant', content: summary }];
+  return [{ role: 'assistant', content: summary, source: 'distilled' }];
 }
 
 export function createSummarizeFn(

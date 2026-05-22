@@ -92,7 +92,7 @@ export interface ToolResult {
 /** Structured conversation message supporting tool-call round-trips. */
 export type Message =
   | { role: 'user'; content: string }
-  | { role: 'assistant'; content: string; toolCalls?: ToolCall[]; reasoningContent?: string }
+  | { role: 'assistant'; content: string; toolCalls?: ToolCall[]; reasoningContent?: string; source?: string }
   | { role: 'tool'; content: string; toolCallId: string; toolName: string; result?: unknown; error?: string; mutated?: boolean; truncated?: boolean; validationError?: string };
 
 // ---------------------------------------------------------------------------
