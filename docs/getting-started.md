@@ -4,6 +4,11 @@ AgentForge 快速入门指南。从零开始创建并运行你的第一个 Agent
 
 ---
 
+
+::: tip 零配置可观测性
+AgentForge 自动检测  环境变量。设置后无需任何代码即可将 trace 导出到 Jaeger、Grafana Tempo、Datadog 等 OTLP 兼容后端。
+:::
+
 ## 前置要求
 
 - **Node.js** >= 18

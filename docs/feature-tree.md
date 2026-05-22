@@ -327,3 +327,27 @@ pending → running → completed
 | 日期 | 变更 |
 |------|------|
 | 2026-05-20 | 初始版本，11 SF / 44 IR 全量梳理 |
+
+
+## P2 生产级能力 (2026-05)
+
+### 可观测性
+- **OTel Metrics Bridge** — 双路径 Metrics 导出（InMemory + OTLP），无 MeterProvider 优雅降级
+- **W3C Trace Context 传播** — traceparent extract/inject，跨服务链路关联
+- **Trace 采样策略** — always_on/always_off/ratio，环境变量或代码级配置
+- **Agent 自动 OTel** — 零配置检测 OTEL_EXPORTER_OTLP_ENDPOINT 自动导出
+
+### Server 生产化
+- **HTTP 限流中间件** — 滑动窗口，IP+路由级别，标准 RateLimit 响应头
+- **结构化日志** — JSON/pretty/silent 格式，X-Request-Id 自动生成/透传
+- **Config 环境变量展开** —  和  语法
+
+### 数据韧性
+- **事件完整性校验** — SHA-256 checksum 每行事件，verifyIntegrity() 审计
+- **Snapshot 内容恢复** — revert 完整恢复被修改/删除的文件
+- **Session TTL 自动清理** — 过期会话自动 GC
+- **序列化版本控制** — version 字段 + 迁移钩子
+
+### 事件系统增强
+- **EventBus async emit** — emitAsync 并行事件发送，Promise.allSettled
+- **CompositeHook** — parallel/sequential/first-wins 组合模式

@@ -267,3 +267,34 @@ agent.use(compressionPlugin({
 ```
 
 当提供 `getLLM` 时，插件自动调用 `createSummarizeFn(getLLM, summarizeModel)` 为所有缺少 `summarizeFn` 的 summarize phase 注入默认实现。
+
+
+## Server 中间件
+
+### 限流中间件 (Rate Limit)
+
+滑动窗口限流中间件，按 IP + 路由限制请求频率：
+
+
+
+超出限制时返回 429 状态码，含标准 、、 响应头。
+
+### 结构化日志
+
+支持 JSON/pretty/silent 三种日志格式，通过  环境变量控制：
+
+
+
+每条日志包含时间戳、请求方法、路径、状态码、耗时、（自动生成或透传）等信息。
+
+## 组合 Hook (CompositeHook)
+
+支持三种执行模式：
+
+| 模式 | 行为 |
+|------|------|
+|  | 按优先级顺序执行（默认） |
+|  | 并发执行所有子 hook |
+|  | 首个非 undefined 返回值即为最终结果 |
+
+

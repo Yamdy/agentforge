@@ -286,3 +286,20 @@ class RedisSessionStorage implements SessionStorage {
   async getMessages(sessionId: string, options?: { limit?: number; before?: string }): Promise<Message[]> { /* ... */ }
 }
 ```
+
+
+## 可观测性
+
+AgentForge 自动检测以下环境变量并启用 OTLP trace 导出：
+
+
+
+无需代码改动，Trace 自动关联跨服务调用链。
+
+## 限流
+
+通过  配置服务器级限流：
+
+
+
+认证失败不计入限流（）。
