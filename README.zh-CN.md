@@ -33,20 +33,20 @@
 
 ---
 
-## 为什么选择 AgentForge？
+## 💡 为什么选择 AgentForge？
 
 每个流水线阶段同时是**扩展点**、**可观测性跨度**和**钩子拦截点**——一种机制，三种能力。
 
-- [**流水线引擎**](docs/feature-tree.md#sf-1-agent-pipeline-engine) — 10 阶段处理器流水线，含 preLoop / loop / postLoop 区段，4 种控制流（中止 / 重试 / 挂起 / 错误）
-- [**多智能体编排**](docs/feature-tree.md#sf-4-multi-agent-orchestration) — 顺序、并行与路由执行器，以流式流水线声明复杂工作流
-- [**LLM 集成**](docs/feature-tree.md#sf-2-llm-integration) — 网关链支持 OpenAI、Anthropic、Google、DeepSeek 及任意 OpenAI 兼容端点。内置兼容规则与模型降级
-- [**16 个内置工具**](docs/feature-tree.md#sf-3-tool-system) — 文件、网络、系统、工具、记忆——另有 MCP 协议支持外部工具与子智能体即工具
-- [**15+ 生产级插件**](docs/feature-tree.md#sf-7-plugin-system) — 记忆、压缩、权限、技能、MCP、驱逐、校验、费用上限、Token 预算、速率限制、PII 脱敏、内容审核
-- [**任务队列**](docs/feature-tree.md#sf-10-task-management) — 基于优先级的并发控制，支持长时任务自动检查点恢复
-- [**会话持久化**](docs/feature-tree.md#sf-6-session--persistence) — 挂起 / 恢复，支持 JSONL 与 SQLite 后端。11 种事件类型完整回放。专为 HITL 工作流设计
-- [**A2A 协议**](docs/feature-tree.md#sf-9-server--deployment) — 原生 Agent-to-Agent JSON-RPC，支持流式传输、Agent Card 与工件交换
+- ⚙️ [**流水线引擎**](docs/feature-tree.md#sf-1-agent-pipeline-engine) — 10 阶段处理器流水线，含 preLoop / loop / postLoop 区段，4 种控制流（中止 / 重试 / 挂起 / 错误）
+- 🤖 [**多智能体编排**](docs/feature-tree.md#sf-4-multi-agent-orchestration) — 顺序、并行与路由执行器，以流式流水线声明复杂工作流
+- 🧠 [**LLM 集成**](docs/feature-tree.md#sf-2-llm-integration) — 网关链支持 OpenAI、Anthropic、Google、DeepSeek 及任意 OpenAI 兼容端点。内置兼容规则与模型降级
+- 🛠️ [**16 个内置工具**](docs/feature-tree.md#sf-3-tool-system) — 文件、网络、系统、工具、记忆——另有 MCP 协议支持外部工具与子智能体即工具
+- 🔌 [**15+ 生产级插件**](docs/feature-tree.md#sf-7-plugin-system) — 记忆、压缩、权限、技能、MCP、驱逐、校验、费用上限、Token 预算、速率限制、PII 脱敏、内容审核
+- 📋 [**任务队列**](docs/feature-tree.md#sf-10-task-management) — 基于优先级的并发控制，支持长时任务自动检查点恢复
+- 💾 [**会话持久化**](docs/feature-tree.md#sf-6-session--persistence) — 挂起 / 恢复，支持 JSONL 与 SQLite 后端。11 种事件类型完整回放。专为 HITL 工作流设计
+- 🌐 [**A2A 协议**](docs/feature-tree.md#sf-9-server--deployment) — 原生 Agent-to-Agent JSON-RPC，支持流式传输、Agent Card 与工件交换
 
-## 快速开始
+## 🚀 快速开始
 
 ```bash
 npm install @primo-ai/core
@@ -83,9 +83,9 @@ const agent = new Agent({ model: 'anthropic/claude-sonnet-4-6-20250514', systemP
 
 </details>
 
-## 示例
+## 📦 示例
 
-### 多智能体编排
+### 🤝 多智能体编排
 
 ```typescript
 import { createPipeline } from '@primo-ai/core';
@@ -107,7 +107,7 @@ const result = await createPipeline()
   .run('解释快速排序');
 ```
 
-### 添加生产级插件
+### 🔌 添加生产级插件
 
 ```typescript
 import { memoryPlugin, compressionPlugin, permissionPlugin } from '@primo-ai/plugins';
@@ -123,7 +123,7 @@ const agent = new Agent({
 });
 ```
 
-### 任务队列
+### 📋 任务队列
 
 ```typescript
 import { TaskQueueImpl } from '@primo-ai/core';
@@ -136,7 +136,7 @@ const handle = await queue.enqueue('analyst', { input: '分析此数据集...' }
 handle.on('complete', (data) => console.log('完成:', data));
 ```
 
-### 自定义处理器
+### ⚙️ 自定义处理器
 
 ```typescript
 import { createFactInjectionProcessor } from '@primo-ai/plugins';
@@ -159,7 +159,7 @@ const agent = new Agent({
 > [!TIP]
 > 每个阶段都会发射事件——零配置订阅：`agent.eventSystem.subscribe('invokeLLM:after', handler)`
 
-## 特性对比
+## ⚖️ 特性对比
 
 | | AgentForge | Mastra | AgentScope | CrewAI |
 |---|---|---|---|---|
@@ -172,7 +172,7 @@ const agent = new Agent({
 | 会话持久化 | JSONL + SQLite + 检查点 | 基础 | SQLite | 基础 |
 | 插件系统 | 15+ 内置，一行注册 | 有限 | Toolkit + MCP | Tools + MCP |
 
-## 架构
+## 🏗️ 架构
 
 ```
 processInput → buildContext → [Agentic Loop:
@@ -199,7 +199,7 @@ packages/
   server/          -- HTTP 服务器 · A2A 协议 · CLI · Studio UI
 ```
 
-## 生产就绪
+## 🏭 生产就绪
 
 <details>
 <summary>配置</summary>
@@ -266,7 +266,7 @@ docker compose up
 
 ---
 
-## 参与贡献
+## 🤝 参与贡献
 
 开发命令与架构详情请参阅 [CLAUDE.md](./CLAUDE.md)。
 

@@ -33,20 +33,20 @@
 
 ---
 
-## Why AgentForge?
+## 💡 Why AgentForge?
 
 Every pipeline stage is simultaneously an **extension point**, an **observability span**, and a **hook interception point** — one mechanism, three capabilities.
 
-- [**Pipeline Engine**](docs/feature-tree.md#sf-1-agent-pipeline-engine) — 10-stage processor pipeline with preLoop / loop / postLoop sections, 4 control flows (abort / retry / suspend / error)
-- [**Multi-Agent Orchestration**](docs/feature-tree.md#sf-4-multi-agent-orchestration) — Sequential, Parallel, and Router executors — declare complex workflows in a fluent pipeline
-- [**LLM Integration**](docs/feature-tree.md#sf-2-llm-integration) — Gateway chain with OpenAI, Anthropic, Google, DeepSeek, and any OpenAI-compatible endpoint. Built-in compat rules and model fallback
-- [**16 Built-in Tools**](docs/feature-tree.md#sf-3-tool-system) — File, web, system, utility, memory — plus MCP protocol for external tools and sub-agent-as-tool
-- [**15+ Production Plugins**](docs/feature-tree.md#sf-7-plugin-system) — Memory, compression, permission, skill, MCP, eviction, validation, cost cap, token budget, rate limit, PII, moderation
-- [**Task Queue**](docs/feature-tree.md#sf-10-task-management) — Priority-based concurrency control with auto-checkpoint recovery for long-running tasks
-- [**Session Persistence**](docs/feature-tree.md#sf-6-session--persistence) — Suspend / resume with JSONL and SQLite backends. 11 event types for full replay. Built for HITL workflows
-- [**A2A Protocol**](docs/feature-tree.md#sf-9-server--deployment) — Native Agent-to-Agent JSON-RPC with streaming, agent cards, and artifact exchange
+- ⚙️ [**Pipeline Engine**](docs/feature-tree.md#sf-1-agent-pipeline-engine) — 10-stage processor pipeline with preLoop / loop / postLoop sections, 4 control flows (abort / retry / suspend / error)
+- 🤖 [**Multi-Agent Orchestration**](docs/feature-tree.md#sf-4-multi-agent-orchestration) — Sequential, Parallel, and Router executors — declare complex workflows in a fluent pipeline
+- 🧠 [**LLM Integration**](docs/feature-tree.md#sf-2-llm-integration) — Gateway chain with OpenAI, Anthropic, Google, DeepSeek, and any OpenAI-compatible endpoint. Built-in compat rules and model fallback
+- 🛠️ [**16 Built-in Tools**](docs/feature-tree.md#sf-3-tool-system) — File, web, system, utility, memory — plus MCP protocol for external tools and sub-agent-as-tool
+- 🔌 [**15+ Production Plugins**](docs/feature-tree.md#sf-7-plugin-system) — Memory, compression, permission, skill, MCP, eviction, validation, cost cap, token budget, rate limit, PII, moderation
+- 📋 [**Task Queue**](docs/feature-tree.md#sf-10-task-management) — Priority-based concurrency control with auto-checkpoint recovery for long-running tasks
+- 💾 [**Session Persistence**](docs/feature-tree.md#sf-6-session--persistence) — Suspend / resume with JSONL and SQLite backends. 11 event types for full replay. Built for HITL workflows
+- 🌐 [**A2A Protocol**](docs/feature-tree.md#sf-9-server--deployment) — Native Agent-to-Agent JSON-RPC with streaming, agent cards, and artifact exchange
 
-## Quick Start
+## 🚀 Quick Start
 
 ```bash
 npm install @primo-ai/core
@@ -83,9 +83,9 @@ const agent = new Agent({ model: 'anthropic/claude-sonnet-4-6-20250514', systemP
 
 </details>
 
-## Examples
+## 📦 Examples
 
-### Multi-agent orchestration
+### 🤝 Multi-agent orchestration
 
 ```typescript
 import { createPipeline } from '@primo-ai/core';
@@ -107,7 +107,7 @@ const result = await createPipeline()
   .run('Explain quicksort');
 ```
 
-### Add production plugins
+### 🔌 Add production plugins
 
 ```typescript
 import { memoryPlugin, compressionPlugin, permissionPlugin } from '@primo-ai/plugins';
@@ -123,7 +123,7 @@ const agent = new Agent({
 });
 ```
 
-### Task Queue
+### 📋 Task Queue
 
 ```typescript
 import { TaskQueueImpl } from '@primo-ai/core';
@@ -136,7 +136,7 @@ const handle = await queue.enqueue('analyst', { input: 'Analyze this dataset...'
 handle.on('complete', (data) => console.log('Done:', data));
 ```
 
-### Custom processor
+### ⚙️ Custom processor
 
 ```typescript
 import { createFactInjectionProcessor } from '@primo-ai/plugins';
@@ -159,7 +159,7 @@ const agent = new Agent({
 > [!TIP]
 > Every stage emits events — subscribe with zero setup: `agent.eventSystem.subscribe('invokeLLM:after', handler)`
 
-## Comparison
+## ⚖️ Comparison
 
 | | AgentForge | Mastra | AgentScope | CrewAI |
 |---|---|---|---|---|
@@ -172,7 +172,7 @@ const agent = new Agent({
 | Session persistence | JSONL + SQLite + checkpoint | Basic | SQLite | Basic |
 | Plugin system | 15+ built-in, 1-line register | Limited | Toolkit + MCP | Tools + MCP |
 
-## Architecture
+## 🏗️ Architecture
 
 ```
 processInput → buildContext → [Agentic Loop:
@@ -199,7 +199,7 @@ packages/
   server/          -- HTTP server · A2A protocol · CLI · Studio UI
 ```
 
-## Production
+## 🏭 Production
 
 <details>
 <summary>Configuration</summary>
@@ -266,7 +266,7 @@ Container exposes port 3000 with health checks. Mount your config at `/app/.agen
 
 ---
 
-## Contributing
+## 🤝 Contributing
 
 See [CLAUDE.md](./CLAUDE.md) for development commands and architecture details.
 
