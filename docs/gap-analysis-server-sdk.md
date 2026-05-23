@@ -318,8 +318,8 @@ P0（3/3已完成）、P1（5/8已完成）、P2（12/12已完成）。总完成
 
 ### 非 Gap 说明（详见 design/adr/）
 
-- **Dead Letter Queue**: 非 gap。Server/SDK 离散执行，调用方即 DLQ。详见 [ADR-0001](../design/adr/0001-dlq-unnecessary-for-server-sdk.md)
-- **Suspend 超时**: 非 gap。由 Session TTL 覆盖。详见 [ADR-0002](../design/adr/0002-suspend-timeout-covered-by-session-ttl.md)
+- **Dead Letter Queue**: 非 gap。Server/SDK 离散执行，调用方即 DLQ。详见 ADR-0001
+- **Suspend 超时**: 非 gap。由 Session TTL 覆盖。详见 ADR-0002
 
 ### 唯一剩余 Gap
 
