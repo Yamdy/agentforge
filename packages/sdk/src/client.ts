@@ -45,6 +45,8 @@ export interface AgentRunResult {
   response: string;
   tokenUsage: { input: number; output: number };
   sessionId: string;
+  compatRetries: number;
+  content?: import("./index.js").ContentBlock[];
 }
 
 export interface SSEMessage {

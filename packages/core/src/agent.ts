@@ -1,5 +1,6 @@
 import type {
   AgentConfig,
+  AgentRunResult,
   AgentSimpleConfig,
   CheckpointStore,
   PipelineContext,
@@ -55,16 +56,6 @@ export interface AgentDependencies {
 export interface RunOptions {
   sessionId?: string;
   signal?: globalThis.AbortSignal;
-}
-
-export interface AgentRunResult {
-  response: string;
-  tokenUsage: import('@primo-ai/sdk').TokenUsage;
-  sessionId: string;
-  /** Number of compat retries that occurred during the agentic loop. */
-  compatRetries: number;
-  /** Structured content blocks from the final LLM response. */
-  content?: import('@primo-ai/sdk').ContentBlock[];
 }
 
 /**

@@ -298,7 +298,7 @@ export interface Processor {
 
 export interface ToolExecutionContext {
   harness?: unknown;
-  span?: unknown;
+  span?: SpanContext;
   sessionId?: string;
 }
 

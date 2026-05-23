@@ -1,7 +1,8 @@
 // @primo-ai/core — Agent Loop, Processor Pipeline, Context, Tool Registry
 
 export { PipelineRunner, type PipelineRunnerOptions } from './pipeline.js';
-export { Agent, createAgent, autoDetectOtelTracer, type AgentDependencies, type AgentRunResult, type RunOptions } from './agent.js';
+export { Agent, createAgent, autoDetectOtelTracer, type AgentDependencies, type RunOptions } from './agent.js';
+export type { AgentRunResult } from '@primo-ai/sdk';
 export { LLMInvoker, type LLMInvokerOptions, type LLMInvokeInput, type LLMInvokeResult, type LLMStreamHandle } from './llm-invoker.js';
 export { assembleContentBlocks, textContentFromBlocks, toolCallsFromBlocks, reasoningFromBlocks } from './content-blocks.js';
 export { resolveModel, registerProvider, parseModel, type ParsedModel } from './model-resolver.js';

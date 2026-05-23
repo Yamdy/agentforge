@@ -19,7 +19,7 @@ export function createExecuteToolsProcessor(registry: ToolRegistry): Processor {
         try {
           const result = await registry.executeTool(tc.name, tc.args, {
             toolCallId: tc.id,
-            span: toolSpan ?? ctx.iteration.span,
+            span: (toolSpan ?? ctx.iteration.span)?.spanContext(),
             sessionId: ctx.request.sessionId,
           });
           const outputSize = typeof result.output === 'string'
