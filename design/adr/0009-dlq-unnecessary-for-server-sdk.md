@@ -1,4 +1,4 @@
-# ADR-0001: Dead Letter Queue is Unnecessary for Server/SDK Agent Execution Model
+# ADR-0009: Dead Letter Queue is Unnecessary for Server/SDK Agent Execution Model
 
 **Status**: Accepted
 **Date**: 2026-05-22

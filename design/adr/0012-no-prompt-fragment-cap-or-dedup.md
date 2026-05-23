@@ -1,4 +1,4 @@
-# ADR-0004: No Prompt Fragment Cap or Deduplication
+# ADR-0012: No Prompt Fragment Cap or Deduplication
 
 **Status**: Accepted | **Date**: 2026-05-23
 

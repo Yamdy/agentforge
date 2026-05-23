@@ -3,7 +3,7 @@
 > **审计日期**: 2026-05-23
 > **更新日期**: 2026-05-23
 > **审计范围**: 全仓库文档、worktree、文件、远程分支
-> **审计状态**: P0 ✅ 已修复，P1 部分完成，P2 ✅ 已修复
+> **审计状态**: P0 ✅ 已修复，P1 大部分完成，P2 ✅ 已修复
 
 ---
 
@@ -13,9 +13,9 @@
 |------|--------|--------|------|
 | 🔴 与代码冲突的文档 | 5 | P0 | ✅ 已修复 |
 | 🔴 重复/冗余文档 | 10 | P1 | ✅ 已清理 |
-| 🔴 过期/已完成的设计文档 | 19 | P1 | 部分处理 |
-| 🟡 工作追踪文件（非文档） | 28 | P1 | 待处理 |
-| 🟡 重复模板文件 | 5 | P1 | 待处理 |
+| 🔴 过期/已完成的设计文档 | 19 | P1 | 大部分处理 |
+| 🟡 工作追踪文件（非正式文档） | 28 | P1 | 待处理 |
+| 🟡 重复模板文件 | 5 | P1 | ✅ 已清理 |
 | 🟡 泄露本地路径的配置 | 1 | P0 | ✅ 已修复 |
 | 🟢 远程分支冗余 | 3 | P2 | ✅ 已修复 |
 | 🟢 gitignore 冲突 | 1 | P2 | ✅ 已修复 |
@@ -107,7 +107,7 @@
 
 **建议**：docs/ 保留完整版，README 只保留简要引用
 
-### 9. `design/adr/` — ADR 编号重复
+### 9. `design/adr/` — ADR 编号重复 ✅
 
 | 编号 | 文件1 | 文件2 |
 |------|-------|-------|
@@ -118,7 +118,7 @@
 | 0005 | `no-time-based-history-pruning.md` | `vercel-ai-sdk-as-llm-provider-layer.md` |
 | 0006 | `checkpoint-versioning-sufficient-no-ttl-needed.md` | `llm-invoker-and-unified-streaming.md` |
 
-**建议**：重新编号为 0001-0014 连续序列
+**修复**：重新编号为 0001-0014 连续序列。原始批次（05-17）保留 0001-0008，后加批次（05-22/23）重编号为 0009-0014，同时更新文件内标题的 ADR 编号
 
 ### 10. `design/adr/architecture-audit-report.md` — 与 `design/audit/` 重复 ✅
 
@@ -130,24 +130,26 @@
 
 ## 四、🔴 P1 — 过期/已完成的设计文档
 
-### 11. `design/superpowers/` — 6 个已完成的设计/计划文件
+### 11. `design/superpowers/` — 6 个已完成的设计/计划文件 ✅
 
 | 文件 | 类型 | 状态 |
 |------|------|------|
-| `specs/2026-05-10-architecture-upgrade-design.md` | 设计 | 已实现 |
-| `specs/2026-05-11-kitchen-sink-integration-design.md` | 设计 | 已实现 |
-| `specs/2026-05-11-tool-eviction-design.md` | 设计 | 已实现 |
-| `plans/2026-05-11-agent-loop-deduplication.md` | 计划 | 已完成 |
-| `plans/2026-05-11-four-region-pipeline-context.md` | 计划 | 已完成 |
-| `plans/2026-05-11-kitchen-sink-integration.md` | 计划 | 已完成 |
+| `specs/2026-05-10-architecture-upgrade-design.md` | 设计 | ✅ 已删除 |
+| `specs/2026-05-11-kitchen-sink-integration-design.md` | 设计 | ✅ 已删除 |
+| `specs/2026-05-11-tool-eviction-design.md` | 设计 | ✅ 已删除 |
+| `plans/2026-05-11-agent-loop-deduplication.md` | 计划 | ✅ 已删除 |
+| `plans/2026-05-11-four-region-pipeline-context.md` | 计划 | ✅ 已删除 |
+| `plans/2026-05-11-kitchen-sink-integration.md` | 计划 | ✅ 已删除 |
 
-### 12. `docs/superpowers/specs/` — 3 个孤立设计文件
+**已完成**：整个 `design/superpowers/` 目录已删除
 
-- `2026-05-17-studio-design.md`
-- `2026-05-17-framework-server-design.md`
-- `2026-05-17-agents-directory-discovery-design.md`
+### 12. `docs/superpowers/specs/` — 3 个孤立设计文件 ✅
 
-未从 `docs/index.md` 或任何索引页面链接，且对应功能似乎已实现
+- `2026-05-17-studio-design.md` — ✅ 已删除
+- `2026-05-17-framework-server-design.md` — ✅ 已删除
+- `2026-05-17-agents-directory-discovery-design.md` — ✅ 已删除
+
+**已完成**：整个 `docs/superpowers/` 目录已删除
 
 ### 13. `design/audit/audit-fix-plan.md` — 已完成的修复计划
 
@@ -191,10 +193,12 @@
 
 ## 六、🟡 P1 — 重复模板文件
 
-### 18. `packages/create-agentforge/templates/` 与 `src/templates/` 重复
+### 18. `packages/create-agentforge/templates/` 与 `src/templates/` 重复 ✅
 
 - `templates/` 根目录下有 5 个模板文件，与 `src/templates/` 下的文件完全相同
-- 构建系统使用 `src/templates/`，根目录 `templates/` 是遗留副本
+- 构建系统优先使用 `src/templates/`（编译后为 `dist/templates/`），根目录 `templates/` 是遗留 fallback
+
+**修复**：删除 `packages/create-agentforge/templates/` 目录，保留 `src/templates/` 作为唯一模板源
 
 ---
 
@@ -241,17 +245,17 @@
 | **P1** | 删除 `design/audit/` 中 4 个旧审计版本 | 4 | ✅ |
 | **P1** | 删除 `design/adr/architecture-audit-report.md` | 1 | ✅ |
 | **P1** | 合并 `design/architecture.md` → `design/ideal-architecture.md` | 1 | ✅ |
-| **P1** | 重新编号 ADR 0001-0014 | 14 | 待处理 |
-| **P1** | 删除/归档 `design/superpowers/` 6 个已完成文件 | 6 | 待处理 |
-| **P1** | 删除/归档 `docs/superpowers/specs/` 3 个孤立文件 | 3 | 待处理 |
+| **P1** | 重新编号 ADR 0001-0014 | 14 | ✅ |
+| **P1** | 删除/归档 `design/superpowers/` 6 个已完成文件 | 6 | ✅ |
+| **P1** | 删除/归档 `docs/superpowers/specs/` 3 个孤立文件 | 3 | ✅ |
 | **P1** | 删除/归档 `.scratch/` 26 个工作文件 | 26 | 待处理 |
 | **P1** | 删除/归档 `.claude/plans/` + `.claude/prds/` 12 个文件 | 12 | 待处理 |
-| **P1** | 删除 `packages/create-agentforge/templates/` 重复目录 | 5 | 待处理 |
+| **P1** | 删除 `packages/create-agentforge/templates/` 重复目录 | 5 | ✅ |
 | **P2** | 清理远程分支 `origin/master` | 1 | ✅ |
 | **P2** | 处理 `agentforge-logo-v4.jpg` 的 gitignore 冲突 | 1 | ✅ |
 | **P2** | 补全 `packages/tools/README.md` 工具文档 | 1 | ✅ |
 
-**总计**：约 80+ 个文件需要处理，其中 P0 级 5 个（✅ 已完成），P1 级已完成 3 项（6 个文件），P1 级剩余约 66 个，P2 级 3 项（✅ 已完成）。
+**总计**：约 80+ 个文件需要处理，其中 P0 级 5 个（✅ 已完成），P1 级已完成 7 项（31 个文件），P1 级剩余 2 项（38 个文件），P2 级 3 项（✅ 已完成）。
 
 ---
 
@@ -307,16 +311,24 @@
 
 ## 十四、剩余待办清单
 
-### P1 剩余（6 项，约 66 个文件）
+### P1 剩余（2 项，约 38 个文件）
 
 | # | 操作 | 文件数 | 说明 |
 |---|------|--------|------|
-| 1 | 重新编号 ADR 0001-0014 | 14 | 6 组重复编号需连续化 |
-| 2 | 删除/归档 `design/superpowers/` | 6 | 已完成的设计/计划文件 |
-| 3 | 删除/归档 `docs/superpowers/specs/` | 3 | 孤立设计文件 |
-| 4 | 删除/归档 `.scratch/` | 26 | 已完成的工作追踪文件 |
-| 5 | 删除/归档 `.claude/plans/` + `.claude/prds/` | 12 | 旧计划/PRD 文件 |
-| 6 | 删除 `packages/create-agentforge/templates/` | 5 | 与 `src/templates/` 重复 |
+| 1 | 删除/归档 `.scratch/` | 26 | 已完成的工作追踪文件 |
+| 2 | 删除/归档 `.claude/plans/` + `.claude/prds/` | 12 | 旧计划/PRD 文件 |
+
+### P1 已完成（7 项）
+
+| # | 操作 | 文件数 | 状态 |
+|---|------|--------|------|
+| 1 | 删除 `design/audit/` 中 4 个旧审计版本 | 4 | ✅ |
+| 2 | 删除 `design/adr/architecture-audit-report.md` | 1 | ✅ |
+| 3 | 合并 `design/architecture.md` → `design/ideal-architecture.md` | 1 | ✅ |
+| 4 | 重新编号 ADR 0001-0014 | 14 | ✅ |
+| 5 | 删除 `design/superpowers/` | 6 | ✅ |
+| 6 | 删除 `docs/superpowers/specs/` | 3 | ✅ |
+| 7 | 删除 `packages/create-agentforge/templates/` | 5 | ✅ |
 
 ### P2（3 项，✅ 全部完成）
 

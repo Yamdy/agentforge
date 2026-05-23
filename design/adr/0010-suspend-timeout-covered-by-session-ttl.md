@@ -1,4 +1,4 @@
-# ADR-0002: Suspend Timeout is Covered by Session TTL, Not a Separate Feature
+# ADR-0010: Suspend Timeout is Covered by Session TTL, Not a Separate Feature
 
 **Status**: Accepted
 **Date**: 2026-05-22

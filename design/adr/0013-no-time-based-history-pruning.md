@@ -1,4 +1,4 @@
-# ADR-0005: No Time-Based History Pruning
+# ADR-0013: No Time-Based History Pruning
 
 **Status**: Accepted | **Date**: 2026-05-23
 

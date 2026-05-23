@@ -1,4 +1,4 @@
-# ADR-0006: Checkpoint Versioning Sufficient, No TTL Needed
+# ADR-0014: Checkpoint Versioning Sufficient, No TTL Needed
 
 **Status**: Accepted | **Date**: 2026-05-23
 

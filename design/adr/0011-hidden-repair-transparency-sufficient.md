@@ -1,4 +1,4 @@
-# ADR-0003: Hidden Repair Loop Transparency is Sufficient
+# ADR-0011: Hidden Repair Loop Transparency is Sufficient
 
 **Status**: Accepted | **Date**: 2026-05-23
 
