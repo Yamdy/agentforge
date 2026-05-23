@@ -9,5 +9,6 @@ docs/.vitepress/cache/
 docs/.vitepress/dist/
 .playwright-mcp/
 *.jpg
+!agentforge-logo-v4.jpg
 *.png
 .claude/settings.local.json

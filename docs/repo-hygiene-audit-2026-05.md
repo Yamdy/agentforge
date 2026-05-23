@@ -3,7 +3,7 @@
 > **审计日期**: 2026-05-23
 > **更新日期**: 2026-05-23
 > **审计范围**: 全仓库文档、worktree、文件、远程分支
-> **审计状态**: P0 ✅ 已修复，P1 部分完成，P2 待处理
+> **审计状态**: P0 ✅ 已修复，P1 部分完成，P2 ✅ 已修复
 
 ---
 
@@ -17,7 +17,9 @@
 | 🟡 工作追踪文件（非文档） | 28 | P1 | 待处理 |
 | 🟡 重复模板文件 | 5 | P1 | 待处理 |
 | 🟡 泄露本地路径的配置 | 1 | P0 | ✅ 已修复 |
-| 🟢 远程分支冗余 | 3 | P2 | 待处理 |
+| 🟢 远程分支冗余 | 3 | P2 | ✅ 已修复 |
+| 🟢 gitignore 冲突 | 1 | P2 | ✅ 已修复 |
+| 🟢 工具文档缺失 | 1 | P2 | ✅ 已修复 |
 | ✅ 无问题 | — | — | — |
 
 ---
@@ -198,29 +200,32 @@
 
 ## 七、🟢 P2 — 远程分支冗余
 
-| 分支 | 与 dev 的差异 | 建议 |
-|------|-------------|------|
-| `origin/main` | 75 个未合并 commit（旧历史） | 可能是旧主分支，可考虑归档 |
-| `origin/new` | 99 个未合并 commit（RxJS 迁移等） | 旧开发线，已合并到 dev 或废弃 |
-| `origin/oc` | 99 个未合并 commit（与 new 高度重叠） | 可能是 new 的 fork，可考虑删除 |
-| `origin/master` | 已合并到 dev | 可删除 |
+| 分支 | 与 dev 的差异 | 建议 | 状态 |
+|------|-------------|------|------|
+| `origin/main` | 75 个未合并 commit（旧历史） | 可能是旧主分支，可考虑归档 | 待处理 |
+| `origin/new` | 99 个未合并 commit（RxJS 迁移等） | 旧开发线，已合并到 dev 或废弃 | 待处理 |
+| `origin/oc` | 99 个未合并 commit（与 new 高度重叠） | 可能是 new 的 fork，可考虑删除 | 待处理 |
+| `origin/master` | 已合并到 dev | 可删除 | ✅ 已删除 |
 
 ---
 
 ## 八、其他发现
 
-### 19. `packages/tools/README.md` — 只列出 echo 工具
+### 19. `packages/tools/README.md` — 只列出 echo 工具 ✅
 
 - 实际有 16 个工具，但 README 只文档化了 echo 一个
+
+**修复**：重写 README，按 5 个分类文档化全部 16 个工具，包含 schema、approval 标记、工厂函数说明和 `toolsByCategory`/`registerBuiltinTools` 用法
 
 ### 20. `packages/core/__tests__/fixtures/test-plugin.js`
 
 - 与同目录的 `test-plugin.ts` 重复，可能是编译产物
 
-### 21. `agentforge-logo-v4.jpg` — gitignore 冲突
+### 21. `agentforge-logo-v4.jpg` — gitignore 冲突 ✅
 
 - `.gitignore` 包含 `*.jpg`，但该文件已被跟踪（gitignore 仅影响未跟踪文件）
-- 需要添加 `!agentforge-logo-v4.jpg` 显式允许，或移至外部托管
+
+**修复**：在 `.gitignore` 的 `*.jpg` 行后添加 `!agentforge-logo-v4.jpg` 显式允许
 
 ---
 
@@ -242,11 +247,11 @@
 | **P1** | 删除/归档 `.scratch/` 26 个工作文件 | 26 | 待处理 |
 | **P1** | 删除/归档 `.claude/plans/` + `.claude/prds/` 12 个文件 | 12 | 待处理 |
 | **P1** | 删除 `packages/create-agentforge/templates/` 重复目录 | 5 | 待处理 |
-| **P2** | 清理远程分支 `origin/master`、`origin/oc` | 2 | 待处理 |
-| **P2** | 处理 `agentforge-logo-v4.jpg` 的 gitignore 冲突 | 1 | 待处理 |
-| **P2** | 补全 `packages/tools/README.md` 工具文档 | 1 | 待处理 |
+| **P2** | 清理远程分支 `origin/master` | 1 | ✅ |
+| **P2** | 处理 `agentforge-logo-v4.jpg` 的 gitignore 冲突 | 1 | ✅ |
+| **P2** | 补全 `packages/tools/README.md` 工具文档 | 1 | ✅ |
 
-**总计**：约 80+ 个文件需要处理，其中 P0 级 5 个（✅ 已完成），P1 级已完成 3 项（6 个文件），P1 级剩余约 66 个，P2 级约 4 个。
+**总计**：约 80+ 个文件需要处理，其中 P0 级 5 个（✅ 已完成），P1 级已完成 3 项（6 个文件），P1 级剩余约 66 个，P2 级 3 项（✅ 已完成）。
 
 ---
 
@@ -290,7 +295,7 @@
 |------|------|
 | `origin/dev` | 当前开发主线（HEAD） |
 | `origin/main` | 旧主分支，75 个未合并 commit |
-| `origin/master` | 已合并到 dev |
+| `origin/master` | 已合并到 dev，已删除 | ✅ |
 | `origin/new` | 旧开发线，99 个未合并 commit |
 | `origin/oc` | 旧开发线，99 个未合并 commit |
 
@@ -313,13 +318,13 @@
 | 5 | 删除/归档 `.claude/plans/` + `.claude/prds/` | 12 | 旧计划/PRD 文件 |
 | 6 | 删除 `packages/create-agentforge/templates/` | 5 | 与 `src/templates/` 重复 |
 
-### P2（3 项，约 4 个文件）
+### P2（3 项，✅ 全部完成）
 
-| # | 操作 | 说明 |
-|---|------|------|
-| 1 | 清理远程分支 | `origin/master` 已合并可删，`origin/oc` 与 `origin/new` 重叠可删 |
-| 2 | 处理 `agentforge-logo-v4.jpg` gitignore 冲突 | `.gitignore` 有 `*.jpg` 但文件已跟踪 |
-| 3 | 补全 `packages/tools/README.md` | 只文档化了 echo，实际有 16 个工具 |
+| # | 操作 | 状态 | 说明 |
+|---|------|------|------|
+| 1 | 清理远程分支 `origin/master` | ✅ | 已合并到 dev，已删除 |
+| 2 | 处理 `agentforge-logo-v4.jpg` gitignore 冲突 | ✅ | `.gitignore` 添加 `!agentforge-logo-v4.jpg` |
+| 3 | 补全 `packages/tools/README.md` | ✅ | 重写为 5 分类 16 工具完整文档 |
 
 ### 实施方向变更
 
