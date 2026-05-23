@@ -23,7 +23,6 @@ export default defineConfig({
           text: '开始',
           items: [
             { text: '快速入门', link: '/getting-started' },
-            { text: '特性树', link: '/feature-tree' },
             { text: '配置', link: '/configuration' },
           ],
         },
