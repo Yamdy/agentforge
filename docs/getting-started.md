@@ -27,7 +27,7 @@ npm install @primo-ai/core @primo-ai/sdk @primo-ai/tools
 |---|---|
 | `@primo-ai/sdk` | 类型定义（零依赖） |
 | `@primo-ai/core` | Agent、Pipeline、模型解析 |
-| `@primo-ai/tools` | 11 个内置工具（http、文件、shell、计算器等） |
+| `@primo-ai/tools` | 16 个内置工具（http、文件、shell、web、memory 等） |
 | `@primo-ai/plugins` | 插件（memory、compression、MCP 等） |
 | `@primo-ai/observability` | OpenTelemetry 桥接 |
 
@@ -85,7 +85,7 @@ DEEPSEEK_API_KEY=sk-xxx npx tsx your-file.ts
 
 ## 内置工具
 
-`@primo-ai/tools` 提供 11 个开箱即用的工具，零外部依赖：
+`@primo-ai/tools` 提供 16 个开箱即用的工具，零外部依赖：
 
 | 工具 | 说明 |
 |------|------|
@@ -100,11 +100,18 @@ DEEPSEEK_API_KEY=sk-xxx npx tsx your-file.ts
 | `calculatorTool` | 数学表达式求值 |
 | `datetimeTool` | 获取当前日期时间 |
 | `jsonTool` | JSON 解析/格式化/查询 |
+| `webSearchTool` | Web 搜索 |
+| `webFetchTool` | Web 页面抓取 |
+| `memoryStoreTool` | 存储记忆 |
+| `memoryRetrieveTool` | 检索记忆 |
+| `memoryListTool` | 列出记忆 |
 
 ```ts
 import {
   echoTool, httpTool, fileReadTool, fileWriteTool, fileEditTool,
   globTool, grepTool, shellTool, calculatorTool, datetimeTool, jsonTool,
+  webSearchTool, webFetchTool,
+  memoryStoreTool, memoryRetrieveTool, memoryListTool,
 } from '@primo-ai/tools';
 
 const agent = new Agent({
@@ -159,23 +166,25 @@ const agent = new Agent({
 
 ## 使用插件
 
-插件通过 `agent.use()` 加载，在 pipeline 中注入处理器、工具和钩子：
+插件通过 `plugins` 配置项加载，在 pipeline 中注入处理器、工具和钩子：
 
 ```ts
-import { memoryPlugin, InMemoryBackend } from '@primo-ai/plugins';
-import { compressionPlugin } from '@primo-ai/plugins';
+import { memoryPlugin, compressionPlugin } from '@primo-ai/plugins';
 
-// 记忆插件 — 自动存储和检索对话记忆
-agent.use(memoryPlugin({
-  backend: new InMemoryBackend(),
-  triggerMode: { type: 'automatic', onLoad: 'always' },
-}));
-
-// 压缩插件 — 防止上下文溢出
-agent.use(compressionPlugin({
-  maxContextTokens: 8000,
-  phases: [{ type: 'truncate', maxLength: 500 }],
-}));
+const agent = new Agent({
+  model: 'deepseek/deepseek-v4-flash',
+  plugins: [
+    // 记忆插件 — 自动存储和检索对话记忆
+    memoryPlugin({
+      triggerMode: { type: 'automatic', onLoad: 'always' },
+    }),
+    // 压缩插件 — 防止上下文溢出
+    compressionPlugin({
+      maxContextTokens: 8000,
+      phases: [{ type: 'truncate', maxLength: 500 }],
+    }),
+  ],
+});
 ```
 
 ## 自定义 Processor
@@ -331,14 +340,19 @@ agent_run
 ```ts
 import { mcpPlugin } from '@primo-ai/plugins';
 
-agent.use(mcpPlugin({
-  servers: [{
-    name: 'filesystem',
-    transport: 'stdio',
-    command: 'node',
-    args: ['mcp-server-filesystem.js', '/path/to/allowed/dir'],
-  }],
-}));
+const agent = new Agent({
+  model: 'deepseek/deepseek-v4-flash',
+  plugins: [
+    mcpPlugin({
+      servers: [{
+        name: 'filesystem',
+        transport: 'stdio',
+        command: 'node',
+        args: ['mcp-server-filesystem.js', '/path/to/allowed/dir'],
+      }],
+    }),
+  ],
+});
 ```
 
 MCP 工具会自动以 `serverName__toolName` 格式注册到 Agent。

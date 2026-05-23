@@ -10,3 +10,4 @@ docs/.vitepress/dist/
 .playwright-mcp/
 *.jpg
 *.png
+.claude/settings.local.json

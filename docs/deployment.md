@@ -292,14 +292,41 @@ class RedisSessionStorage implements SessionStorage {
 
 AgentForge 自动检测以下环境变量并启用 OTLP trace 导出：
 
+| 环境变量 | 说明 |
+|----------|------|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP 导出端点（如 `http://localhost:4318/v1/traces`） |
+| `OTEL_SERVICE_NAME` | 服务名称（默认 `agentforge`） |
+| `OTEL_TRACES_SAMPLER` | 采样策略：`always_on` / `always_off` / `parentbased_traceidratio` |
+| `OTEL_TRACES_SAMPLER_ARG` | 采样比率（0.0-1.0，仅 `traceidratio` 模式生效） |
 
+```bash
+# 启用 OTLP trace 导出到 Jaeger
+docker run -p 3000:3000 \
+  -e OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318/v1/traces \
+  -e OTEL_TRACES_SAMPLER=always_on \
+  agentforge
+```
 
-无需代码改动，Trace 自动关联跨服务调用链。
+无需代码改动，Trace 自动关联跨服务调用链。也可编程式配置：
+
+```typescript
+import { autoDetectOtelTracer } from '@primo-ai/core';
+
+const tracer = autoDetectOtelTracer({ ratio: 0.25 });
+const agent = new Agent(config, { tracer });
+```
 
 ## 限流
 
-通过  配置服务器级限流：
+通过 `rateLimit` 配置服务器级限流：
 
+```typescript
+const server = new AgentForgeServer({
+  rateLimit: {
+    windowMs: 60_000,    // 滑动窗口时长（毫秒）
+    maxRequests: 100,    // 窗口内最大请求数
+  },
+});
+```
 
-
-认证失败不计入限流（）。
+认证失败不计入限流（`429 Too Many Requests` 仅在成功认证后计数）。超出限制时返回 429 状态码，含标准 `Retry-After`、`X-RateLimit-Limit`、`X-RateLimit-Remaining` 响应头。

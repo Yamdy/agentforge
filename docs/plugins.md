@@ -146,30 +146,27 @@ api.registerProcessor('myCustomStage', {
 
 ## Plugin Lifecycle
 
-1. **Construction** -- Plugin factory function is called with `HarnessAPI`
-2. **Registration** -- Plugin registers processors, hooks, tools, resources
-3. **Initialization** -- `pluginManager.initializeAll()` starts all resources
-4. **Execution** -- Processors and hooks execute during agent runs
-5. **Shutdown** -- `pluginManager.shutdown()` stops all resources
+1. **Construction** -- Agent 构造时，Plugin factory function 被调用并接收 `HarnessAPI`
+2. **Registration** -- Plugin 注册 processors, hooks, tools, resources
+3. **Execution** -- Processors 和 hooks 在 agent 运行时自动执行
+4. **Shutdown** -- Agent 关闭时自动停止所有 resources
 
 ## Using Plugins
 
 ```typescript
 import { Agent } from '@primo-ai/core';
+import { memoryPlugin, compressionPlugin } from '@primo-ai/plugins';
 
-const agent = new Agent({ model: 'deepseek/deepseek-v4-flash' });
+const agent = new Agent({
+  model: 'deepseek/deepseek-v4-flash',
+  plugins: [
+    memoryPlugin({ triggerMode: { type: 'automatic', onLoad: 'always' } }),
+    compressionPlugin({ maxContextTokens: 8000 }),
+  ],
+});
 
-// Register a plugin
-agent.use(myPlugin);
-
-// Initialize all plugins (starts resources)
-await agent.pluginManager.initializeAll();
-
-// Run the agent (plugins are active)
+// 运行 Agent（插件自动激活）
 const result = await agent.run('Hello');
-
-// Shutdown when done (stops resources)
-await agent.pluginManager.shutdown();
 ```
 
 ## Flow Control
@@ -255,15 +252,20 @@ const fn = createSummarizeFn(
 ### 在 compressionPlugin 中使用
 
 ```typescript
-agent.use(compressionPlugin({
-  maxContextTokens: 8000,
-  phases: [
-    { type: 'summarize', model: 'gpt-4o', maxTokens: 2000, summarizeFn: customFn },
+const agent = new Agent({
+  model: 'deepseek/deepseek-v4-flash',
+  plugins: [
+    compressionPlugin({
+      maxContextTokens: 8000,
+      phases: [
+        { type: 'summarize', model: 'gpt-4o', maxTokens: 2000, summarizeFn: customFn },
+      ],
+      // 自动注入：提供 getLLM 即可自动为所有 summarize phase 创建 summarizeFn
+      getLLM: (model) => llmInvoker,
+      summarizeModel: 'deepseek/deepseek-v4-flash',
+    }),
   ],
-  // 自动注入：提供 getLLM 即可自动为所有 summarize phase 创建 summarizeFn
-  getLLM: (model) => llmInvoker,
-  summarizeModel: 'deepseek/deepseek-v4-flash',
-}));
+});
 ```
 
 当提供 `getLLM` 时，插件自动调用 `createSummarizeFn(getLLM, summarizeModel)` 为所有缺少 `summarizeFn` 的 summarize phase 注入默认实现。

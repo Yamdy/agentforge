@@ -653,7 +653,7 @@ const agent = new Agent(config: AgentConfig, options?: { tracer?: Tracer });
 
 | 方法 | 签名 | 说明 |
 |------|------|------|
-| `use` | `(factory: PluginFactory) => void` | 加载插件 |
+| `use` | `(factory: PluginFactory) => void` | ~~@deprecated~~ 使用 `plugins` 配置项代替 |
 | `run` | `(input: string, signal?: AbortSignal) => Promise<AgentRunResult>` | 运行并返回 `{ response, tokenUsage, sessionId }` |
 | `stream` | `(input: string, signal?: AbortSignal) => AsyncIterable<string>` | 流式运行，逐文本片段返回 |
 | `streamEvents` | `(input: string, signal?: AbortSignal) => AsyncIterable<StreamEvent>` | 流式运行，逐事件返回 |
@@ -1547,6 +1547,8 @@ Google Agent-to-Agent 协议支持。
 import {
   echoTool, httpTool, fileReadTool, fileWriteTool, fileEditTool,
   globTool, grepTool, shellTool, calculatorTool, datetimeTool, jsonTool,
+  webSearchTool, webFetchTool,
+  memoryStoreTool, memoryRetrieveTool, memoryListTool,
 } from '@primo-ai/tools';
 ```
 
@@ -1563,6 +1565,11 @@ import {
 | `calculatorTool` | `{ expression }` | `{ result, expression }` | 数学表达式求值 | 否 |
 | `datetimeTool` | `{ format?, timezone? }` | `{ iso, formatted, timezone, unix }` | 获取当前日期时间 | 否 |
 | `jsonTool` | `{ operation, data, path?, indent? }` | `{ result }` | JSON 解析/格式化/路径查询 | 否 |
+| `webSearchTool` | `{ query, maxResults? }` | `{ results, count }` | Web 搜索 | 否 |
+| `webFetchTool` | `{ url, format? }` | `{ content, url }` | Web 页面抓取 | 否 |
+| `memoryStoreTool` | `{ key, value, metadata? }` | `{ key, stored: true }` | 存储记忆 | 否 |
+| `memoryRetrieveTool` | `{ key }` | `{ value, metadata }` | 检索记忆 | 否 |
+| `memoryListTool` | `{ prefix?, limit? }` | `{ keys, count }` | 列出记忆 | 否 |
 
 ---
 
@@ -1671,10 +1678,14 @@ import {
 会话记忆存储与检索。
 
 ```ts
-agent.use(memoryPlugin({
-  backend: new InMemoryBackend(),  // 或 SQLiteBackend
-  triggerMode: { type: 'automatic', onLoad: 'always' },
-}));
+const agent = new Agent({
+  model: 'deepseek/deepseek-v4-flash',
+  plugins: [
+    memoryPlugin({
+      triggerMode: { type: 'automatic', onLoad: 'always' },
+    }),
+  ],
+});
 ```
 
 **triggerMode 选项：**
@@ -1689,17 +1700,22 @@ agent.use(memoryPlugin({
 上下文压缩，防止 token 溢出。
 
 ```ts
-agent.use(compressionPlugin({
-  maxContextTokens: 8000,
-  phases: [
-    { type: 'truncate', maxTokens: 500 },
-    { type: 'summarize', model: 'deepseek/deepseek-v4-flash', maxTokens: 2000 },
-    { type: 'prune', keepRecent: 10 },
+const agent = new Agent({
+  model: 'deepseek/deepseek-v4-flash',
+  plugins: [
+    compressionPlugin({
+      maxContextTokens: 8000,
+      phases: [
+        { type: 'truncate', maxTokens: 500 },
+        { type: 'summarize', model: 'deepseek/deepseek-v4-flash', maxTokens: 2000 },
+        { type: 'prune', keepRecent: 10 },
+      ],
+      // 可选：注入自定义 LLM 调用器（自动创建 summarizeFn）
+      getLLM: (model) => ({ invoke: async (input) => ({ response: 'summary', tokenUsage: null }) }),
+      summarizeModel: 'deepseek/deepseek-v4-flash',
+    }),
   ],
-  // 可选：注入自定义 LLM 调用器（自动创建 summarizeFn）
-  getLLM: (model) => ({ invoke: async (input) => ({ response: 'summary', tokenUsage: null }) }),
-  summarizeModel: 'deepseek/deepseek-v4-flash',
-}));
+});
 ```
 
 **阶段按顺序执行，满足条件后停止。**
@@ -1715,11 +1731,16 @@ const customFn: SummarizeFn = async (messages) => {
   return '摘要内容';
 };
 
-agent.use(compressionPlugin({
-  phases: [
-    { type: 'summarize', model: 'gpt-4o', maxTokens: 2000, summarizeFn: customFn },
+const agent = new Agent({
+  model: 'deepseek/deepseek-v4-flash',
+  plugins: [
+    compressionPlugin({
+      phases: [
+        { type: 'summarize', model: 'gpt-4o', maxTokens: 2000, summarizeFn: customFn },
+      ],
+    }),
   ],
-}));
+});
 ```
 
 也可通过 `getLLM` 选项自动创建内置的 `createSummarizeFn`。`createSummarizeFn(getLLM, model?)` 通过 system prompt 引导 LLM 生成结构化摘要。
@@ -1729,11 +1750,15 @@ agent.use(compressionPlugin({
 大工具输出自动驱逐。
 
 ```ts
-agent.use(evictionPlugin({
-  maxSize: 500,                      // 超过此大小的工具输出被驱逐
-  storage: new InMemoryEvictionStorage(),
-  previewLength: 200,                // 驱逐后保留的预览长度
-}));
+const agent = new Agent({
+  model: 'deepseek/deepseek-v4-flash',
+  plugins: [
+    evictionPlugin({
+      maxSize: 500,                      // 超过此大小的工具输出被驱逐
+      previewLength: 200,                // 驱逐后保留的预览长度
+    }),
+  ],
+});
 ```
 
 驱逐后工具结果替换为 `{ preview, reference, evicted: true }`，可通过 `EvictionStorage` 检索完整内容。
@@ -1743,15 +1768,19 @@ agent.use(evictionPlugin({
 工具执行权限控制。
 
 ```ts
-agent.use(permissionPlugin({
-  mode: 'interactive',  // 'full-auto' | 'plan-only' | 'interactive'
-  rules: [
-    { tool: 'shell_exec', action: 'deny' },
-    { tool: 'file_write', action: 'ask' },
-    { tool: 'echo', action: 'allow' },
+const agent = new Agent({
+  model: 'deepseek/deepseek-v4-flash',
+  plugins: [
+    permissionPlugin({
+      mode: 'interactive',  // 'full-auto' | 'plan-only' | 'interactive'
+      rules: [
+        { tool: 'shell_exec', action: 'deny' },
+        { tool: 'file_write', action: 'ask' },
+        { tool: 'echo', action: 'allow' },
+      ],
+    }),
   ],
-  permissionManager: new PermissionManager(),  // 可选：交互式审批
-}));
+});
 ```
 
 **模式：**
@@ -1764,11 +1793,16 @@ agent.use(permissionPlugin({
 基于 SKILL.md 文件的技能发现与注入。
 
 ```ts
-agent.use(skillPlugin({
-  skills: [{ name: 'summarize', description: '文本摘要', content: '...' }],
-  // 或自动发现:
-  directories: ['./skills', './.skills'],
-}));
+const agent = new Agent({
+  model: 'deepseek/deepseek-v4-flash',
+  plugins: [
+    skillPlugin({
+      skills: [{ name: 'summarize', description: '文本摘要', content: '...' }],
+      // 或自动发现:
+      directories: ['./skills', './.skills'],
+    }),
+  ],
+});
 ```
 
 注册 `read_skill` 工具供 Agent 按需读取技能内容。
@@ -1778,14 +1812,19 @@ agent.use(skillPlugin({
 Model Context Protocol 服务器集成。
 
 ```ts
-agent.use(mcpPlugin({
-  servers: [{
-    name: 'filesystem',
-    transport: 'stdio',
-    command: 'node',
-    args: ['server-entry.js', '/path/to/dir'],
-  }],
-}));
+const agent = new Agent({
+  model: 'deepseek/deepseek-v4-flash',
+  plugins: [
+    mcpPlugin({
+      servers: [{
+        name: 'filesystem',
+        transport: 'stdio',
+        command: 'node',
+        args: ['server-entry.js', '/path/to/dir'],
+      }],
+    }),
+  ],
+});
 ```
 
 MCP 工具名自动添加 `serverName__` 前缀防止冲突。生命周期通过 `ResourceDeclaration` 管理：`start()` 连接并发现工具，`stop()` 断开并注销。
