@@ -164,12 +164,32 @@ export class JsonlPersistentQueue<T = unknown> {
 
       const tmp = `${this.filePath}.tmp`;
       await writeFile(tmp, lines.join('\n') + '\n', 'utf-8');
-      await rename(tmp, this.filePath);
+      await this.renameWithRetry(tmp, this.filePath);
     };
 
     // Chain onto the write lock
     this.writeLock = this.writeLock.then(doPersist, doPersist);
     await this.writeLock;
+  }
+
+  /**
+   * Rename with retry for Windows EPERM/EPERM race conditions.
+   * Windows may briefly hold a file handle after writeFile, causing
+   * rename to fail with EPERM. A short delay + retry resolves this.
+   */
+  private async renameWithRetry(src: string, dest: string, maxRetries = 3): Promise<void> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await rename(src, dest);
+        return;
+      } catch (err: unknown) {
+        if (hasCode(err) && (err.code === 'EPERM' || err.code === 'EACCES') && attempt < maxRetries) {
+          await new Promise((r) => setTimeout(r, 50 * (attempt + 1)));
+          continue;
+        }
+        throw err;
+      }
+    }
   }
 
   async enqueue(options: EnqueueOptions<T>): Promise<string> {
