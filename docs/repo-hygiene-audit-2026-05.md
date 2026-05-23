@@ -3,7 +3,7 @@
 > **审计日期**: 2026-05-23
 > **更新日期**: 2026-05-23
 > **审计范围**: 全仓库文档、worktree、文件、远程分支
-> **审计状态**: P0 ✅ 已修复，P1 大部分完成，P2 ✅ 已修复
+> **审计状态**: P0 ✅ 已修复，P1 ✅ 全部完成，P2 ✅ 已修复
 
 ---
 
@@ -14,7 +14,7 @@
 | 🔴 与代码冲突的文档 | 5 | P0 | ✅ 已修复 |
 | 🔴 重复/冗余文档 | 10 | P1 | ✅ 已清理 |
 | 🔴 过期/已完成的设计文档 | 19 | P1 | 大部分处理 |
-| 🟡 工作追踪文件（非正式文档） | 28 | P1 | 待处理 |
+| 🟡 工作追踪文件（非正式文档） | 28 | P1 | ✅ 已清理 |
 | 🟡 重复模板文件 | 5 | P1 | ✅ 已清理 |
 | 🟡 泄露本地路径的配置 | 1 | P0 | ✅ 已修复 |
 | 🟢 远程分支冗余 | 3 | P2 | ✅ 已修复 |
@@ -159,35 +159,43 @@
 
 ## 五、🟡 P1 — 工作追踪文件（非正式文档）
 
-### 14. `.scratch/harness-framework/` — 18 个已完成的 issue 文件
+### 14. `.scratch/harness-framework/` — 18 个已完成的 issue 文件 ✅
 
 - PRD.md + 17 个编号 issue（01-17），全部标记 `Status: done`
 - 这些是开发过程追踪文件，项目已完成
 
-### 15. `.scratch/audit-2026-05/` — 8 个已解决的审计发现
+**已完成**：整个 `.scratch/` 目录已删除
+
+### 15. `.scratch/audit-2026-05/` — 8 个已解决的审计发现 ✅
 
 - F-1 到 F-8，全部在 `ideal-architecture.md` 中标记为已解决
 - issue 文件中仍标记 `Status: open`，与实际不符
 
-### 16. `.claude/plans/` — 10 个计划文件
+**已完成**：随 `.scratch/` 目录一起删除
+
+### 16. `.claude/plans/` — 10 个计划文件 ✅
 
 | 文件 | 状态 |
 |------|------|
-| `processor-api-radical-refactor.md` | ✅ 已完成 |
-| `resumable-auditable-agent.plan.md` | 部分完成 |
-| `skill-discovery-enhancement.plan.md` | 未知 |
-| `mid-term-improvements.plan.md` | pending |
-| `orchestration-layer.plan.md` | 未知 |
-| `orchestration-task-queue.plan.md` | 未知 |
-| `memory-system-self-built.plan.md` | 已审查 |
-| `mastra-memory-integration.plan.md` | 未知 |
-| `milestone-2-snapshot-service.plan.md` | 未知 |
-| `milestone-3-integration.plan.md` | 未知 |
+| `processor-api-radical-refactor.md` | ✅ 已删除 |
+| `resumable-auditable-agent.plan.md` | ✅ 已删除 |
+| `skill-discovery-enhancement.plan.md` | ✅ 已删除 |
+| `mid-term-improvements.plan.md` | ✅ 已删除 |
+| `orchestration-layer.plan.md` | ✅ 已删除 |
+| `orchestration-task-queue.plan.md` | ✅ 已删除 |
+| `memory-system-self-built.plan.md` | ✅ 已删除 |
+| `mastra-memory-integration.plan.md` | ✅ 已删除 |
+| `milestone-2-snapshot-service.plan.md` | ✅ 已删除 |
+| `milestone-3-integration.plan.md` | ✅ 已删除 |
 
-### 17. `.claude/prds/` — 2 个 PRD 文件
+**已完成**：整个 `.claude/plans/` 目录已删除
 
-- `resumable-auditable-agent.prd.md`
-- `skill-discovery-enhancement.prd.md`
+### 17. `.claude/prds/` — 2 个 PRD 文件 ✅
+
+- `resumable-auditable-agent.prd.md` — ✅ 已删除
+- `skill-discovery-enhancement.prd.md` — ✅ 已删除
+
+**已完成**：整个 `.claude/prds/` 目录已删除
 
 ---
 
@@ -248,14 +256,14 @@
 | **P1** | 重新编号 ADR 0001-0014 | 14 | ✅ |
 | **P1** | 删除/归档 `design/superpowers/` 6 个已完成文件 | 6 | ✅ |
 | **P1** | 删除/归档 `docs/superpowers/specs/` 3 个孤立文件 | 3 | ✅ |
-| **P1** | 删除/归档 `.scratch/` 26 个工作文件 | 26 | 待处理 |
-| **P1** | 删除/归档 `.claude/plans/` + `.claude/prds/` 12 个文件 | 12 | 待处理 |
+| **P1** | 删除/归档 `.scratch/` 26 个工作文件 | 26 | ✅ |
+| **P1** | 删除/归档 `.claude/plans/` + `.claude/prds/` 12 个文件 | 12 | ✅ |
 | **P1** | 删除 `packages/create-agentforge/templates/` 重复目录 | 5 | ✅ |
 | **P2** | 清理远程分支 `origin/master` | 1 | ✅ |
 | **P2** | 处理 `agentforge-logo-v4.jpg` 的 gitignore 冲突 | 1 | ✅ |
 | **P2** | 补全 `packages/tools/README.md` 工具文档 | 1 | ✅ |
 
-**总计**：约 80+ 个文件需要处理，其中 P0 级 5 个（✅ 已完成），P1 级已完成 7 项（31 个文件），P1 级剩余 2 项（38 个文件），P2 级 3 项（✅ 已完成）。
+**总计**：约 80+ 个文件需要处理，其中 P0 级 5 个（✅ 已完成），P1 级 9 项（69 个文件，✅ 全部完成），P2 级 3 项（✅ 已完成）。
 
 ---
 
@@ -311,14 +319,7 @@
 
 ## 十四、剩余待办清单
 
-### P1 剩余（2 项，约 38 个文件）
-
-| # | 操作 | 文件数 | 说明 |
-|---|------|--------|------|
-| 1 | 删除/归档 `.scratch/` | 26 | 已完成的工作追踪文件 |
-| 2 | 删除/归档 `.claude/plans/` + `.claude/prds/` | 12 | 旧计划/PRD 文件 |
-
-### P1 已完成（7 项）
+### P1（9 项，✅ 全部完成）
 
 | # | 操作 | 文件数 | 状态 |
 |---|------|--------|------|
@@ -329,6 +330,8 @@
 | 5 | 删除 `design/superpowers/` | 6 | ✅ |
 | 6 | 删除 `docs/superpowers/specs/` | 3 | ✅ |
 | 7 | 删除 `packages/create-agentforge/templates/` | 5 | ✅ |
+| 8 | 删除 `.scratch/` 26 个工作文件 | 26 | ✅ |
+| 9 | 删除 `.claude/plans/` + `.claude/prds/` 12 个文件 | 12 | ✅ |
 
 ### P2（3 项，✅ 全部完成）
 
