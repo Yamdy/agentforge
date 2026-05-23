@@ -27,6 +27,10 @@
   <a href="https://github.com/Yamdy/agentforge/stargazers"><img src="https://img.shields.io/github/stars/Yamdy/agentforge?style=social" alt="stars" /></a>
 </p>
 
+<p align="center">
+  English | <a href="./README.zh-CN.md">中文</a>
+</p>
+
 ---
 
 ## Why AgentForge?
