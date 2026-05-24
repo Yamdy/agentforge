@@ -164,6 +164,14 @@ export class LoopOrchestrator {
     return this.stateMachine.current;
   }
 
+  get stageConfig(): PipelineStageConfig {
+    return {
+      preLoop: [...this.preLoopStages],
+      loop: [...this.loopStages],
+      postLoop: [...this.postLoopStages],
+    };
+  }
+
   applyMutation(mutation: StageMutation): void {
     if (this.stateMachine.current !== 'pending') {
       throw new Error(`Stage mutations only allowed before first run (current: ${this.stateMachine.current})`);

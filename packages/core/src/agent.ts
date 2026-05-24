@@ -576,11 +576,7 @@ export class Agent {
       execute: async () => {
         const agent = self.agent;
         return {
-          pipeline: {
-            preLoop: ['processInput', 'buildContext'],
-            loop: ['prepareStep', 'gateLLM', 'invokeLLM', 'processStepOutput', 'gateTool', 'executeTools', 'evaluateIteration'],
-            postLoop: ['processOutput'],
-          },
+          pipeline: agent.orchestrator.stageConfig,
           tools: agent.toolRegistry.getAll().map(t => t.name),
           state: agent.state,
         };
