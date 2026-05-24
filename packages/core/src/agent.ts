@@ -304,6 +304,9 @@ export class Agent {
 
   /** Check AutonomousConfig.gapTriggers and start gap optimization if a trigger matches. */
   private triggerGapOptimizationIfApplicable(triggerType: 'afterRun' | 'onError'): void {
+    // Prevent re-entrant gap optimization while already in progress
+    if (this._gapOptimizationRunning) return;
+    
     const autonomous = this._harnessConfig?.autonomous;
     if (!autonomous?.enabled || !autonomous.gapTriggers?.length) return;
     const match = autonomous.gapTriggers.find((t: { type: string }) => t.type === triggerType);
