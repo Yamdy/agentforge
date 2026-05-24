@@ -1,0 +1,24 @@
+{
+  "version": "1",
+  "servers": {
+    "filesystem": {
+      "type": "local",
+      "command": ["npx", "@modelcontextprotocol/server-filesystem", "./"],
+      "enabled": true
+    },
+    "github": {
+      "type": "remote",
+      "url": "https://mcp.github.com",
+      "oauth": {
+        "clientId": "your-client-id",
+        "scope": "repo,user"
+      },
+      "enabled": true
+    },
+    "disabled-server": {
+      "type": "local",
+      "command": ["some-command"],
+      "enabled": false
+    }
+  }
+}

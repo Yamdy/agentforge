@@ -1,0 +1,22 @@
+{
+  "eval_id": 0,
+  "eval_name": "implement-permission-system",
+  "prompt": "我要实现一个权限系统，类似于 OpenHarness 的权限检查功能，支持路径级规则和命令级拒绝列表。",
+  "assertions": [
+    {
+      "text": "询问用户实际使用场景",
+      "passed": false,
+      "evidence": ""
+    },
+    {
+      "text": "询问集成计划和时间表",
+      "passed": false,
+      "evidence": ""
+    },
+    {
+      "text": "进行必要性评估",
+      "passed": false,
+      "evidence": ""
+    }
+  ]
+}

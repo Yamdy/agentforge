@@ -1,0 +1,467 @@
+---
+title: 'Observability'
+type: 'class'
+author: 'AI-Assistant'
+date: '2026-04-07'
+version: '1.0.0'
+sourceFile: 'src/observability/index.ts'
+complexity: 'medium'
+tests: ['tests/observability/observability.test.ts']
+dependencies: ['uuid', 'zod']
+---
+
+# Observability
+
+## Description
+
+Distributed tracing and observability system for monitoring and debugging AI agent execution. Features span management, GenAI-specific semantic attributes, and pluggable exporters with built-in console output.
+
+## Architecture
+
+```
+┌─────────────────────────────────────────┐
+│         Global Tracer                    │
+│  ┌─────────────────────────────────┐   │
+│  │  Span Hierarchy                 │   │
+│  │  ┌─────────────────────────┐   │   │
+│  │  │ Root Span (agent.run)  │   │   │
+│  │  └──────────┬──────────────┘   │   │
+│  │             │                    │   │
+│  │  ┌──────────▼──────────────┐   │   │
+│  │  │ Child Span (tool.call)  │   │   │
+│  │  └─────────────────────────┘   │   │
+│  └─────────────────────────────────┘   │
+│             │                            │
+│  ┌──────────▼──────────────┐            │
+│  │     Span Buffer          │            │
+│  └──────────┬──────────────┘            │
+│             │                            │
+│  ┌──────────▼──────────────┐            │
+│  │    Span Exporter         │            │
+│  │  (Console / Custom)      │            │
+│  └─────────────────────────┘            │
+└─────────────────────────────────────────┘
+```
+
+## Signature
+
+```typescript
+function setupObservability(config: ObservabilityConfig): void;
+function getTracer(): Tracer;
+function setTracer(tracer: Tracer): void;
+const tracer: {
+  startSpan(
+    name: string,
+    options?: { attributes?: Record<string, string | number | boolean> }
+  ): Span;
+  endSpan(span: Span): void;
+  flush(): Promise<void>;
+  shutdown(): Promise<void>;
+  getCurrentSpan(): Span | undefined;
+};
+
+function createSpan(
+  name: string,
+  options?: {
+    traceId?: string;
+    parentSpanId?: string;
+    attributes?: Record<string, string | number | boolean>;
+  }
+): Span;
+
+class ConsoleExporter implements SpanExporter {
+  export(spans: Span[]): Promise<void>;
+  shutdown(): Promise<void>;
+}
+```
+
+## Core Functions
+
+### setupObservability(config)
+
+Initialize the global observability system.
+
+| Parameter             | Type         | Required | Description                                        |
+| --------------------- | ------------ | -------- | -------------------------------------------------- |
+| config.exporter       | SpanExporter | No       | Custom span exporter (defaults to ConsoleExporter) |
+| config.serviceName    | string       | No       | Service name for tracing (default: "primo-agent")  |
+| config.serviceVersion | string       | No       | Service version (default: "0.1.0")                 |
+
+### getTracer()
+
+Get the current global tracer instance.
+
+**Returns:** `Tracer` - Global tracer instance
+
+### setTracer(tracer)
+
+Set a custom global tracer instance.
+
+| Parameter | Type   | Required | Description            |
+| --------- | ------ | -------- | ---------------------- |
+| tracer    | Tracer | Yes      | Custom tracer instance |
+
+### createSpan(name, options)
+
+Create a new span (without using the global tracer).
+
+| Parameter            | Type                                              | Required | Description                               |
+| -------------------- | ------------------------------------------------- | -------- | ----------------------------------------- |
+| name                 | string                                            | Yes      | Span name                                 |
+| options.traceId      | string                                            | No       | Trace ID (auto-generated if not provided) |
+| options.parentSpanId | string                                            | No       | Parent span ID for nested spans           |
+| options.attributes   | Record&lt;string, string \| number \| boolean&gt; | No       | Span attributes                           |
+
+**Returns:** `Span` - New span instance
+
+## Global Tracer Object (tracer)
+
+### tracer.startSpan(name, options)
+
+Start a new span with the global tracer.
+
+| Parameter          | Type                                              | Required | Description     |
+| ------------------ | ------------------------------------------------- | -------- | --------------- |
+| name               | string                                            | Yes      | Span name       |
+| options.attributes | Record&lt;string, string \| number \| boolean&gt; | No       | Span attributes |
+
+**Returns:** `Span` - Started span
+
+### tracer.endSpan(span)
+
+End a span and add it to the export buffer.
+
+| Parameter | Type | Required | Description |
+| --------- | ---- | -------- | ----------- |
+| span      | Span | Yes      | Span to end |
+
+### tracer.flush()
+
+Force export all buffered spans immediately.
+
+**Returns:** `Promise<void>`
+
+### tracer.shutdown()
+
+Shutdown the tracer, exporting all remaining spans.
+
+**Returns:** `Promise<void>`
+
+### tracer.getCurrentSpan()
+
+Get the currently active span.
+
+**Returns:** `Span | undefined` - Current span or undefined
+
+## Span Methods
+
+### span.end(status?)
+
+End the span with optional status.
+
+| Parameter      | Type                       | Required | Description                    |
+| -------------- | -------------------------- | -------- | ------------------------------ |
+| status.code    | 'UNSET' \| 'OK' \| 'ERROR' | No       | Status code (default: 'UNSET') |
+| status.message | string                     | No       | Status message                 |
+
+### span.recordException(error)
+
+Record an exception and set span status to ERROR.
+
+| Parameter | Type  | Required | Description     |
+| --------- | ----- | -------- | --------------- |
+| error     | Error | Yes      | Error to record |
+
+### span.addEvent(name, attributes?)
+
+Add an event to the span.
+
+| Parameter  | Type                                              | Required | Description      |
+| ---------- | ------------------------------------------------- | -------- | ---------------- |
+| name       | string                                            | Yes      | Event name       |
+| attributes | Record&lt;string, string \| number \| boolean&gt; | No       | Event attributes |
+
+### span.setAttribute(key, value)
+
+Set an attribute on the span.
+
+| Parameter | Type                        | Required | Description     |
+| --------- | --------------------------- | -------- | --------------- |
+| key       | string                      | Yes      | Attribute key   |
+| value     | string \| number \| boolean | Yes      | Attribute value |
+
+## GenAI Semantic Attributes
+
+Pre-defined attribute constants for GenAI operations:
+
+| Constant                         | Value                            | Description           |
+| -------------------------------- | -------------------------------- | --------------------- |
+| `GEN_AI_AGENT_NAME`              | `gen_ai.agent.name`              | Agent name            |
+| `GEN_AI_AGENT_ID`                | `gen_ai.agent.id`                | Agent identifier      |
+| `GEN_AI_REQUEST_MODEL`           | `gen_ai.request.model`           | LLM model name        |
+| `GEN_AI_REQUEST_TEMPERATURE`     | `gen_ai.request.temperature`     | Temperature parameter |
+| `GEN_AI_REQUEST_MAX_TOKENS`      | `gen_ai.request.max_tokens`      | Max tokens parameter  |
+| `GEN_AI_REQUEST_TOP_P`           | `gen_ai.request.top_p`           | Top P parameter       |
+| `GEN_AI_RESPONSE_ID`             | `gen_ai.response.id`             | Response ID           |
+| `GEN_AI_RESPONSE_FINISH_REASONS` | `gen_ai.response.finish_reasons` | Finish reasons        |
+| `GEN_AI_USAGE_INPUT_TOKENS`      | `gen_ai.usage.input_tokens`      | Input token count     |
+| `GEN_AI_USAGE_OUTPUT_TOKENS`     | `gen_ai.usage.output_tokens`     | Output token count    |
+| `GEN_AI_TOOL_NAME`               | `gen_ai.tool.name`               | Tool name             |
+| `GEN_AI_TOOL_DESCRIPTION`        | `gen_ai.tool.description`        | Tool description      |
+| `GEN_AI_OPERATION_NAME`          | `gen_ai.operation.name`          | Operation name        |
+| `GEN_AI_PROVIDER_NAME`           | `gen_ai.provider.name`           | Provider name         |
+
+## Types
+
+### Span
+
+```typescript
+interface Span {
+  readonly spanId: string;
+  readonly traceId: string;
+  readonly parentSpanId?: string;
+  readonly name: string;
+  readonly startTime: Date;
+  endTime?: Date;
+  attributes: Record<string, string | number | boolean>;
+  status: SpanStatus;
+  events: SpanEvent[];
+
+  end(status?: SpanStatus): void;
+  recordException(error: Error): void;
+  addEvent(name: string, attributes?: Record<string, string | number | boolean>): void;
+  setAttribute(key: string, value: string | number | boolean): void;
+}
+```
+
+### SpanStatus
+
+```typescript
+interface SpanStatus {
+  code: 'UNSET' | 'OK' | 'ERROR';
+  message?: string;
+}
+```
+
+### SpanEvent
+
+```typescript
+interface SpanEvent {
+  name: string;
+  time: Date;
+  attributes?: Record<string, string | number | boolean>;
+}
+```
+
+### SpanExporter
+
+```typescript
+interface SpanExporter {
+  export(spans: Span[]): Promise<void>;
+  shutdown(): Promise<void>;
+}
+```
+
+### ObservabilityConfig
+
+```typescript
+interface ObservabilityConfig {
+  exporter?: SpanExporter;
+  serviceName?: string;
+  serviceVersion?: string;
+}
+```
+
+## Examples
+
+### Example 1: Basic Tracing
+
+```typescript
+import { setupObservability, tracer, GEN_AI_AGENT_NAME, GEN_AI_REQUEST_MODEL } from 'primo-agent';
+
+setupObservability({
+  serviceName: 'my-agent-service',
+  serviceVersion: '1.0.0',
+});
+
+const span = tracer.startSpan('agent.run', {
+  attributes: {
+    [GEN_AI_AGENT_NAME]: 'customer-support-agent',
+    [GEN_AI_REQUEST_MODEL]: 'gpt-4',
+  },
+});
+
+try {
+  span.setAttribute('step', 1);
+  span.addEvent('tool-call', { tool: 'search' });
+
+  span.end({ code: 'OK' });
+} catch (error) {
+  span.recordException(error as Error);
+  span.end();
+} finally {
+  tracer.endSpan(span);
+  await tracer.flush();
+}
+```
+
+### Example 2: Nested Spans
+
+```typescript
+import { tracer, GEN_AI_TOOL_NAME } from 'primo-agent';
+
+const parentSpan = tracer.startSpan('agent.run');
+
+// Child span inherits traceId from parent
+const toolSpan = tracer.startSpan('tool.execute', {
+  attributes: {
+    [GEN_AI_TOOL_NAME]: 'calculator',
+  },
+});
+
+toolSpan.end({ code: 'OK' });
+tracer.endSpan(toolSpan);
+
+parentSpan.end({ code: 'OK' });
+tracer.endSpan(parentSpan);
+
+await tracer.flush();
+```
+
+### Example 3: Custom Exporter
+
+```typescript
+import { setupObservability, type SpanExporter, type Span } from 'primo-agent';
+
+class ZipkinExporter implements SpanExporter {
+  private endpoint: string;
+
+  constructor(endpoint: string) {
+    this.endpoint = endpoint;
+  }
+
+  async export(spans: Span[]): Promise<void> {
+    const zipkinSpans = spans.map((span) => ({
+      traceId: span.traceId,
+      id: span.spanId,
+      parentId: span.parentSpanId,
+      name: span.name,
+      timestamp: span.startTime.getTime() * 1000,
+      duration: span.endTime ? (span.endTime.getTime() - span.startTime.getTime()) * 1000 : 0,
+      tags: span.attributes,
+    }));
+
+    await fetch(this.endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(zipkinSpans),
+    });
+  }
+
+  async shutdown(): Promise<void> {
+    // Cleanup resources
+  }
+}
+
+setupObservability({
+  exporter: new ZipkinExporter('http://localhost:9411/api/v2/spans'),
+});
+```
+
+### Example 4: Console Exporter Output
+
+```typescript
+import { setupObservability, tracer, ConsoleExporter } from 'primo-agent';
+
+const exporter = new ConsoleExporter();
+setupObservability({ exporter });
+
+const span = tracer.startSpan('test.operation', {
+  attributes: { key: 'value', count: 42 },
+});
+span.addEvent('processing', { phase: 'started' });
+span.end({ code: 'OK' });
+tracer.endSpan(span);
+await tracer.flush();
+
+// Console output:
+// [Span] test.operation (abc123...)
+//   Trace ID: def456...
+//   Status: OK
+//   Start Time: 2026-04-07T12:00:00.000Z
+//   End Time: 2026-04-07T12:00:00.005Z
+//   Duration: 5ms
+//   Attributes:
+//     key: value
+//     count: 42
+//   Events:
+//     2026-04-07T12:00:00.002Z: processing
+//       phase: started
+```
+
+### Example 5: Error Handling
+
+```typescript
+import { tracer } from 'primo-agent';
+
+const span = tracer.startSpan('risky.operation');
+
+try {
+  throw new Error('Something went wrong!');
+} catch (error) {
+  span.recordException(error as Error);
+  span.end({ code: 'ERROR', message: 'Operation failed' });
+} finally {
+  tracer.endSpan(span);
+  await tracer.flush();
+}
+```
+
+### Example 6: Manual Span Creation
+
+```typescript
+import { createSpan } from 'primo-agent';
+
+// Create a span without using the global tracer
+const span = createSpan('manual.span', {
+  attributes: { mode: 'manual' },
+});
+
+span.setAttribute('custom', 'value');
+span.end({ code: 'OK' });
+
+console.log('Span:', {
+  name: span.name,
+  traceId: span.traceId,
+  status: span.status,
+  duration: span.endTime ? span.endTime.getTime() - span.startTime.getTime() : 0,
+});
+```
+
+### Example 7: Shutdown Hook
+
+```typescript
+import { setupObservability, tracer, getTracer } from 'primo-agent';
+
+setupObservability({});
+
+process.on('SIGTERM', async () => {
+  console.log('Shutting down observability...');
+  await getTracer().shutdown();
+  console.log('Observability shutdown complete');
+  process.exit(0);
+});
+
+// Your application code
+```
+
+## Dependencies
+
+- `uuid` - Unique identifier generation for spans and traces
+- `zod` - Schema validation
+
+## Related
+
+- [Agent](./agent.mdx)
+- [Tracer](./tracer.mdx)
+- [Logger](./logger.mdx)

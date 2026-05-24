@@ -1,0 +1,251 @@
+---
+title: 'Skill System'
+type: 'class'
+author: 'AI-Assistant'
+date: '2026-04-07'
+version: '1.0.0'
+sourceFile: 'src/skill/index.ts'
+complexity: 'medium'
+tests: ['tests/skill.test.ts']
+dependencies: ['zod']
+---
+
+# Skill System
+
+## Description
+
+SKILL discovery and loading system that allows agents to discover, load, and use specialized skills from predefined directories. Supports skill discovery, listing, and built-in tools for skill management.
+
+## Signature
+
+```typescript
+const Skill: {
+  discover(): Promise<void>;
+  list(): SkillInfo[];
+  get(name: string): SkillInfo | undefined;
+  refresh(): Promise<void>;
+  createLoadSkillTool(): Tool;
+  createListSkillsTool(): Tool;
+};
+```
+
+## Skill Namespace Methods
+
+### Skill.discover()
+
+Discover and load skills from configured directories.
+
+**Returns:** `Promise<void>`
+
+### Skill.list()
+
+List all discovered skills.
+
+**Returns:** `SkillInfo[]` - Array of skill information
+
+### Skill.get(name)
+
+Get a skill by name.
+
+| Parameter | Type   | Required | Description |
+| --------- | ------ | -------- | ----------- |
+| name      | string | Yes      | Skill name  |
+
+**Returns:** `SkillInfo | undefined` - Skill info or undefined
+
+### Skill.refresh()
+
+Refresh skill discovery (re-scan directories).
+
+**Returns:** `Promise<void>`
+
+### Skill.createLoadSkillTool()
+
+Create a tool to load skills by name.
+
+**Returns:** `Tool` - The load_skill tool
+
+### Skill.createListSkillsTool()
+
+Create a tool to list all available skills.
+
+**Returns:** `Tool` - The list_skills tool
+
+## Types
+
+### SkillFrontmatter
+
+```typescript
+interface SkillFrontmatter {
+  name: string;
+  description: string;
+  license?: string;
+  compatibility?: string;
+  metadata?: Record<string, any>;
+}
+```
+
+### SkillInfo
+
+```typescript
+interface SkillInfo {
+  name: string;
+  description: string;
+  location: string;
+  content: string;
+  frontmatter?: SkillFrontmatter;
+}
+```
+
+## Skill Directory Structure
+
+Skills are discovered from these directories (in order):
+
+- `.primo-agent/skills/`
+- `.agents/skills/`
+- `.claude/skills/`
+- `.opencode/skills/`
+
+Each skill should be in its own subdirectory with a `SKILL.md` file.
+
+## Skill File Format
+
+```markdown
+---
+name: my-skill
+description: Description of what this skill does
+license: MIT
+compatibility: primo-agent 0.1.0
+metadata: { 'version': '1.0.0', 'author': 'Your Name' }
+---
+
+# My Skill
+
+Detailed instructions and workflows for this skill...
+```
+
+## Examples
+
+### Example 1: Discover and List Skills
+
+```typescript
+import { Skill } from 'primo-agent';
+
+// Discover skills
+await Skill.discover();
+
+// List all skills
+const skills = Skill.list();
+console.log(
+  'Available skills:',
+  skills.map((s) => s.name)
+);
+```
+
+### Example 2: Get a Specific Skill
+
+```typescript
+import { Skill } from 'primo-agent';
+
+await Skill.discover();
+
+const gitReleaseSkill = Skill.get('git-release');
+if (gitReleaseSkill) {
+  console.log('Name:', gitReleaseSkill.name);
+  console.log('Description:', gitReleaseSkill.description);
+  console.log('Location:', gitReleaseSkill.location);
+  console.log('Content:', gitReleaseSkill.content);
+}
+```
+
+### Example 3: Refresh Skills
+
+```typescript
+import { Skill } from 'primo-agent';
+
+// Initial discovery
+await Skill.discover();
+
+// Later, refresh to pick up new skills
+await Skill.refresh();
+```
+
+### Example 4: Using Skill Tools in an Agent
+
+```typescript
+import { Skill, Agent, AIAdapter, InMemoryHistory, ToolRegistry } from 'primo-agent';
+
+// Create tool registry with skill tools
+const registry = new ToolRegistry();
+registry.register(Skill.createLoadSkillTool());
+registry.register(Skill.createListSkillsTool());
+
+// Create agent with the tools
+const agent = new Agent(new AIAdapter({ model: 'gpt-4' }), new InMemoryHistory(), registry);
+
+// Agent can now use skill tools
+const response = await agent.run(`
+  First, list all available skills.
+  Then, load the "git-release" skill and follow its instructions.
+`);
+```
+
+### Example 5: Load Skill Directly
+
+```typescript
+import { Skill } from 'primo-agent';
+
+await Skill.discover();
+
+const tool = Skill.createLoadSkillTool();
+const result = await tool.execute({ name: 'git-release' });
+console.log(result);
+```
+
+### Example 6: List Skills via Tool
+
+```typescript
+import { Skill } from 'primo-agent';
+
+await Skill.discover();
+
+const tool = Skill.createListSkillsTool();
+const result = await tool.execute({});
+console.log(result);
+```
+
+### Example 7: Create a Custom Skill
+
+Create directory structure:
+
+```
+.primo-agent/
+  skills/
+    my-custom-skill/
+      SKILL.md
+```
+
+SKILL.md content:
+
+```markdown
+---
+name: my-custom-skill
+description: A custom skill for specialized tasks
+license: MIT
+---
+
+# Custom Skill Instructions
+
+1. First, do this...
+2. Then, do that...
+3. Finally, complete the task.
+```
+
+## Dependencies
+
+- `zod` - Schema validation for skill frontmatter
+
+## Related
+
+- [SubAgent System](./subagent.mdx)
+- [Tool Registry](./tool-registry.mdx)

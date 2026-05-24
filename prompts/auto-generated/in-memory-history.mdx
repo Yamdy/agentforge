@@ -1,0 +1,76 @@
+---
+title: "InMemoryHistory"
+type: "class"
+author: "AI-Assistant"
+date: "2026-04-06"
+version: "1.0.0"
+sourceFile: "src/history.ts"
+complexity: "low"
+tests: []
+dependencies: ["zod"]
+---
+
+# InMemoryHistory
+
+## Description
+
+In-memory implementation of `HistoryManager`. Stores messages and tool results in arrays, suitable for short-lived agent runs.
+
+## Signature
+
+```typescript
+class InMemoryHistory implements HistoryManager {
+  add(role: 'user' | 'assistant', content: string): void
+  addToolResult(toolCallId: string, toolName: string, result: string): void
+  getToolResult(toolCallId: string): ToolResult | undefined
+  getMessages(): Message[]
+  clear(): void
+}
+```
+
+## Methods
+
+### add(role, content)
+
+Add user or assistant message with validation.
+
+### addToolResult(toolCallId, toolName, result)
+
+Store tool result for later inclusion in messages.
+
+### getToolResult(toolCallId)
+
+Retrieve stored tool result.
+
+### getMessages()
+
+Get all messages including tool results as formatted content.
+
+### clear()
+
+Clear all messages and tool results.
+
+## Examples
+
+```typescript
+import { InMemoryHistory } from 'primo-agent';
+
+const history = new InMemoryHistory();
+
+history.add('user', 'What is 2+2?');
+history.addToolResult('call_123', 'calculator', '4');
+history.add('assistant', '2 plus 2 equals 4');
+
+const messages = history.getMessages();
+// Includes tool result as: [TOOL_CALL_RESULT] tool_name=calculator tool_call_id=call_123 result="4"
+
+history.clear();
+```
+
+## Dependencies
+
+- `zod` (for validateMessage)
+
+## Related
+
+- [HistoryManager (types)](./types.mdx)

@@ -1,0 +1,22 @@
+{
+  "eval_id": 1,
+  "eval_name": "unused-permission-module",
+  "prompt": "我发现 src/permissions 目录下有162行代码实现了权限系统，但是 agent.ts 完全没有使用它，测试目录也是空的。这个应该保留还是删除？",
+  "assertions": [
+    {
+      "text": "识别出这是死代码",
+      "passed": false,
+      "evidence": ""
+    },
+    {
+      "text": "检查是否被其他模块引用",
+      "passed": false,
+      "evidence": ""
+    },
+    {
+      "text": "给出明确建议（删除或集成）",
+      "passed": false,
+      "evidence": ""
+    }
+  ]
+}

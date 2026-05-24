@@ -1,184 +1,101 @@
-# CLAUDE.md
+<!-- gitnexus:start -->
+# GitNexus — Code Intelligence
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This project is indexed by GitNexus as **agentforge** (1300 symbols, 3074 relationships, 98 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
-## Commands
+> If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
+
+## Always Do
+
+- **MUST run impact analysis before editing any symbol.** Before modifying a function, class, or method, run `gitnexus_impact({target: "symbolName", direction: "upstream"})` and report the blast radius (direct callers, affected processes, risk level) to the user.
+- **MUST run `gitnexus_detect_changes()` before committing** to verify your changes only affect expected symbols and execution flows.
+- **MUST warn the user** if impact analysis returns HIGH or CRITICAL risk before proceeding with edits.
+- When exploring unfamiliar code, use `gitnexus_query({query: "concept"})` to find execution flows instead of grepping. It returns process-grouped results ranked by relevance.
+- When you need full context on a specific symbol — callers, callees, which execution flows it participates in — use `gitnexus_context({name: "symbolName"})`.
+
+## When Debugging
+
+1. `gitnexus_query({query: "<error or symptom>"})` — find execution flows related to the issue
+2. `gitnexus_context({name: "<suspect function>"})` — see all callers, callees, and process participation
+3. `READ gitnexus://repo/agentforge/process/{processName}` — trace the full execution flow step by step
+4. For regressions: `gitnexus_detect_changes({scope: "compare", base_ref: "main"})` — see what your branch changed
+
+## When Refactoring
+
+- **Renaming**: MUST use `gitnexus_rename({symbol_name: "old", new_name: "new", dry_run: true})` first. Review the preview — graph edits are safe, text_search edits need manual review. Then run with `dry_run: false`.
+- **Extracting/Splitting**: MUST run `gitnexus_context({name: "target"})` to see all incoming/outgoing refs, then `gitnexus_impact({target: "target", direction: "upstream"})` to find all external callers before moving code.
+- After any refactor: run `gitnexus_detect_changes({scope: "all"})` to verify only expected files changed.
+
+## Never Do
+
+- NEVER edit a function, class, or method without first running `gitnexus_impact` on it.
+- NEVER ignore HIGH or CRITICAL risk warnings from impact analysis.
+- NEVER rename symbols with find-and-replace — use `gitnexus_rename` which understands the call graph.
+- NEVER commit changes without running `gitnexus_detect_changes()` to check affected scope.
+
+## Tools Quick Reference
+
+| Tool | When to use | Command |
+|------|-------------|---------|
+| `query` | Find code by concept | `gitnexus_query({query: "auth validation"})` |
+| `context` | 360-degree view of one symbol | `gitnexus_context({name: "validateUser"})` |
+| `impact` | Blast radius before editing | `gitnexus_impact({target: "X", direction: "upstream"})` |
+| `detect_changes` | Pre-commit scope check | `gitnexus_detect_changes({scope: "staged"})` |
+| `rename` | Safe multi-file rename | `gitnexus_rename({symbol_name: "old", new_name: "new", dry_run: true})` |
+| `cypher` | Custom graph queries | `gitnexus_cypher({query: "MATCH ..."})` |
+
+## Impact Risk Levels
+
+| Depth | Meaning | Action |
+|-------|---------|--------|
+| d=1 | WILL BREAK — direct callers/importers | MUST update these |
+| d=2 | LIKELY AFFECTED — indirect deps | Should test |
+| d=3 | MAY NEED TESTING — transitive | Test if critical path |
+
+## Resources
+
+| Resource | Use for |
+|----------|---------|
+| `gitnexus://repo/agentforge/context` | Codebase overview, check index freshness |
+| `gitnexus://repo/agentforge/clusters` | All functional areas |
+| `gitnexus://repo/agentforge/processes` | All execution flows |
+| `gitnexus://repo/agentforge/process/{name}` | Step-by-step execution trace |
+
+## Self-Check Before Finishing
+
+Before completing any code modification task, verify:
+1. `gitnexus_impact` was run for all modified symbols
+2. No HIGH/CRITICAL risk warnings were ignored
+3. `gitnexus_detect_changes()` confirms changes match expected scope
+4. All d=1 (WILL BREAK) dependents were updated
+
+## Keeping the Index Fresh
+
+After committing code changes, the GitNexus index becomes stale. Re-run analyze to update it:
 
 ```bash
-# Build all packages (respects dependency order via turbo)
-pnpm build
-
-# Run all tests
-pnpm test
-
-# Run tests for a single package
-pnpm --filter @primo-ai/core test
-
-# Run a single test file
-pnpm --filter @primo-ai/core vitest run __tests__/pipeline.test.ts
-
-# Type-check all packages
-pnpm check-types
-
-# Run a single example (requires .env in examples/)
-cd examples && npx tsx unified-demo.ts
+npx gitnexus analyze
 ```
 
-## Architecture
+If the index previously included embeddings, preserve them by adding `--embeddings`:
 
-**AgentForge** is a TypeScript agent framework built around a Processor Pipeline model. The agent lifecycle is a linear pipeline of stages, each simultaneously an extension point (Processor), an observability span, and a hook interception point.
-
-### Monorepo Structure (pnpm + Turborepo)
-
-```
-packages/
-  sdk/         — Pure type definitions (PipelineContext, Processor, Tool, Span, etc.)
-  tools/       — Tool implementations (echo tool, etc.)
-  observability/ — Span/Tracer/Metrics abstractions + OTel bridge
-  core/        — PipelineRunner, Agent (orchestration), LLMInvoker, ToolRegistry, SessionManager, etc.
-    core/processors/ — 8 built-in pipeline stage processors (extracted from Agent)
-    process-input, build-context, prepare-step, invoke-llm, evaluate-iteration (substantive)
-    process-step-output, execute-tools, process-output (no-op extension points)
-    provider-history-compat (compat rules engine)
-    core/gateways/ — GatewayChain, BuiltInGateway, OpenAICompatibleGateway
-    provider-capabilities.ts — Provider capability detection
-    loop-orchestrator.ts — Loop orchestration logic (extracted from Agent, shared by run/stream)
-    parse-model.ts — parseModel function (extracted from model-resolver, eliminates circular dep)
-    state-machine.ts — Agent lifecycle state machine (pending→running→completed/paused/cancelled/error)
-    serialize.ts — PipelineContext serialization/deserialization (for suspend checkpoint)
-  plugins/     — Processor plugins: memory, compression, permission, skill, MCP, eviction
+```bash
+npx gitnexus analyze --embeddings
 ```
 
-Dependency direction: `sdk` (zero deps) ← `tools` / `observability` ← `core` ← `plugins`.
+To check whether embeddings exist, inspect `.gitnexus/meta.json` — the `stats.embeddings` field shows the count (0 means no embeddings). **Running analyze without `--embeddings` will delete any previously generated embeddings.**
 
-### Pipeline Context — Three Regions
+> Claude Code users: A PostToolUse hook handles this automatically after `git commit` and `git merge`.
 
-Every stage receives a `PipelineContext` with three regions:
-- `agent` — config + prompt + tool declarations + promptFragments
-- `iteration` — per-step state (step number, response, loopDirective, span)
-- `session` — cross-iteration state (input, sessionId, messageHistory, tokenUsage, plugin custom data)
+## CLI
 
-### Agent Lifecycle Pipeline
+| Task | Read this skill file |
+|------|---------------------|
+| Understand architecture / "How does X work?" | `.claude/skills/gitnexus/gitnexus-exploring/SKILL.md` |
+| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus/gitnexus-impact-analysis/SKILL.md` |
+| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus/gitnexus-debugging/SKILL.md` |
+| Rename / extract / split / refactor | `.claude/skills/gitnexus/gitnexus-refactoring/SKILL.md` |
+| Tools, resources, schema reference | `.claude/skills/gitnexus/gitnexus-guide/SKILL.md` |
+| Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
 
-```
-processInput → buildContext → [Agentic Loop:
-  prepareStep → gateLLM → invokeLLM → processStepOutput → gateTool → executeTools → evaluateIteration
-] → processOutput
-```
-
-The agentic loop repeats until `iteration.loopDirective` is `stop`. Processors can return an `AbortSignal` to abort with optional `retryFrom` a specific stage.
-
-### Key Patterns
-
-- **Processor**: `(context) => Promise<ProcessorResult>` — registered per stage, executes business logic. Substantive processors (`invokeLLM`, `buildContext`, etc.) live in `core/processors/` as factory functions; no-op extension points are const exports.
-- **Plugin**: factory function `(harness: HarnessAPI) => PluginRegistration` — registers processors, tools, hooks, resources
-- **Dynamic\<T\>**: `T | ((ctx) => T)` — AgentConfig fields resolved per-request at `processInput` stage
-- **ToolRegistry**: adapts Tool definitions to AI SDK format via `toAiSdkToolSchemas()` (schemas only, no execute). AgentForge pipeline controls tool execution via `executeTool()` with before/after hooks.
-- **LoopOrchestrator**: extracted loop orchestration logic shared by `run()`/`stream()` — handles abort, retry, compat rule application, and suspend checkpointing. Agent is now a thin facade (construct + register + delegate).
-- **AgentRunResult**: `run()` returns `{ response, tokenUsage, sessionId }` rather than a bare string.
-- **Model resolution**: `ModelFactory` is the single canonical path (instantiated, injectable). `resolveModel()` is `@deprecated`. `parseModel` is exported from `parse-model.ts`, eliminating the circular dependency in model-resolver.
-- **StateMachine**: Agent lifecycle states (`pending`/`running`/`paused`/`completed`/`cancelled`/`error`). Terminal states can be reset back to `pending` to support multiple `run()` calls.
-- **Suspend/Resume**: on suspend, `serialize()` stores a checkpoint; `Agent.resume(sessionId)` deserializes and continues the loop.
-- **LLMInvoker**: wraps `ai.streamText()` for single-step LLM calls (no `maxSteps`), returns `fullStream` + `usage` + `reasoning` promises. `stream()` now includes `llm.stream` span tracking and retry on initial streamText connection. Retry at invoke level only.
-- **Provider compatibility**: `ProviderCapabilities` detection + `CompatRule` engine. Preemptive rules rewrite messages before LLM call; reactive rules fix history on API error. `providerOptions` passthrough from `AgentConfig` to `streamText()`.
-
-### Three-Form / 7-Module / AOP Mapping
-
-**Three-Form → Code**
-
-| Form | Capability | Code |
-|------|-----------|------|
-| Form 1: Agent Loop | while loop | `LoopOrchestrator.runLoop/streamLoop` |
-| | LLM call | `LLMInvoker.invoke/stream` |
-| | Tools | `ToolRegistry` + `executeTools` processor |
-| | Context assembly | `ContextBuilder.assemble` |
-| Form 2: Harness | observe | `EventSystem` + span attributes + events |
-| | control | `StateMachine` + token cap + step limit |
-| | intervene | `HookManager` + compat rules + abort |
-| Form 3: Runtime | EventBus | `EventSystem` (EventBus + replay) |
-| | LifecycleState | `StateMachine` (inside LoopOrchestrator) |
-| | Hooks | `HookManager` |
-
-**7-Module → Source + Forms**
-
-| Module | Source | Forms |
-|--------|--------|-------|
-| PipelineRunner | `core/pipeline.ts` | 1 |
-| ContextBuilder | `core/context-builder.ts` | 1 |
-| LLMInvoker | `core/llm-invoker.ts` | 1 |
-| ToolRegistry | `core/tool-registry.ts` | 1 |
-| EventSystem | `core/event-system.ts` + `event-bus.ts` | 2, 3 |
-| HookManager | `core/hook-manager.ts` | 2, 3 |
-| CheckpointStore | `core/checkpoint-store.ts` | 2 |
-
-**AOP Three Methods → Code**
-
-| Method | Mechanism | Code |
-|--------|-----------|------|
-| Method 1: Callback/Hook | Fixed-position interception | `HookManager`, tool before/after hooks |
-| Method 2: Flow as Data | Configurable pipeline stages | `LoopOrchestrator` stage arrays + `PipelineStageConfig` |
-| Method 3: Side Observing | Non-intrusive event emission | `EventSystem` (emit + replay) |
-
-### Configuration Merging
-
-Multi-level JSONC config (highest priority first):
-1. Session-level — runtime params passed to `agent.run()`
-2. Project-level — `.agentforge/config.jsonc`
-3. Global-level — `~/.agentforge/config.jsonc`
-4. Environment — `AGENTFORGE_CONFIG` env var
-
-Arrays `plugins` and `modelGateways` use concat merge; all other arrays are overridden.
-
-### Skill Discovery
-
-AgentForge automatically discovers skills from multiple directories (lowest to highest priority):
-
-1. `{project}/.agentforge/skills/` — project-level AgentForge skills
-2. `{project}/.agents/skills/` — project-level ecosystem skills (Claude Code compatible)
-3. `~/.agentforge/skills/` — user-level AgentForge skills
-4. `~/.agents/skills/` — user-level ecosystem skills (Claude Code compatible)
-5. `skills.paths` — additional directories configured in `config.jsonc` (highest priority)
-
-To configure extra skill directories, add to `config.jsonc`:
-
-```jsonc
-{
-  "skills": {
-    "paths": [
-      "/path/to/shared/skills",
-      "./relative/skills"
-    ]
-  }
-}
-```
-
-Each skill is a directory containing a `SKILL.md` file with YAML frontmatter:
-
-```markdown
----
-name: my-skill
-description: A useful skill
-triggers:
-  - pattern: "keyword"
----
-
-Skill instructions here...
-```
-
-### Session Persistence
-
-SessionManagerImpl.restore() handles all 11 event types. Agent supports optional SessionManager dependency injection. JSONL file storage with tree branching via `parentSessionId`. Supports suspend/resume + checkpoint for HITL workflows.
-
-## Agent skills
-
-### Issue tracker
-
-Issues tracked as local markdown files in `.scratch/`. See `docs/agents/issue-tracker.md`.
-
-### Triage labels
-
-Default triage label vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
-
-### Domain docs
-
-Single-context layout (`CONTEXT.md` + `design/adr/` at repo root). See `docs/agents/domain.md`.
+<!-- gitnexus:end -->

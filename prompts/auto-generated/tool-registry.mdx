@@ -1,0 +1,106 @@
+---
+title: "ToolRegistry"
+type: "class"
+author: "AI-Assistant"
+date: "2026-04-06"
+version: "1.0.0"
+sourceFile: "src/registry.ts"
+complexity: "low"
+tests: []
+dependencies: ["zod"]
+---
+
+# ToolRegistry
+
+## Description
+
+Registry for managing agent tools. Provides registration, lookup, and execution of tools with validation.
+
+## Signature
+
+```typescript
+class ToolRegistry {
+  register(tool: Tool): void
+  get(name: string): Tool | undefined
+  list(): Tool[]
+  async execute(name: string, args: Record<string, unknown>): Promise<string>
+}
+```
+
+## Methods
+
+### register(tool)
+
+Register tool with validation.
+
+```typescript
+const tool = {
+  name: 'calculator',
+  description: 'Calculate math expression',
+  parameters: {
+    type: 'object',
+    properties: { expr: { type: 'string' } },
+    required: ['expr']
+  },
+  execute: async (args) => String(eval(args.expr))
+};
+
+registry.register(tool);
+```
+
+### get(name)
+
+Get tool by name.
+
+**Returns:** `Tool | undefined`
+
+### list()
+
+List all registered tools.
+
+**Returns:** `Tool[]`
+
+### execute(name, args)
+
+Execute tool by name with arguments.
+
+**Returns:** `Promise<string>` - Tool result as string
+
+**Throws:** `Error` if tool not found
+
+## Examples
+
+### Example 1: Register and Execute
+
+```typescript
+import { ToolRegistry } from 'primo-agent';
+
+const registry = new ToolRegistry();
+
+registry.register({
+  name: 'add',
+  description: 'Add two numbers',
+  execute: async ({ a, b }) => String(a + b)
+});
+
+const result = await registry.execute('add', { a: 2, b: 3 });
+console.log(result); // "5"
+```
+
+### Example 2: Tool Discovery
+
+```typescript
+const tools = registry.list();
+for (const tool of tools) {
+  console.log(`${tool.name}: ${tool.description}`);
+}
+```
+
+## Dependencies
+
+- `zod` (via validateTool from types)
+
+## Related
+
+- [Tools](./tools/index.mdx)
+- [Agent](./agent.mdx)

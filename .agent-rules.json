@@ -1,0 +1,87 @@
+{
+  "version": "1.0.0",
+  "description": "Rules for automatic MDX documentation generation",
+  "rules": {
+    "autoGenerate": {
+      "enabled": true,
+      "triggers": [
+        {
+          "condition": "lines > 20",
+          "description": "Generate MDX for files with more than 20 lines of code"
+        },
+        {
+          "condition": "exports.length > 0",
+          "description": "Generate MDX for modules that export public APIs"
+        }
+      ],
+      "exclude": [
+        "**/*.test.ts",
+        "**/*.spec.ts",
+        "**/__tests__/**",
+        "**/node_modules/**",
+        "**/dist/**",
+        "**/*.d.ts",
+        "**/examples/**"
+      ]
+    },
+    "pathRules": {
+      "baseDirectory": "prompts/auto-generated",
+      "mirrorStructure": true,
+      "mapping": {
+        "src/": "prompts/auto-generated/",
+        "src/agent/": "prompts/auto-generated/agent/",
+        "src/server/": "prompts/auto-generated/server/",
+        "src/session/": "prompts/auto-generated/session/",
+        "src/plugin/": "prompts/auto-generated/plugin/",
+        "src/adapters/": "prompts/auto-generated/adapters/",
+        "src/tools/": "prompts/auto-generated/tools/"
+      }
+    },
+    "requiredFields": {
+      "frontmatter": [
+        "title",
+        "type",
+        "author",
+        "date",
+        "version",
+        "sourceFile",
+        "complexity",
+        "tests",
+        "dependencies"
+      ],
+      "content": [
+        "Description",
+        "Signature",
+        "Parameters",
+        "Returns",
+        "Examples (minimum 2)",
+        "Dependencies",
+        "Related"
+      ]
+    },
+    "exampleRequirements": {
+      "minCount": 2,
+      "mustBeRunnable": true,
+      "showInput": true,
+      "showOutput": true
+    }
+  },
+  "workflow": {
+    "onNewCode": [
+      "1. Check if file meets auto-generate triggers",
+      "2. If yes, create MDX with template",
+      "3. Fill in frontmatter from source",
+      "4. Extract signature and types",
+      "5. Generate parameter tables",
+      "6. Add dependency analysis",
+      "7. Create runnable examples"
+    ],
+    "onCodeUpdate": [
+      "1. Check if MDX exists",
+      "2. Update frontmatter (date, version)",
+      "3. Update signature if changed",
+      "4. Add new examples if needed",
+      "5. Update dependencies"
+    ]
+  }
+}

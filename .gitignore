@@ -1,14 +1,53 @@
+# Dependencies
 node_modules/
+
+# Build outputs
 dist/
-.turbo/
-.tmp/
-*.tsbuildinfo
-coverage/
+build/
+
+# Environment files
 .env
-docs/.vitepress/cache/
-docs/.vitepress/dist/
-.playwright-mcp/
-*.jpg
-!agentforge-logo-v4.jpg
-*.png
-.claude/settings.local.json
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Data and storage
+data/
+data/sessions.db
+*.db
+
+# IDE and editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Tool
+.gitnexus/
+.codemate/
+
+# Worktrees
+.worktrees/
+
+# Test fixtures (generated)
+tests/__test_project__/

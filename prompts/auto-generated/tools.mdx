@@ -1,0 +1,89 @@
+---
+title: "Tools"
+type: "config"
+author: "AI-Assistant"
+date: "2026-04-06"
+version: "1.0.0"
+sourceFile: "src/tools/index.ts"
+complexity: "low"
+tests: []
+dependencies: []
+---
+
+# Tools
+
+## Description
+
+Built-in tool definitions for the agent. Includes calculator and web search tools.
+
+## Exports
+
+### calculatorTool
+
+```typescript
+const calculatorTool: Tool = {
+  name: 'calculator',
+  description: 'Calculate a math expression and return the result. Input should be a math expression like "2+2" or "123*456".',
+  parameters: {
+    type: 'object',
+    properties: {
+      expr: {
+        type: 'string',
+        description: 'The math expression to calculate',
+      },
+    },
+    required: ['expr'],
+  },
+  execute: async (args) => { ... }
+}
+```
+
+### searchTool
+
+```typescript
+const searchTool: Tool = {
+  name: 'web_search',
+  description: 'Search the web for information. Takes a query string.',
+  parameters: {
+    type: 'object',
+    properties: {
+      query: {
+        type: 'string',
+        description: 'The search query',
+      },
+    },
+    required: ['query'],
+  },
+  execute: async (args) => { ... }
+}
+```
+
+### allTools
+
+Array containing all built-in tools: `[calculatorTool, searchTool]`
+
+## Examples
+
+### Register Tools
+
+```typescript
+import { allTools, ToolRegistry } from 'primo-agent';
+
+const registry = new ToolRegistry();
+for (const tool of allTools) {
+  registry.register(tool);
+}
+
+// Use in agent
+const result = await registry.execute('calculator', { expr: '2+2' });
+console.log(result); // "4"
+```
+
+## Dependencies
+
+None
+
+## Related
+
+- [ToolRegistry](./tool-registry.mdx)
+- [Agent](./agent.mdx)
