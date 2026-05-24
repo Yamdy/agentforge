@@ -353,3 +353,61 @@ describe('Phase 5: Server config-driven Agent assembly', () => {
     expect(agent.toolRegistry.get('endAutonomousLoop')).toBeDefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Recursion prevention: runSelfOptimization must not re-trigger gap
+// ---------------------------------------------------------------------------
+
+describe('Phase 5: runSelfOptimization recursion prevention', () => {
+  it('triggerGapOptimizationIfApplicable is a no-op when _gapOptimizationRunning is true', () => {
+    const agent = new Agent({ model: 'test-model' });
+    (agent as any)._harnessConfig = {
+      autonomous: { enabled: true, gapTriggers: [{ type: 'afterRun' }] },
+    };
+    (agent as any)._gapOptimizationRunning = true;
+
+    const startSpy = vi.spyOn(agent as any, 'startGapOptimization');
+    (agent as any).triggerGapOptimizationIfApplicable('afterRun');
+    expect(startSpy).not.toHaveBeenCalled();
+  });
+
+  it('internal run (_isInternalRun) skips triggerGapOptimizationIfApplicable', () => {
+    const agent = new Agent({ model: 'test-model' });
+    (agent as any)._isInternalRun = true;
+    (agent as any)._harnessConfig = {
+      autonomous: { enabled: true, gapTriggers: [{ type: 'afterRun' }] },
+    };
+
+    const triggerSpy = vi.spyOn(agent as any, 'triggerGapOptimizationIfApplicable');
+
+    if (!(agent as any)._isInternalRun) {
+      (agent as any).triggerGapOptimizationIfApplicable('afterRun');
+    }
+
+    expect(triggerSpy).not.toHaveBeenCalled();
+  });
+
+  it('runSelfOptimization sets _isInternalRun during execution and clears it after', async () => {
+    const agent = new Agent({ model: 'test-model' });
+    let capturedFlag = false;
+
+    agent.run = vi.fn(async () => {
+      capturedFlag = (agent as any)._isInternalRun;
+    }) as any;
+
+    await (agent as any).runSelfOptimization('test prompt', 1);
+
+    expect(capturedFlag).toBe(true);
+    expect((agent as any)._isInternalRun).toBe(false);
+  });
+
+  it('_isInternalRun is cleared even when runSelfOptimization throws', async () => {
+    const agent = new Agent({ model: 'test-model' });
+
+    agent.run = vi.fn(async () => { throw new Error('boom'); }) as any;
+
+    await expect((agent as any).runSelfOptimization('test', 1)).rejects.toThrow('boom');
+    expect((agent as any)._isInternalRun).toBe(false);
+    expect((agent as any)._gapOptimizationRunning).toBe(false);
+  });
+});

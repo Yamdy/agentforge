@@ -133,6 +133,7 @@ export class Agent {
   private selfRef: { agent: Agent } = { agent: undefined! };
   private _pendingModifications: SelfModificationRequest[] = [];
   private _gapOptimizationRunning = false;
+  private _isInternalRun = false;
   private _engineContext: SelfModificationEngineContext;
   private _harnessConfig?: import('@primo-ai/sdk').HarnessConfig;
 
@@ -298,12 +299,13 @@ export class Agent {
       this.activeAbortController = null;
       // agent.end hook — always fires, even on error; suppress hook errors to preserve original
       try { await hm.invoke('agent.end', { sessionId: context.session.sessionId }, {}); } catch { /* hook error must not mask original */ }
-      this.triggerGapOptimizationIfApplicable('afterRun');
+      if (!this._isInternalRun) this.triggerGapOptimizationIfApplicable('afterRun');
     }
   }
 
   /** Check AutonomousConfig.gapTriggers and start gap optimization if a trigger matches. */
   private triggerGapOptimizationIfApplicable(triggerType: 'afterRun' | 'onError'): void {
+    if (this._gapOptimizationRunning) return;
     const autonomous = this._harnessConfig?.autonomous;
     if (!autonomous?.enabled || !autonomous.gapTriggers?.length) return;
     const match = autonomous.gapTriggers.find((t: { type: string }) => t.type === triggerType);
@@ -349,7 +351,7 @@ export class Agent {
       throw error;
     } finally {
       try { await hm.invoke('agent.end', { sessionId }, {}); } catch { /* hook error must not mask original */ }
-      this.triggerGapOptimizationIfApplicable('afterRun');
+      if (!this._isInternalRun) this.triggerGapOptimizationIfApplicable('afterRun');
     }
   }
 
@@ -387,7 +389,7 @@ export class Agent {
     } finally {
       this.activeAbortController = null;
       try { await hm.invoke('agent.end', { sessionId: context.session.sessionId }, {}); } catch { /* hook error must not mask original */ }
-      this.triggerGapOptimizationIfApplicable('afterRun');
+      if (!this._isInternalRun) this.triggerGapOptimizationIfApplicable('afterRun');
     }
   }
 
@@ -423,7 +425,7 @@ export class Agent {
     } finally {
       this.activeAbortController = null;
       try { await hm.invoke('agent.end', { sessionId: context.session.sessionId }, {}); } catch { /* hook error must not mask original */ }
-      this.triggerGapOptimizationIfApplicable('afterRun');
+      if (!this._isInternalRun) this.triggerGapOptimizationIfApplicable('afterRun');
     }
   }
 
@@ -501,6 +503,7 @@ export class Agent {
 
   /** Execute the self-optimization loop: run → collect proposals → apply. */
   private async runSelfOptimization(prompt: string, maxOptimizations: number): Promise<void> {
+    this._isInternalRun = true;
     try {
       await this.run(prompt);
       if (this._pendingModifications.length > 0) {
@@ -511,6 +514,7 @@ export class Agent {
       }
     } finally {
       this._gapOptimizationRunning = false;
+      this._isInternalRun = false;
       this.eventBus.emit('gap:ended', {});
     }
   }
