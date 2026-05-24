@@ -38,12 +38,18 @@ export class PluginManager {
   private _eventSystem = new EventSystem();
   readonly hookManager: HookManager;
   private _harnessInstances: HarnessAPIImpl[] = [];
+  private _pluginNames: string[] = [];
   private resourceInstances = new Map<string, unknown>();
   private errors: Array<{ source: string; error: Error }> = [];
   private stageMutator?: (mutation: StageMutation) => void;
 
   get eventBus(): EventBus {
     return this._eventSystem.bus;
+  }
+
+  /** Names of all initialized plugins in registration order. */
+  get pluginNames(): string[] {
+    return [...this._pluginNames];
   }
 
   get eventSystem(): EventSystem {
@@ -80,6 +86,8 @@ export class PluginManager {
 
   initializePlugin(factory: PluginFactory): void {
     const api = this.createHarnessAPI();
+    const name = factory.name || `plugin-${this._harnessInstances.length}`;
+    this._pluginNames.push(name);
     factory(api);
   }
 
@@ -195,6 +203,7 @@ export class PluginManager {
       for (const unsub of h.getUnsubFns()) unsub();
     }
     this._harnessInstances = [];
+    this._pluginNames = [];
   }
 
   private createHarnessAPI(): HarnessAPI {

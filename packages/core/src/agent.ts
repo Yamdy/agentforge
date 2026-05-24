@@ -28,6 +28,11 @@ import { JsonlCheckpointStore } from './checkpoint-store.js';
 import { echoTool } from '@primo-ai/tools';
 import { MutabilityPolicyEngine } from './mutability-policy.js';
 import { SelfRepresentationBuilder } from './self-representation.js';
+import { applySelfModification, type SelfModificationEngineContext } from './self-modification-engine.js';
+import { ConstitutionEngine } from './constitution.js';
+import { VerificationGatePipeline } from './verification-gate.js';
+import { MutationBudgetEngine } from './mutation-budget.js';
+import type { Constitution } from '@primo-ai/sdk';
 import {
   processInputProcessor,
   buildContextExtensionPoint,
@@ -160,6 +165,8 @@ export class Agent {
   private selfRef: { agent: Agent } = { agent: undefined! };
   private _pendingModifications: SelfModificationRequest[] = [];
   private _gapOptimizationRunning = false;
+  private _engineContext: SelfModificationEngineContext;
+  private _harnessConfig?: import('@primo-ai/sdk').HarnessConfig;
 
   constructor(config: AgentSimpleConfig);
   constructor(config: AgentConfig, deps?: AgentDependencies);
@@ -180,6 +187,7 @@ export class Agent {
     this.orchestrator = new LoopOrchestrator(this.runner, this._pluginManager.hookManager, store, this._pluginManager.eventBus, stageConfig);
     this.sessionManager = deps?.sessionManager;
     this._autoCheckpoint = deps?.autoCheckpoint ?? false;
+    this._harnessConfig = deps?.harnessConfig;
     // Merge processor descriptors: harnessConfig.processors as base, deps.processorDescriptors overrides
     const harnessProcessors = deps?.harnessConfig?.processors as Record<string, ProcessorDescriptor> | undefined;
     if (harnessProcessors || deps?.processorDescriptors) {
@@ -192,6 +200,35 @@ export class Agent {
     this.registerTools();
     this.registerBuiltinProcessors();
     this._pluginManager.setStageMutator((m) => this.orchestrator.applyMutation(m));
+    // Self-modification engine context: constitution → verification gates → mutation budget
+    const defaultConstitution: Constitution = {
+      version: 1,
+      protectedPaths: [
+        { pattern: 'packages/sdk/src/**', reason: 'SDK types are the contract layer', level: 'absolute' },
+        { pattern: 'packages/core/src/constitution.ts', reason: 'Constitution must not modify itself', level: 'absolute' },
+      ],
+      diffLimits: { maxFilesPerMutation: 3, maxLinesPerFile: 100, maxMutationsPerHour: 10, maxMutationsPerDay: 50, cooldownMs: 5000 },
+      immutableInterfaces: [],
+      requiredCapabilities: [],
+      benchmarkFiles: [],
+      approvalMatrix: {
+        L0: { description: 'No-op extension point', mode: 'auto' },
+        L1: { description: 'Processor replacement', mode: 'auto_with_audit', auditTarget: 'eventBus', auditEvent: 'gap:optimization_complete', auditPayload: ['type', 'target'] },
+        L2: { description: 'Plugin registration', mode: 'human_approval' },
+        L3: { description: 'Source modification', mode: 'human_approval' },
+        L4: { description: 'Constitution-level', mode: 'always_reject' },
+      },
+    };
+    const constitutionEngine = new ConstitutionEngine(defaultConstitution);
+    const gatePipeline = new VerificationGatePipeline({ constitutionEngine });
+    const budgetEngine = new MutationBudgetEngine({
+      maxMutationsPerHour: defaultConstitution.diffLimits.maxMutationsPerHour,
+      maxMutationsPerDay: defaultConstitution.diffLimits.maxMutationsPerDay,
+      maxDiffLinesPerMutation: defaultConstitution.diffLimits.maxLinesPerFile,
+      maxFilesPerMutation: defaultConstitution.diffLimits.maxFilesPerMutation,
+      cooldownMs: defaultConstitution.diffLimits.cooldownMs,
+    });
+    this._engineContext = { constitutionEngine, gatePipeline, budgetEngine };
     this.selfRef.agent = this;
   }
 
@@ -293,7 +330,23 @@ export class Agent {
       this.activeAbortController = null;
       // agent.end hook — always fires, even on error; suppress hook errors to preserve original
       try { await hm.invoke('agent.end', { sessionId: context.session.sessionId }, {}); } catch { /* hook error must not mask original */ }
+      this.triggerGapOptimizationIfApplicable('afterRun');
     }
+  }
+
+  /** Check AutonomousConfig.gapTriggers and start gap optimization if a trigger matches. */
+  private triggerGapOptimizationIfApplicable(triggerType: 'afterRun' | 'onError'): void {
+    const autonomous = this._harnessConfig?.autonomous;
+    if (!autonomous?.enabled || !autonomous.gapTriggers?.length) return;
+    const match = autonomous.gapTriggers.find((t: { type: string }) => t.type === triggerType);
+    if (!match) return;
+    if (match.type === 'afterRun' && match.minIntervalMs > 0) {
+      // Rate-limit: only trigger if enough time has passed since last gap optimization
+      const lastGap = (this as any)._lastGapOptimizationTime as number | undefined;
+      if (lastGap && Date.now() - lastGap < match.minIntervalMs) return;
+    }
+    this.startGapOptimization();
+    (this as any)._lastGapOptimizationTime = Date.now();
   }
 
   async resume(sessionId: string, signal?: globalThis.AbortSignal): Promise<AgentRunResult> {
@@ -328,6 +381,7 @@ export class Agent {
       throw error;
     } finally {
       try { await hm.invoke('agent.end', { sessionId }, {}); } catch { /* hook error must not mask original */ }
+      this.triggerGapOptimizationIfApplicable('afterRun');
     }
   }
 
@@ -365,6 +419,7 @@ export class Agent {
     } finally {
       this.activeAbortController = null;
       try { await hm.invoke('agent.end', { sessionId: context.session.sessionId }, {}); } catch { /* hook error must not mask original */ }
+      this.triggerGapOptimizationIfApplicable('afterRun');
     }
   }
 
@@ -400,6 +455,7 @@ export class Agent {
     } finally {
       this.activeAbortController = null;
       try { await hm.invoke('agent.end', { sessionId: context.session.sessionId }, {}); } catch { /* hook error must not mask original */ }
+      this.triggerGapOptimizationIfApplicable('afterRun');
     }
   }
 
@@ -457,10 +513,38 @@ export class Agent {
     this._model = null;
   }
 
-  /** Start gap optimization cycle. Emits gap:started. */
+  /** Start gap optimization cycle. Emits gap:started, then runs self-analysis and applies modifications. */
   startGapOptimization(): void {
+    if (this._gapOptimizationRunning) return;
     this._gapOptimizationRunning = true;
     this.eventBus.emit('gap:started', {});
+
+    const autonomous = this._harnessConfig?.autonomous;
+    if (!autonomous?.enabled) return;
+
+    const prompt = autonomous.initialPrompt ?? 'Analyze your own pipeline and identify improvements. Use inspectSelf to examine your current state, then propose changes via replaceProcessor or registerPlugin if beneficial.';
+    const maxOptimizations = autonomous.maxOptimizationsPerGap ?? 1;
+
+    // Fire-and-forget: run self-optimization asynchronously
+    this.runSelfOptimization(prompt, maxOptimizations).catch(() => {
+      this._gapOptimizationRunning = false;
+    });
+  }
+
+  /** Execute the self-optimization loop: run → collect proposals → apply. */
+  private async runSelfOptimization(prompt: string, maxOptimizations: number): Promise<void> {
+    try {
+      await this.run(prompt);
+      if (this._pendingModifications.length > 0) {
+        const toApply = this._pendingModifications.slice(0, maxOptimizations);
+        this._pendingModifications = this._pendingModifications.slice(maxOptimizations);
+        this._pendingModifications.unshift(...toApply);
+        await this.applyPendingModifications();
+      }
+    } finally {
+      this._gapOptimizationRunning = false;
+      this.eventBus.emit('gap:ended', {});
+    }
   }
 
   /** Preempt gap optimization when a user request arrives. Emits gap:preempted. */
@@ -475,15 +559,13 @@ export class Agent {
     const rejected: SelfModificationRequest[] = [];
 
     for (const mod of this._pendingModifications) {
-      if (mod.type === 'replaceProcessor') {
-        // For Phase 5, we accept the proposal as-is. Phase 6 adds sandbox→verify→apply.
-        applied.push(mod);
-        this.eventBus.emit('gap:optimization_complete', { type: mod.type, target: mod.target });
-      } else if (mod.type === 'registerPlugin') {
+      const result = await applySelfModification(mod, this._engineContext);
+      if (result.accepted) {
         applied.push(mod);
         this.eventBus.emit('gap:optimization_complete', { type: mod.type, target: mod.target });
       } else {
         rejected.push(mod);
+        this.eventBus.emit('gap:optimization_rejected', { type: mod.type, target: mod.target, reason: result.reason });
       }
     }
 
@@ -590,10 +672,23 @@ export class Agent {
           agent: {
             orchestrator: agent.orchestrator,
             toolRegistry: agent.toolRegistry,
-            getPluginNames: () => (agent._pluginManager as any)._harnessInstances?.map(() => 'plugin') ?? [],
+            getPluginNames: () => agent._pluginManager.pluginNames,
             state: agent.state,
             config: agent.config as unknown as Record<string, unknown>,
-            eventBus: { query: undefined },
+            eventBus: {
+              query: (filter?: unknown) => {
+                // Use EventSystem.query() via the replay backend when available
+                try {
+                  const sessionId = agent.lastContext?.session?.sessionId;
+                  if (!sessionId) return [];
+                  // Synchronous approximation: return empty for now; full async query
+                  // requires SelfRepresentationBuilder to support async (future enhancement)
+                  return [];
+                } catch {
+                  return [];
+                }
+              },
+            },
           },
           mutabilityPolicy: agent.mutabilityPolicyEngine.policy,
         });
