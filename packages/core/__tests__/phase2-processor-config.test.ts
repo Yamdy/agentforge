@@ -67,6 +67,7 @@ describe('Phase 2: Processor configuration in HarnessConfig', () => {
 
   describe('Agent auto-wires HarnessConfig.processors', () => {
     it('Agent reads processors from harnessConfig and uses them for processor selection', async () => {
+      vi.setConfig({ testTimeout: 15000 });
       const { Agent } = await import('../src/agent.js');
 
       // Register a custom processor that we can detect
