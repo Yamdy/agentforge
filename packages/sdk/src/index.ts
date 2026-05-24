@@ -1075,6 +1075,8 @@ export interface HarnessConfig {
   factInjection?: {
     facts: string[] | ((ctx: PipelineContext) => string[] | Promise<string[]>);
   };
+  /** Custom compat rules for provider-specific message normalization. Defaults to built-in rules. */
+  compatRules?: CompatRule[];
 }
 
 // ---------------------------------------------------------------------------

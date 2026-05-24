@@ -21,11 +21,11 @@ import { join } from 'node:path';
 import type { CircuitBreaker } from './circuit-breaker.js';
 import type { RetryStateStore } from './retry-state-store.js';
 
-const PRE_LOOP_STAGES: PipelineStage[] = ['processInput', 'buildContext'];
-const LOOP_STAGES: PipelineStage[] = [
-  'prepareStep', 'gateLLM', 'invokeLLM', 'processStepOutput', 'gateTool', 'executeTools', 'evaluateIteration',
-];
-const POST_LOOP_STAGES: PipelineStage[] = ['processOutput'];
+const DEFAULT_STAGE_CONFIG: PipelineStageConfig = {
+  preLoop: ['processInput', 'buildContext'],
+  loop: ['prepareStep', 'gateLLM', 'invokeLLM', 'processStepOutput', 'gateTool', 'executeTools', 'evaluateIteration'],
+  postLoop: ['processOutput'],
+};
 
 // ---------------------------------------------------------------------------
 // RunMode — concurrent control for shell-interrupt
@@ -154,9 +154,9 @@ export class LoopOrchestrator {
       join(process.cwd(), '.agentforge', 'checkpoints'),
     );
     this.eventBus = eventBus;
-    this.preLoopStages = stageConfig?.preLoop ?? PRE_LOOP_STAGES;
-    this.loopStages = stageConfig?.loop ?? LOOP_STAGES;
-    this.postLoopStages = stageConfig?.postLoop ?? POST_LOOP_STAGES;
+    this.preLoopStages = stageConfig?.preLoop ?? DEFAULT_STAGE_CONFIG.preLoop!;
+    this.loopStages = stageConfig?.loop ?? DEFAULT_STAGE_CONFIG.loop!;
+    this.postLoopStages = stageConfig?.postLoop ?? DEFAULT_STAGE_CONFIG.postLoop!;
     this.snapshotService = snapshotService;
   }
 
@@ -173,9 +173,6 @@ export class LoopOrchestrator {
   }
 
   applyMutation(mutation: StageMutation): void {
-    if (this.stateMachine.current !== 'pending') {
-      throw new Error(`Stage mutations only allowed before first run (current: ${this.stateMachine.current})`);
-    }
     const arr = mutation.phase === 'preLoop' ? this.preLoopStages
       : mutation.phase === 'loop' ? this.loopStages
       : this.postLoopStages;

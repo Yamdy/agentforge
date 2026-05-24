@@ -88,8 +88,12 @@ describe('Phase 1b: ProcessorRegistry', () => {
     });
   });
 
-  describe('global registry has built-in processors', () => {
-    it('globalProcessorRegistry has all 10 built-in processor names', async () => {
+  describe('global registry has built-in processors (after Agent init)', () => {
+    it('globalProcessorRegistry has all 10 built-in processor names after Agent creation', async () => {
+      // Processors are registered by Agent.ensureProcessorsRegistered(), not module side effects
+      const { Agent } = await import('../src/agent.js');
+      new Agent({ model: 'test-model' });
+
       const { globalProcessorRegistry } = await import('../src/processor-registry.js');
       const names = globalProcessorRegistry.list();
 

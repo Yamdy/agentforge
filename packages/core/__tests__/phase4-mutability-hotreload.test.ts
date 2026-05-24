@@ -221,10 +221,10 @@ describe('MutabilityPolicyEngine', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Harness.freeze() controlled by MutabilityPolicy
+// Harness mutability controlled by MutabilityPolicyEngine
 // ---------------------------------------------------------------------------
 
-describe('Harness freeze respects MutabilityPolicy', () => {
+describe('Harness mutations respect MutabilityPolicy', () => {
   function createHarnessDeps(): HarnessDeps {
     const eventBus = new EventBus();
     return {
@@ -239,15 +239,14 @@ describe('Harness freeze respects MutabilityPolicy', () => {
     };
   }
 
-  it('frozen policy: freeze blocks stage mutations', () => {
+  it('frozen policy: blocks stage mutations', () => {
     const deps = createHarnessDeps();
     const harness = new HarnessAPIImpl(deps);
     harness.setMutabilityPolicy(new MutabilityPolicyEngine());
-    harness.freeze();
     expect(() => harness.insertStage('loop', 'invokeLLM', 'customStage')).toThrow();
   });
 
-  it('dynamic policy: freeze does not block stage mutations', () => {
+  it('dynamic policy: allows stage mutations', () => {
     const deps = createHarnessDeps();
     const harness = new HarnessAPIImpl(deps);
     const policy = new MutabilityPolicyEngine({
@@ -259,11 +258,10 @@ describe('Harness freeze respects MutabilityPolicy', () => {
       watchConfig: false,
     });
     harness.setMutabilityPolicy(policy);
-    harness.freeze();
     expect(() => harness.insertStage('loop', 'invokeLLM', 'customStage')).not.toThrow();
   });
 
-  it('configOnly policy: freeze blocks direct mutations', () => {
+  it('configOnly policy: blocks direct mutations', () => {
     const deps = createHarnessDeps();
     const harness = new HarnessAPIImpl(deps);
     const policy = new MutabilityPolicyEngine({
@@ -275,7 +273,6 @@ describe('Harness freeze respects MutabilityPolicy', () => {
       watchConfig: false,
     });
     harness.setMutabilityPolicy(policy);
-    harness.freeze();
     expect(() => harness.insertStage('loop', 'invokeLLM', 'customStage')).toThrow();
   });
 });

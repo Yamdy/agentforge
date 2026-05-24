@@ -113,38 +113,6 @@ const defaultProcessorDescriptors: Record<string, ProcessorDescriptor> = {
   processOutput: { builtin: 'processOutput' },
 };
 
-let _builtinsRegistered = false;
-
-function registerBuiltinProcessorsOnce(): void {
-  if (_builtinsRegistered) return;
-  _builtinsRegistered = true;
-  globalProcessorRegistry.register('processInput', () => processInputProcessor);
-  globalProcessorRegistry.register('buildContext', () => buildContextExtensionPoint);
-  globalProcessorRegistry.register('prepareStep', () => prepareStepExtensionPoint);
-  globalProcessorRegistry.register('gateLLM', () => ({
-    stage: 'gateLLM' as const,
-    execute: async (ctx) => ctx.state,
-    isNoOp: true,
-  }));
-  globalProcessorRegistry.register('invokeLLM', (deps?: ProcessorDeps) =>
-    createInvokeLLMProcessor({
-      getLLM: deps?.getLLM as any,
-      registry: deps?.registry as any,
-      hookManager: deps?.hookManager as any,
-      modelString: deps?.modelString ?? '',
-    }),
-  );
-  globalProcessorRegistry.register('processStepOutput', () => processStepOutputProcessor);
-  globalProcessorRegistry.register('gateTool', () => gateToolExtensionPoint);
-  globalProcessorRegistry.register('executeTools', (deps?: ProcessorDeps) =>
-    createExecuteToolsProcessor(deps?.registry as any),
-  );
-  globalProcessorRegistry.register('evaluateIteration', (deps?: ProcessorDeps) =>
-    createEvaluateIterationProcessor({ eventBus: deps?.eventBus as any }),
-  );
-  globalProcessorRegistry.register('processOutput', () => processOutputProcessor);
-}
-
 export class Agent {
   private config: AgentConfig;
   private runner: PipelineRunner;
@@ -291,7 +259,7 @@ export class Agent {
     const signal = options instanceof AbortSignal ? options : options?.signal;
     const sessionId = options instanceof AbortSignal ? undefined : options?.sessionId;
     if (signal?.aborted) throw new DOMException('Agent run aborted', 'AbortError');
-    this._pluginManager.freezeHarnessInstances();
+    this._pluginManager.setMutabilityPolicyOnHarnesses(this.mutabilityPolicyEngine);
 
     const context = await this.buildContext(input, sessionId);
     const hm = this._pluginManager.hookManager;
@@ -763,8 +731,7 @@ export class Agent {
 
   private registerBuiltinProcessors(): void {
     const deps = this.buildProcessorDeps();
-    // Ensure built-in processors are registered (idempotent)
-    registerBuiltinProcessorsOnce();
+    this.ensureProcessorsRegistered();
     // Merge custom descriptors over defaults: custom takes precedence
     const descriptors = this._processorDescriptors
       ? { ...defaultProcessorDescriptors, ...this._processorDescriptors }
@@ -789,6 +756,35 @@ export class Agent {
       eventBus: this._pluginManager.eventBus,
       modelString: this.config.model,
     };
+  }
+
+  private ensureProcessorsRegistered(): void {
+    if (globalProcessorRegistry.has('processInput')) return;
+    globalProcessorRegistry.register('processInput', () => processInputProcessor);
+    globalProcessorRegistry.register('buildContext', () => buildContextExtensionPoint);
+    globalProcessorRegistry.register('prepareStep', () => prepareStepExtensionPoint);
+    globalProcessorRegistry.register('gateLLM', () => ({
+      stage: 'gateLLM' as const,
+      execute: async (ctx) => ctx.state,
+      isNoOp: true,
+    }));
+    globalProcessorRegistry.register('invokeLLM', (deps?: ProcessorDeps) =>
+      createInvokeLLMProcessor({
+        getLLM: deps?.getLLM as any,
+        registry: deps?.registry as any,
+        hookManager: deps?.hookManager as any,
+        modelString: deps?.modelString ?? '',
+      }),
+    );
+    globalProcessorRegistry.register('processStepOutput', () => processStepOutputProcessor);
+    globalProcessorRegistry.register('gateTool', () => gateToolExtensionPoint);
+    globalProcessorRegistry.register('executeTools', (deps?: ProcessorDeps) =>
+      createExecuteToolsProcessor(deps?.registry as any),
+    );
+    globalProcessorRegistry.register('evaluateIteration', (deps?: ProcessorDeps) =>
+      createEvaluateIterationProcessor({ eventBus: deps?.eventBus as any }),
+    );
+    globalProcessorRegistry.register('processOutput', () => processOutputProcessor);
   }
 }
 

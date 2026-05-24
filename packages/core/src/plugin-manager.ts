@@ -152,8 +152,8 @@ export class PluginManager {
     this.stageMutator = mutator;
   }
 
-  freezeHarnessInstances(): void {
-    for (const h of this._harnessInstances) h.freeze();
+  setMutabilityPolicyOnHarnesses(policy: import('./mutability-policy.js').MutabilityPolicyEngine): void {
+    for (const h of this._harnessInstances) h.setMutabilityPolicy(policy);
   }
 
   emitEvent(eventType: EventType, ...args: unknown[]): void {
