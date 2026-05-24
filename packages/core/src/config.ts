@@ -320,6 +320,46 @@ const AutonomousConfigSchema = z.object({
   errorBackoffMs: z.number().optional(),
 });
 
+// Phase 6b: Constitution schema
+const ProtectedPathSchema = z.object({
+  pattern: z.string(),
+  reason: z.string(),
+  level: z.enum(['absolute', 'approval']),
+});
+
+const DiffLimitsSchema = z.object({
+  maxFilesPerMutation: z.number(),
+  maxLinesPerFile: z.number(),
+  maxMutationsPerHour: z.number(),
+  maxMutationsPerDay: z.number(),
+  cooldownMs: z.number(),
+});
+
+const ImmutableInterfaceSchema = z.object({
+  module: z.string(),
+  export: z.string(),
+  members: z.array(z.string()),
+  reason: z.string(),
+});
+
+const ApprovalMatrixSchema = z.object({
+  L0: z.object({ description: z.string(), mode: z.literal('auto') }),
+  L1: z.object({ description: z.string(), mode: z.literal('auto_with_audit'), auditTarget: z.string(), auditEvent: z.string(), auditPayload: z.array(z.string()) }),
+  L2: z.object({ description: z.string(), mode: z.literal('human_approval') }),
+  L3: z.object({ description: z.string(), mode: z.literal('human_approval') }),
+  L4: z.object({ description: z.string(), mode: z.literal('always_reject') }),
+});
+
+export const ConstitutionSchema = z.object({
+  version: z.literal(1),
+  protectedPaths: z.array(ProtectedPathSchema),
+  diffLimits: DiffLimitsSchema,
+  immutableInterfaces: z.array(ImmutableInterfaceSchema),
+  requiredCapabilities: z.array(z.string()),
+  benchmarkFiles: z.array(z.string()),
+  approvalMatrix: ApprovalMatrixSchema,
+});
+
 const HarnessConfigSchema = z.object({
   agents: z.record(z.string(), z.unknown()).optional(),
   tools: ToolSetConfigSchema.optional(),

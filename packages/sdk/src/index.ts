@@ -705,16 +705,211 @@ export interface SelfModificationRequest {
   type: 'replaceProcessor' | 'registerPlugin' | 'modifySource';
   target: string;
   payload: unknown;
-  riskLevel: 'L0' | 'L1' | 'L2' | 'L3';
+  riskLevel: 'L0' | 'L1' | 'L2' | 'L3' | 'L4';
   proposedDiff?: FilePatch[];
+}
+
+// ---------------------------------------------------------------------------
+// Self-Representation (Phase 6a)
+// ---------------------------------------------------------------------------
+
+/** Health check result for a single ECC layer or component. */
+export interface HealthCheckResult {
+  healthy: boolean;
+  reason?: string;
+  metrics?: Record<string, number>;
+}
+
+/** A module tracked in the agent's self-representation. */
+export interface ModuleInfo {
+  name: string;
+  path: string;
+  responsibility: string;
+  mutability: 'frozen' | 'configOnly' | 'dynamic';
+  exports: string[];
+  dependsOn: string[];
+}
+
+/** A dependency edge between two modules. */
+export interface ModuleDependency {
+  from: string;
+  to: string;
+  type: 'uses' | 'implements' | 'extends';
+}
+
+/** ECC 12-layer diagnostic entry for self-representation. */
+export interface LayerDiagnostic {
+  layer: number;
+  name: string;
+  agentForgeComponent: string;
+  codeGated: boolean;
+  knownFailurePatterns: string[];
+  lastCheckResult?: HealthCheckResult;
+  riskLevel: 'low' | 'medium' | 'high' | 'critical';
+}
+
+/** Record of a self-modification applied to the agent. */
+export interface ModificationRecord {
+  timestamp: string;
+  module: string;
+  type: 'processor' | 'plugin' | 'config' | 'source';
+  diff: string;
+  verificationResult: 'passed' | 'failed' | 'skipped';
+  approvedBy: 'auto' | 'human' | 'constitution';
+}
+
+/** Complete self-representation of the agent's architecture. */
+export interface SelfRepresentation {
+  modules: ModuleInfo[];
+  dependencies: ModuleDependency[];
+  layerDiagnostics: LayerDiagnostic[];
+  constitution: unknown;
+  modificationHistory: ModificationRecord[];
+}
+
+// ---------------------------------------------------------------------------
+// Constitution System (Phase 6b)
+// ---------------------------------------------------------------------------
+
+/** Protection level for a file path. */
+export interface ProtectedPath {
+  pattern: string;
+  reason: string;
+  level: 'absolute' | 'approval';
+}
+
+/** Limits on diff size and mutation rate. */
+export interface DiffLimits {
+  maxFilesPerMutation: number;
+  maxLinesPerFile: number;
+  maxMutationsPerHour: number;
+  maxMutationsPerDay: number;
+  cooldownMs: number;
+}
+
+/** An immutable interface member that cannot be modified by the agent. */
+export interface ImmutableInterface {
+  module: string;
+  export: string;
+  members: string[];
+  reason: string;
+}
+
+/** Approval matrix for different risk levels. */
+export interface ApprovalMatrix {
+  L0: { description: string; mode: 'auto' };
+  L1: { description: string; mode: 'auto_with_audit'; auditTarget: string; auditEvent: string; auditPayload: string[] };
+  L2: { description: string; mode: 'human_approval' };
+  L3: { description: string; mode: 'human_approval' };
+  L4: { description: string; mode: 'always_reject' };
+}
+
+/** Constitution — the immutable boundary definition for self-modification. */
+export interface Constitution {
+  version: 1;
+  protectedPaths: ProtectedPath[];
+  diffLimits: DiffLimits;
+  immutableInterfaces: ImmutableInterface[];
+  requiredCapabilities: string[];
+  benchmarkFiles: string[];
+  approvalMatrix: ApprovalMatrix;
+}
+
+// ---------------------------------------------------------------------------
+// Verification Gate (Phase 6c)
+// ---------------------------------------------------------------------------
+
+/** Result of a single verification gate. */
+export type GateResult =
+  | { passed: true; duration: number; details?: string }
+  | { passed: false; duration: number; errors: string[]; gate: string };
+
+/** A single verification gate in the pipeline. */
+export interface VerificationGate {
+  name: string;
+  level: number;
+  timeoutMs: number;
+  execute(diff: FilePatch[], context: VerificationContext): Promise<GateResult>;
+}
+
+/** Context passed to verification gates. */
+export interface VerificationContext {
+  constitution: Constitution;
+  snapshotId: string;
+  agentId: string;
+  skipGates?: number[];
+}
+
+/** Complete verification report for a self-modification attempt. */
+export interface VerificationReport {
+  timestamp: string;
+  diff: FilePatch[];
+  gates: GateResult[];
+  overall: 'passed' | 'failed';
+  approvedBy: 'auto' | 'human';
 }
 
 /** Result of processing a self-modification request. */
 export interface SelfModificationResult {
   accepted: boolean;
-  verificationReport?: unknown;
+  verificationReport?: VerificationReport;
   rollbackSnapshotId?: string;
   reason?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Degeneration Watchdog (Phase 6d)
+// ---------------------------------------------------------------------------
+
+/** Health check result. */
+export type HealthCheckOutcome =
+  | { healthy: true; metrics?: Record<string, number> }
+  | { healthy: false; reason: string; severity: 'warning' | 'critical' };
+
+/** A single health check definition. */
+export interface HealthCheck {
+  name: string;
+  level: 'L0' | 'L1' | 'L2';
+  check: () => Promise<HealthCheckOutcome>;
+}
+
+/** Watchdog configuration. */
+export interface WatchdogConfig {
+  checkIntervalMs: number;
+  degradationThreshold: number;
+  healthChecks: HealthCheck[];
+  autoRollback: boolean;
+  rollbackTarget: 'lastKnownGood' | 'lastSnapshot';
+}
+
+/** Watchdog runtime state. */
+export interface WatchdogState {
+  consecutiveFailures: number;
+  lastHealthySnapshot: string;
+  lastCheckTime: string;
+  totalRollbacks: number;
+}
+
+// ---------------------------------------------------------------------------
+// Mutation Budget (Phase 6e)
+// ---------------------------------------------------------------------------
+
+/** Mutation budget configuration. */
+export interface MutationBudgetConfig {
+  maxMutationsPerHour: number;
+  maxMutationsPerDay: number;
+  maxDiffLinesPerMutation: number;
+  maxFilesPerMutation: number;
+  cooldownMs: number;
+}
+
+/** Mutation budget runtime state. */
+export interface MutationBudgetState {
+  hourlyCount: number;
+  hourlyResetAt: number;
+  dailyCount: number;
+  dailyResetAt: number;
+  lastMutationAt: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -976,6 +1171,10 @@ export interface FilePatch {
   oldHash?: string;
   newHash?: string;
   type: 'created' | 'modified' | 'deleted';
+  /** New file content — used by constitution gate for content inspection. */
+  content?: string;
+  /** Original file content — used for rollback. */
+  oldContent?: string;
 }
 
 /** Persistent storage for snapshots. */

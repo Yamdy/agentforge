@@ -104,22 +104,24 @@ describe('Phase 5: inspectSelf tool', () => {
     const result = await tool.execute({}, { sessionId: 'test' });
     const data = result as any;
 
-    expect(data.pipeline).toBeDefined();
-    expect(data.pipeline.preLoop).toBeDefined();
-    expect(data.pipeline.loop).toBeDefined();
-    expect(data.pipeline.postLoop).toBeDefined();
-    expect(data.tools).toBeDefined();
-    expect(Array.isArray(data.tools)).toBe(true);
-    expect(data.state).toBeDefined();
+    // Phase 6a: inspectSelf now returns SelfRepresentation
+    expect(data.modules).toBeDefined();
+    expect(Array.isArray(data.modules)).toBe(true);
+    expect(data.dependencies).toBeDefined();
+    expect(data.layerDiagnostics).toBeDefined();
+    expect(data.layerDiagnostics.length).toBe(12);
   });
 
-  it('inspectSelf includes agent state', async () => {
+  it('inspectSelf includes processor and tool modules', async () => {
     const agent = new Agent({ model: 'test-model' });
     const tool = agent.toolRegistry.get('inspectSelf')!;
     const result = await tool.execute({}, { sessionId: 'test' });
     const data = result as any;
 
-    expect(data.state).toBe('pending');
+    const processors = data.modules.filter((m: any) => m.responsibility === 'processor');
+    expect(processors.length).toBeGreaterThan(0);
+    const tools = data.modules.filter((m: any) => m.responsibility === 'tool');
+    expect(tools.length).toBeGreaterThan(0);
   });
 });
 

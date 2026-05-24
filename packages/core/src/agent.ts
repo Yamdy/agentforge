@@ -27,6 +27,7 @@ import { LoopOrchestrator } from './loop-orchestrator.js';
 import { JsonlCheckpointStore } from './checkpoint-store.js';
 import { echoTool } from '@primo-ai/tools';
 import { MutabilityPolicyEngine } from './mutability-policy.js';
+import { SelfRepresentationBuilder } from './self-representation.js';
 import {
   processInputProcessor,
   buildContextExtensionPoint,
@@ -585,11 +586,18 @@ export class Agent {
       inputSchema: { type: 'object', properties: {} },
       execute: async () => {
         const agent = self.agent;
-        return {
-          pipeline: agent.orchestrator.stageConfig,
-          tools: agent.toolRegistry.getAll().map(t => t.name),
-          state: agent.state,
-        };
+        const builder = new SelfRepresentationBuilder({
+          agent: {
+            orchestrator: agent.orchestrator,
+            toolRegistry: agent.toolRegistry,
+            getPluginNames: () => (agent._pluginManager as any)._harnessInstances?.map(() => 'plugin') ?? [],
+            state: agent.state,
+            config: agent.config as unknown as Record<string, unknown>,
+            eventBus: { query: undefined },
+          },
+          mutabilityPolicy: agent.mutabilityPolicyEngine.policy,
+        });
+        return builder.build();
       },
     });
 
