@@ -1,0 +1,38 @@
+Codemap Diff Report — 2026-05-24
+==================================
+
+## Scan Summary
+
+- Project type: Monorepo (pnpm + Turborepo)
+- Packages: 8 (sdk, core, plugins, observability, tools, server, studio-ui, create-agentforge)
+- Total source files scanned: ~145
+- Previous codemaps: None (first generation)
+
+## Files Generated
+
+| File | Content | Token Estimate |
+|------|---------|----------------|
+| docs/CODEMAPS/architecture.md | System overview, pipeline, 7-module coverage | ~900 |
+| docs/CODEMAPS/backend.md | API routes, middleware chain, key files | ~800 |
+| docs/CODEMAPS/dependencies.md | Internal + external deps | ~600 |
+| docs/CODEMAPS/data.md | Storage backends, data models, serialization | ~700 |
+| docs/CODEMAPS/frontend.md | Studio UI routes, components, composables | ~500 |
+
+## Architecture Changes Since Last Scan
+
+N/A — first scan.
+
+## Notable Observations
+
+1. All 7 production-grade modules are now complete (PipelineRunner, ContextBuilder, LLMInvoker, ToolRegistry, EventSystem, HookManager, CheckpointStore)
+2. Memory system expanded to three-layer cognitive architecture (Working/Episodic/Semantic) with SQLite backend
+3. Orchestration layer added (sequential, parallel, router executors)
+4. A2A protocol support added to server
+5. Harness processors extracted to plugins (cost-cap, token-budget, goal-echo, fact-injection, rate-limit, required-tools-gate, circuit-breaker, moderation, pii-detector)
+6. Runner + Latch for structured concurrency
+7. SnapshotService for file system auditing
+8. CircuitBreaker + RetryStateStore for resilience
+
+## Staleness Warnings
+
+None — all codemaps are fresh (first generation).
