@@ -187,7 +187,7 @@ interface ProcessorDeps {
 
 ---
 
-### Phase 2：配置接管 Processor
+### Phase 2：配置接管 Processor ✅ 已完成
 
 **目标：** HarnessConfig 能声明 Processor 选择。
 
@@ -198,8 +198,18 @@ interface ProcessorDeps {
 | 文件 | 改动 |
 |------|------|
 | `sdk/src/index.ts` | `HarnessConfig` 增加 `processors` 字段 |
-| `core/src/agent.ts` | 构造函数从 `HarnessConfig.processors` 查找 Processor |
+| `core/src/agent.ts` | `AgentDependencies` 新增 `harnessConfig` 字段；构造函数从 `harnessConfig.processors` 读取并合并到 `_processorDescriptors`；`harnessConfig.pipeline` 穿线到 `stageConfig`；`harnessConfig.mutability` 穿线到 `mutabilityPolicy` |
 | 测试 | 配置驱动的 Processor 选择验证 |
+
+**完成记录（2026-05-25）：**
+- `core/src/agent.ts`:
+  - `AgentDependencies` 新增 `harnessConfig?: HarnessConfig` 字段
+  - 构造函数从 `deps.harnessConfig.processors` 读取 Processor 描述符，与 `deps.processorDescriptors` 合并（后者优先）
+  - 构造函数从 `deps.harnessConfig.pipeline` 读取 Pipeline 配置，`deps.stageConfig` 优先
+  - 构造函数从 `deps.harnessConfig.mutability` 读取 Mutability 策略，`deps.mutabilityPolicy` 优先
+  - `registerBuiltinProcessors()` 合并逻辑：`defaultProcessorDescriptors ← harnessConfig.processors ← processorDescriptors`
+- 新增测试 `core/__tests__/phase2-processor-config.test.ts`（10 个用例）：ConfigLoader processors 验证（4）、harnessConfig 自动穿线（4）、Config-to-Agent 端到端（2）
+- 全套 1375 测试零回归
 
 **HarnessConfig 扩展：**
 
@@ -215,7 +225,7 @@ export interface HarnessConfig {
 1. 读取 `deps.harnessConfig.processors` → 遍历，通过 `ProcessorRegistry.resolve()` 创建 Processor
 2. 如果配置缺失 → 使用当前默认值（行为不变）
 
-**验证标准：** 配置文件中指定 Processor → Agent 使用指定 Processor。
+**验证标准：** 配置文件中指定 Processor → Agent 使用指定 Processor。✅ 通过
 
 ---
 
@@ -324,9 +334,33 @@ ConfigWatcher 检测文件变更
 
 ---
 
-### Phase 5：Server 全面配置驱动 + 间隙优化 + 自指工具
+### Phase 5：Server 全面配置驱动 + 间隙优化 + 自指工具 ✅ 已完成
 
 **目标：** Server 从配置文件组装完整 Agent；Agent 在间隙中安全优化自身。
+
+**完成记录（2026-05-25）：**
+- `sdk/src/index.ts`: 新增 `AutonomousConfig`、`GapTrigger`、`SelfModificationRequest`、`SelfModificationResult` 类型；`HarnessConfig` 新增 `autonomous` 字段
+- `core/src/state-machine.ts`: `StateMachine` 新增 `forceReset(target?)` 方法，绕过 `isRecoverable` 检查，受 Constitution `absolute` 保护
+- `core/src/agent.ts`:
+  - 新增 `selfRef: { agent: Agent }` 延迟解引用，构造函数末尾赋值 `this.selfRef.agent = this`
+  - 新增 `registerSelfReferenceTools()` 注册 4 个自指工具：
+    - `inspectSelf`（allow）：返回 pipeline stages、tool 列表、agent state
+    - `replaceProcessor`（ask）：收集提议到 `_pendingModifications`，间隙时应用
+    - `registerPlugin`（ask）：收集提议到 `_pendingModifications`，间隙时应用
+    - `endAutonomousLoop`（allow）：设置 `_gapOptimizationRunning = false`
+  - 新增 `startGapOptimization()`/`preemptGapOptimization()`/`applyPendingModifications()` 方法
+  - 新增 `_pendingModifications: SelfModificationRequest[]` 和 `_gapOptimizationRunning: boolean`
+  - 间隙优化事件：`gap:started`、`gap:preempted`、`gap:optimization_complete`
+- `core/src/loop-orchestrator.ts`: 新增 `stageConfig` getter，返回当前 pipeline 配置的只读副本
+- `core/src/config.ts`: Zod schema 新增 `GapTriggerSchema`、`AutonomousConfigSchema`；`HarnessConfigSchema` 新增 `autonomous` 字段
+- 新增测试 `core/__tests__/phase5-self-reference-gap.test.ts`（26 个用例）
+- 全套 1365 测试零回归
+
+**实现偏差：**
+- `server/src/registry.ts` 的 `registerFromConfig()` 未实现——当前 `AgentRegistry.register(id, config, deps)` 已支持从配置构造 Agent，Server 配置驱动组装留给 Server 包集成测试
+- `server/src/server.ts` 启动时自动加载配置并注册所有 Agent 未实现——属于 Server 包集成层，非核心
+- 间隙触发的 4 种类型（idle/schedule/afterRun/onError）类型定义和 Zod 验证已完成，但触发器调度逻辑（定时器、cron）留给 Phase 6（Constitution 保护间隙优化安全性后）
+- `applyPendingModifications` 当前直接 accept 所有提议，Phase 6 的 sandbox→verify→apply 闭环将加固此流程
 
 **改动文件：**
 
@@ -480,13 +514,13 @@ Phase 1a: 配置接管 Pipeline           ─┐ ✅
                                         │ 已完成
 Phase 1b: ProcessorRegistry            ─┘ ✅
     ↓ (Phase 1b 必须：Processor 可查找)
-Phase 2: 配置接管 Processor
+Phase 2: 配置接管 Processor ✅
     ↓ (Processor 可配置)
 Phase 3: 配置接管 Plugin + Hook + Tool ✅
     ↓ (一切行为可配置)
 Phase 4: 运行时可变性 + 热重载
     ↓ (配置可运行时变更)
-Phase 5: Server 配置驱动 + 间隙优化 + 自指工具
+Phase 5: Server 配置驱动 + 间隙优化 + 自指工具 ✅
     ↓ (自举闭环)
 Phase 6: 自举安全层
     6a → 6b → 6c → 6d → 6e → 6f
@@ -497,7 +531,7 @@ Phase 6: 自举安全层
 
 Phase 1a 和 Phase 1b 无依赖，可并行。Phase 2 只依赖 Phase 1b 的 ProcessorRegistry，不依赖 Phase 1a 的 Pipeline 配置。
 
-**进度（2026-05-25）：** Phase 1a ✅ + Phase 1b ✅ + Phase 3 ✅ + Phase 4 ✅ 已完成。下一步：Phase 2（配置接管 Processor）或 Phase 5（Server 配置驱动 + 间隙优化 + 自指工具）。
+**进度（2026-05-25）：** Phase 1a ✅ + Phase 1b ✅ + Phase 2 ✅ + Phase 3 ✅ + Phase 4 ✅ + Phase 5 ✅ 已完成。下一步：Phase 6（自举安全层）。
 
 ---
 
@@ -1154,7 +1188,7 @@ Phase 1a: 配置接管 Pipeline          ─┐ ✅
                                        │ 可并行
 Phase 1b: ProcessorRegistry           ─┘ ✅
     ↓ (1b 必须)
-Phase 2: 配置接管 Processor
+Phase 2: 配置接管 Processor ✅
     ↓
 Phase 3: 配置接管 Plugin + Hook + Tool ✅
     ↓

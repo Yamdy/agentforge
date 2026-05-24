@@ -63,6 +63,8 @@ export interface AgentDependencies {
   otelSampler?: 'always_on' | 'always_off' | { ratio: number };
   /** Mutability policy controlling what can change at runtime. */
   mutabilityPolicy?: MutabilityPolicy;
+  /** Harness-level config. Agent reads processors, pipeline, etc. from this. */
+  harnessConfig?: import('@primo-ai/sdk').HarnessConfig;
 }
 
 export interface RunOptions {
@@ -173,11 +175,19 @@ export class Agent {
     this.registry.setEventBus(this._pluginManager.eventBus);
     this.runner.setHookManager(this._pluginManager.hookManager);
     const store = deps?.checkpointStore ?? (deps?.checkpointDir ? new JsonlCheckpointStore<ReturnType<typeof serialize>>(deps.checkpointDir) : undefined);
-    this.orchestrator = new LoopOrchestrator(this.runner, this._pluginManager.hookManager, store, this._pluginManager.eventBus, deps?.stageConfig);
+    const stageConfig = deps?.stageConfig ?? deps?.harnessConfig?.pipeline as PipelineStageConfig | undefined;
+    this.orchestrator = new LoopOrchestrator(this.runner, this._pluginManager.hookManager, store, this._pluginManager.eventBus, stageConfig);
     this.sessionManager = deps?.sessionManager;
     this._autoCheckpoint = deps?.autoCheckpoint ?? false;
-    this._processorDescriptors = deps?.processorDescriptors;
-    this.mutabilityPolicyEngine = new MutabilityPolicyEngine(deps?.mutabilityPolicy);
+    // Merge processor descriptors: harnessConfig.processors as base, deps.processorDescriptors overrides
+    const harnessProcessors = deps?.harnessConfig?.processors as Record<string, ProcessorDescriptor> | undefined;
+    if (harnessProcessors || deps?.processorDescriptors) {
+      this._processorDescriptors = { ...harnessProcessors, ...deps?.processorDescriptors };
+    } else {
+      this._processorDescriptors = undefined;
+    }
+    const mutabilityPolicy = deps?.mutabilityPolicy ?? deps?.harnessConfig?.mutability as MutabilityPolicy | undefined;
+    this.mutabilityPolicyEngine = new MutabilityPolicyEngine(mutabilityPolicy);
     this.registerTools();
     this.registerBuiltinProcessors();
     this._pluginManager.setStageMutator((m) => this.orchestrator.applyMutation(m));
