@@ -17,10 +17,9 @@ import { ContextBuilder } from '../src/context-builder.js';
 
 function makeCtx(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
-    request: { input: 'test', sessionId: 's-1' },
     agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
     iteration: { step: 0 },
-    session: { custom: {} },
+    session: { input: 'test', sessionId: 's-1', custom: {} },
     ...overrides,
   };
 }
@@ -185,9 +184,10 @@ describe('F-7: processStepOutput user message detection', () => {
     // Simulate: memory injection already prepended user messages to history
     const memoryUserMsg: Message = { role: 'user', content: 'remembered fact' };
     const pCtx = makeProcessorContext({
-      request: { input: 'actual user question', sessionId: 's-1' },
       iteration: { step: 0, response: 'assistant reply' },
       session: {
+        input: 'actual user question',
+        sessionId: 's-1',
         messageHistory: [memoryUserMsg],
         custom: {},
       },
@@ -271,10 +271,9 @@ describe('F-10: ContextBuilder post-compression budget check', () => {
     }));
 
     const ctx: PipelineContext = {
-      request: { input: 'test', sessionId: 's-1' },
       agent: { config: { model: 'test/m' }, promptFragments: [], toolDeclarations: [], systemPrompt: '' },
       iteration: { step: 0 },
-      session: { messageHistory: history, custom: {} },
+      session: { input: 'test', sessionId: 's-1', messageHistory: history, custom: {} },
     };
 
     const result = await builder.assemble(ctx);

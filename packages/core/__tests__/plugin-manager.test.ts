@@ -34,10 +34,9 @@ describe('PluginManager', () => {
     manager.initializePlugin(plugin);
 
     const ctx: PipelineContext = {
-      request: { input: 'test', sessionId: 's1' },
       agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
       iteration: { step: 0 },
-      session: { custom: {} },
+      session: { input: 'test', sessionId: 's1', custom: {} },
     };
     await runner.run(ctx, ['processInput']);
 
@@ -96,10 +95,9 @@ describe('PluginManager', () => {
     await manager.loadPlugin(fixturePath);
 
     const ctx: PipelineContext = {
-      request: { input: 'test', sessionId: 's1' },
       agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
       iteration: { step: 0 },
-      session: { custom: {} },
+      session: { input: 'test', sessionId: 's1', custom: {} },
     };
     const result = await runner.run(ctx, ['processInput']);
     expect(result).toBeDefined();
@@ -246,10 +244,9 @@ describe('PluginManager', () => {
       expect(result).toBe('pong: hello');
 
       const ctx: PipelineContext = {
-        request: { input: 'test', sessionId: 's1' },
         agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
         iteration: { step: 0 },
-        session: { custom: {} },
+        session: { input: 'test', sessionId: 's1', custom: {} },
       };
       const pipelineResult = await runner.run(ctx, ['processInput']);
       expect(pipelineResult).toBeDefined();
@@ -310,10 +307,9 @@ describe('PluginManager', () => {
       expect(await tool.execute({ a: 2, b: 3 }, {})).toBe(5);
 
       const ctx: PipelineContext = {
-        request: { input: 'test', sessionId: 's1' },
         agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
         iteration: { step: 0 },
-        session: { custom: {} },
+        session: { input: 'test', sessionId: 's1', custom: {} },
       };
       const result = (await runner.run(ctx, ['processInput'])) as PipelineContext;
       expect(result.session.custom.annotated).toBe(true);

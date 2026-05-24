@@ -8,10 +8,9 @@ import { ProcessorContextImpl, AbortControlFlow } from '@primo-ai/core';
 
 function makeContext(response?: string, overrides?: Partial<PipelineContext>): PipelineContext {
   return {
-    request: { input: 'test', sessionId: 'session-1' },
     agent: { config: { model: 'test' }, promptFragments: [], toolDeclarations: [] },
     iteration: { step: 0, response },
-    session: { custom: {} },
+    session: { input: 'test', sessionId: 'session-1', custom: {} },
     ...overrides,
   };
 }

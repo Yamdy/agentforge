@@ -14,13 +14,13 @@ export function createExecuteToolsProcessor(registry: ToolRegistry): Processor {
 
       const toolResults: ToolResult[] = [];
       for (const tc of toolCalls) {
-        const toolSpan = ctx.iteration.span?.startChild(SpanType.TOOL_EXECUTE);
+        const toolSpan = pCtx.span?.startChild(SpanType.TOOL_EXECUTE);
         toolSpan?.setAttribute(SpanAttributeKeys.TOOL_NAME, tc.name);
         try {
           const result = await registry.executeTool(tc.name, tc.args, {
             toolCallId: tc.id,
-            span: (toolSpan ?? ctx.iteration.span)?.spanContext(),
-            sessionId: ctx.request.sessionId,
+            span: (toolSpan ?? pCtx.span)?.spanContext(),
+            sessionId: ctx.session.sessionId,
           });
           const outputSize = typeof result.output === 'string'
             ? result.output.length

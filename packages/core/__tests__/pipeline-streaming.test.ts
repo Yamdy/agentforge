@@ -5,10 +5,9 @@ import type { PipelineContext, ProcessorContext, StreamEvent } from '@primo-ai/s
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
-    request: { input: 'test', sessionId: 's1' },
     agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
     iteration: { step: 0 },
-    session: { custom: {} },
+    session: { input: 'test', sessionId: 's1', custom: {} },
     ...overrides,
   };
 }
@@ -41,11 +40,11 @@ describe('PipelineRunner.stream()', () => {
     runner.register({
       stage: 'invokeLLM',
       execute: async (pCtx) => {
-        pCtx.state.iteration.fullStream = (async function* () {
+        pCtx._streamHandle = { fullStream: (async function* () {
           yield { type: 'text-delta', text: 'hello ' };
           yield { type: 'text-delta', text: 'world' };
           yield { type: 'finish-step', usage: { inputTokens: { total: 10, noCache: 10 }, outputTokens: { total: 2, text: 2 } } };
-        })();
+        })() };
       },
     });
 

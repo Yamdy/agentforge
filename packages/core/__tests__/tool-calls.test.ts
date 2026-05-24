@@ -59,7 +59,7 @@ describe('Tool call parsing', () => {
               execute: async ({ path: _path }) => 'file content',
             }),
           },
-          prompt: pCtx.state.request.input,
+          prompt: pCtx.state.session.input,
         });
 
         const chunks: string[] = [];
@@ -80,10 +80,9 @@ describe('Tool call parsing', () => {
 
     await runner.run(
       {
-        request: { input: 'read the hosts file', sessionId: 's1' },
         agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
         iteration: { step: 0 },
-        session: { custom: {} },
+        session: { input: 'read the hosts file', sessionId: 's1', custom: {} },
       },
       ['invokeLLM', 'processOutput'],
     );

@@ -4,10 +4,9 @@ import type { PipelineContext, ProcessorContext, StreamEvent } from '@primo-ai/s
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
-    request: { input: 'test', sessionId: 's1' },
     agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
     iteration: { step: 0 },
-    session: { custom: {} },
+    session: { input: 'test', sessionId: 's1', custom: {} },
     ...overrides,
   };
 }
@@ -18,7 +17,7 @@ describe('PipelineRunner stream edge cases', () => {
     runner.register({
       stage: 'invokeLLM',
       execute: async (pCtx: ProcessorContext) => {
-        pCtx.state.iteration.fullStream = (async function* () {
+        pCtx._streamHandle = {}; pCtx._streamHandle.fullStream = (async function* () {
           yield { type: 'tool-call', toolCallId: 'tc-1', toolName: 'echo', args: { input: 'hi' } };
           yield { type: 'finish-step', usage: { inputTokens: { total: 5, noCache: 5 }, outputTokens: { total: 3, text: 3 } } };
         })();
@@ -46,7 +45,7 @@ describe('PipelineRunner stream edge cases', () => {
     runner.register({
       stage: 'invokeLLM',
       execute: async (pCtx: ProcessorContext) => {
-        pCtx.state.iteration.fullStream = (async function* () {
+        pCtx._streamHandle = {}; pCtx._streamHandle.fullStream = (async function* () {
           yield { type: 'reasoning', textDelta: 'thinking...' };
           yield { type: 'text-delta', text: 'answer' };
           yield { type: 'finish-step', usage: { inputTokens: { total: 5, noCache: 5 }, outputTokens: { total: 3, text: 3 } } };
@@ -69,11 +68,11 @@ describe('PipelineRunner stream edge cases', () => {
     runner.register({
       stage: 'invokeLLM',
       execute: async (pCtx: ProcessorContext) => {
-        pCtx.state.iteration.fullStream = (async function* () {
+        pCtx._streamHandle = {}; pCtx._streamHandle.fullStream = (async function* () {
           yield { type: 'text-delta', text: 'answer' };
           yield { type: 'finish-step', usage: { inputTokens: { total: 5, noCache: 5 }, outputTokens: { total: 3, text: 3 } } };
         })();
-        pCtx.state.iteration.reasoningPromise = Promise.resolve('deferred reasoning');
+        pCtx._streamHandle.reasoningPromise = Promise.resolve('deferred reasoning');
       },
     });
 
@@ -91,10 +90,10 @@ describe('PipelineRunner stream edge cases', () => {
     runner.register({
       stage: 'invokeLLM',
       execute: async (pCtx: ProcessorContext) => {
-        pCtx.state.iteration.fullStream = (async function* () {
+        pCtx._streamHandle = {}; pCtx._streamHandle.fullStream = (async function* () {
           yield { type: 'text-delta', text: 'answer' };
         })();
-        pCtx.state.iteration.usagePromise = Promise.resolve({ input: 42, output: 7 });
+        pCtx._streamHandle.usagePromise = Promise.resolve({ input: 42, output: 7 });
       },
     });
 
@@ -112,7 +111,7 @@ describe('PipelineRunner stream edge cases', () => {
     runner.register({
       stage: 'invokeLLM',
       execute: async (pCtx: ProcessorContext) => {
-        pCtx.state.iteration.fullStream = (async function* () {
+        pCtx._streamHandle = {}; pCtx._streamHandle.fullStream = (async function* () {
           yield { type: 'error', error: new Error('stream broke') };
         })();
       },

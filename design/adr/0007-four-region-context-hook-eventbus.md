@@ -1,8 +1,8 @@
-# ADR-0007: Four-Region PipelineContext, Hook Pipeline, and EventBus
+# ADR-0007: Three-Region PipelineContext, Hook Pipeline, and EventBus
 
 ## Status
 
-Accepted
+Accepted (amended 2026-05-24: simplified from 4-region to 3-region)
 
 ## Context
 
@@ -12,16 +12,17 @@ Analysis of OpenCode (Hook system), oh-my-openagent (BackgroundManager event-dri
 
 ## Decision
 
-### 1. Four-Region PipelineContext
+### 1. Three-Region PipelineContext
 
-Replace `pipeline: Record<string, unknown>` with four typed regions:
+Replace `pipeline: Record<string, unknown>` with three typed regions:
 
-- **`request`** — immutable input data (user message, session ID, metadata)
 - **`agent`** — agent configuration state (config, systemPrompt, toolDeclarations, promptFragments)
-- **`iteration`** — current step state (step number, textStream, response, toolCalls, stopLoop, retryFrom)
-- **`session`** — cross-iteration state (messageHistory, totalTokenUsage, `custom: Record<string, unknown>` for plugin extension)
+- **`iteration`** — current step state (step number, loopDirective, content, response, pendingToolCalls, toolResults, reasoningContent, tokenUsage)
+- **`session`** — immutable input + cross-iteration state (input, sessionId, messageHistory, totalTokenUsage, `custom: Record<string, unknown>` for plugin extension)
 
 Each region has explicit typed fields. The `session.custom` field is the designated extension point for plugins — no implicit key hanging.
+
+The original `request` region (input, sessionId) was merged into `session` as of 2026-05-24 (v2 serialization format). Internal pipeline fields (`fullStream`, `usagePromise`, `reasoningPromise`, `span`) were removed from `iteration` and moved to internal `ProcessorContext` slots (`_streamHandle`, `span`).
 
 ### 2. Hook Pipeline alongside Processors
 
@@ -45,6 +46,7 @@ EventBus decouples producers (pipeline execution) from consumers (session persis
 - Hook/Processor separation keeps business logic clean from cross-cutting noise
 - EventBus enables session persistence and background tasks without tight coupling
 - `session.custom` provides explicit, namespaced plugin extension
+- 3-region simplification (v2) reduces surface area: request fields merged into session, internal pipeline fields moved out of public API
 
 **Negative:**
 - Migration cost: all existing tests and core modules must adopt new context shape

@@ -67,7 +67,7 @@ export function createTokenBudgetProcessor(
       const historyTokens = estimateHistoryTokens(history, tokenCounter);
       const totalUsed = historyTokens + reservedForSystem;
 
-      const childSpan = ctx.iteration.span?.startChild(SpanType.TOKEN_BUDGET_CHECK);
+      const childSpan = pCtx.span?.startChild(SpanType.TOKEN_BUDGET_CHECK);
       childSpan?.setAttribute(SpanAttributeKeys.BUDGET_CONTEXT_MAX, config.maxContextTokens);
       childSpan?.setAttribute(SpanAttributeKeys.BUDGET_CONTEXT_USED, totalUsed);
       childSpan?.setAttribute(SpanAttributeKeys.BUDGET_RESERVED_OUTPUT, config.reservedOutputTokens);

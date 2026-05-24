@@ -36,7 +36,7 @@ export function evictionPlugin(options: EvictionPluginOptions): (api: HarnessAPI
         if (!serialized || serialized.length <= maxSize) continue;
 
         const preview = serialized.slice(0, previewLength);
-        const ref = await storage.store(ctx.request.sessionId, result.name, result.output);
+        const ref = await storage.store(ctx.session.sessionId, result.name, result.output);
 
         results[i] = {
           ...result,

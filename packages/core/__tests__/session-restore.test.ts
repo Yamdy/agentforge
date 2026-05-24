@@ -21,10 +21,11 @@ function createMockSessionManager(restoredCtx: PipelineContext): SessionManager 
 
 function makeRestoredContext(overrides: Partial<PipelineContext> = {}): PipelineContext {
   return {
-    request: { input: 'previous input', sessionId: 'restored-session-123' },
     agent: { config: { model: 'mock/test' } as unknown as PipelineContext['agent']['config'], promptFragments: [], toolDeclarations: [] },
     iteration: { step: 1, response: 'previous response' },
     session: {
+      input: 'previous input',
+      sessionId: 'restored-session-123',
       messageHistory: [
         { role: 'user' as const, content: 'previous input' },
         { role: 'assistant' as const, content: 'previous response' },

@@ -183,7 +183,7 @@ export class Agent {
     const hm = this._pluginManager.hookManager;
 
     // agent.start hook
-    await hm.invoke('agent.start', { sessionId: context.request.sessionId, request: context.request, agentConfig: this.config }, {});
+    await hm.invoke('agent.start', { sessionId: context.session.sessionId, session: context.session, agentConfig: this.config }, {});
 
     const maxIter = typeof this.config.maxIterations === 'number' ? this.config.maxIterations : 10;
     const controller = new AbortController();
@@ -196,7 +196,7 @@ export class Agent {
         maxIterations: maxIter,
         signal: controller.signal,
         modelString: this.config.model,
-        sessionId: context.request.sessionId,
+        sessionId: context.session.sessionId,
         autoCheckpoint: this._autoCheckpoint,
       });
 
@@ -205,7 +205,7 @@ export class Agent {
       return {
         response: finalCtx.iteration.response as string ?? '',
         tokenUsage: finalCtx.session.totalTokenUsage ?? { input: 0, output: 0 },
-        sessionId: context.request.sessionId,
+        sessionId: context.session.sessionId,
         compatRetries,
         content: finalCtx.iteration.content,
       };
@@ -215,7 +215,7 @@ export class Agent {
     } finally {
       this.activeAbortController = null;
       // agent.end hook — always fires, even on error; suppress hook errors to preserve original
-      try { await hm.invoke('agent.end', { sessionId: context.request.sessionId }, {}); } catch { /* hook error must not mask original */ }
+      try { await hm.invoke('agent.end', { sessionId: context.session.sessionId }, {}); } catch { /* hook error must not mask original */ }
     }
   }
 
@@ -263,7 +263,7 @@ export class Agent {
     const hm = this._pluginManager.hookManager;
 
     // agent.start hook
-    await hm.invoke('agent.start', { sessionId: context.request.sessionId, request: context.request, agentConfig: this.config }, {});
+    await hm.invoke('agent.start', { sessionId: context.session.sessionId, session: context.session, agentConfig: this.config }, {});
 
     const maxIter = typeof this.config.maxIterations === 'number' ? this.config.maxIterations : 10;
     const controller = new AbortController();
@@ -277,7 +277,7 @@ export class Agent {
         maxIterations: maxIter,
         signal: controller.signal,
         modelString: this.config.model,
-        sessionId: context.request.sessionId,
+        sessionId: context.session.sessionId,
         autoCheckpoint: this._autoCheckpoint,
       })) {
         if (event.type === 'text_delta') yield event.text;
@@ -287,7 +287,7 @@ export class Agent {
       this.lastContext = finalCtx;
     } finally {
       this.activeAbortController = null;
-      try { await hm.invoke('agent.end', { sessionId: context.request.sessionId }, {}); } catch { /* hook error must not mask original */ }
+      try { await hm.invoke('agent.end', { sessionId: context.session.sessionId }, {}); } catch { /* hook error must not mask original */ }
     }
   }
 
@@ -299,7 +299,7 @@ export class Agent {
     const context = await this.buildContext(input, sessionId);
     const hm = this._pluginManager.hookManager;
 
-    await hm.invoke('agent.start', { sessionId: context.request.sessionId, request: context.request, agentConfig: this.config }, {});
+    await hm.invoke('agent.start', { sessionId: context.session.sessionId, session: context.session, agentConfig: this.config }, {});
 
     const maxIter = typeof this.config.maxIterations === 'number' ? this.config.maxIterations : 10;
     const controller = new AbortController();
@@ -313,7 +313,7 @@ export class Agent {
         maxIterations: maxIter,
         signal: controller.signal,
         modelString: this.config.model,
-        sessionId: context.request.sessionId,
+        sessionId: context.session.sessionId,
         autoCheckpoint: this._autoCheckpoint,
       })) {
         if (event.type === 'complete') finalCtx = (event as { context: PipelineContext }).context;
@@ -322,7 +322,7 @@ export class Agent {
       this.lastContext = finalCtx;
     } finally {
       this.activeAbortController = null;
-      try { await hm.invoke('agent.end', { sessionId: context.request.sessionId }, {}); } catch { /* hook error must not mask original */ }
+      try { await hm.invoke('agent.end', { sessionId: context.session.sessionId }, {}); } catch { /* hook error must not mask original */ }
     }
   }
 
@@ -367,10 +367,11 @@ export class Agent {
     // Path 1: In-memory continuation (highest priority)
     if (this.lastContext) {
       return {
-        request: { input, sessionId: this.lastContext.request.sessionId },
         agent: { config: { ...this.config }, promptFragments: [], toolDeclarations: [] },
         iteration: { step: 0 },
         session: {
+          input,
+          sessionId: this.lastContext.session.sessionId,
           messageHistory: [
             ...(this.lastContext.session.messageHistory ?? []),
             { role: 'user', content: input },
@@ -385,10 +386,11 @@ export class Agent {
     if (sessionId && this.sessionManager) {
       const restored = await this.sessionManager.restore(sessionId);
       return {
-        request: { input, sessionId },
         agent: { config: { ...this.config }, promptFragments: [], toolDeclarations: [] },
         iteration: { step: 0 },
         session: {
+          input,
+          sessionId,
           messageHistory: [
             ...(restored.session.messageHistory ?? []),
             { role: 'user', content: input },
@@ -410,10 +412,9 @@ export class Agent {
       sid = record.sessionId;
     }
     return {
-      request: { input, sessionId: sid },
       agent: { config: { ...this.config }, promptFragments: [], toolDeclarations: [] },
       iteration: { step: 0 },
-      session: { custom: {} },
+      session: { input, sessionId: sid, custom: {} },
     };
   }
 

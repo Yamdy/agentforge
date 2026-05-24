@@ -10,10 +10,9 @@ type Serialized = ReturnType<typeof serialize>;
 
 function makeContext(overrides?: Partial<PipelineContext['iteration']>): PipelineContext {
   return {
-    request: { input: 'hello', sessionId: 'test' },
     agent: { config: { model: 'test' }, toolDeclarations: [], promptFragments: [] },
     iteration: { step: 0, loopDirective: undefined, ...overrides },
-    session: { messageHistory: [], custom: {} },
+    session: { input: 'hello', sessionId: 'test', messageHistory: [], custom: {} },
   };
 }
 
@@ -113,7 +112,7 @@ describe('JsonlCheckpointStore', () => {
 
     expect(deserialized.iteration.step).toBe(5);
     expect(deserialized.iteration.response).toBe('mid-response');
-    expect(deserialized.request.input).toBe('hello');
+    expect(deserialized.session.input).toBe('hello');
   });
 });
 
@@ -136,7 +135,7 @@ describe('CheckpointStore integration — crash recovery', () => {
 
     expect(recovered.iteration.step).toBe(3);
     expect(recovered.iteration.response).toBe('partial work');
-    expect(recovered.request.input).toBe('hello');
+    expect(recovered.session.input).toBe('hello');
     expect(recovered.session.messageHistory).toEqual([]);
   });
 

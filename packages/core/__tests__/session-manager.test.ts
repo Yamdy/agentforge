@@ -75,8 +75,8 @@ describe('SessionManager', () => {
 
       const ctx = await manager.restore(sessionId);
 
-      expect(ctx.request.sessionId).toBe(sessionId);
-      expect(ctx.request.input).toBe('What is 2+2?');
+      expect(ctx.session.sessionId).toBe(sessionId);
+      expect(ctx.session.input).toBe('What is 2+2?');
       expect(ctx.session).toBeDefined();
     });
 

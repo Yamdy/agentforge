@@ -5,10 +5,9 @@ import { ProcessorContextImpl } from '@primo-ai/core';
 
 function makeContext(): PipelineContext {
   return {
-    request: { input: 'test', sessionId: 's1' },
     agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
     iteration: { step: 0 },
-    session: { custom: {} },
+    session: { input: 'test', sessionId: 's1', custom: {} },
   } as PipelineContext;
 }
 
@@ -31,7 +30,7 @@ describe('FactInjectionProcessor', () => {
 
   it('injects dynamic facts from function', async () => {
     const processor = createFactInjectionProcessor({
-      facts: (ctx) => [`User input was: ${ctx.request.input}`],
+      facts: (ctx) => [`User input was: ${ctx.session.input}`],
     });
     const pCtx = makeProcessorContext();
     await processor.execute(pCtx);
@@ -40,7 +39,7 @@ describe('FactInjectionProcessor', () => {
 
   it('injects async dynamic facts', async () => {
     const processor = createFactInjectionProcessor({
-      facts: async (ctx) => [`Async fact for ${ctx.request.sessionId}`],
+      facts: async (ctx) => [`Async fact for ${ctx.session.sessionId}`],
     });
     const pCtx = makeProcessorContext();
     await processor.execute(pCtx);

@@ -213,14 +213,13 @@ describe('Full Pipeline Stages', () => {
     }));
 
     const ctx: PipelineContext = {
-      request: { input: 'test', sessionId: 's1' },
       agent: {
         config: { model: 'mock/test' },
         toolDeclarations: [],
         promptFragments: ['keep me'],
       },
       iteration: { step: 0 },
-      session: { messageHistory: longHistory, custom: {} },
+      session: { input: 'test', sessionId: 's1', messageHistory: longHistory, custom: {} },
     };
 
     const pCtx = new ProcessorContextImpl(ctx);

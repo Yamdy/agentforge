@@ -5,10 +5,9 @@ import { ProcessorContextImpl, AbortControlFlow } from '@primo-ai/core';
 
 function makeContext(input = 'Hello, how are you?', response?: string): PipelineContext {
   return {
-    request: { input, sessionId: 's1' },
     agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
     iteration: { step: 0, response },
-    session: { custom: {} },
+    session: { input, sessionId: 's1', custom: {} },
   } as PipelineContext;
 }
 
@@ -74,8 +73,8 @@ describe('ModerationProcessor', () => {
       const pCtx = makeProcessorContext('I will kill you tomorrow');
       await processor.execute(pCtx);
       // The word "kill" should be redacted in the input
-      expect(pCtx.state.request.input).not.toContain('kill');
-      expect(pCtx.state.request.input).toContain('[REDACTED]');
+      expect(pCtx.state.session.input).not.toContain('kill');
+      expect(pCtx.state.session.input).toContain('[REDACTED]');
     });
 
     it('passes through when disabled', async () => {
@@ -86,7 +85,7 @@ describe('ModerationProcessor', () => {
       });
       const pCtx = makeProcessorContext('I will kill you');
       await processor.execute(pCtx);
-      expect(pCtx.state.request.input).toContain('kill');
+      expect(pCtx.state.session.input).toContain('kill');
     });
 
     it('only checks configured categories', async () => {

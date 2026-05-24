@@ -39,7 +39,6 @@ function createMockEventBus(): EventBus {
 
 function createMockContext(): PipelineContext {
   return {
-    request: { input: 'test', sessionId: 'test-session' },
     agent: {
       config: { model: 'test-model' },
       prompt: '',
@@ -54,6 +53,8 @@ function createMockContext(): PipelineContext {
       loopDirective: { action: 'stop' },
     },
     session: {
+      input: 'test',
+      sessionId: 'test-session',
       messageHistory: [],
       tokenUsage: { input: 0, output: 0, reasoning: 0 },
       custom: {},

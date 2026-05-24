@@ -7,8 +7,8 @@ export function createMemoryRecallProcessor(system: MemorySystem): Processor {
     stage: 'buildContext',
     execute: async (pCtx: ProcessorContext) => {
       const ctx = pCtx.state;
-      const userInput = ctx.request.input;
-      const sessionId = ctx.request.sessionId;
+      const userInput = ctx.session.input;
+      const sessionId = ctx.session.sessionId;
 
       // Recall relevant memories
       const memories = await system.recall(userInput, {
@@ -45,8 +45,8 @@ export function createMemoryStoreProcessor(system: MemorySystem): Processor {
     stage: 'processOutput',
     execute: async (pCtx: ProcessorContext) => {
       const ctx = pCtx.state;
-      const sessionId = ctx.request.sessionId;
-      const userInput = ctx.request.input?.trim();
+      const sessionId = ctx.session.sessionId;
+      const userInput = ctx.session.input?.trim();
       const response = ctx.iteration.response;
 
       if (!userInput && !response) return;

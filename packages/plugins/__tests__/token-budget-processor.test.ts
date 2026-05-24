@@ -5,7 +5,6 @@ import { ProcessorContextImpl, AbortControlFlow } from '@primo-ai/core';
 
 function makeContext(history?: Array<{ role: 'user'; content: string }>): PipelineContext {
   return {
-    request: { input: 'test', sessionId: 's1' },
     agent: {
       config: { model: 'mock/test' },
       promptFragments: [],
@@ -13,7 +12,7 @@ function makeContext(history?: Array<{ role: 'user'; content: string }>): Pipeli
       systemPrompt: 'You are helpful.',
     },
     iteration: { step: 0 },
-    session: { messageHistory: history ?? [], custom: {} },
+    session: { input: 'test', sessionId: 's1', messageHistory: history ?? [], custom: {} },
   } as PipelineContext;
 }
 

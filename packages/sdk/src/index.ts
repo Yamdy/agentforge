@@ -142,13 +142,8 @@ export type LoopDirective =
   | { action: 'retry'; retryFrom: StageName };
 
 // ---------------------------------------------------------------------------
-// Pipeline Context — Four Regions (ADR-0007)
+// Pipeline Context — Three Regions (ADR-0007)
 // ---------------------------------------------------------------------------
-
-export interface RequestRegion {
-  input: string;
-  sessionId: string;
-}
 
 export interface AgentRegion {
   config: AgentConfig;
@@ -164,11 +159,6 @@ export interface IterationRegion {
   step: number;
   /** undefined defaults to 'continue'. Default evaluateIteration sets 'stop'. */
   loopDirective?: LoopDirective;
-  /** AI SDK fullStream yielding text-delta, tool-call, finish-step, error events. */
-  fullStream?: AsyncIterable<unknown>;
-  usagePromise?: Promise<TokenUsage | null>;
-  /** Promise resolving to reasoning text from the model (e.g. DeepSeek reasoning_content). */
-  reasoningPromise?: Promise<string | undefined>;
   /** Structured content blocks from the LLM response. */
   content?: ContentBlock[];
   /** Flat text response. Prefer content[] for structured access. */
@@ -180,12 +170,11 @@ export interface IterationRegion {
   reasoningContent?: string;
   /** Results from executing pending tool calls (set by executeTools processor). */
   toolResults?: ToolResult[];
-  /** Per-stage observability span. Created by PipelineRunner.executeStage(),
-   *  lives for one stage invocation (not one full iteration). */
-  span?: Span;
 }
 
 export interface SessionRegion {
+  input: string;
+  sessionId: string;
   messageHistory?: Message[];
   totalTokenUsage?: TokenUsage;
   /**
@@ -196,7 +185,6 @@ export interface SessionRegion {
 }
 
 export interface PipelineContext {
-  request: RequestRegion;
   agent: AgentRegion;
   iteration: IterationRegion;
   session: SessionRegion;
@@ -238,6 +226,14 @@ export interface ProcessorControl {
 export interface ProcessorContext {
   state: PipelineContext;
   control: ProcessorControl;
+  /** Per-stage observability span. Set by PipelineRunner before processor execution. */
+  span?: Span;
+  /** @internal Stream handle for passing LLM stream promises between invokeLLM and PipelineRunner. */
+  _streamHandle?: {
+    fullStream?: AsyncIterable<unknown>;
+    usagePromise?: Promise<TokenUsage | null>;
+    reasoningPromise?: Promise<string | undefined>;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -485,7 +481,7 @@ export interface CompositeHook {
 
 export interface AgentHookInput {
   sessionId: string;
-  request: RequestRegion;
+  session: SessionRegion;
   agentConfig: AgentConfig;
 }
 

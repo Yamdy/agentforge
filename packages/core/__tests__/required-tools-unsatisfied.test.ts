@@ -6,7 +6,6 @@ import { ProcessorContextImpl } from '../src/processor-context.js';
 
 function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
   return {
-    request: { input: 'test', sessionId: 's1' },
     agent: {
       config: {},
       systemPrompt: '',
@@ -18,10 +17,11 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
       step: 1,
       response: 'done',
       loopDirective: undefined,
-      span: { setAttribute: () => {} } as unknown as Span,
       ...overrides.iteration,
     },
     session: {
+      input: 'test',
+      sessionId: 's1',
       messageHistory: [],
       totalTokenUsage: { input: 0, output: 0 },
       custom: {},
@@ -55,6 +55,8 @@ describe('F-I: requiredTools unsatisfied observability', () => {
         ],
       },
       session: {
+        input: 'test',
+        sessionId: 's1',
         messageHistory: [],
         totalTokenUsage: { input: 50000, output: 60000 },
         custom: {},
@@ -64,7 +66,6 @@ describe('F-I: requiredTools unsatisfied observability', () => {
         response: 'done',
         tokenUsage: { input: 0, output: 0 },
         loopDirective: undefined,
-        span: { setAttribute: () => {} } as unknown as Span,
       },
     });
 
@@ -94,6 +95,8 @@ describe('F-I: requiredTools unsatisfied observability', () => {
         toolDeclarations: [{ name: 'search', description: '' }],
       },
       session: {
+        input: 'test',
+        sessionId: 's1',
         messageHistory: [
           {
             role: 'assistant',
@@ -110,7 +113,6 @@ describe('F-I: requiredTools unsatisfied observability', () => {
         response: 'done',
         tokenUsage: { input: 0, output: 0 },
         loopDirective: undefined,
-        span: { setAttribute: () => {} } as unknown as Span,
       },
     });
 
@@ -130,6 +132,8 @@ describe('F-I: requiredTools unsatisfied observability', () => {
 
     const ctx = makeCtx({
       session: {
+        input: 'test',
+        sessionId: 's1',
         messageHistory: [],
         totalTokenUsage: { input: 50000, output: 60000 },
         custom: {},
@@ -139,7 +143,6 @@ describe('F-I: requiredTools unsatisfied observability', () => {
         response: 'done',
         tokenUsage: { input: 0, output: 0 },
         loopDirective: undefined,
-        span: { setAttribute: () => {} } as unknown as Span,
       },
     });
 

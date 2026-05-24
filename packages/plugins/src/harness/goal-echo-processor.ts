@@ -30,7 +30,7 @@ export function createGoalEchoProcessor(config: GoalEchoConfig): Processor {
       const ctx = pCtx.state;
 
       const state = (ctx.session.custom.goalEcho as GoalEchoState | undefined)
-        ?? { lastEchoStep: -1, originalGoal: ctx.request.input };
+        ?? { lastEchoStep: -1, originalGoal: ctx.session.input };
 
       const step = ctx.iteration.step;
       const shouldEcho = step === 0 || (step - state.lastEchoStep) >= config.echoFrequency;
@@ -40,7 +40,7 @@ export function createGoalEchoProcessor(config: GoalEchoConfig): Processor {
         return;
       }
 
-      const childSpan = ctx.iteration.span?.startChild(SpanType.GOAL_ECHO);
+      const childSpan = pCtx.span?.startChild(SpanType.GOAL_ECHO);
       childSpan?.setAttribute(SpanAttributeKeys.GOAL_TEXT, state.originalGoal);
       childSpan?.setAttribute(SpanAttributeKeys.GOAL_ITERATION, step);
 

@@ -108,7 +108,6 @@ describe('evaluate-iteration token:usage_unavailable event', () => {
     const processor = createEvaluateIterationProcessor({ eventBus: eventBus as any });
 
     const ctx: PipelineContext = {
-      request: { input: 'test', sessionId: 's1' },
       agent: {
         config: { model: 'test' },
         promptFragments: [],
@@ -119,6 +118,8 @@ describe('evaluate-iteration token:usage_unavailable event', () => {
         tokenUsage: null as unknown as TokenUsage | undefined,
       },
       session: {
+        input: 'test',
+        sessionId: 's1',
         custom: {},
       },
     };
@@ -139,7 +140,6 @@ describe('evaluate-iteration token:usage_unavailable event', () => {
     const processor = createEvaluateIterationProcessor({ eventBus: eventBus as any });
 
     const ctx: PipelineContext = {
-      request: { input: 'test', sessionId: 's2' },
       agent: {
         config: { model: 'test' },
         promptFragments: [],
@@ -150,6 +150,8 @@ describe('evaluate-iteration token:usage_unavailable event', () => {
         tokenUsage: { input: 50, output: 25 } as TokenUsage,
       },
       session: {
+        input: 'test',
+        sessionId: 's2',
         custom: {},
       },
     };

@@ -180,7 +180,7 @@ export function createPermissionProcessor(config: PermissionConfig): Processor {
               const permissionId = `perm-${toolCall.name}-${Date.now()}-${++permissionCounter}`;
               const permission = {
                 permissionId,
-                sessionId: ctx.request.sessionId,
+                sessionId: ctx.session.sessionId,
                 toolName: toolCall.name,
                 args: toolCall.args,
                 reason: `Tool '${toolCall.name}' requires approval (ask rule)`,

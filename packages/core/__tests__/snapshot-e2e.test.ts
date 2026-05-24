@@ -16,14 +16,13 @@ import type { PipelineContext, StreamEvent, SnapshotService } from '@primo-ai/sd
 // Helper to create a minimal PipelineContext
 function createTestContext(sessionId: string, input: string = 'test'): PipelineContext {
   return {
-    request: { input, sessionId },
     agent: {
       config: { model: 'test-model' },
       toolDeclarations: [],
       promptFragments: [],
     },
     iteration: { step: 0 },
-    session: { messageHistory: [], custom: {} },
+    session: { input, sessionId, messageHistory: [], custom: {} },
   } as unknown as PipelineContext;
 }
 

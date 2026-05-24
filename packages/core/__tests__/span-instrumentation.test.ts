@@ -7,10 +7,9 @@ import { createMockLanguageModel } from './helpers.js';
 
 function makeContext(): PipelineContext {
   return {
-    request: { input: 'test', sessionId: 's1' },
     agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
     iteration: { step: 0 },
-    session: { custom: {} },
+    session: { input: 'test', sessionId: 's1', custom: {} },
   };
 }
 

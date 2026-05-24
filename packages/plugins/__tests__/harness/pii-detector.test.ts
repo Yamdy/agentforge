@@ -5,10 +5,9 @@ import { ProcessorContextImpl, AbortControlFlow } from '@primo-ai/core';
 
 function makeContext(input = 'Hello, how are you?', response?: string): PipelineContext {
   return {
-    request: { input, sessionId: 's1' },
     agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
     iteration: { step: 0, response },
-    session: { custom: {} },
+    session: { input, sessionId: 's1', custom: {} },
   } as PipelineContext;
 }
 
@@ -39,7 +38,7 @@ describe('PiiDetectorProcessor', () => {
       });
       const pCtx = makeProcessorContext('What is the weather today?');
       await processor.execute(pCtx);
-      expect(pCtx.state.request.input).toBe('What is the weather today?');
+      expect(pCtx.state.session.input).toBe('What is the weather today?');
     });
 
     it('redacts email addresses', async () => {
@@ -50,8 +49,8 @@ describe('PiiDetectorProcessor', () => {
       });
       const pCtx = makeProcessorContext('My email is john@example.com');
       await processor.execute(pCtx);
-      expect(pCtx.state.request.input).not.toContain('john@example.com');
-      expect(pCtx.state.request.input).toContain('[REDACTED]');
+      expect(pCtx.state.session.input).not.toContain('john@example.com');
+      expect(pCtx.state.session.input).toContain('[REDACTED]');
     });
 
     it('redacts phone numbers', async () => {
@@ -62,8 +61,8 @@ describe('PiiDetectorProcessor', () => {
       });
       const pCtx = makeProcessorContext('Call me at 555-123-4567');
       await processor.execute(pCtx);
-      expect(pCtx.state.request.input).not.toContain('555-123-4567');
-      expect(pCtx.state.request.input).toContain('[REDACTED]');
+      expect(pCtx.state.session.input).not.toContain('555-123-4567');
+      expect(pCtx.state.session.input).toContain('[REDACTED]');
     });
 
     it('redacts SSN', async () => {
@@ -74,8 +73,8 @@ describe('PiiDetectorProcessor', () => {
       });
       const pCtx = makeProcessorContext('My SSN is 123-45-6789');
       await processor.execute(pCtx);
-      expect(pCtx.state.request.input).not.toContain('123-45-6789');
-      expect(pCtx.state.request.input).toContain('[REDACTED]');
+      expect(pCtx.state.session.input).not.toContain('123-45-6789');
+      expect(pCtx.state.session.input).toContain('[REDACTED]');
     });
 
     it('redacts credit card numbers', async () => {
@@ -86,8 +85,8 @@ describe('PiiDetectorProcessor', () => {
       });
       const pCtx = makeProcessorContext('Card: 4111-1111-1111-1111');
       await processor.execute(pCtx);
-      expect(pCtx.state.request.input).not.toContain('4111-1111-1111-1111');
-      expect(pCtx.state.request.input).toContain('[REDACTED]');
+      expect(pCtx.state.session.input).not.toContain('4111-1111-1111-1111');
+      expect(pCtx.state.session.input).toContain('[REDACTED]');
     });
 
     it('redacts IP addresses', async () => {
@@ -98,8 +97,8 @@ describe('PiiDetectorProcessor', () => {
       });
       const pCtx = makeProcessorContext('Server is at 192.168.1.100');
       await processor.execute(pCtx);
-      expect(pCtx.state.request.input).not.toContain('192.168.1.100');
-      expect(pCtx.state.request.input).toContain('[REDACTED]');
+      expect(pCtx.state.session.input).not.toContain('192.168.1.100');
+      expect(pCtx.state.session.input).toContain('[REDACTED]');
     });
 
     it('blocks input with PII when strategy is block', async () => {
@@ -122,7 +121,7 @@ describe('PiiDetectorProcessor', () => {
       const pCtx = makeProcessorContext('My email is test@example.com');
       await processor.execute(pCtx);
       // Original text preserved on warn
-      expect(pCtx.state.request.input).toContain('test@example.com');
+      expect(pCtx.state.session.input).toContain('test@example.com');
     });
 
     it('passes through when disabled', async () => {
@@ -133,7 +132,7 @@ describe('PiiDetectorProcessor', () => {
       });
       const pCtx = makeProcessorContext('My email is test@example.com');
       await processor.execute(pCtx);
-      expect(pCtx.state.request.input).toContain('test@example.com');
+      expect(pCtx.state.session.input).toContain('test@example.com');
     });
 
     it('only checks configured PII types', async () => {
@@ -157,8 +156,8 @@ describe('PiiDetectorProcessor', () => {
       });
       const pCtx = makeProcessorContext('My email is john@example.com');
       await processor.execute(pCtx);
-      expect(pCtx.state.request.input).toContain('[HIDDEN]');
-      expect(pCtx.state.request.input).not.toContain('john@example.com');
+      expect(pCtx.state.session.input).toContain('[HIDDEN]');
+      expect(pCtx.state.session.input).not.toContain('john@example.com');
     });
 
     it('supports custom patterns', async () => {
@@ -172,8 +171,8 @@ describe('PiiDetectorProcessor', () => {
       });
       const pCtx = makeProcessorContext('My ID is EMP-12345');
       await processor.execute(pCtx);
-      expect(pCtx.state.request.input).not.toContain('EMP-12345');
-      expect(pCtx.state.request.input).toContain('[REDACTED]');
+      expect(pCtx.state.session.input).not.toContain('EMP-12345');
+      expect(pCtx.state.session.input).toContain('[REDACTED]');
     });
 
     it('redacts multiple PII occurrences in one input', async () => {
@@ -184,8 +183,8 @@ describe('PiiDetectorProcessor', () => {
       });
       const pCtx = makeProcessorContext('Email: a@b.com and phone: 555-000-1111');
       await processor.execute(pCtx);
-      expect(pCtx.state.request.input).not.toContain('a@b.com');
-      expect(pCtx.state.request.input).not.toContain('555-000-1111');
+      expect(pCtx.state.session.input).not.toContain('a@b.com');
+      expect(pCtx.state.session.input).not.toContain('555-000-1111');
     });
   });
 

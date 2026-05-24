@@ -5,10 +5,9 @@ import { ProcessorContextImpl, AbortControlFlow } from '@primo-ai/core';
 
 function makeContext(toolDeclarations: Array<{ name: string; description: string }> = []): PipelineContext {
   return {
-    request: { input: 'test', sessionId: 's1' },
     agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations },
     iteration: { step: 0 },
-    session: { custom: {} },
+    session: { input: 'test', sessionId: 's1', custom: {} },
   } as PipelineContext;
 }
 
@@ -87,8 +86,8 @@ describe('createRequiredToolsGate', () => {
       { name: 'read_file', description: 'Read a file' },
     ]);
     await processor.execute(pCtx);
-    expect(pCtx.state.request.sessionId).toBe('s1');
-    expect(pCtx.state.request.input).toBe('test');
+    expect(pCtx.state.session.sessionId).toBe('s1');
+    expect(pCtx.state.session.input).toBe('test');
   });
 
   it('handles toolDeclarations with extra tools gracefully', async () => {

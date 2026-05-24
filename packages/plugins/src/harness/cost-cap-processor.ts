@@ -56,7 +56,7 @@ export function createCostCapProcessor(config: CostCapConfig): Processor {
 
       const projectedCost = state.cumulativeCost + estimatedStepCost;
 
-      const childSpan = ctx.iteration.span?.startChild(SpanType.COST_CAP_CHECK);
+      const childSpan = pCtx.span?.startChild(SpanType.COST_CAP_CHECK);
       childSpan?.setAttribute(SpanAttributeKeys.COST_ESTIMATED, estimatedStepCost);
       childSpan?.setAttribute(SpanAttributeKeys.COST_CUMULATIVE, state.cumulativeCost);
       childSpan?.setAttribute(SpanAttributeKeys.COST_BUDGET, config.maxCost);

@@ -6,10 +6,9 @@ import { ProcessorContextImpl } from '@primo-ai/core';
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
-    request: { input: 'test', sessionId: 'session-1' },
     agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
     iteration: { step: 0 },
-    session: { custom: {} },
+    session: { input: 'test', sessionId: 'session-1', custom: {} },
     ...overrides,
   };
 }
@@ -37,8 +36,8 @@ describe('createMemoryOutputProcessor — suspend/resume closure state', () => {
     });
 
     const ctx1 = makeContext({
-      request: { input: 'question 1', sessionId: 'session-sr' },
       iteration: { step: 0, response: 'answer A' },
+      session: { input: 'question 1', sessionId: 'session-sr', custom: {} },
     });
 
     const result1 = await executeProcessor(processor1, ctx1);
@@ -60,9 +59,8 @@ describe('createMemoryOutputProcessor — suspend/resume closure state', () => {
     });
 
     const ctx2 = makeContext({
-      request: { input: 'question 2', sessionId: 'session-sr' },
       iteration: { step: 0, response: 'answer A' }, // same response as before
-      session: { custom: savedCustom },
+      session: { input: 'question 2', sessionId: 'session-sr', custom: savedCustom },
     });
 
     await executeProcessor(processor2, ctx2);
@@ -83,8 +81,8 @@ describe('createMemoryOutputProcessor — suspend/resume closure state', () => {
     });
 
     const result1 = await executeProcessor(processor1, makeContext({
-      request: { input: 'q1', sessionId: 'session-sr2' },
       iteration: { step: 0, response: 'answer X' },
+      session: { input: 'q1', sessionId: 'session-sr2', custom: {} },
     }));
 
     const savedCustom = { ...result1.session.custom };
@@ -96,9 +94,8 @@ describe('createMemoryOutputProcessor — suspend/resume closure state', () => {
     });
 
     await executeProcessor(processor2, makeContext({
-      request: { input: 'q2', sessionId: 'session-sr2' },
       iteration: { step: 0, response: 'answer Y' },
-      session: { custom: savedCustom },
+      session: { input: 'q2', sessionId: 'session-sr2', custom: savedCustom },
     }));
 
     const stored = await backend.retrieve('session-sr2');
@@ -118,9 +115,8 @@ describe('createMemoryOutputProcessor — suspend/resume closure state', () => {
 
     // Fresh context with empty custom
     const ctx = makeContext({
-      request: { input: 'hello', sessionId: 'session-fresh' },
       iteration: { step: 0, response: 'hi there' },
-      session: { custom: {} },
+      session: { input: 'hello', sessionId: 'session-fresh', custom: {} },
     });
 
     const result = await executeProcessor(processor, ctx);

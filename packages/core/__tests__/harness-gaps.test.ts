@@ -17,10 +17,9 @@ import type { PipelineContext, Processor, StageName, ErrorHookInput, ProcessorCo
 
 function makeCtx(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
-    request: { input: 'test', sessionId: 'test-session' },
     agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
     iteration: { step: 0 },
-    session: { custom: {} },
+    session: { input: 'test', sessionId: 'test-session', custom: {} },
     ...overrides,
   };
 }
@@ -86,7 +85,7 @@ describe('G1: autoCheckpoint enabled via AgentDependencies', () => {
 
     const orchestrator = new LoopOrchestrator(runner, hm, store, eventBus);
 
-    const ctx = makeCtx({ request: { input: 'test', sessionId: 'g1-session' } });
+    const ctx = makeCtx({ session: { input: 'test', sessionId: 'g1-session', custom: {} } });
     const options: LoopOptions = {
       maxIterations: 5,
       modelString: 'mock/test',
@@ -112,7 +111,7 @@ describe('G1: autoCheckpoint enabled via AgentDependencies', () => {
 
     const orchestrator = new LoopOrchestrator(runner, hm, store, eventBus);
 
-    const ctx = makeCtx({ request: { input: 'test', sessionId: 'g1-no-auto' } });
+    const ctx = makeCtx({ session: { input: 'test', sessionId: 'g1-no-auto', custom: {} } });
     const options: LoopOptions = {
       maxIterations: 5,
       modelString: 'mock/test',
@@ -195,6 +194,8 @@ describe('G3: configurable token overflow threshold', () => {
         toolResults: [{ toolCallId: 'call_1', name: 'echo', output: 'hi' }],
       },
       session: {
+        input: 'test',
+        sessionId: 'test-session',
         totalTokenUsage: { input: 0, output: 0 },
         custom: {},
       },
@@ -219,6 +220,8 @@ describe('G3: configurable token overflow threshold', () => {
         toolResults: [{ toolCallId: 'call_1', name: 'echo', output: 'hi' }],
       },
       session: {
+        input: 'test',
+        sessionId: 'test-session',
         totalTokenUsage: { input: 0, output: 0 },
         custom: {},
       },
@@ -243,6 +246,8 @@ describe('G3: configurable token overflow threshold', () => {
         toolResults: [{ toolCallId: 'call_1', name: 'echo', output: 'hi' }],
       },
       session: {
+        input: 'test',
+        sessionId: 'test-session',
         totalTokenUsage: { input: 0, output: 0 },
         custom: {},
       },
@@ -344,7 +349,7 @@ describe('A-1: runLoop and streamEvents produce equivalent results', () => {
   };
 
   it('runLoop returns same context shape as streamEvents complete event', async () => {
-    const ctx = makeCtx({ request: { input: 'a1-test', sessionId: 'a1-session' } });
+    const ctx = makeCtx({ session: { input: 'a1-test', sessionId: 'a1-session', custom: {} } });
 
     // runLoop path
     const runResult = await createOrchestrator().runLoop(ctx, baseOptions);
@@ -368,7 +373,7 @@ describe('A-1: runLoop and streamEvents produce equivalent results', () => {
   });
 
   it('runLoop and streamEvents both end in completed state', async () => {
-    const ctx = makeCtx({ request: { input: 'a1-state', sessionId: 'a1-state' } });
+    const ctx = makeCtx({ session: { input: 'a1-state', sessionId: 'a1-state', custom: {} } });
 
     const orch1 = createOrchestrator();
     await orch1.runLoop(ctx, baseOptions);
@@ -389,7 +394,7 @@ describe('A-1: runLoop and streamEvents produce equivalent results', () => {
     const streamSpy = vi.spyOn(runner, 'stream');
 
     const orch = new LoopOrchestrator(runner, hm, undefined, eventBus);
-    const ctx = makeCtx({ request: { input: 'a1-delegate', sessionId: 'a1-delegate' } });
+    const ctx = makeCtx({ session: { input: 'a1-delegate', sessionId: 'a1-delegate', custom: {} } });
 
     await orch.runLoop(ctx, baseOptions);
 

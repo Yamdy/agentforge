@@ -95,7 +95,7 @@ export function createPiiDetectorProcessor(config: PiiDetectorConfig): Processor
 
       const redaction = config.redactionText ?? '[REDACTED]';
 
-      const inputMatches = detectPii(ctx.request.input, config.piiTypes, config.customPatterns);
+      const inputMatches = detectPii(ctx.session.input, config.piiTypes, config.customPatterns);
       const outputText = ctx.iteration.content
         ? textContentFromBlocks(ctx.iteration.content)
         : ctx.iteration.response;
@@ -106,7 +106,7 @@ export function createPiiDetectorProcessor(config: PiiDetectorConfig): Processor
       const allMatches = [...inputMatches, ...outputMatches];
       const hasPii = allMatches.length > 0;
 
-      const childSpan = ctx.iteration.span?.startChild(SpanType.GATE_DECISION);
+      const childSpan = pCtx.span?.startChild(SpanType.GATE_DECISION);
       childSpan?.setAttribute('pii.matchCount', allMatches.length);
       childSpan?.setAttribute('pii.types', [...new Set(allMatches.map((m) => m.type))]);
 
@@ -134,11 +134,11 @@ export function createPiiDetectorProcessor(config: PiiDetectorConfig): Processor
           return;
         }
 
-        const redactedInput = redactMatches(ctx.request.input, inputMatches, redaction);
+        const redactedInput = redactMatches(ctx.session.input, inputMatches, redaction);
         childSpan?.setAttribute(SpanAttributeKeys.HARNESS_DECISION, 'redacted');
         childSpan?.setAttribute(SpanAttributeKeys.HARNESS_REASON, 'PII redacted in input');
         childSpan?.end();
-        ctx.request.input = redactedInput;
+        ctx.session.input = redactedInput;
         ctx.session.custom = { ...ctx.session.custom, piiDetector: { lastDecision: 'redacted', matches: inputMatches } };
         return;
       }

@@ -24,10 +24,9 @@ function createHarnessAPI(): { api: HarnessAPI; processors: Map<string, Processo
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
-    request: { input: 'test', sessionId: 'session-1' },
     agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
     iteration: { step: 0 },
-    session: { custom: {} },
+    session: { input: 'test', sessionId: 'session-1', custom: {} },
     ...overrides,
   };
 }

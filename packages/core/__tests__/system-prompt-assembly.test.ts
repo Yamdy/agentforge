@@ -8,14 +8,13 @@ import { ProcessorContextImpl } from '../src/processor-context.js';
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
-    request: { input: 'test input', sessionId: 's1' },
     agent: {
       config: { model: 'mock/test', systemPrompt: 'raw config prompt' },
       promptFragments: [],
       toolDeclarations: [],
     },
     iteration: { step: 0 },
-    session: { custom: {} },
+    session: { input: 'test input', sessionId: 's1', custom: {} },
     ...overrides,
   };
 }

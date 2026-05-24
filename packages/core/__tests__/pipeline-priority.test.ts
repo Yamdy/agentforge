@@ -21,10 +21,9 @@ function makeP(stage: string, name: string, priority?: number, shouldAbort?: { r
 
 function makeCtx(): PipelineContext {
   return {
-    request: { input: 'test', sessionId: 'prio-test' },
     agent: { config: { model: 'test/gpt-4' }, promptFragments: [], toolDeclarations: [] },
     iteration: { step: 0 },
-    session: { custom: {} },
+    session: { input: 'test', sessionId: 'prio-test', custom: {} },
   };
 }
 

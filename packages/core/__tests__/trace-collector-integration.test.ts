@@ -1,16 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { PipelineRunner } from '../src/pipeline.js';
-import type { PipelineContext, Span } from '@primo-ai/sdk';
+import type { PipelineContext } from '@primo-ai/sdk';
 import { TraceCollector, formatTraceJson, formatTraceConsole } from '@primo-ai/observability';
 import { SpanType } from '@primo-ai/sdk';
 import { ProcessorContextImpl } from '../src/processor-context.js';
 
 function makeContext(): PipelineContext {
   return {
-    request: { input: 'test', sessionId: 's1' },
     agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
     iteration: { step: 0 },
-    session: { custom: {} },
+    session: { input: 'test', sessionId: 's1', custom: {} },
   };
 }
 
@@ -114,8 +113,7 @@ describe('TraceCollector + PipelineRunner integration', () => {
     runner.register({
       stage: 'processInput',
       execute: async (pCtx) => {
-        const span = pCtx.state.iteration.span as Span;
-        span.setAttribute('input.length', pCtx.state.request.input.length);
+        pCtx.span?.setAttribute('input.length', pCtx.state.session.input.length);
       },
     });
 
@@ -134,7 +132,7 @@ describe('TraceCollector + PipelineRunner integration', () => {
     runner.register({
       stage: 'invokeLLM',
       execute: async (pCtx) => {
-        (pCtx.state.iteration as unknown as Record<string, unknown>)._modelString = 'gpt-4o';
+        (pCtx.state.iteration as unknown as Record<string, unknown>)._modelString = 'gpt-4';
       },
     });
 
@@ -148,8 +146,8 @@ describe('TraceCollector + PipelineRunner integration', () => {
   it('PipelineRunner auto-sets token attributes on invokeLLM span after stream', async () => {
     const collector = new TraceCollector();
     const tracer = collector.createTracer();
-    const runner = new PipelineRunner({ tracer });
 
+    const runner = new PipelineRunner({ tracer });
     const mockStream = (async function* () {
       yield { type: 'text-delta', text: 'hello' };
       yield { type: 'finish-step', usage: { inputTokens: 10, outputTokens: 20 } };
@@ -158,7 +156,7 @@ describe('TraceCollector + PipelineRunner integration', () => {
     runner.register({
       stage: 'invokeLLM',
       execute: async (pCtx) => {
-        pCtx.state.iteration.fullStream = mockStream;
+        pCtx._streamHandle = { fullStream: mockStream };
         (pCtx.state.iteration as unknown as Record<string, unknown>)._modelString = 'gpt-4';
       },
     });

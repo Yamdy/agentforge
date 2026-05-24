@@ -69,10 +69,9 @@ describe('Snapshot Integration', () => {
 
       // Store checkpoint with snapshot reference
       const mockContext = {
-        request: { input: 'test', sessionId: 'session-1' },
         agent: { config: {}, toolDeclarations: [], promptFragments: [] },
         iteration: { step: 0 },
-        session: { messageHistory: [], custom: {} },
+        session: { input: 'test', sessionId: 'session-1', messageHistory: [], custom: {} },
         snapshotId,
       } as unknown as SerializableContext;
 
@@ -84,10 +83,9 @@ describe('Snapshot Integration', () => {
 
     it('checkpoint without snapshotId works (backward compatible)', async () => {
       const mockContext = {
-        request: { input: 'test', sessionId: 'session-2' },
         agent: { config: {}, toolDeclarations: [], promptFragments: [] },
         iteration: { step: 0 },
-        session: { messageHistory: [], custom: {} },
+        session: { input: 'test', sessionId: 'session-2', messageHistory: [], custom: {} },
       } as unknown as SerializableContext;
 
       await checkpointStore.save('session-2', mockContext);

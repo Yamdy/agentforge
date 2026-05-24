@@ -65,18 +65,17 @@ describe('Processor', () => {
 });
 
 describe('PipelineContext', () => {
-  it('carries request, agent, iteration, and session regions', () => {
+  it('carries agent, iteration, and session regions', () => {
     const ctx: PipelineContext = {
-      request: { input: 'hello', sessionId: 's1' },
       agent: {
         config: { model: 'test' } as AgentConfig,
         promptFragments: [],
         toolDeclarations: [],
       },
       iteration: { step: 0 },
-      session: { custom: {} },
+      session: { input: 'hello', sessionId: 's1', custom: {} },
     };
-    expect(ctx.request.input).toBe('hello');
+    expect(ctx.session.input).toBe('hello');
     expect(ctx.iteration.step).toBe(0);
     expect(ctx.agent.promptFragments).toEqual([]);
   });
@@ -347,17 +346,21 @@ describe('LoopDirective and Regions', () => {
     expect(msg.content).toBe('hello');
   });
 
-  it('SessionRegion carries messageHistory and custom', () => {
+  it('SessionRegion carries input, sessionId, messageHistory and custom', () => {
     const session: SessionRegion = {
+      input: 'hello',
+      sessionId: 's1',
       messageHistory: [{ role: 'user', content: 'hi' }],
       totalTokenUsage: { input: 5, output: 2 },
       custom: { myPlugin: { flag: true } },
     };
+    expect(session.input).toBe('hello');
+    expect(session.sessionId).toBe('s1');
     expect(session.messageHistory?.length).toBe(1);
     expect(session.custom.myPlugin).toEqual({ flag: true });
   });
 
-  it('IterationRegion carries loopDirective and span', () => {
+  it('IterationRegion carries loopDirective', () => {
     const iter: IterationRegion = {
       step: 3,
       loopDirective: { action: 'stop' },

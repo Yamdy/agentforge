@@ -5,10 +5,9 @@ import { createPermissionProcessor, type PermissionRule } from '../src/permissio
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
-    request: { input: 'test', sessionId: 'session-1' },
     agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
     iteration: { step: 0 },
-    session: { custom: {} },
+    session: { input: 'test', sessionId: 'session-1', custom: {} },
     ...overrides,
   };
 }

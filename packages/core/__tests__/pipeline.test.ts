@@ -7,10 +7,9 @@ import { ProcessorContextImpl } from '../src/processor-context.js';
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
-    request: { input: 'test', sessionId: 's1' },
     agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
     iteration: { step: 0 },
-    session: { custom: {} },
+    session: { input: 'test', sessionId: 's1', custom: {} },
     ...overrides,
   };
 }
@@ -142,12 +141,12 @@ describe('PipelineRunner', () => {
     runner.register({
       stage: 'invokeLLM',
       execute: async (pCtx) => {
-        pCtx.state.iteration.fullStream = (async function* () {
+        pCtx._streamHandle = {}; pCtx._streamHandle.fullStream = (async function* () {
           yield { type: 'text-delta', text: 'hello ' };
           yield { type: 'text-delta', text: 'world' };
           yield { type: 'finish-step', usage: { inputTokens: { total: 10, noCache: 10 }, outputTokens: { total: 2, text: 2 } } };
         })();
-        pCtx.state.iteration.usagePromise = Promise.resolve({ input: 10, output: 2 });
+        pCtx._streamHandle.usagePromise = Promise.resolve({ input: 10, output: 2 });
       },
     });
 
@@ -155,8 +154,8 @@ describe('PipelineRunner', () => {
     const ctx = result as PipelineContext;
     expect(ctx.iteration.response).toBe('hello world');
     expect(ctx.iteration.tokenUsage).toEqual({ input: 10, output: 2 });
-    expect(ctx.iteration.fullStream).toBeUndefined();
-    expect(ctx.iteration.usagePromise).toBeUndefined();
+    expect((ctx.iteration as unknown as Record<string, unknown>).fullStream).toBeUndefined();
+    expect((ctx.iteration as unknown as Record<string, unknown>).usagePromise).toBeUndefined();
   });
 
   describe('with HookManager wired', () => {

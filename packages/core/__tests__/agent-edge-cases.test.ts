@@ -212,10 +212,9 @@ describe('Agent edge cases', () => {
       const orchestrator = new LoopOrchestrator(mockRunner as unknown as PipelineRunner, mockHookManager as unknown as HookManager, undefined, eventBus);
 
       const ctx = {
-        request: { input: 'test', sessionId: 'test-session' },
         agent: { config: { model: 'test' } as AgentConfig, toolDeclarations: [], promptFragments: [] },
         iteration: { step: 0 },
-        session: { messageHistory: [], custom: {} },
+        session: { input: 'test', sessionId: 'test-session', messageHistory: [], custom: {} },
       };
 
       await orchestrator.runLoop(ctx, { maxIterations: 5, modelString: 'anthropic/test', sessionId: 'test-session' });

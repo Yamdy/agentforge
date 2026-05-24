@@ -6,10 +6,9 @@ import { ProcessorContextImpl } from '@primo-ai/core';
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
-    request: { input: 'test', sessionId: 'session-1' },
     agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
     iteration: { step: 0 },
-    session: { custom: {} },
+    session: { input: 'test', sessionId: 'session-1', custom: {} },
     ...overrides,
   };
 }
@@ -31,13 +30,13 @@ describe('F-C: Memory correctionEnabled behavior', () => {
       });
 
       await executeProcessor(processor, makeContext({
-        request: { input: 'What is the capital of France?', sessionId: 's-corr' },
         iteration: { step: 0, response: 'The capital is Paris.' },
+        session: { input: 'What is the capital of France?', sessionId: 's-corr', custom: {} },
       }));
 
       await executeProcessor(processor, makeContext({
-        request: { input: 'Actually no, I meant Germany. What is the capital of Germany?', sessionId: 's-corr' },
         iteration: { step: 0, response: 'The capital of Germany is Berlin.' },
+        session: { input: 'Actually no, I meant Germany. What is the capital of Germany?', sessionId: 's-corr', custom: {} },
       }));
 
       const stored = await backend.retrieve('s-corr');
@@ -55,13 +54,13 @@ describe('F-C: Memory correctionEnabled behavior', () => {
       });
 
       await executeProcessor(processor, makeContext({
-        request: { input: 'Tell me about X', sessionId: 's-meta' },
         iteration: { step: 0, response: 'X is a thing.' },
+        session: { input: 'Tell me about X', sessionId: 's-meta', custom: {} },
       }));
 
       await executeProcessor(processor, makeContext({
-        request: { input: 'No wait, I meant Y actually', sessionId: 's-meta' },
         iteration: { step: 0, response: 'Y is different.' },
+        session: { input: 'No wait, I meant Y actually', sessionId: 's-meta', custom: {} },
       }));
 
       const stored = await backend.retrieve('s-meta');
@@ -81,13 +80,13 @@ describe('F-C: Memory correctionEnabled behavior', () => {
       });
 
       await executeProcessor(processor, makeContext({
-        request: { input: 'What is the capital of France?', sessionId: 's-nocorr' },
         iteration: { step: 0, response: 'The capital is Paris.' },
+        session: { input: 'What is the capital of France?', sessionId: 's-nocorr', custom: {} },
       }));
 
       await executeProcessor(processor, makeContext({
-        request: { input: 'Actually, tell me about Germany', sessionId: 's-nocorr' },
         iteration: { step: 0, response: 'The capital of Germany is Berlin.' },
+        session: { input: 'Actually, tell me about Germany', sessionId: 's-nocorr', custom: {} },
       }));
 
       const stored = await backend.retrieve('s-nocorr');
@@ -110,8 +109,8 @@ describe('F-13: Multilingual and cross-session memory correction', () => {
       });
 
       await executeProcessor(processor, makeContext({
-        request: { input: '不对，应该是 bar', sessionId: 's-zh' },
         iteration: { step: 0, response: 'bar is correct' },
+        session: { input: '不对，应该是 bar', sessionId: 's-zh', custom: {} },
       }));
 
       const remaining = await backend.retrieve('s-zh');
@@ -131,8 +130,8 @@ describe('F-13: Multilingual and cross-session memory correction', () => {
       });
 
       await executeProcessor(processor, makeContext({
-        request: { input: '不是的，正确答案是 baz', sessionId: 's-zh2' },
         iteration: { step: 0, response: 'baz is right' },
+        session: { input: '不是的，正确答案是 baz', sessionId: 's-zh2', custom: {} },
       }));
 
       const remaining = await backend.retrieve('s-zh2');
@@ -151,8 +150,8 @@ describe('F-13: Multilingual and cross-session memory correction', () => {
       });
 
       await executeProcessor(processor, makeContext({
-        request: { input: '違います、正しくは qux', sessionId: 's-ja' },
         iteration: { step: 0, response: 'qux is right' },
+        session: { input: '違います、正しくは qux', sessionId: 's-ja', custom: {} },
       }));
 
       const remaining = await backend.retrieve('s-ja');
@@ -174,8 +173,8 @@ describe('F-13: Multilingual and cross-session memory correction', () => {
       });
 
       await executeProcessor(processor, makeContext({
-        request: { input: 'Actually that was wrong', sessionId: 's-curr' },
         iteration: { step: 0, response: 'corrected answer' },
+        session: { input: 'Actually that was wrong', sessionId: 's-curr', custom: {} },
       }));
 
       const sOther = await backend.retrieve('s-other');
@@ -194,8 +193,8 @@ describe('F-13: Multilingual and cross-session memory correction', () => {
       });
 
       await executeProcessor(processor, makeContext({
-        request: { input: 'Actually that was wrong', sessionId: 's-curr2' },
         iteration: { step: 0, response: 'corrected' },
+        session: { input: 'Actually that was wrong', sessionId: 's-curr2', custom: {} },
       }));
 
       const sOther = await backend.retrieve('s-other2');

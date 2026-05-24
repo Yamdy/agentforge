@@ -9,14 +9,13 @@ import type { PipelineContext } from '@primo-ai/sdk';
 
 function createEmptyPipelineContext(): PipelineContext {
   return {
-    request: { input: 'Build a memory system', sessionId: 'session-1' },
     agent: {
       config: { model: 'test-model' },
       toolDeclarations: [],
       promptFragments: [],
     },
     iteration: { step: 0 },
-    session: { messageHistory: [], custom: {} },
+    session: { input: 'Build a memory system', sessionId: 'session-1', messageHistory: [], custom: {} },
   };
 }
 
@@ -70,7 +69,7 @@ describe('Memory Processor', () => {
       const processor = createMemoryRecallProcessor(system);
 
       const ctx = createEmptyPipelineContext();
-      ctx.request.input = 'pipeline architecture';
+      ctx.session.input = 'pipeline architecture';
       const pCtx = createProcessorContext(ctx);
 
       await processor.execute(pCtx);
@@ -86,7 +85,7 @@ describe('Memory Processor', () => {
       const processor = createMemoryRecallProcessor(system);
 
       const ctx = createEmptyPipelineContext();
-      ctx.request.input = 'completely unrelated query xyz';
+      ctx.session.input = 'completely unrelated query xyz';
       const pCtx = createProcessorContext(ctx);
 
       await expect(processor.execute(pCtx)).resolves.not.toThrow();
@@ -99,7 +98,7 @@ describe('Memory Processor', () => {
       expect(processor.stage).toBe('processOutput');
 
       const ctx = createEmptyPipelineContext();
-      ctx.request.input = 'What is TDD?';
+      ctx.session.input = 'What is TDD?';
       ctx.iteration.response = 'TDD stands for Test-Driven Development';
       const pCtx = createProcessorContext(ctx);
 

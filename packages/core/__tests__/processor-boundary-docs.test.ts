@@ -4,10 +4,9 @@ import { ProcessorContextImpl } from '../src/processor-context.js';
 
 function makeProcessorContext(): ProcessorContext {
   return new ProcessorContextImpl({
-    request: { input: 'test', sessionId: 's1' },
     agent: { config: { model: 'test' }, promptFragments: [], toolDeclarations: [] },
     iteration: { step: 0 },
-    session: { custom: {} },
+    session: { input: 'test', sessionId: 's1', custom: {} },
   });
 }
 
@@ -17,7 +16,7 @@ describe('Processor and Hook types are distinct', () => {
       stage: 'processInput',
       execute: async (ctx) => {
         // Can modify state directly
-        ctx.state.request.input = 'modified';
+        ctx.state.session.input = 'modified';
         // Or return void
       },
     };
@@ -27,7 +26,7 @@ describe('Processor and Hook types are distinct', () => {
     // Test execution
     const pCtx = makeProcessorContext();
     await processor.execute(pCtx);
-    expect(pCtx.state.request.input).toBe('modified');
+    expect(pCtx.state.session.input).toBe('modified');
   });
 
   it('Hook has handler method, not execute', () => {

@@ -147,10 +147,9 @@ export class SessionManagerImpl implements SessionManager {
     }
 
     return {
-      request: { input, sessionId },
       agent: { config: agentConfig as unknown as PipelineContext['agent']['config'], promptFragments, toolDeclarations },
       iteration: { step: lastStep, response: lastResponse },
-      session: { messageHistory, totalTokenUsage, custom: { ...custom, snapshotIds } },
+      session: { input, sessionId, messageHistory, totalTokenUsage, custom: { ...custom, snapshotIds } },
     };
   }
 

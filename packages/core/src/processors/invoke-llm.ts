@@ -114,21 +114,21 @@ export function createInvokeLLMProcessor(deps: InvokeLLMDeps): Processor {
       const systemPrompt = resolveSystemPrompt(ctx);
       const llm = await deps.getLLM(systemPrompt);
 
-      if (ctx.iteration.span) {
-        ctx.iteration.span.setAttribute('model', deps.modelString);
+      if (pCtx.span) {
+        pCtx.span.setAttribute('model', deps.modelString);
       }
 
       deps.registry.setToolExecutionContext({
         span: {
-          spanId: `tool-${ctx.request.sessionId}-${ctx.iteration.step}`,
-          traceId: ctx.request.sessionId,
+          spanId: `tool-${ctx.session.sessionId}-${ctx.iteration.step}`,
+          traceId: ctx.session.sessionId,
         },
-        sessionId: ctx.request.sessionId,
+        sessionId: ctx.session.sessionId,
       });
 
       const messages = toAiSdkMessages(
         (ctx.session.messageHistory as Message[]) ?? [],
-        ctx.request.input,
+        ctx.session.input,
         ctx.iteration.step,
       );
 
@@ -153,9 +153,11 @@ export function createInvokeLLMProcessor(deps: InvokeLLMDeps): Processor {
         providerOptions: ctx.agent.providerOptions,
       });
 
-      ctx.iteration.fullStream = handle.fullStream;
-      ctx.iteration.usagePromise = handle.usage;
-      ctx.iteration.reasoningPromise = handle.reasoning;
+      pCtx._streamHandle = {
+        fullStream: handle.fullStream,
+        usagePromise: handle.usage,
+        reasoningPromise: handle.reasoning,
+      };
       (ctx.iteration as unknown as { _modelString?: string })._modelString = deps.modelString;
     },
   };

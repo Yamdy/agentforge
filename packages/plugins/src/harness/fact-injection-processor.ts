@@ -22,7 +22,7 @@ export function createFactInjectionProcessor(config: FactInjectionConfig): Proce
 
       if (resolvedFacts.length === 0) return;
 
-      const childSpan = ctx.iteration.span?.startChild(SpanType.FACT_INJECTION);
+      const childSpan = pCtx.span?.startChild(SpanType.FACT_INJECTION);
       childSpan?.setAttribute(SpanAttributeKeys.FACT_COUNT, resolvedFacts.length);
 
       const fragment = '[Constraints & Facts]\n'

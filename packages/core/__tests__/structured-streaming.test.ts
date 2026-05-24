@@ -5,10 +5,9 @@ import { ProcessorContextImpl } from '../src/processor-context.js';
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
-    request: { input: 'test', sessionId: 's1' },
     agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
     iteration: { step: 0 },
-    session: { custom: {} },
+    session: { input: 'test', sessionId: 's1', custom: {} },
     ...overrides,
   };
 }
@@ -23,7 +22,7 @@ describe('Phase 3: Structured Streaming Events', () => {
       runner.register({
         stage: 'invokeLLM',
         execute: async (pCtx) => {
-          pCtx.state.iteration.fullStream = (async function* () {
+          pCtx._streamHandle = {}; pCtx._streamHandle.fullStream = (async function* () {
               yield { type: 'text-delta', text: 'hello' };
               yield { type: 'finish-step', usage: { inputTokens: { total: 5, noCache: 5 }, outputTokens: { total: 1, text: 1 } } };
             })();
@@ -46,7 +45,7 @@ describe('Phase 3: Structured Streaming Events', () => {
       runner.register({
         stage: 'invokeLLM',
         execute: async (pCtx) => {
-          pCtx.state.iteration.fullStream = (async function* () {
+          pCtx._streamHandle = {}; pCtx._streamHandle.fullStream = (async function* () {
               yield { type: 'text-delta', text: 'hel' };
               yield { type: 'text-delta', text: 'lo' };
               yield { type: 'finish-step', usage: { inputTokens: { total: 5, noCache: 5 }, outputTokens: { total: 2, text: 2 } } };
@@ -72,7 +71,7 @@ describe('Phase 3: Structured Streaming Events', () => {
       runner.register({
         stage: 'invokeLLM',
         execute: async (pCtx) => {
-          pCtx.state.iteration.fullStream = (async function* () {
+          pCtx._streamHandle = {}; pCtx._streamHandle.fullStream = (async function* () {
               yield { type: 'reasoning', textDelta: 'thinking...' };
               yield { type: 'text-delta', text: 'answer' };
               yield { type: 'finish-step', usage: { inputTokens: { total: 10, noCache: 10 }, outputTokens: { total: 2, text: 2 } } };
@@ -99,7 +98,7 @@ describe('Phase 3: Structured Streaming Events', () => {
       runner.register({
         stage: 'invokeLLM',
         execute: async (pCtx) => {
-          pCtx.state.iteration.fullStream = (async function* () {
+          pCtx._streamHandle = {}; pCtx._streamHandle.fullStream = (async function* () {
               yield { type: 'text-delta', text: 'calling' };
               yield { type: 'tool-call', toolCallId: 'tc1', toolName: 'search', args: { q: 'a' } };
               yield { type: 'finish-step', usage: { inputTokens: { total: 10, noCache: 10 }, outputTokens: { total: 2, text: 2 } } };
@@ -123,7 +122,7 @@ describe('Phase 3: Structured Streaming Events', () => {
       runner.register({
         stage: 'invokeLLM',
         execute: async (pCtx) => {
-          pCtx.state.iteration.fullStream = (async function* () {
+          pCtx._streamHandle = {}; pCtx._streamHandle.fullStream = (async function* () {
               yield { type: 'text-delta', text: 'hi' };
               yield { type: 'finish-step', usage: { inputTokens: { total: 5, noCache: 5 }, outputTokens: { total: 1, text: 1 } } };
             })();
@@ -146,7 +145,7 @@ describe('Phase 3: Structured Streaming Events', () => {
       runner.register({
         stage: 'invokeLLM',
         execute: async (pCtx) => {
-          pCtx.state.iteration.fullStream = (async function* () {
+          pCtx._streamHandle = {}; pCtx._streamHandle.fullStream = (async function* () {
               yield { type: 'text-delta', text: 'hello' };
               yield { type: 'tool-call', toolCallId: 'tc1', toolName: 'search', args: {} };
               yield { type: 'finish-step', usage: { inputTokens: { total: 5, noCache: 5 }, outputTokens: { total: 1, text: 1 } } };
@@ -174,7 +173,7 @@ describe('Phase 3: Structured Streaming Events', () => {
       runner.register({
         stage: 'invokeLLM',
         execute: async (pCtx) => {
-          pCtx.state.iteration.fullStream = (async function* () {
+          pCtx._streamHandle = {}; pCtx._streamHandle.fullStream = (async function* () {
               yield { type: 'text-delta', text: 'response' };
               yield { type: 'finish-step', usage: { inputTokens: { total: 10, noCache: 10 }, outputTokens: { total: 3, text: 3 } } };
             })();

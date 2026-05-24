@@ -26,7 +26,7 @@ export const processStepOutputProcessor: Processor = {
 
     const history: Message[] = [...(ctx.session.messageHistory ?? [])];
     if (ctx.iteration.step === 0) {
-      history.push({ role: 'user', content: ctx.request.input });
+      history.push({ role: 'user', content: ctx.session.input });
     }
     history.push(assistantMsg);
 

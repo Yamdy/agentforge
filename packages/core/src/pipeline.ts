@@ -20,6 +20,7 @@ import { assembleContentBlocks, textContentFromBlocks, toolCallsFromBlocks, reas
 import { AbortControlFlow, SuspendControlFlow, ErrorControlFlow } from './control-flow.js';
 import { ProcessorContextImpl } from './processor-context.js';
 
+
 /**
  * Recursively freezes an object and all nested plain objects / arrays.
  * Uses a WeakSet to guard against circular references.
@@ -125,6 +126,7 @@ export class PipelineRunner {
   private processors: Processor[] = [];
   private tracer: Tracer;
   private hookManager?: HookManager;
+  private _currentProcessorCtx?: ProcessorContextImpl;
 
   constructor(options?: PipelineRunnerOptions) {
     this.tracer = options?.tracer ?? new NoOpTracer();
@@ -236,7 +238,7 @@ export class PipelineRunner {
           }
           ctx = stageResult;
 
-          const fullStream = ctx.iteration.fullStream;
+          const fullStream = this._currentProcessorCtx?._streamHandle?.fullStream;
           if (fullStream) {
             const chunks: string[] = [];
             const toolCalls: ToolCall[] = [];
@@ -329,9 +331,9 @@ export class PipelineRunner {
               if (finalBlock) yield { type: 'content_block_end', index: currentBlockIndex, block: finalBlock } as StreamEvent;
             }
 
-            const reasoningContent = await resolveReasoningContent(reasoningParts, ctx.iteration.reasoningPromise);
-            const pendingUsage = ctx.iteration.usagePromise
-              ? await ctx.iteration.usagePromise
+            const reasoningContent = await resolveReasoningContent(reasoningParts, this._currentProcessorCtx?._streamHandle?.reasoningPromise);
+            const pendingUsage = this._currentProcessorCtx?._streamHandle?.usagePromise
+              ? await this._currentProcessorCtx?._streamHandle?.usagePromise
               : undefined;
 
             const content = assembleContentBlocks(chunks, toolCalls, reasoningParts);
@@ -344,9 +346,6 @@ export class PipelineRunner {
                 pendingToolCalls: toolCallsFromBlocks(content).length > 0 ? toolCallsFromBlocks(content) : undefined,
                 reasoningContent: reasoningFromBlocks(content) ?? reasoningContent,
                 tokenUsage: usage ?? pendingUsage ?? undefined,
-                fullStream: undefined,
-                usagePromise: undefined,
-                reasoningPromise: undefined,
               },
             });
 
@@ -355,6 +354,8 @@ export class PipelineRunner {
               yield { type: 'step_complete', step: ctx.iteration.step, tokenUsage: usage, content: content } as StreamEvent;
             }
           }
+          // Clear consumed stream handle to prevent stale propagation
+          if (this._currentProcessorCtx) this._currentProcessorCtx._streamHandle = undefined;
 
           // Fire llm.after after stream is consumed (response is now available)
           if (stage === 'invokeLLM' && this.hookManager && (ctx.iteration as unknown as { _modelString?: string })._modelString) {
@@ -398,13 +399,12 @@ export class PipelineRunner {
     let currentCtx = ctx;
     for (const processor of stageProcessors) {
       // Create mutable context for processor (don't freeze before processor execution)
-      const ctxWithSpan = {
-        ...currentCtx,
-        iteration: { ...currentCtx.iteration, span: stageSpan },
-      };
-
       try {
-        const processorCtx = new ProcessorContextImpl(ctxWithSpan as PipelineContext);
+        const processorCtx = new ProcessorContextImpl(currentCtx);
+        processorCtx.span = stageSpan;
+        const prevHandle = this._currentProcessorCtx?._streamHandle;
+        if (prevHandle) processorCtx._streamHandle = prevHandle;
+        this._currentProcessorCtx = processorCtx;
         const result = await processor.execute(processorCtx);
         // Freeze result after processor execution for immutability between stages
         currentCtx = deepFreeze(result ? { ...result } : { ...processorCtx.state });
@@ -466,16 +466,17 @@ export class PipelineRunner {
   }
 
   private async consumeStream(ctx: PipelineContext): Promise<PipelineContext> {
-    const fullStream = ctx.iteration.fullStream;
+    const fullStream = this._currentProcessorCtx?._streamHandle?.fullStream;
     if (!fullStream) return ctx;
 
     const result = await parseFullStream(fullStream as AsyncIterable<{ type: string; [key: string]: unknown }>);
-    const reasoningContent = await resolveReasoningContent(result.reasoningParts, ctx.iteration.reasoningPromise);
-    const pendingUsage = ctx.iteration.usagePromise
-      ? await ctx.iteration.usagePromise
+    const reasoningContent = await resolveReasoningContent(result.reasoningParts, this._currentProcessorCtx?._streamHandle?.reasoningPromise);
+    const pendingUsage = this._currentProcessorCtx?._streamHandle?.usagePromise
+      ? await this._currentProcessorCtx?._streamHandle?.usagePromise
       : undefined;
 
     const content = assembleContentBlocks(result.chunks, result.toolCalls, result.reasoningParts);
+    if (this._currentProcessorCtx) this._currentProcessorCtx._streamHandle = undefined;
     return deepFreeze({
       ...ctx,
       iteration: {
@@ -485,9 +486,6 @@ export class PipelineRunner {
         pendingToolCalls: toolCallsFromBlocks(content).length > 0 ? toolCallsFromBlocks(content) : undefined,
         reasoningContent: reasoningFromBlocks(content) ?? reasoningContent,
         tokenUsage: result.usage ?? pendingUsage ?? undefined,
-        fullStream: undefined,
-        usagePromise: undefined,
-        reasoningPromise: undefined,
       },
     });
   }

@@ -8,21 +8,20 @@ import type { AgentConfig } from '@primo-ai/sdk';
 import { Agent } from '../src/agent.js';
 import { createMockLanguageModel, registerMockProvider } from './helpers.js';
 
-describe('Four-Region PipelineContext', () => {
-  it('has request, agent, iteration, and session regions', () => {
+describe('Three-Region PipelineContext', () => {
+  it('has agent, iteration, and session regions', () => {
     const ctx: PipelineContext = {
-      request: { input: 'hello', sessionId: 's1' },
       agent: {
         config: { model: 'test' } as AgentConfig,
         promptFragments: [],
         toolDeclarations: [],
       },
       iteration: { step: 0 },
-      session: { custom: {} },
+      session: { input: 'hello', sessionId: 's1', custom: {} },
     };
 
-    expect(ctx.request.input).toBe('hello');
-    expect(ctx.request.sessionId).toBe('s1');
+    expect(ctx.session.input).toBe('hello');
+    expect(ctx.session.sessionId).toBe('s1');
     expect(Array.isArray(ctx.agent.promptFragments)).toBe(true);
     expect(Array.isArray(ctx.agent.toolDeclarations)).toBe(true);
     expect(ctx.iteration.step).toBe(0);
@@ -48,10 +47,9 @@ describe('Four-Region PipelineContext', () => {
       { role: 'assistant', content: 'hi' },
     ];
     const ctx: PipelineContext = {
-      request: { input: 'hello', sessionId: 's1' },
       agent: { config: {} as AgentConfig, promptFragments: [], toolDeclarations: [] },
       iteration: { step: 0 },
-      session: { messageHistory: messages, custom: {} },
+      session: { input: 'hello', sessionId: 's1', messageHistory: messages, custom: {} },
     };
 
     expect(ctx.session.messageHistory?.length).toBe(2);
@@ -60,25 +58,23 @@ describe('Four-Region PipelineContext', () => {
 
   it('does NOT have pipeline or untyped config fields', () => {
     const ctx: PipelineContext = {
-      request: { input: 'hello', sessionId: 's1' },
       agent: { config: {} as AgentConfig, promptFragments: [], toolDeclarations: [] },
       iteration: { step: 0 },
-      session: { custom: {} },
+      session: { input: 'hello', sessionId: 's1', custom: {} },
     };
 
     // Verify old fields don't exist on the runtime object
     expect('pipeline' in ctx).toBe(false);
     expect('config' in ctx).toBe(false);
 
-    // Verify the four expected regions exist
-    expect('request' in ctx).toBe(true);
+    // Verify the three expected regions exist
     expect('agent' in ctx).toBe(true);
     expect('iteration' in ctx).toBe(true);
     expect('session' in ctx).toBe(true);
   });
 });
 
-describe('Agent with four-region context', () => {
+describe('Agent with three-region context', () => {
   beforeEach(() => {
     registerMockProvider('mock', () => createMockLanguageModel({ text: 'Hello world' }));
   });

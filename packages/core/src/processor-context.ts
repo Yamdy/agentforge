@@ -1,6 +1,13 @@
 import type { PipelineContext, ProcessorControl, ProcessorContext as IProcessorContext, StageName, PipelineCheckpoint } from '@primo-ai/sdk';
 import { AbortControlFlow, SuspendControlFlow, ErrorControlFlow } from './control-flow.js';
 
+/** @internal */
+export interface StreamHandle {
+  fullStream?: AsyncIterable<unknown>;
+  usagePromise?: Promise<import('@primo-ai/sdk').TokenUsage | null>;
+  reasoningPromise?: Promise<string | undefined>;
+}
+
 /**
  * Deep clone a value, handling frozen objects and circular references.
  */
@@ -42,6 +49,12 @@ function deepClone<T>(obj: T, seen: WeakMap<object, object> = new WeakMap()): T 
 export class ProcessorContextImpl implements IProcessorContext {
   private _state: PipelineContext;
 
+  /** @internal Stream handle — not part of public API */
+  _streamHandle?: StreamHandle;
+
+  /** @internal Per-stage span — moved from IterationRegion */
+  private _span?: import('@primo-ai/sdk').Span;
+
   constructor(state: PipelineContext) {
     // Deep clone to ensure the state is mutable even if the input was frozen
     this._state = deepClone(state) as PipelineContext;
@@ -63,6 +76,16 @@ export class ProcessorContextImpl implements IProcessorContext {
         throw new ErrorControlFlow(error, stage, recoverable);
       },
     };
+  }
+
+  /** @internal */
+  get span(): import('@primo-ai/sdk').Span | undefined {
+    return this._span;
+  }
+
+  /** @internal */
+  set span(s: import('@primo-ai/sdk').Span | undefined) {
+    this._span = s;
   }
 }
 

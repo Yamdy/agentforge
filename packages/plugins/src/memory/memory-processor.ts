@@ -36,7 +36,7 @@ export function createMemoryProcessor(config: MemoryConfig): Processor {
       const ctx = pCtx.state;
       if (triggerMode.type === 'agent-controlled') return;
 
-      const entries = await backend.retrieve(ctx.request.sessionId, {
+      const entries = await backend.retrieve(ctx.session.sessionId, {
         limit: windowLimit,
       });
 
@@ -88,7 +88,7 @@ export function createMemoryOutputProcessor(config: MemoryConfig): Processor {
         : ctx.iteration.response;
       if (!response) return;
 
-      const userInput = ctx.request.input?.trim();
+      const userInput = ctx.session.input?.trim();
       if (!userInput) return;
 
       const isCorrection = correctionEnabled && CORRECTION_SIGNALS.test(userInput);
@@ -96,14 +96,14 @@ export function createMemoryOutputProcessor(config: MemoryConfig): Processor {
         if (crossSessionCorrection && backend.deleteEntriesGlobally) {
           await backend.deleteEntriesGlobally((e) => e.role === 'assistant');
         } else {
-          await backend.deleteEntries(ctx.request.sessionId, (e) => e.role === 'assistant');
+          await backend.deleteEntries(ctx.session.sessionId, (e) => e.role === 'assistant');
         }
       }
 
       const now = new Date().toISOString();
-      await backend.store(ctx.request.sessionId, {
+      await backend.store(ctx.session.sessionId, {
         role: 'user',
-        content: trim(ctx.request.input),
+        content: trim(ctx.session.input),
         timestamp: now,
         ...(isCorrection ? { metadata: { corrected: true } } : {}),
       });
@@ -118,7 +118,7 @@ export function createMemoryOutputProcessor(config: MemoryConfig): Processor {
       // Persist to session.custom for suspend/resume survival
       ctx.session.custom = { ...ctx.session.custom, [CUSTOM_KEY]: response };
 
-      await backend.store(ctx.request.sessionId, {
+      await backend.store(ctx.session.sessionId, {
         role: 'assistant',
         content: trim(response),
         timestamp: new Date(Date.now() + 1).toISOString(),

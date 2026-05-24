@@ -25,10 +25,9 @@ function createHarnessAPI(): { api: HarnessAPI; processors: Map<string, unknown>
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
-    request: { input: 'test', sessionId: 'session-1' },
     agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
     iteration: { step: 0 },
-    session: { custom: {} },
+    session: { input: 'test', sessionId: 'session-1', custom: {} },
     ...overrides,
   };
 }
@@ -62,8 +61,8 @@ describe('memoryPlugin — automatic mode', () => {
 
     // First turn: processOutput saves the conversation
     const ctx1 = makeContext({
-      request: { input: 'What is TypeScript?', sessionId: 's-e2e' },
       iteration: { step: 0, response: 'A typed superset of JavaScript' },
+      session: { input: 'What is TypeScript?', sessionId: 's-e2e', custom: {} },
     });
     await executeProcessor(outputProcessor, ctx1);
 
@@ -72,7 +71,7 @@ describe('memoryPlugin — automatic mode', () => {
     expect(stored).toHaveLength(2);
 
     // Second turn: buildContext loads memory
-    const ctx2 = makeContext({ request: { input: 'Tell me more', sessionId: 's-e2e' } });
+    const ctx2 = makeContext({ session: { input: 'Tell me more', sessionId: 's-e2e', custom: {} } });
     const result = await executeProcessor(buildCtxProcessor, ctx2);
 
     const history = result.session.messageHistory as Array<{ content: string }>;
@@ -163,8 +162,8 @@ describe('memoryPlugin — storage option (CoreMemoryBackend)', () => {
     const outputProcessor = processors.get('processOutput') as Processor;
 
     const ctx1 = makeContext({
-      request: { input: 'What is TypeScript?', sessionId: 's-e2e-core' },
       iteration: { step: 0, response: 'A typed superset of JavaScript' },
+      session: { input: 'What is TypeScript?', sessionId: 's-e2e-core', custom: {} },
     });
     await executeProcessor(outputProcessor, ctx1);
 
@@ -172,7 +171,7 @@ describe('memoryPlugin — storage option (CoreMemoryBackend)', () => {
     const facts = await storage.getFacts('s-e2e-core');
     expect(facts).toHaveLength(2);
 
-    const ctx2 = makeContext({ request: { input: 'Tell me more', sessionId: 's-e2e-core' } });
+    const ctx2 = makeContext({ session: { input: 'Tell me more', sessionId: 's-e2e-core', custom: {} } });
     const result = await executeProcessor(buildCtxProcessor, ctx2);
 
     const history = result.session.messageHistory as Array<{ content: string }>;

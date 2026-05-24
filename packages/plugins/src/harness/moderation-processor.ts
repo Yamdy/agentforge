@@ -104,7 +104,7 @@ export function createModerationProcessor(config: ModerationConfig): Processor {
       const blockMessage = config.blockMessage ?? 'Content blocked by moderation policy';
 
       // Check user input
-      const inputResult = checker(ctx.request.input, config.categories);
+      const inputResult = checker(ctx.session.input, config.categories);
 
       // Check LLM output — prefer content[] when available
       const outputText = ctx.iteration.content
@@ -118,7 +118,7 @@ export function createModerationProcessor(config: ModerationConfig): Processor {
       const combinedFlagged = inputResult.flagged || (outputResult?.flagged ?? false);
       const allMatches = [...inputResult.matches, ...(outputResult?.matches ?? [])];
 
-      const childSpan = ctx.iteration.span?.startChild(SpanType.GATE_DECISION);
+      const childSpan = pCtx.span?.startChild(SpanType.GATE_DECISION);
       childSpan?.setAttribute('moderation.flagged', combinedFlagged);
       childSpan?.setAttribute('moderation.matchCount', allMatches.length);
 
@@ -154,14 +154,14 @@ export function createModerationProcessor(config: ModerationConfig): Processor {
         childSpan?.setAttribute('moderation.categories', inputResult.categories);
         childSpan?.end();
 
-        let redactedInput = ctx.request.input;
+        let redactedInput = ctx.session.input;
         const sortedMatches = [...inputResult.matches].sort((a, b) => b.index - a.index);
         for (const m of sortedMatches) {
           redactedInput =
             redactedInput.slice(0, m.index) + REDACTION + redactedInput.slice(m.index + m.text.length);
         }
 
-        ctx.request.input = redactedInput;
+        ctx.session.input = redactedInput;
         ctx.session.custom = { ...ctx.session.custom, moderation: { lastDecision: 'redacted', matches: inputResult.matches } };
         return;
       }

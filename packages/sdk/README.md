@@ -24,10 +24,9 @@ This package contains all shared types used across the AgentForge monorepo. It h
 
 | Type | Description |
 |------|-------------|
-| `RequestRegion` | Immutable input: `input`, `sessionId` |
 | `AgentRegion` | Config: `config`, `systemPrompt`, `toolDeclarations`, `promptFragments` |
 | `IterationRegion` | Per-step: `step`, `response`, `loopDirective`, `pendingToolCalls` |
-| `SessionRegion` | Cross-iteration: `messageHistory`, `totalTokenUsage`, `custom` |
+| `SessionRegion` | Input + cross-iteration: `input`, `sessionId`, `messageHistory`, `totalTokenUsage`, `custom` |
 
 ### Tools
 

@@ -16,7 +16,7 @@ describe('Token usage extraction', () => {
     runner.register({
       stage: 'invokeLLM',
       execute: async (pCtx) => {
-        const result = streamText({ model, prompt: pCtx.state.request.input });
+        const result = streamText({ model, prompt: pCtx.state.session.input });
         const chunks: string[] = [];
         for await (const c of result.textStream) { chunks.push(c); }
         const usage = await result.usage;
@@ -34,10 +34,9 @@ describe('Token usage extraction', () => {
 
     await runner.run(
       {
-        request: { input: 'test', sessionId: 's1' },
         agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
         iteration: { step: 0 },
-        session: { custom: {} },
+        session: { input: 'test', sessionId: 's1', custom: {} },
       },
       ['invokeLLM', 'processOutput'],
     );

@@ -13,7 +13,6 @@ function makeContext(overrides?: {
   toolDeclarations?: Array<{ name: string; description: string }>;
 }): PipelineContext {
   return {
-    request: { input: 'test', sessionId: 's1' },
     agent: {
       config: { model: 'test', ...overrides?.config },
       promptFragments: [],
@@ -26,6 +25,8 @@ function makeContext(overrides?: {
       pendingToolCalls: overrides?.pendingToolCalls as unknown as ToolCall[] | undefined,
     },
     session: {
+      input: 'test',
+      sessionId: 's1',
       custom: {},
       messageHistory: overrides?.history,
       totalTokenUsage: { input: 0, output: 0 },
@@ -158,9 +159,9 @@ describe('requiredTools gate', () => {
       config: { requiredTools: ['search', 'calculate', 'fetch'] },
       history: [assistantWithToolCalls(['search'])],
     });
-    ctx.iteration.span = mockSpan as unknown as Span;
-
-    await processor.execute(new ProcessorContextImpl(ctx));
+    const pCtx1 = new ProcessorContextImpl(ctx);
+    pCtx1.span = mockSpan as unknown as Span;
+    await processor.execute(pCtx1);
     expect(attributes['required_tools.incomplete']).toBe(true);
     expect(attributes['required_tools.uncalled']).toContain('calculate');
     expect(attributes['required_tools.uncalled']).toContain('fetch');
@@ -182,9 +183,9 @@ describe('requiredTools gate', () => {
       config: { requiredTools: ['search'] },
       history: [assistantWithToolCalls(['search'])],
     });
-    ctx.iteration.span = mockSpan as unknown as Span;
-
-    await processor.execute(new ProcessorContextImpl(ctx));
+    const pCtx2 = new ProcessorContextImpl(ctx);
+    pCtx2.span = mockSpan as unknown as Span;
+    await processor.execute(pCtx2);
     expect(attributes['required_tools.incomplete']).toBeUndefined();
   });
 
@@ -395,12 +396,12 @@ describe('requiredTools gate', () => {
       config: { requiredTools: ['search'], requiredToolPolicy: 'enforce' },
       history: [],
     });
-    baseCtx.iteration.span = mockSpan as unknown as Span;
-
+    const pCtx3 = new ProcessorContextImpl(baseCtx);
+    pCtx3.span = mockSpan as unknown as Span;
     // Exhaust retries
-    await processor.execute(new ProcessorContextImpl(baseCtx));
-    await processor.execute(new ProcessorContextImpl(baseCtx));
-    await processor.execute(new ProcessorContextImpl(baseCtx));
+    await processor.execute(pCtx3);
+    await processor.execute(pCtx3);
+    await processor.execute(pCtx3);
 
     expect(attributes['required_tools.enforced']).toBe('search');
   });

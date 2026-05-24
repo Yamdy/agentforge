@@ -4,7 +4,6 @@ import type { PipelineContext, ModelProfile } from '@primo-ai/sdk';
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
-    request: { input: 'test', sessionId: 's1' },
     agent: {
       config: { model: 'anthropic/claude-3' },
       promptFragments: [],
@@ -14,7 +13,7 @@ function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
       ],
     },
     iteration: { step: 0 },
-    session: { custom: {} },
+    session: { input: 'test', sessionId: 's1', custom: {} },
     ...overrides,
   };
 }

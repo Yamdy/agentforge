@@ -5,10 +5,9 @@ import { ProcessorContextImpl, AbortControlFlow } from '@primo-ai/core';
 
 function makeContext(step = 0, custom?: Record<string, unknown>): PipelineContext {
   return {
-    request: { input: 'test', sessionId: 's1' },
     agent: { config: { model: 'gpt-4o' }, promptFragments: [], toolDeclarations: [] },
     iteration: { step, tokenUsage: { input: 1000, output: 500 } },
-    session: { custom: custom ?? {} },
+    session: { input: 'test', sessionId: 's1', custom: custom ?? {} },
   } as PipelineContext;
 }
 

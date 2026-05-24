@@ -6,10 +6,9 @@ import { ProcessorContextImpl } from '@primo-ai/core';
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
-    request: { input: 'test', sessionId: 'session-1' },
     agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
     iteration: { step: 0 },
-    session: { custom: {} },
+    session: { input: 'test', sessionId: 'session-1', custom: {} },
     ...overrides,
   };
 }
@@ -111,8 +110,8 @@ describe('MemoryProcessor', () => {
       const processor = createMemoryOutputProcessor({ backend, triggerMode: { type: 'automatic', onLoad: 'always' } });
 
       const ctx = makeContext({
-        request: { input: 'What is 2+2?', sessionId: 'session-2' },
         iteration: { step: 0, response: '4' },
+        session: { input: 'What is 2+2?', sessionId: 'session-2', custom: {} },
       });
 
       await executeProcessor(processor, ctx);
@@ -130,8 +129,8 @@ describe('MemoryProcessor', () => {
       const processor = createMemoryOutputProcessor({ backend, triggerMode: { type: 'automatic', onLoad: 'always' } });
 
       const ctx = makeContext({
-        request: { input: 'hello', sessionId: 'session-3' },
         iteration: { step: 0, response: undefined },
+        session: { input: 'hello', sessionId: 'session-3', custom: {} },
       });
 
       await executeProcessor(processor, ctx);
@@ -159,6 +158,8 @@ describe('MemoryProcessor', () => {
 
       const ctx = makeContext({
         session: {
+          input: '',
+          sessionId: 'session-1',
           messageHistory: [
             { role: 'user', content: 'current session question' },
           ],
@@ -211,15 +212,15 @@ describe('MemoryProcessor', () => {
 
       // First turn: user asks, agent answers about topic X
       await executeProcessor(processor, makeContext({
-        request: { input: 'What is the capital of France?', sessionId: 'session-corr' },
         iteration: { step: 0, response: 'The capital is Paris.' },
+        session: { input: 'What is the capital of France?', sessionId: 'session-corr', custom: {} },
       }));
 
       // Second turn: user corrects with a different question on same session
       // The agent gave wrong info, user corrects
       await executeProcessor(processor, makeContext({
-        request: { input: 'No, actually tell me about Germany', sessionId: 'session-corr' },
         iteration: { step: 0, response: 'The capital of Germany is Berlin.' },
+        session: { input: 'No, actually tell me about Germany', sessionId: 'session-corr', custom: {} },
       }));
 
       const stored = await backend.retrieve('session-corr');
@@ -238,14 +239,13 @@ describe('MemoryProcessor', () => {
       // Since dedup state lives in session.custom (not a closure),
       // we must thread the returned session.custom into the next call.
       const result1 = await executeProcessor(processor, makeContext({
-        request: { input: 'question 1', sessionId: 'session-dedup' },
         iteration: { step: 0, response: 'same answer' },
+        session: { input: 'question 1', sessionId: 'session-dedup', custom: {} },
       })) as PipelineContext;
 
       await executeProcessor(processor, makeContext({
-        request: { input: 'question 2', sessionId: 'session-dedup' },
         iteration: { step: 0, response: 'same answer' },
-        session: { custom: result1.session.custom },
+        session: { input: 'question 2', sessionId: 'session-dedup', custom: result1.session.custom },
       }));
 
       const stored = await backend.retrieve('session-dedup');
@@ -263,8 +263,8 @@ describe('MemoryProcessor', () => {
 
       // Agent monologue should not become persistent memory
       await executeProcessor(processor, makeContext({
-        request: { input: '', sessionId: 'session-empty-user' },
         iteration: { step: 0, response: 'I am thinking...' },
+        session: { input: '', sessionId: 'session-empty-user', custom: {} },
       }));
 
       const stored = await backend.retrieve('session-empty-user');

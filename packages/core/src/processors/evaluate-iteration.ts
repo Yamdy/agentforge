@@ -52,8 +52,8 @@ export function createEvaluateIterationProcessor(deps?: EvaluateIterationDeps): 
       const requiredTools = ctx.agent.config.requiredTools;
 
       if (totalTokens > maxTotalTokens) {
-        ctx.iteration.span?.setAttribute('token.overflow', true);
-        ctx.iteration.span?.setAttribute('token.total', totalTokens);
+        pCtx.span?.setAttribute('token.overflow', true);
+        pCtx.span?.setAttribute('token.total', totalTokens);
 
         // Emit unsatisfied if required tools are not all called
         if (requiredTools && requiredTools.length > 0) {
@@ -67,7 +67,7 @@ export function createEvaluateIterationProcessor(deps?: EvaluateIterationDeps): 
               uncalled,
               reason: 'token_overflow',
               step: ctx.iteration.step,
-              sessionId: ctx.request.sessionId,
+              sessionId: ctx.session.sessionId,
             });
           }
         }
@@ -86,9 +86,9 @@ export function createEvaluateIterationProcessor(deps?: EvaluateIterationDeps): 
               unknown,
               registered: [...registeredNames],
               step: ctx.iteration.step,
-              sessionId: ctx.request.sessionId,
+              sessionId: ctx.session.sessionId,
             });
-            ctx.iteration.span?.setAttribute('required_tools.unknown', unknown.join(','));
+            pCtx.span?.setAttribute('required_tools.unknown', unknown.join(','));
           }
           warnedUnknownTools = true;
         }
@@ -109,8 +109,8 @@ export function createEvaluateIterationProcessor(deps?: EvaluateIterationDeps): 
 
           const exhausted = uncalled.filter(name => (failCounts[name] ?? 0) >= REQUIRED_TOOLS_MAX_RETRIES);
 
-          ctx.iteration.span?.setAttribute('required_tools.incomplete', true);
-          ctx.iteration.span?.setAttribute('required_tools.uncalled', uncalled.join(','));
+          pCtx.span?.setAttribute('required_tools.incomplete', true);
+          pCtx.span?.setAttribute('required_tools.uncalled', uncalled.join(','));
 
           if (exhausted.length > 0) {
             const exhaustedMsg = `Required tools exhausted after ${REQUIRED_TOOLS_MAX_RETRIES} retries: ${exhausted.join(', ')}. Halting loop.`;
@@ -118,9 +118,9 @@ export function createEvaluateIterationProcessor(deps?: EvaluateIterationDeps): 
               exhausted,
               failCounts: { ...failCounts },
               step: ctx.iteration.step,
-              sessionId: ctx.request.sessionId,
+              sessionId: ctx.session.sessionId,
             });
-            ctx.iteration.span?.setAttribute('required_tools.exhausted', exhausted.join(','));
+            pCtx.span?.setAttribute('required_tools.exhausted', exhausted.join(','));
 
             const policy = ctx.agent.config.requiredToolPolicy ?? 'advise';
 
@@ -135,9 +135,9 @@ export function createEvaluateIterationProcessor(deps?: EvaluateIterationDeps): 
                 tools: exhausted,
                 syntheticCalls,
                 step: ctx.iteration.step,
-                sessionId: ctx.request.sessionId,
+                sessionId: ctx.session.sessionId,
               });
-              ctx.iteration.span?.setAttribute('required_tools.enforced', exhausted.join(','));
+              pCtx.span?.setAttribute('required_tools.enforced', exhausted.join(','));
 
               ctx.iteration.loopDirective = { action: 'continue' } as LoopDirective;
               ctx.iteration.pendingToolCalls = syntheticCalls;
@@ -159,7 +159,7 @@ export function createEvaluateIterationProcessor(deps?: EvaluateIterationDeps): 
             uncalled,
             called: [...calledTools],
             step: ctx.iteration.step,
-            sessionId: ctx.request.sessionId,
+            sessionId: ctx.session.sessionId,
           });
 
           ctx.agent.promptFragments = [

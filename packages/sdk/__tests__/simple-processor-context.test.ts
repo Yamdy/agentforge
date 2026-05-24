@@ -10,7 +10,6 @@ import type {
 
 function createMockContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
-    request: { input: 'test input', sessionId: 'session-123' },
     agent: {
       config: { model: 'test-model', systemPrompt: 'You are a test assistant.' } as AgentConfig,
       systemPrompt: 'You are a test assistant.',
@@ -24,6 +23,8 @@ function createMockContext(overrides?: Partial<PipelineContext>): PipelineContex
       pendingToolCalls: [],
     },
     session: {
+      input: 'test input',
+      sessionId: 'session-123',
       messageHistory: [
         { role: 'user', content: 'hello' },
         { role: 'assistant', content: 'hi there' },
@@ -42,13 +43,13 @@ describe('SimpleProcessorContext', () => {
     expect(spc).toBeInstanceOf(SimpleProcessorContext);
   });
 
-  it('.input returns ctx.request.input', () => {
+  it('.input returns ctx.session.input', () => {
     const ctx = createMockContext();
     const spc = new SimpleProcessorContext(ctx);
     expect(spc.input).toBe('test input');
   });
 
-  it('.sessionId returns ctx.request.sessionId', () => {
+  it('.sessionId returns ctx.session.sessionId', () => {
     const ctx = createMockContext();
     const spc = new SimpleProcessorContext(ctx);
     expect(spc.sessionId).toBe('session-123');

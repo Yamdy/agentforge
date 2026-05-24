@@ -32,14 +32,13 @@ function createMockHookManager(): HookManager {
 
 function createMinimalContext(): PipelineContext {
   return {
-    request: { input: 'hello', sessionId: 'test-session' },
     agent: {
       config: { model: 'test-model' },
       toolDeclarations: [],
       promptFragments: [],
     },
     iteration: { step: 0 },
-    session: { custom: {} },
+    session: { input: 'hello', sessionId: 'test-session', custom: {} },
   } as unknown as PipelineContext;
 }
 
@@ -120,7 +119,7 @@ describe('LoopOrchestrator RunMode', () => {
 
       const result = await runPromise;
       expect(result).toBeDefined();
-      expect(result.context.request.sessionId).toBe('test-session');
+      expect(result.context.session.sessionId).toBe('test-session');
     });
 
     it('rejects additional queued runs while one is pending', async () => {

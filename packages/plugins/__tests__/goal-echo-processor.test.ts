@@ -5,10 +5,9 @@ import { ProcessorContextImpl } from '@primo-ai/core';
 
 function makeContext(step = 0): PipelineContext {
   return {
-    request: { input: 'build a REST API', sessionId: 's1' },
     agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
     iteration: { step },
-    session: { custom: {} },
+    session: { input: 'build a REST API', sessionId: 's1', custom: {} },
   } as PipelineContext;
 }
 
@@ -84,7 +83,7 @@ describe('GoalEchoProcessor', () => {
     expect(pCtx0.state.agent.promptFragments[0]).toContain('build a REST API');
 
     const pCtx1 = makeProcessorContext(1);
-    pCtx1.state.request.input = 'something different';
+    pCtx1.state.session.input = 'something different';
     pCtx1.state.session.custom = pCtx0.state.session.custom;
     await processor.execute(pCtx1);
     expect(pCtx1.state.agent.promptFragments[0]).toContain('build a REST API');

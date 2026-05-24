@@ -17,10 +17,9 @@ function makeMockRegistry(): ToolRegistry {
 
 function makeContext(history?: Message[], overrides?: Partial<PipelineContext>): PipelineContext {
   return {
-    request: { input: 'test', sessionId: 's1' },
     agent: { config: { model: 'test' }, promptFragments: [], toolDeclarations: [] },
     iteration: { step: 0 },
-    session: { custom: {}, messageHistory: history },
+    session: { input: 'test', sessionId: 's1', custom: {}, messageHistory: history },
     ...overrides,
   };
 }

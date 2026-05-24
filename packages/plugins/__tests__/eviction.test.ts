@@ -56,10 +56,9 @@ describe('evictionPlugin', () => {
 
   function makeCtx(toolResults: Array<{ toolCallId: string; name: string; output: unknown }>): PipelineContext {
     return {
-      request: { input: 'test', sessionId: 'session-1' },
       agent: { config: { model: 'test' }, promptFragments: [], toolDeclarations: [] },
       iteration: { step: 0, toolResults },
-      session: { custom: {} },
+      session: { input: 'test', sessionId: 'session-1', custom: {} },
     };
   }
 

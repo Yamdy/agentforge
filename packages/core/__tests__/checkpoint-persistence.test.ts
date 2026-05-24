@@ -116,10 +116,9 @@ describe('Auto checkpoint per iteration (P0)', () => {
     });
 
     const ctx: PipelineContext = {
-      request: { input: 'test', sessionId: 'auto-cp-1' },
       agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
       iteration: { step: 0 },
-      session: { custom: {} },
+      session: { input: 'test', sessionId: 'auto-cp-1', custom: {} },
     };
 
     const options: LoopOptions = {
@@ -166,10 +165,9 @@ describe('Auto checkpoint per iteration (P0)', () => {
     runner.register({ stage: 'processOutput', execute: async () => {} });
 
     const ctx: PipelineContext = {
-      request: { input: 'test', sessionId: 'no-auto-cp' },
       agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
       iteration: { step: 0 },
-      session: { custom: {} },
+      session: { input: 'test', sessionId: 'no-auto-cp', custom: {} },
     };
 
     // Default: autoCheckpoint is false

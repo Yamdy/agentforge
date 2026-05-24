@@ -1,29 +1,22 @@
 import type { PipelineContext, IterationRegion, SessionRegion, AgentRegion } from '@primo-ai/sdk';
 import { SerializationVersionError } from './errors.js';
 
-type SerializableIteration = Omit<IterationRegion, 'fullStream' | 'usagePromise' | 'reasoningPromise' | 'span'>;
+type SerializableIteration = IterationRegion;
 
 export interface SerializableContext {
-  request: PipelineContext['request'];
   agent: AgentRegion;
   iteration: SerializableIteration;
   session: SessionRegion;
-  /** Serialization format version. Absent = v1 (backward compat). Current = 1. */
   version?: number;
-  /** Optional snapshot ID for file system auditing */
   snapshotId?: string;
 }
 
-/** Current serialization format version. */
-export const SERIALIZATION_VERSION = 1;
+export const SERIALIZATION_VERSION = 2;
 
 export function serialize(ctx: PipelineContext, snapshotId?: string): SerializableContext {
-  const { fullStream, usagePromise, reasoningPromise, span, ...serializableIteration } = ctx.iteration;
-  void fullStream; void usagePromise; void reasoningPromise; void span;
   const result: SerializableContext = {
-    request: { ...ctx.request },
     agent: { ...ctx.agent },
-    iteration: serializableIteration,
+    iteration: { ...ctx.iteration },
     session: { ...ctx.session },
     version: SERIALIZATION_VERSION,
   };
@@ -36,8 +29,20 @@ export function serialize(ctx: PipelineContext, snapshotId?: string): Serializab
 export function deserialize(data: SerializableContext): PipelineContext {
   const version = data.version ?? 1;
   if (version === 1) {
+    // v1 兼容：将 request 字段合并到 session
+    const req = (data as any).request;
     return {
-      request: data.request,
+      agent: data.agent,
+      iteration: data.iteration,
+      session: {
+        ...data.session,
+        input: req?.input ?? (data.session as SessionRegion).input ?? '',
+        sessionId: req?.sessionId ?? (data.session as SessionRegion).sessionId ?? '',
+      },
+    };
+  }
+  if (version === 2) {
+    return {
       agent: data.agent,
       iteration: data.iteration,
       session: data.session,
@@ -46,12 +51,21 @@ export function deserialize(data: SerializableContext): PipelineContext {
   throw new SerializationVersionError(version);
 }
 
-/**
- * Placeholder migration function for future v1 → v2 upgrades.
- * When the serialization format evolves, implement the actual migration here.
- */
 export function migrate_v1_to_v2(data: SerializableContext): SerializableContext {
-  // v1 → v2 migration: no changes yet
+  const version = data.version ?? 1;
+  if (version === 1) {
+    const req = (data as any).request;
+    const { request: _, version: _v, ...rest } = data as any;
+    return {
+      ...rest,
+      session: {
+        ...data.session,
+        input: req?.input ?? (data.session as SessionRegion).input ?? '',
+        sessionId: req?.sessionId ?? (data.session as SessionRegion).sessionId ?? '',
+      },
+      version: 2,
+    };
+  }
   return data;
 }
 

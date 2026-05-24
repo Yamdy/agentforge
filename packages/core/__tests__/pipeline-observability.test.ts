@@ -10,10 +10,9 @@ import { ProcessorContextImpl } from '../src/processor-context.js';
 
 function makeContext(overrides?: Partial<PipelineContext>): PipelineContext {
   return {
-    request: { input: 'test', sessionId: 's1' },
     agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
     iteration: { step: 0 },
-    session: { custom: {} },
+    session: { input: 'test', sessionId: 's1', custom: {} },
     ...overrides,
   };
 }
@@ -56,12 +55,12 @@ describe('PipelineRunner with Tracer', () => {
     runner.register({
       stage: 'processInput',
       execute: async (pCtx: ProcessorContext) => {
-        const span = pCtx.state.iteration.span as Span;
-        span.setAttribute('input.length', pCtx.state.request.input.length);
+        const span = pCtx.span as Span;
+        span.setAttribute('input.length', pCtx.state.session.input.length);
       },
     });
 
-    await runner.run(makeContext({ request: { input: 'hello world', sessionId: 's1' } }), ['processInput']);
+    await runner.run(makeContext({ session: { input: 'hello world', sessionId: 's1', custom: {} } }), ['processInput']);
 
     const spans = exporter.getSpans();
     const processInputSpan = spans.find((s) => s.name === 'processInput');
@@ -157,10 +156,9 @@ describe('LoopOrchestrator compatRetries exposure', () => {
     );
 
     const ctx: PipelineContext = {
-      request: { input: 'test', sessionId: 's1' },
       agent: { config: { model: 'mock/test' }, promptFragments: [], toolDeclarations: [] },
       iteration: { step: 0 },
-      session: { custom: {} },
+      session: { input: 'test', sessionId: 's1', custom: {} },
     };
 
     const result = await orchestrator.runLoop(ctx, { maxIterations: 5, modelString: 'mock/test', sessionId: 's1' });
@@ -210,10 +208,9 @@ describe('LoopOrchestrator compatRetries exposure', () => {
     );
 
     const ctx: PipelineContext = {
-      request: { input: 'test', sessionId: 's1' },
       agent: { config: { model: 'anthropic/test' }, promptFragments: [], toolDeclarations: [] },
       iteration: { step: 0 },
-      session: { custom: {} },
+      session: { input: 'test', sessionId: 's1', custom: {} },
     };
 
     const result = await orchestrator.runLoop(ctx, { maxIterations: 5, modelString: 'anthropic/test', sessionId: 's1' });

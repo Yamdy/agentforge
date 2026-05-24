@@ -6,8 +6,8 @@ export const processInputProcessor: Processor = {
   execute: async (pCtx: ProcessorContext) => {
     const ctx = pCtx.state;
     const resolveCtx: ResolveContext = {
-      input: ctx.request.input,
-      sessionId: ctx.request.sessionId,
+      input: ctx.session.input,
+      sessionId: ctx.session.sessionId,
       metadata: {},
     };
     const config = { ...ctx.agent.config };

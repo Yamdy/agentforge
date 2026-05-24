@@ -241,7 +241,7 @@ export class TaskQueueImpl implements TaskQueue {
         const checkpoint = options.resumeFrom;
         const restoredContext = checkpoint.context;
         // Use the restored input from checkpoint if available
-        input = restoredContext?.request?.input ?? (state.input as string);
+        input = restoredContext?.session?.input ?? (state.input as string);
       } else {
         input = state.input as string;
       }

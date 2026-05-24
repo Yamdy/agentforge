@@ -14,9 +14,9 @@ import type {
 export class SimpleProcessorContext {
   constructor(private ctx: PipelineContext) {}
 
-  // Request region (immutable)
-  get input(): string { return this.ctx.request.input; }
-  get sessionId(): string { return this.ctx.request.sessionId; }
+  // Session region (includes former request fields)
+  get input(): string { return this.ctx.session.input; }
+  get sessionId(): string { return this.ctx.session.sessionId; }
 
   // Agent region
   get model(): string { return this.ctx.agent.config.model; }
