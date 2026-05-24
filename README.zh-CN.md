@@ -9,7 +9,7 @@
 
 <p align="center">
   <strong>开箱即用的 TypeScript Agent 框架</strong><br/>
-  流水线驱动 · 多智能体编排 · 兼容任意 LLM 提供商
+  流水线驱动 · 安全自修改 · 三层认知记忆 · 兼容任意 LLM 提供商
 </p>
 
 <p align="center">
@@ -37,12 +37,14 @@
 
 每个流水线阶段同时是**扩展点**、**可观测性跨度**和**钩子拦截点**——一种机制，三种能力。
 
-- ⚙️ [**流水线引擎**](docs/feature-tree.md#sf-1-agent-pipeline-engine) — 10 阶段处理器流水线，含 preLoop / loop / postLoop 区段，4 种控制流（中止 / 重试 / 挂起 / 错误）
+- ⚙️ [**流水线引擎**](docs/feature-tree.md#sf-1-agent-pipeline-engine) — 10 阶段处理器流水线，含 preLoop / loop / postLoop 区段，4 种控制流，运行时可变性（frozen / configurable / hot-reload）
+- 🛡️ [**安全自修改**](docs/feature-tree.md#sf-12-self-modification-safety--自修改安全) — 宪法引擎（L0-L4 风险分级）→ 四门验证 → 变异配额 → 退化看门狗，三层防线确保自修改不失控
+- 🧠 [**三层认知记忆**](docs/feature-tree.md#sf-14-cognitive-memory--三层认知记忆) — 情景记忆（事件流）+ 语义记忆（知识图谱）+ 工作记忆（当前上下文），模拟人类认知三层架构
 - 🤖 [**多智能体编排**](docs/feature-tree.md#sf-4-multi-agent-orchestration) — 顺序、并行与路由执行器，以流式流水线声明复杂工作流
 - 🧠 [**LLM 集成**](docs/feature-tree.md#sf-2-llm-integration) — 网关链支持 OpenAI、Anthropic、Google、DeepSeek 及任意 OpenAI 兼容端点。内置兼容规则与模型降级
 - 🛠️ [**16 个内置工具**](docs/feature-tree.md#sf-3-tool-system) — 文件、网络、系统、工具、记忆——另有 MCP 协议支持外部工具与子智能体即工具
-- 🔌 [**15+ 生产级插件**](docs/feature-tree.md#sf-7-plugin-system) — 记忆、压缩、权限、技能、MCP、驱逐、校验、费用上限、Token 预算、速率限制、PII 脱敏、内容审核
-- 📋 [**任务队列**](docs/feature-tree.md#sf-10-task-management) — 基于优先级的并发控制，支持长时任务自动检查点恢复
+- 🔌 [**18+ 生产级插件**](docs/feature-tree.md#sf-7-plugin-system) — 记忆、压缩、权限、技能、MCP、驱逐、校验、费用上限、Token 预算、速率限制、PII 脱敏、内容审核、熔断器
+- 🏗️ [**生产韧性**](docs/feature-tree.md#sf-15-production-resilience--生产韧性) — 熔断器、结构化并发、倒计时门闩、文件审计回滚，防止级联故障
 - 💾 [**会话持久化**](docs/feature-tree.md#sf-6-session--persistence) — 挂起 / 恢复，支持 JSONL 与 SQLite 后端。11 种事件类型完整回放。专为 HITL 工作流设计
 - 🌐 [**A2A 协议**](docs/feature-tree.md#sf-9-server--deployment) — 原生 Agent-to-Agent JSON-RPC，支持流式传输、Agent Card 与工件交换
 
@@ -165,12 +167,14 @@ const agent = new Agent({
 |---|---|---|---|---|
 | 语言 | TypeScript | TypeScript | Python | Python |
 | 流水线模型 | Processor + Span + Hook | 仅 Middleware | 仅 Pipeline | 基于任务 |
+| 安全自修改 | 宪法引擎 + 验证门 + 变异配额 + 看门狗 | 非内置 | 非内置 | 非内置 |
+| 三层认知记忆 | 情景 + 语义 + 工作 | 非内置 | 非内置 | 非内置 |
 | 多智能体 | 顺序 / 并行 / 路由 | 手动编排 | 基础 | Crew + Flow |
-| 生产级防护 | costCap, tokenBudget, rateLimit, PII, moderation | 部分 | 非内置 | 非内置 |
+| 生产级防护 | costCap, tokenBudget, rateLimit, PII, moderation, circuitBreaker | 部分 | 非内置 | 非内置 |
 | A2A 协议 | 原生 + 流式 | 手动 | 原生 | 非内置 |
 | 任务队列 | 优先级 + 并发 + 检查点 | 基础 | 非内置 | 非内置 |
 | 会话持久化 | JSONL + SQLite + 检查点 | 基础 | SQLite | 基础 |
-| 插件系统 | 15+ 内置，一行注册 | 有限 | Toolkit + MCP | Tools + MCP |
+| 插件系统 | 18+ 内置，一行注册 | 有限 | Toolkit + MCP | Tools + MCP |
 
 ## 🏗️ 架构
 
@@ -180,22 +184,21 @@ processInput → buildContext → [Agentic Loop:
 ] → processOutput
 ```
 
-每个阶段接收一个 `PipelineContext`，包含四个区域：
+每个阶段接收一个 `PipelineContext`，包含三个区域：
 
 | 区域 | 用途 |
 |------|------|
-| `request` | 不可变输入（消息、sessionId） |
 | `agent` | 配置、系统提示、工具声明、提示片段 |
 | `iteration` | 单步状态（响应、工具调用、循环指令、跨度） |
-| `session` | 跨步状态（历史记录、Token 用量、插件数据） |
+| `session` | 跨步状态（输入、sessionId、历史记录、Token 用量、插件数据） |
 
 ```
 packages/
   sdk/             -- 纯类型定义（零依赖）
   tools/           -- 16 个内置工具（文件 · 网络 · 系统 · 工具 · 记忆）
   observability/   -- Span · Tracer · Metrics + OpenTelemetry 桥接
-  core/            -- Agent · Pipeline · LLMInvoker · 编排 · TaskQueue · Session
-  plugins/         -- 15+ 处理器插件
+  core/            -- Agent · Pipeline · LLMInvoker · 编排 · TaskQueue · Session · 自修改 · 记忆
+  plugins/         -- 18+ 处理器插件
   server/          -- HTTP 服务器 · A2A 协议 · CLI · Studio UI
 ```
 

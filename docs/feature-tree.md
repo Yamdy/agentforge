@@ -13,14 +13,18 @@ AgentForge 特性树
 ├── SF-1  Agent Pipeline Engine     ████████████ 核心
 ├── SF-2  LLM Integration           ████████████ 核心
 ├── SF-3  Tool System                ██████████   核心
-├── SF-4  Multi-Agent Orchestration  ████████     新增
+├── SF-4  Multi-Agent Orchestration  ████████     核心
 ├── SF-5  Observability & Harness    ████████████ 核心
 ├── SF-6  Session & Persistence      █████████    核心
 ├── SF-7  Plugin System              ████████████ 核心
 ├── SF-8  Configuration & Profiles   ███████      支撑
 ├── SF-9  Server & Deployment        ████████     产品化
-├── SF-10 Task Management            ██████       新增
-└── SF-11 State Management           ████         支撑
+├── SF-10 Task Management            ██████       核心
+├── SF-11 State Management           ████         支撑
+├── SF-12 Self-Modification Safety   ████████████ 核心
+├── SF-13 Runtime Mutability         ████████     核心
+├── SF-14 Cognitive Memory           █████████    核心
+└── SF-15 Production Resilience      ████████     核心
 ```
 
 ---
@@ -31,9 +35,10 @@ AgentForge 特性树
 sdk (零依赖，纯类型)
   ← tools         (工具实现)
   ← observability (可观测抽象)
-  ← core          (全部运行时：管道/Agent/LLM/会话/编排/任务队列)
+  ← core          (全部运行时：管道/Agent/LLM/会话/编排/任务队列/自修改/记忆/韧性)
+    core/memory/  (三层认知记忆：情景/语义/工作)
   ← plugins       (处理器插件)
-  ← server        (HTTP 服务 + A2A + 认证)
+  ← server        (HTTP 服务 + A2A + 认证 + Studio)
 ```
 
 ---
@@ -157,6 +162,8 @@ Router:     Input → Classifier → {Agent A | Agent B | Agent C} → Output
 | IR-5.4 | Harness Gates | Cost Cap / Token Budget / Rate Limit / Required Tools Gate 四类内置门控 | `plugins/harness/` |
 | IR-5.5 | Goal Echo & Fact Injection | 目标回声（防止 Agent 漂移）+ 事实注入（上下文增强） | `plugins/harness/` |
 | IR-5.6 | Output Validation | 输出校验策略（json-schema/regex/custom），block/warn/fix 三种处理模式 | `plugins/validation/` |
+| IR-5.7 | Snapshot Service | 文件系统审计追踪，变更 diff，一键回滚 | `core/snapshot-service.ts`, `core/snapshot-store.ts` |
+| IR-5.8 | Harness Decisions | 决策记录袋，allow/block/warn/queue 四种决策类型 | `core/harness-decisions.ts` |
 
 ### Hook 拦截点
 
@@ -239,6 +246,9 @@ session.created, user.message, assistant.message, tool.call, tool.result, iterat
 | IR-7.5 | Permission Plugin | 规则引擎 + allow/deny/ask 三模式 + glob 匹配 + 内置危险工具列表 | `plugins/permission/` |
 | IR-7.6 | Skill Plugin | 文件系统技能发现 + YAML frontmatter 解析 + 渐进式披露 | `plugins/skill/` |
 | IR-7.7 | Eviction Plugin | 大内容驱逐到外部存储（InMemory/Filesystem），返回 preview + reference | `plugins/eviction/` |
+| IR-7.8 | PII Detector | 个人信息检测，正则+规则引擎，mask/block/warn 三种处理 | `plugins/harness/pii-detector-processor.ts` |
+| IR-7.9 | Moderation | 内容审核，可配置敏感词/规则，block/replace/warn 三种模式 | `plugins/harness/moderation-processor.ts` |
+| IR-7.10 | Circuit Breaker | 熔断器处理器，连续失败自动熔断，half-open 试探恢复 | `plugins/harness/circuit-breaker-processor.ts` |
 
 ### Plugin 注册内容
 
@@ -282,6 +292,8 @@ session.created, user.message, assistant.message, tool.call, tool.result, iterat
 | IR-9.5 | Authentication | AuthAdapter 接口 + StaticKeyAuthAdapter 实现 | `server/middleware/` |
 | IR-9.6 | Studio Observability | Studio UI 可观测性集成 | `server/studio/` |
 | IR-9.7 | Server Profiles | 4 种服务端预设（coding/business/personal/data） | `server/profiles/` |
+| IR-9.8 | Rate Limiting | 滑动窗口限流中间件，IP+路由级别，标准 RateLimit 响应头 | `server/middleware/rate-limit.ts` |
+| IR-9.9 | Structured Logging | JSON/pretty/silent 格式，X-Request-Id 自动生成/透传 | `server/middleware/logger.ts` |
 
 ---
 
@@ -321,10 +333,106 @@ pending → running → completed
 
 ---
 
+## SF-12: Self-Modification Safety — 自修改安全
+
+> **客户价值**：Agent 可安全地修改自身行为，通过宪法引擎、验证门和变异预算构成的三层防线，确保自修改不失控。
+
+| IR | 能力域 | 功能点 | 对应代码 |
+|----|--------|--------|---------|
+| IR-12.1 | Constitution Engine | L0-L4 五级风险分类，保护路径白名单，diff 行数限制，审批矩阵（auto/auto_with_audit/human_approval/always_reject） | `core/constitution.ts` |
+| IR-12.2 | Verification Gate | 四门验证管线（Constitution/DiffLimit/InterfacePreservation/SyntaxCheck），门可扩展 | `core/verification-gate.ts` |
+| IR-12.3 | Mutation Budget | 每小时/每日修改配额，文件数/行数双维度限制，自动重置 | `core/mutation-budget.ts` |
+| IR-12.4 | Degeneration Watchdog | 可配置健康检查集合，连续失败自动回滚到最近健康快照 | `core/degeneration-watchdog.ts` |
+| IR-12.5 | Self-Modification Engine | 自修改编排器，串联宪法检查→验证门→预算消费→应用变更 | `core/self-modification-engine.ts` |
+| IR-12.6 | Self-Representation | ECC 12 层模型，Agent 可内省自身模块/依赖/健康状态，识别故障模式 | `core/self-representation.ts` |
+
+### 风险分级
+
+| 级别 | 含义 | 默认审批 |
+|------|------|---------|
+| L0 | 纯数据修改（systemPrompt 等） | auto |
+| L1 | 低风险代码变更（配置文件） | auto_with_audit |
+| L2 | 中风险变更（非核心模块） | human_approval |
+| L3 | 高风险变更（核心模块） | human_approval |
+| L4 | 绝对保护（不可修改） | always_reject |
+
+### 验证门管线
+
+```
+ConstitutionGate → DiffLimitGate → InterfacePreservationGate → SyntaxCheckGate → accepted
+```
+
+---
+
+## SF-13: Runtime Mutability — 运行时可变性
+
+> **客户价值**：Agent 可在运行时动态调整 pipeline 结构、处理器和插件，支持 frozen/configurable/hot-reload 三档控制。
+
+| IR | 能力域 | 功能点 | 对应代码 |
+|----|--------|--------|---------|
+| IR-13.1 | Mutability Policy | frozen/configurable/hot-reload 按 domain（pipeline/processors/plugins/tools）控制 | `core/mutability-policy.ts` |
+| IR-13.2 | Config Watcher | 文件系统监听配置变更，防抖触发热重载，策略门控 | `core/config-watcher.ts` |
+| IR-13.3 | Processor Registry | 配置驱动的处理器解析，{ builtin: "name" } 声明式引用 | `core/processor-registry.ts` |
+| IR-13.4 | Plugin Registry | 配置驱动的插件解析，{ id: "name" } 声明式引用 | `core/plugin-registry.ts` |
+| IR-13.5 | Stage Mutation | 运行时 insert/remove/replace pipeline 阶段，PipelineStageConfig 三段编排 | `sdk/` PipelineStageConfig, StageMutation |
+| IR-13.6 | HarnessConfig Auto-Wire | 配置自动接线：processors/pipeline/mutability 从 HarnessConfig 注入 Agent | `core/harness.ts` |
+
+### 可变性策略
+
+| Domain | frozen | configurable | hot-reload |
+|--------|--------|-------------|-----------|
+| pipeline | 不可修改阶段顺序 | 运行时可调整 | 配置变更自动生效 |
+| processors | 不可增删处理器 | 运行时注册/注销 | 配置驱动自动注册 |
+| plugins | 不可增删插件 | 运行时注册/注销 | 配置驱动自动注册 |
+| tools | 不可增删工具 | 运行时注册/注销 | — |
+
+---
+
+## SF-14: Cognitive Memory — 三层认知记忆
+
+> **客户价值**：Agent 具备情景记忆（事件流）、语义记忆（知识图谱）和工作记忆（当前上下文），模拟人类认知三层架构。
+
+| IR | 能力域 | 功能点 | 对应代码 |
+|----|--------|--------|---------|
+| IR-14.1 | Episodic Memory | 事件流存储与回放，时间范围查询，自动摘要 | `core/memory/episodic-memory.ts` |
+| IR-14.2 | Semantic Memory | 实体+关系知识图谱，相似度搜索，图遍历 | `core/memory/semantic-memory.ts` |
+| IR-14.3 | Working Memory | 当前上下文有限缓冲区，自动淘汰旧内容 | `core/memory/working-memory.ts` |
+| IR-14.4 | Embedding Provider | SimpleEmbedder 内置 + 可扩展向量嵌入接口 | `core/memory/types.ts` |
+| IR-14.5 | Memory Storage | InMemory + SQLite 双存储后端 | `core/memory/storage/` |
+| IR-14.6 | Memory Processors | createMemoryRecallProcessor + createMemoryStoreProcessor，pipeline 自动存取 | `core/memory/memory-processor.ts` |
+
+### 记忆层次
+
+```
+Working Memory (当前上下文，有限容量)
+      ↕ 自动交换
+Episodic Memory (事件流，时间索引)
+      ↕ 压缩提炼
+Semantic Memory (知识图谱，语义索引)
+```
+
+---
+
+## SF-15: Production Resilience — 生产韧性
+
+> **客户价值**：生产环境 Agent 需要熔断、重试、结构化并发等韧性模式，防止级联故障和资源耗尽。
+
+| IR | 能力域 | 功能点 | 对应代码 |
+|----|--------|--------|---------|
+| IR-15.1 | Circuit Breaker | closed/open/half_open 三态熔断器，可配失败阈值/恢复超时/半开试探 | `core/circuit-breaker.ts` |
+| IR-15.2 | Runner | 结构化并发，Idle→Running→Shell→ShellThenRun 状态机，中断传播 | `core/runner.ts` |
+| IR-15.3 | Latch | 倒计时门闩并发原语，await() 阻塞直到 countDown 到 0 | `core/latch.ts` |
+| IR-15.4 | Retry State Store | 持久化重试计数器，InMemory + Jsonl 双后端 | `core/retry-state-store.ts` |
+| IR-15.5 | Snapshot Service | 文件系统变更审计，diff 对比，一键 revert 回滚 | `core/snapshot-service.ts` |
+| IR-15.6 | Pending Permission | 异步权限审批流，决策缓存，HITL 暂停/恢复 | `core/pending-permission.ts` |
+
+---
+
 ## 变更日志
 
 | 日期 | 变更 |
 |------|------|
+| 2026-05-25 | 新增 SF-12~15（自修改安全/运行时可变性/认知记忆/生产韧性），更新 SF-5/7/9，15 SF / 66+ IR |
 | 2026-05-20 | 初始版本，11 SF / 44 IR 全量梳理 |
 
 

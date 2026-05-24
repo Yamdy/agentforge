@@ -9,7 +9,7 @@
 
 <p align="center">
   <strong>The batteries-included TypeScript Agent framework.</strong><br/>
-  Pipeline-driven · Multi-agent orchestration · Any LLM provider
+  Pipeline-driven · Self-modification safety · Cognitive memory · Any LLM provider
 </p>
 
 <p align="center">
@@ -37,12 +37,14 @@
 
 Every pipeline stage is simultaneously an **extension point**, an **observability span**, and a **hook interception point** — one mechanism, three capabilities.
 
-- ⚙️ [**Pipeline Engine**](docs/feature-tree.md#sf-1-agent-pipeline-engine) — 10-stage processor pipeline with preLoop / loop / postLoop sections, 4 control flows (abort / retry / suspend / error)
+- ⚙️ [**Pipeline Engine**](docs/feature-tree.md#sf-1-agent-pipeline-engine) — 10-stage processor pipeline with preLoop / loop / postLoop sections, 4 control flows (abort / retry / suspend / error), runtime mutability (frozen / configurable / hot-reload)
+- 🛡️ [**Self-Modification Safety**](docs/feature-tree.md#sf-12-self-modification-safety--自修改安全) — Constitution engine (L0-L4 risk levels), 4-gate verification pipeline, mutation budget, degeneration watchdog — Agent can safely modify itself with three-layer protection
+- 🧠 [**Cognitive Memory**](docs/feature-tree.md#sf-14-cognitive-memory--三层认知记忆) — Episodic (event stream) + Semantic (knowledge graph) + Working (current context) — three-layer memory mimicking human cognition
 - 🤖 [**Multi-Agent Orchestration**](docs/feature-tree.md#sf-4-multi-agent-orchestration) — Sequential, Parallel, and Router executors — declare complex workflows in a fluent pipeline
 - 🧠 [**LLM Integration**](docs/feature-tree.md#sf-2-llm-integration) — Gateway chain with OpenAI, Anthropic, Google, DeepSeek, and any OpenAI-compatible endpoint. Built-in compat rules and model fallback
 - 🛠️ [**16 Built-in Tools**](docs/feature-tree.md#sf-3-tool-system) — File, web, system, utility, memory — plus MCP protocol for external tools and sub-agent-as-tool
-- 🔌 [**15+ Production Plugins**](docs/feature-tree.md#sf-7-plugin-system) — Memory, compression, permission, skill, MCP, eviction, validation, cost cap, token budget, rate limit, PII, moderation
-- 📋 [**Task Queue**](docs/feature-tree.md#sf-10-task-management) — Priority-based concurrency control with auto-checkpoint recovery for long-running tasks
+- 🔌 [**18+ Production Plugins**](docs/feature-tree.md#sf-7-plugin-system) — Memory, compression, permission, skill, MCP, eviction, validation, cost cap, token budget, rate limit, PII, moderation, circuit breaker
+- 🏗️ [**Production Resilience**](docs/feature-tree.md#sf-15-production-resilience--生产韧性) — Circuit breaker, structured concurrency (Runner), latch, snapshot service with file audit & revert
 - 💾 [**Session Persistence**](docs/feature-tree.md#sf-6-session--persistence) — Suspend / resume with JSONL and SQLite backends. 11 event types for full replay. Built for HITL workflows
 - 🌐 [**A2A Protocol**](docs/feature-tree.md#sf-9-server--deployment) — Native Agent-to-Agent JSON-RPC with streaming, agent cards, and artifact exchange
 
@@ -165,12 +167,14 @@ const agent = new Agent({
 |---|---|---|---|---|
 | Language | TypeScript | TypeScript | Python | Python |
 | Pipeline model | Processor + Span + Hook | Middleware only | Pipeline only | Task-based |
+| Self-modification | Constitution + Verification + Budget + Watchdog | Not built-in | Not built-in | Not built-in |
+| Cognitive memory | Episodic + Semantic + Working | Not built-in | Not built-in | Not built-in |
 | Multi-agent | Sequential / Parallel / Router | Manual | Basic | Crew + Flow |
-| Production guardrails | costCap, tokenBudget, rateLimit, PII, moderation | Partial | Not built-in | Not built-in |
+| Production guardrails | costCap, tokenBudget, rateLimit, PII, moderation, circuitBreaker | Partial | Not built-in | Not built-in |
 | A2A protocol | Native + streaming | Manual | Native | Not built-in |
 | Task queue | Priority + concurrency + checkpoint | Basic | Not built-in | Not built-in |
 | Session persistence | JSONL + SQLite + checkpoint | Basic | SQLite | Basic |
-| Plugin system | 15+ built-in, 1-line register | Limited | Toolkit + MCP | Tools + MCP |
+| Plugin system | 18+ built-in, 1-line register | Limited | Toolkit + MCP | Tools + MCP |
 
 ## 🏗️ Architecture
 
@@ -193,8 +197,8 @@ packages/
   sdk/             -- Pure type definitions (zero dependencies)
   tools/           -- 16 built-in tools (file · web · system · utility · memory)
   observability/   -- Span · Tracer · Metrics + OpenTelemetry bridge
-  core/            -- Agent · Pipeline · LLMInvoker · Orchestration · TaskQueue · Session
-  plugins/         -- 15+ processor plugins
+  core/            -- Agent · Pipeline · LLMInvoker · Orchestration · TaskQueue · Session · Self-Modification · Memory
+  plugins/         -- 18+ processor plugins
   server/          -- HTTP server · A2A protocol · CLI · Studio UI
 ```
 

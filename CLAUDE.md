@@ -26,7 +26,7 @@ cd examples && npx tsx unified-demo.ts
 
 ## Architecture
 
-**AgentForge** is a TypeScript agent framework built around a Processor Pipeline model. The agent lifecycle is a linear pipeline of stages, each simultaneously an extension point (Processor), an observability span, and a hook interception point.
+**AgentForge** is a TypeScript agent framework built around a Processor Pipeline model, with built-in self-modification safety, three-layer cognitive memory, and production resilience. The agent lifecycle is a linear pipeline of stages, each simultaneously an extension point (Processor), an observability span, and a hook interception point.
 
 ### Monorepo Structure (pnpm + Turborepo)
 
@@ -41,12 +41,36 @@ packages/
     process-step-output, execute-tools, process-output (no-op extension points)
     provider-history-compat (compat rules engine)
     core/gateways/ — GatewayChain, BuiltInGateway, OpenAICompatibleGateway
+    core/adapters/ — High-level Processor APIs: modifiers (message/systemPrompt/tools/providerOptions), gates (permission/quota/cost)
+    core/memory/ — Three-layer cognitive memory (Episodic/Semantic/Working), embedder, InMemory+SQLite storage
+    core/orchestration/ — Multi-agent orchestration (Sequential/Parallel/Router + Pipeline)
+    core/task-queue/ — Priority task queue, persistent queue, notification, auto-checkpoint
     provider-capabilities.ts — Provider capability detection
     loop-orchestrator.ts — Loop orchestration logic (extracted from Agent, shared by run/stream)
     parse-model.ts — parseModel function (extracted from model-resolver, eliminates circular dep)
     state-machine.ts — Agent lifecycle state machine (pending→running→completed/paused/cancelled/error)
     serialize.ts — PipelineContext serialization/deserialization (for suspend checkpoint)
-  plugins/     — Processor plugins: memory, compression, permission, skill, MCP, eviction
+    constitution.ts — L0-L4 risk classification, protected paths, diff limits, approval matrix
+    verification-gate.ts — Multi-gate verification pipeline (Constitution/DiffLimit/Interface/Syntax)
+    mutation-budget.ts — Hourly/daily mutation quota engine
+    degeneration-watchdog.ts — Health check + auto-rollback watchdog
+    self-modification-engine.ts — Self-modification orchestrator (constitution→gate→budget→apply)
+    self-representation.ts — ECC 12-layer model, module introspection, health diagnostics
+    mutability-policy.ts — frozen/configurable/hot-reload per-domain control
+    config-watcher.ts — File system config hot-reload with debounce
+    processor-registry.ts — Config-driven processor resolution ({ builtin: "name" })
+    plugin-registry.ts — Config-driven plugin resolution ({ id: "name" })
+    circuit-breaker.ts — closed/open/half_open state machine
+    runner.ts — Structured concurrency for Agent tasks
+    latch.ts — Countdown latch concurrency primitive
+    snapshot-service.ts — File system audit trail, diff, revert
+    pending-permission.ts — Async permission approval flow for HITL
+    harness-decisions.ts — Decision recording bag (allow/block/warn/queue)
+    content-blocks.ts — Pi-style structured output (Text/Thinking/ToolCall/ToolResult blocks)
+  plugins/     — Processor plugins: memory, compression, permission, skill, MCP, eviction, PII, moderation, circuit-breaker
+  server/      — HTTP service + A2A + Auth + Studio + Rate Limit + Structured Logging
+  studio-ui/   — Vue 3 SPA observability dashboard
+  create-agentforge/ — CLI scaffolding tool
 ```
 
 Dependency direction: `sdk` (zero deps) ← `tools` / `observability` ← `core` ← `plugins`.
@@ -81,6 +105,12 @@ The agentic loop repeats until `iteration.loopDirective` is `stop`. Processors c
 - **Suspend/Resume**: on suspend, `serialize()` stores a checkpoint; `Agent.resume(sessionId)` deserializes and continues the loop.
 - **LLMInvoker**: wraps `ai.streamText()` for single-step LLM calls (no `maxSteps`), returns `fullStream` + `usage` + `reasoning` promises. `stream()` now includes `llm.stream` span tracking and retry on initial streamText connection. Retry at invoke level only.
 - **Provider compatibility**: `ProviderCapabilities` detection + `CompatRule` engine. Preemptive rules rewrite messages before LLM call; reactive rules fix history on API error. `providerOptions` passthrough from `AgentConfig` to `streamText()`.
+- **Self-Modification Safety**: Constitution (L0-L4 risk levels, protected paths) → Verification Gate Pipeline (4 gates) → Mutation Budget (hourly/daily quotas) → DegenerationWatchdog (health check + auto-rollback). `SelfModificationEngine` orchestrates the full flow.
+- **Runtime Mutability**: `MutabilityPolicyEngine` controls frozen/configurable/hot-reload per domain. `ConfigWatcher` monitors config files for hot-reload. `ProcessorRegistry`/`PluginRegistry` enable config-driven resolution. `StageMutation` allows insert/remove/replace pipeline stages at runtime.
+- **Cognitive Memory**: Three-layer architecture — `EpisodicMemory` (event stream), `SemanticMemory` (entity+relation graph), `WorkingMemory` (current context buffer). InMemory + SQLite dual storage. `MemorySystem` integrates all three.
+- **Adapters**: `modifiers` (message/systemPrompt/tools/providerOptions) and `gates` (permission/quota/cost) provide high-level Processor creation APIs — one function call instead of manual Processor implementation.
+- **Production Resilience**: `CircuitBreaker` (closed/open/half_open), `Runner` (structured concurrency), `Latch` (countdown), `SnapshotService` (file audit + revert), `PendingPermission` (async HITL approval).
+- **ContentBlocks**: Pi-style structured LLM output — `TextBlock`, `ThinkingBlock`, `ToolCallBlock`, `ToolResultBlock`. `assembleContentBlocks()` merges stream parts into structured blocks.
 
 ### Three-Form / 7-Module / AOP Mapping
 
@@ -110,6 +140,9 @@ The agentic loop repeats until `iteration.loopDirective` is `stop`. Processors c
 | EventSystem | `core/event-system.ts` + `event-bus.ts` | 2, 3 |
 | HookManager | `core/hook-manager.ts` | 2, 3 |
 | CheckpointStore | `core/checkpoint-store.ts` | 2 |
+| ConstitutionEngine | `core/constitution.ts` | 2 |
+| MemorySystem | `core/memory/` | 1, 2 |
+| CircuitBreaker | `core/circuit-breaker.ts` | 2 |
 
 **AOP Three Methods → Code**
 

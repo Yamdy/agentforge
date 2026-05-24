@@ -410,6 +410,233 @@ await server.start();
 
 > **注意**: `StudioObservability` 当前仅从 `@primo-ai/server` 导出，底层 `TraceCollector` 和 `InMemoryMetrics` 从 `@primo-ai/observability` 导出，可在任意场景使用。
 
+## 自修改安全
+
+AgentForge 内建三层防线，确保 Agent 自修改行为不失控：
+
+1. **Constitution 宪法引擎** — 定义保护路径和风险分级
+2. **Verification Gate** — 多门验证管线
+3. **Mutation Budget** — 限制修改频率和规模
+
+```ts
+import { ConstitutionEngine, VerificationGatePipeline, MutationBudgetEngine } from '@primo-ai/core';
+
+// 1. 定义宪法
+const constitution = {
+  protectedPaths: [
+    { pattern: 'core/**/*.ts', level: 'absolute' },
+    { pattern: 'config/**/*.json', level: 'approval' },
+  ],
+  diffLimits: { maxLinesPerFile: 50, maxFilesPerMutation: 5 },
+  approvalMatrix: {
+    L0: 'auto',
+    L1: 'auto_with_audit',
+    L2: 'human_approval',
+    L3: 'human_approval',
+    L4: 'always_reject',
+  },
+};
+
+const constitutionEngine = new ConstitutionEngine(constitution);
+
+// 2. 创建验证门管线
+const gatePipeline = new VerificationGatePipeline({
+  constitutionEngine,
+  additionalGates: [],
+});
+
+// 3. 配置变异预算
+const budgetEngine = new MutationBudgetEngine({
+  maxHourlyMutations: 10,
+  maxDailyMutations: 50,
+  maxLinesPerFile: 100,
+});
+```
+
+### 退化看门狗
+
+监控 Agent 健康状态，连续失败自动回滚：
+
+```ts
+import { DegenerationWatchdog } from '@primo-ai/core';
+
+const watchdog = new DegenerationWatchdog({
+  healthChecks: [
+    {
+      name: 'response-quality',
+      check: async () => ({ healthy: true, details: 'OK' }),
+    },
+  ],
+  maxConsecutiveFailures: 3,
+  onRollback: () => console.log('回滚到最近健康快照'),
+});
+```
+
+## 三层认知记忆
+
+模拟人类认知三层架构：
+
+```ts
+import { MemorySystem } from '@primo-ai/core';
+
+const memory = new MemorySystem({
+  episodic: { store: 'sqlite', path: './memory/episodic.db' },
+  semantic: { store: 'sqlite', path: './memory/semantic.db' },
+  working: { capacity: 10 },
+  embedder: new SimpleEmbedder(),
+});
+
+// 存储事件记忆
+await memory.remember({
+  content: '用户偏好中文回复',
+  type: 'preference',
+});
+
+// 召回相关记忆
+const results = await memory.recall({
+  query: '用户语言偏好',
+  limit: 5,
+});
+```
+
+三层记忆也可通过 pipeline processor 自动集成：
+
+```ts
+import { createMemoryRecallProcessor, createMemoryStoreProcessor } from '@primo-ai/core';
+
+const agent = new Agent({
+  model: 'deepseek/deepseek-v4-flash',
+  plugins: [
+    // 自动存储对话到记忆
+    { factory: (harness) => ({
+      processors: [createMemoryStoreProcessor(memory)],
+    }) },
+    // 自动从记忆召回上下文
+    { factory: (harness) => ({
+      processors: [createMemoryRecallProcessor(memory)],
+    }) },
+  ],
+});
+```
+
+## 适配器 API
+
+高级 Processor 创建 API — 一行代码替代手写 Processor：
+
+### Modifiers — 修改上下文
+
+```ts
+import { modifiers } from '@primo-ai/core';
+
+// 修改消息历史
+const msgModifier = modifiers.message((msgs, ctx) => {
+  // 注入系统消息到历史头部
+  return [{ role: 'user', content: '当前时间: ' + new Date().toISOString() }, ...msgs];
+});
+
+// 修改系统提示
+const promptModifier = modifiers.systemPrompt((prompt, ctx) => {
+  return prompt + '\n\n注意：回答需基于最新数据。';
+});
+
+// 动态注入工具
+const toolModifier = modifiers.tools((tools, ctx) => {
+  return [...tools, { name: 'timeTool', description: '获取当前时间' }];
+});
+```
+
+### Gates — 控制流门控
+
+```ts
+import { gates } from '@primo-ai/core';
+
+// 权限门控
+const permGate = gates.permission({
+  check: (toolName, args, ctx) => {
+    if (toolName === 'shellTool') return 'ask'; // 需要人工审批
+    if (toolName === 'fileWriteTool' && args.path.includes('/etc/')) return 'deny';
+    return 'allow';
+  },
+  onDeny: (toolName) => `工具 ${toolName} 被拒绝`,
+});
+
+// 配额门控
+const quotaGate = gates.quota({
+  check: (usage, ctx) => {
+    return (usage?.totalTokens ?? 0) < 100000;
+  },
+  onExceeded: (usage) => `Token 用量超限: ${usage?.totalTokens}`,
+});
+```
+
+## 生产韧性
+
+### 熔断器
+
+防止级联故障，连续失败自动熔断：
+
+```ts
+import { CircuitBreaker } from '@primo-ai/core';
+
+const breaker = new CircuitBreaker({
+  failureThreshold: 5,    // 5 次失败后熔断
+  resetTimeout: 30000,    // 30 秒后半开试探
+  halfOpenMaxRequests: 1, // 半开状态允许 1 次试探
+});
+
+// 使用
+if (breaker.state === 'closed') {
+  try {
+    const result = await riskyOperation();
+    breaker.recordSuccess();
+  } catch (e) {
+    breaker.recordFailure();
+  }
+}
+```
+
+### 结构化并发
+
+Runner 提供 Agent 任务的结构化并发管理：
+
+```ts
+import { Runner } from '@primo-ai/core';
+
+const runner = new Runner({
+  onInterrupt: () => console.log('任务被中断'),
+});
+
+const handle = runner.enqueue(async () => {
+  return await agent.run('执行任务');
+});
+
+// 等待结果
+const result = await handle.promise;
+```
+
+### 文件审计回滚
+
+SnapshotService 追踪文件变更，支持 diff 和一键回滚：
+
+```ts
+import { SnapshotServiceImpl, NodeFsAdapter, InMemorySnapshotStore } from '@primo-ai/core';
+
+const snapshot = new SnapshotServiceImpl({
+  adapter: new NodeFsAdapter(),
+  store: new InMemorySnapshotStore(),
+  patterns: ['src/**/*.ts', 'config/**/*.json'],
+});
+
+// 创建快照
+const snapId = await snapshot.create();
+
+// 对比差异
+const diff = await snapshot.diff(snapId);
+
+// 回滚
+await snapshot.revert(snapId);
+```
+
 ## 下一步
 
 - [API 参考](/api-reference) — 完整的类型和方法文档

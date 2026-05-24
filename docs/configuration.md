@@ -391,3 +391,145 @@ cd packages/studio-ui && pnpm build
 ```
 
 未构建时访问 `/studio/` 会返回提示信息。
+
+## Mutability Configuration
+
+运行时可变性策略控制 Agent 哪些部分可以在运行时修改：
+
+```jsonc
+{
+  "mutability": {
+    "pipeline": "frozen",       // 'frozen' | 'configurable' | 'hot-reload'
+    "processors": "frozen",     // 'frozen' | 'configurable' | 'hot-reload'
+    "plugins": "frozen",        // 'frozen' | 'configurable' | 'hot-reload'
+    "tools": "frozen",          // 'frozen' | 'configurable'
+    "hotReload": false,         // 是否启用配置热重载
+    "watchConfig": false        // 是否监听配置文件变更
+  }
+}
+```
+
+### 快捷方式
+
+可以设置单一级别应用到所有 domain：
+
+```jsonc
+{
+  "mutability": "configurable"  // 所有 domain 设为 configurable，hotReload 自动开启
+}
+```
+
+| Domain | frozen | configurable | hot-reload |
+|--------|--------|-------------|-----------|
+| pipeline | 不可修改阶段顺序 | 运行时可调整 | 配置变更自动生效 |
+| processors | 不可增删处理器 | 运行时注册/注销 | 配置驱动自动注册 |
+| plugins | 不可增删插件 | 运行时注册/注销 | 配置驱动自动注册 |
+| tools | 不可增删工具 | 运行时注册/注销 | — |
+
+## Self-Modification Configuration
+
+自修改安全体系配置：
+
+```jsonc
+{
+  "selfModification": {
+    "constitution": {
+      "protectedPaths": [
+        { "pattern": "core/**/*.ts", "level": "absolute" },
+        { "pattern": "config/**/*", "level": "approval" }
+      ],
+      "diffLimits": {
+        "maxLinesPerFile": 50,
+        "maxFilesPerMutation": 5
+      },
+      "approvalMatrix": {
+        "L0": "auto",
+        "L1": "auto_with_audit",
+        "L2": "human_approval",
+        "L3": "human_approval",
+        "L4": "always_reject"
+      }
+    },
+    "mutationBudget": {
+      "maxHourlyMutations": 10,
+      "maxDailyMutations": 50,
+      "maxLinesPerFile": 100
+    },
+    "watchdog": {
+      "maxConsecutiveFailures": 3,
+      "autoRollback": true
+    }
+  }
+}
+```
+
+### 风险分级
+
+| 级别 | 含义 | 默认审批模式 |
+|------|------|-------------|
+| L0 | 纯数据修改（systemPrompt 等） | auto |
+| L1 | 低风险代码变更（配置文件） | auto_with_audit |
+| L2 | 中风险变更（非核心模块） | human_approval |
+| L3 | 高风险变更（核心模块） | human_approval |
+| L4 | 绝对保护（不可修改） | always_reject |
+
+## Memory Configuration
+
+三层认知记忆配置：
+
+```jsonc
+{
+  "memory": {
+    "episodic": {
+      "store": "sqlite",        // 'inmemory' | 'sqlite'
+      "path": "./memory/episodic.db"
+    },
+    "semantic": {
+      "store": "sqlite",        // 'inmemory' | 'sqlite'
+      "path": "./memory/semantic.db"
+    },
+    "working": {
+      "capacity": 10            // 工作记忆容量
+    },
+    "embedder": {
+      "type": "simple"          // 'simple' | 自定义
+    }
+  }
+}
+```
+
+### Pipeline 集成
+
+记忆系统可通过 pipeline processor 自动集成到 Agent：
+
+```jsonc
+{
+  "memory": {
+    "autoStore": true,    // 自动存储对话到情景记忆
+    "autoRecall": true,   // 自动从记忆召回相关上下文
+    "recallLimit": 5      // 召回结果数量上限
+  }
+}
+```
+
+## Circuit Breaker Configuration
+
+熔断器配置，防止级联故障：
+
+```jsonc
+{
+  "circuitBreaker": {
+    "failureThreshold": 5,      // 连续失败次数达到阈值后熔断
+    "resetTimeout": 30000,      // 熔断后等待时间（ms），之后进入半开状态
+    "halfOpenMaxRequests": 1    // 半开状态允许的试探请求数
+  }
+}
+```
+
+### 状态转换
+
+```
+closed（正常）→ 连续失败达阈值 → open（熔断）
+open → 等待 resetTimeout → half_open（试探）
+half_open → 试探成功 → closed | 试探失败 → open
+```
