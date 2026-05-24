@@ -1,0 +1,11 @@
+diff --git a/__pycache__/calculator.cpython-314.pyc b/__pycache__/calculator.cpython-314.pyc
+new file mode 100644
+index 0000000..db4c89c
+Binary files /dev/null and b/__pycache__/calculator.cpython-314.pyc differ
+diff --git a/calculator.py b/calculator.py
+index 8f4b480..9bc8bf7 100644
+--- a/calculator.py
++++ b/calculator.py
+@@ -1 +1 @@
+-def add(a, b): return a - b
++def add(a, b): return a + b
