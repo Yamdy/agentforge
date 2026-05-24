@@ -10,7 +10,7 @@ import { globalProcessorRegistry } from '../src/processor-registry.js';
 // selection without writing code.
 // ---------------------------------------------------------------------------
 
-describe('Phase 2: Processor configuration in HarnessConfig', { timeout: 15000 }, () => {
+describe('Phase 2: Processor configuration in HarnessConfig', () => {
   const loader = new ConfigLoader();
 
   describe('ConfigLoader validates processors field', () => {

@@ -8,7 +8,7 @@ import { ConfigLoader } from '../src/config.js';
 // in config, so that I can customize the agent lifecycle without writing code.
 // ---------------------------------------------------------------------------
 
-describe('Phase 1a: Pipeline configuration in HarnessConfig', { timeout: 15000 }, () => {
+describe('Phase 1a: Pipeline configuration in HarnessConfig', () => {
   const loader = new ConfigLoader();
 
   describe('ConfigLoader validates pipeline field', () => {
