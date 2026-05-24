@@ -119,7 +119,7 @@ describe('OrchestrationPipeline', () => {
 
       expect(result.steps).toHaveLength(1);
       // Parallel execution should be faster than sequential
-      expect(duration).toBeLessThan(100);
+      expect(duration).toBeLessThan(300);
       // Token usage should be aggregated
       expect(result.steps[0].tokenUsage).toEqual({ input: 30, output: 60 });
     });

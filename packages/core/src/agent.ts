@@ -2,10 +2,14 @@ import type {
   AgentConfig,
   AgentRunResult,
   AgentSimpleConfig,
+  AutonomousConfig,
   CheckpointStore,
+  MutabilityPolicy,
   PipelineContext,
   PipelineStageConfig,
   Processor,
+  ReloadResult,
+  SelfModificationRequest,
   SessionManager,
   Tool,
   Tracer,
@@ -22,8 +26,16 @@ import { AuthError, ModelNotFoundError } from './errors.js';
 import { LoopOrchestrator } from './loop-orchestrator.js';
 import { JsonlCheckpointStore } from './checkpoint-store.js';
 import { echoTool } from '@primo-ai/tools';
+import { MutabilityPolicyEngine } from './mutability-policy.js';
+import { SelfRepresentationBuilder } from './self-representation.js';
+import { applySelfModification, type SelfModificationEngineContext } from './self-modification-engine.js';
+import { ConstitutionEngine } from './constitution.js';
+import { VerificationGatePipeline } from './verification-gate.js';
+import { MutationBudgetEngine } from './mutation-budget.js';
+import type { Constitution } from '@primo-ai/sdk';
 import {
   processInputProcessor,
+  buildContextExtensionPoint,
   prepareStepExtensionPoint,
   createInvokeLLMProcessor,
   processStepOutputProcessor,
@@ -32,6 +44,8 @@ import {
   createEvaluateIterationProcessor,
   processOutputProcessor,
 } from './processors/index.js';
+import { globalProcessorRegistry } from './processor-registry.js';
+import type { ProcessorDescriptor, ProcessorDeps } from '@primo-ai/sdk';
 import { ContextBuilder } from './context-builder.js';
 
 export interface AgentDependencies {
@@ -49,8 +63,14 @@ export interface AgentDependencies {
   contextBuilder?: ContextBuilder;
   /** Override default pipeline stage order. */
   stageConfig?: PipelineStageConfig;
+  /** Override which Processor is used for each pipeline stage. Keys are stage names. */
+  processorDescriptors?: Record<string, ProcessorDescriptor>;
   /** OTel sampling config passed to auto-detected tracer. Ignored when `tracer` is provided. */
   otelSampler?: 'always_on' | 'always_off' | { ratio: number };
+  /** Mutability policy controlling what can change at runtime. */
+  mutabilityPolicy?: MutabilityPolicy;
+  /** Harness-level config. Agent reads processors, pipeline, etc. from this. */
+  harnessConfig?: import('@primo-ai/sdk').HarnessConfig;
 }
 
 export interface RunOptions {
@@ -80,6 +100,19 @@ export function autoDetectOtelTracer(
   }
 }
 
+const defaultProcessorDescriptors: Record<string, ProcessorDescriptor> = {
+  processInput: { builtin: 'processInput' },
+  buildContext: { builtin: 'buildContext' },
+  prepareStep: { builtin: 'prepareStep' },
+  gateLLM: { builtin: 'gateLLM' },
+  invokeLLM: { builtin: 'invokeLLM' },
+  processStepOutput: { builtin: 'processStepOutput' },
+  gateTool: { builtin: 'gateTool' },
+  executeTools: { builtin: 'executeTools' },
+  evaluateIteration: { builtin: 'evaluateIteration' },
+  processOutput: { builtin: 'processOutput' },
+};
+
 export class Agent {
   private config: AgentConfig;
   private runner: PipelineRunner;
@@ -94,6 +127,14 @@ export class Agent {
   private contextBuilder: ContextBuilder;
   private activeAbortController: AbortController | null = null;
   private lastContext?: PipelineContext;
+  private _processorDescriptors?: Record<string, ProcessorDescriptor>;
+  private mutabilityPolicyEngine: MutabilityPolicyEngine;
+  private _pendingPipelineConfig?: PipelineStageConfig;
+  private selfRef: { agent: Agent } = { agent: undefined! };
+  private _pendingModifications: SelfModificationRequest[] = [];
+  private _gapOptimizationRunning = false;
+  private _engineContext: SelfModificationEngineContext;
+  private _harnessConfig?: import('@primo-ai/sdk').HarnessConfig;
 
   constructor(config: AgentSimpleConfig);
   constructor(config: AgentConfig, deps?: AgentDependencies);
@@ -110,12 +151,53 @@ export class Agent {
     this.registry.setEventBus(this._pluginManager.eventBus);
     this.runner.setHookManager(this._pluginManager.hookManager);
     const store = deps?.checkpointStore ?? (deps?.checkpointDir ? new JsonlCheckpointStore<ReturnType<typeof serialize>>(deps.checkpointDir) : undefined);
-    this.orchestrator = new LoopOrchestrator(this.runner, this._pluginManager.hookManager, store, this._pluginManager.eventBus, deps?.stageConfig);
+    const stageConfig = deps?.stageConfig ?? deps?.harnessConfig?.pipeline as PipelineStageConfig | undefined;
+    this.orchestrator = new LoopOrchestrator(this.runner, this._pluginManager.hookManager, store, this._pluginManager.eventBus, stageConfig);
     this.sessionManager = deps?.sessionManager;
     this._autoCheckpoint = deps?.autoCheckpoint ?? false;
+    this._harnessConfig = deps?.harnessConfig;
+    // Merge processor descriptors: harnessConfig.processors as base, deps.processorDescriptors overrides
+    const harnessProcessors = deps?.harnessConfig?.processors as Record<string, ProcessorDescriptor> | undefined;
+    if (harnessProcessors || deps?.processorDescriptors) {
+      this._processorDescriptors = { ...harnessProcessors, ...deps?.processorDescriptors };
+    } else {
+      this._processorDescriptors = undefined;
+    }
+    const mutabilityPolicy = deps?.mutabilityPolicy ?? deps?.harnessConfig?.mutability as MutabilityPolicy | undefined;
+    this.mutabilityPolicyEngine = new MutabilityPolicyEngine(mutabilityPolicy);
     this.registerTools();
     this.registerBuiltinProcessors();
     this._pluginManager.setStageMutator((m) => this.orchestrator.applyMutation(m));
+    // Self-modification engine context: constitution → verification gates → mutation budget
+    const defaultConstitution: Constitution = {
+      version: 1,
+      protectedPaths: [
+        { pattern: 'packages/sdk/src/**', reason: 'SDK types are the contract layer', level: 'absolute' },
+        { pattern: 'packages/core/src/constitution.ts', reason: 'Constitution must not modify itself', level: 'absolute' },
+      ],
+      diffLimits: { maxFilesPerMutation: 3, maxLinesPerFile: 100, maxMutationsPerHour: 10, maxMutationsPerDay: 50, cooldownMs: 5000 },
+      immutableInterfaces: [],
+      requiredCapabilities: [],
+      benchmarkFiles: [],
+      approvalMatrix: {
+        L0: { description: 'No-op extension point', mode: 'auto' },
+        L1: { description: 'Processor replacement', mode: 'auto_with_audit', auditTarget: 'eventBus', auditEvent: 'gap:optimization_complete', auditPayload: ['type', 'target'] },
+        L2: { description: 'Plugin registration', mode: 'human_approval' },
+        L3: { description: 'Source modification', mode: 'human_approval' },
+        L4: { description: 'Constitution-level', mode: 'always_reject' },
+      },
+    };
+    const constitutionEngine = new ConstitutionEngine(defaultConstitution);
+    const gatePipeline = new VerificationGatePipeline({ constitutionEngine });
+    const budgetEngine = new MutationBudgetEngine({
+      maxMutationsPerHour: defaultConstitution.diffLimits.maxMutationsPerHour,
+      maxMutationsPerDay: defaultConstitution.diffLimits.maxMutationsPerDay,
+      maxDiffLinesPerMutation: defaultConstitution.diffLimits.maxLinesPerFile,
+      maxFilesPerMutation: defaultConstitution.diffLimits.maxFilesPerMutation,
+      cooldownMs: defaultConstitution.diffLimits.cooldownMs,
+    });
+    this._engineContext = { constitutionEngine, gatePipeline, budgetEngine };
+    this.selfRef.agent = this;
   }
 
   use(factory: Processor | PluginFactory): void {
@@ -177,7 +259,7 @@ export class Agent {
     const signal = options instanceof AbortSignal ? options : options?.signal;
     const sessionId = options instanceof AbortSignal ? undefined : options?.sessionId;
     if (signal?.aborted) throw new DOMException('Agent run aborted', 'AbortError');
-    this._pluginManager.freezeHarnessInstances();
+    this._pluginManager.setMutabilityPolicyOnHarnesses(this.mutabilityPolicyEngine);
 
     const context = await this.buildContext(input, sessionId);
     const hm = this._pluginManager.hookManager;
@@ -216,7 +298,23 @@ export class Agent {
       this.activeAbortController = null;
       // agent.end hook — always fires, even on error; suppress hook errors to preserve original
       try { await hm.invoke('agent.end', { sessionId: context.session.sessionId }, {}); } catch { /* hook error must not mask original */ }
+      this.triggerGapOptimizationIfApplicable('afterRun');
     }
+  }
+
+  /** Check AutonomousConfig.gapTriggers and start gap optimization if a trigger matches. */
+  private triggerGapOptimizationIfApplicable(triggerType: 'afterRun' | 'onError'): void {
+    const autonomous = this._harnessConfig?.autonomous;
+    if (!autonomous?.enabled || !autonomous.gapTriggers?.length) return;
+    const match = autonomous.gapTriggers.find((t: { type: string }) => t.type === triggerType);
+    if (!match) return;
+    if (match.type === 'afterRun' && match.minIntervalMs > 0) {
+      // Rate-limit: only trigger if enough time has passed since last gap optimization
+      const lastGap = (this as any)._lastGapOptimizationTime as number | undefined;
+      if (lastGap && Date.now() - lastGap < match.minIntervalMs) return;
+    }
+    this.startGapOptimization();
+    (this as any)._lastGapOptimizationTime = Date.now();
   }
 
   async resume(sessionId: string, signal?: globalThis.AbortSignal): Promise<AgentRunResult> {
@@ -251,6 +349,7 @@ export class Agent {
       throw error;
     } finally {
       try { await hm.invoke('agent.end', { sessionId }, {}); } catch { /* hook error must not mask original */ }
+      this.triggerGapOptimizationIfApplicable('afterRun');
     }
   }
 
@@ -288,6 +387,7 @@ export class Agent {
     } finally {
       this.activeAbortController = null;
       try { await hm.invoke('agent.end', { sessionId: context.session.sessionId }, {}); } catch { /* hook error must not mask original */ }
+      this.triggerGapOptimizationIfApplicable('afterRun');
     }
   }
 
@@ -323,6 +423,7 @@ export class Agent {
     } finally {
       this.activeAbortController = null;
       try { await hm.invoke('agent.end', { sessionId: context.session.sessionId }, {}); } catch { /* hook error must not mask original */ }
+      this.triggerGapOptimizationIfApplicable('afterRun');
     }
   }
 
@@ -339,9 +440,105 @@ export class Agent {
     this.lastContext = undefined;
   }
 
+  /** Reload config changes respecting the mutability policy. */
+  reload(partial: Partial<import('@primo-ai/sdk').HarnessConfig>): ReloadResult {
+    const rejectedKeys: string[] = [];
+    const appliedKeys: string[] = [];
+
+    for (const key of Object.keys(partial)) {
+      const domain = key as import('@primo-ai/sdk').MutabilityDomain;
+      if (domain === 'pipeline' || domain === 'processors' || domain === 'plugins' || domain === 'tools') {
+        if (!this.mutabilityPolicyEngine.canApplyViaReload(domain)) {
+          rejectedKeys.push(key);
+          continue;
+        }
+      } else {
+        // Non-domain keys (e.g. costCap, tokenBudget) are always reloadable
+      }
+      appliedKeys.push(key);
+    }
+
+    // Apply pipeline changes if allowed
+    if (partial.pipeline && !rejectedKeys.includes('pipeline')) {
+      // Pipeline changes will take effect on next run via stageConfig
+      this._pendingPipelineConfig = partial.pipeline;
+    }
+
+    const applied = rejectedKeys.length === 0;
+
+    if (applied && appliedKeys.length > 0) {
+      this.eventBus.emit('config:reload:applied', { appliedKeys, rejectedKeys: [] });
+    }
+    if (rejectedKeys.length > 0) {
+      this.eventBus.emit('config:reload:rejected', { appliedKeys, rejectedKeys });
+    }
+
+    return { applied, rejectedKeys: rejectedKeys.length > 0 ? rejectedKeys : undefined, appliedKeys: appliedKeys.length > 0 ? appliedKeys : undefined };
+  }
+
   /** Clear the cached model so the next run re-resolves from the factory. */
   invalidateModel(): void {
     this._model = null;
+  }
+
+  /** Start gap optimization cycle. Emits gap:started, then runs self-analysis and applies modifications. */
+  startGapOptimization(): void {
+    if (this._gapOptimizationRunning) return;
+    this._gapOptimizationRunning = true;
+    this.eventBus.emit('gap:started', {});
+
+    const autonomous = this._harnessConfig?.autonomous;
+    if (!autonomous?.enabled) return;
+
+    const prompt = autonomous.initialPrompt ?? 'Analyze your own pipeline and identify improvements. Use inspectSelf to examine your current state, then propose changes via replaceProcessor or registerPlugin if beneficial.';
+    const maxOptimizations = autonomous.maxOptimizationsPerGap ?? 1;
+
+    // Fire-and-forget: run self-optimization asynchronously
+    this.runSelfOptimization(prompt, maxOptimizations).catch(() => {
+      this._gapOptimizationRunning = false;
+    });
+  }
+
+  /** Execute the self-optimization loop: run → collect proposals → apply. */
+  private async runSelfOptimization(prompt: string, maxOptimizations: number): Promise<void> {
+    try {
+      await this.run(prompt);
+      if (this._pendingModifications.length > 0) {
+        const toApply = this._pendingModifications.slice(0, maxOptimizations);
+        this._pendingModifications = this._pendingModifications.slice(maxOptimizations);
+        this._pendingModifications.unshift(...toApply);
+        await this.applyPendingModifications();
+      }
+    } finally {
+      this._gapOptimizationRunning = false;
+      this.eventBus.emit('gap:ended', {});
+    }
+  }
+
+  /** Preempt gap optimization when a user request arrives. Emits gap:preempted. */
+  preemptGapOptimization(): void {
+    this._gapOptimizationRunning = false;
+    this.eventBus.emit('gap:preempted', {});
+  }
+
+  /** Apply collected pending modifications from self-reference tools. */
+  async applyPendingModifications(): Promise<{ applied: SelfModificationRequest[]; rejected: SelfModificationRequest[] }> {
+    const applied: SelfModificationRequest[] = [];
+    const rejected: SelfModificationRequest[] = [];
+
+    for (const mod of this._pendingModifications) {
+      const result = await applySelfModification(mod, this._engineContext);
+      if (result.accepted) {
+        applied.push(mod);
+        this.eventBus.emit('gap:optimization_complete', { type: mod.type, target: mod.target });
+      } else {
+        rejected.push(mod);
+        this.eventBus.emit('gap:optimization_rejected', { type: mod.type, target: mod.target, reason: result.reason });
+      }
+    }
+
+    this._pendingModifications = [];
+    return { applied, rejected };
   }
 
   /** Auto-invalidate cached model when the error indicates auth failure or model-not-found. */
@@ -426,23 +623,168 @@ export class Agent {
     for (const tool of this.config.tools ?? []) {
       this.registry.register(tool as Tool);
     }
+    this.registerSelfReferenceTools();
+  }
+
+  private registerSelfReferenceTools(): void {
+    const self = this.selfRef;
+
+    // inspectSelf — read-only, no approval needed
+    this.registry.register({
+      name: 'inspectSelf',
+      description: 'Inspect the current agent pipeline, processors, tools, and state',
+      inputSchema: { type: 'object', properties: {} },
+      execute: async () => {
+        const agent = self.agent;
+        const builder = new SelfRepresentationBuilder({
+          agent: {
+            orchestrator: agent.orchestrator,
+            toolRegistry: agent.toolRegistry,
+            getPluginNames: () => agent._pluginManager.pluginNames,
+            state: agent.state,
+            config: agent.config as unknown as Record<string, unknown>,
+            eventBus: {
+              query: (filter?: unknown) => {
+                // Use EventSystem.query() via the replay backend when available
+                try {
+                  const sessionId = agent.lastContext?.session?.sessionId;
+                  if (!sessionId) return [];
+                  // Synchronous approximation: return empty for now; full async query
+                  // requires SelfRepresentationBuilder to support async (future enhancement)
+                  return [];
+                } catch {
+                  return [];
+                }
+              },
+            },
+          },
+          mutabilityPolicy: agent.mutabilityPolicyEngine.policy,
+        });
+        return builder.build();
+      },
+    });
+
+    // replaceProcessor — requires approval, collects proposal
+    this.registry.register({
+      name: 'replaceProcessor',
+      description: 'Propose replacing a processor in the pipeline. Requires approval.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          stage: { type: 'string', description: 'Pipeline stage to replace' },
+          processorCode: { type: 'string', description: 'Code for the new processor' },
+        },
+        required: ['stage', 'processorCode'],
+      },
+      requireApproval: true,
+      execute: async (input: { stage: string; processorCode: string }) => {
+        const agent = self.agent;
+        const mod: SelfModificationRequest = {
+          type: 'replaceProcessor',
+          target: input.stage,
+          payload: input.processorCode,
+          riskLevel: 'L1',
+        };
+        (agent as any)._pendingModifications.push(mod);
+        return { proposed: true, stage: input.stage };
+      },
+    });
+
+    // registerPlugin — requires approval, collects proposal
+    this.registry.register({
+      name: 'registerPlugin',
+      description: 'Propose registering a new plugin. Requires approval.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          pluginId: { type: 'string', description: 'ID of the plugin to register' },
+          config: { type: 'object', description: 'Plugin configuration' },
+        },
+        required: ['pluginId'],
+      },
+      requireApproval: true,
+      execute: async (input: { pluginId: string; config?: Record<string, unknown> }) => {
+        const agent = self.agent;
+        const mod: SelfModificationRequest = {
+          type: 'registerPlugin',
+          target: input.pluginId,
+          payload: input.config ?? {},
+          riskLevel: 'L1',
+        };
+        (agent as any)._pendingModifications.push(mod);
+        return { proposed: true, pluginId: input.pluginId };
+      },
+    });
+
+    // endAutonomousLoop — no approval needed, sets flag
+    this.registry.register({
+      name: 'endAutonomousLoop',
+      description: 'Signal the agent to stop the autonomous gap optimization loop',
+      inputSchema: { type: 'object', properties: {} },
+      execute: async () => {
+        const agent = self.agent;
+        (agent as any)._gapOptimizationRunning = false;
+        return { ended: true };
+      },
+    });
   }
 
   private registerBuiltinProcessors(): void {
-    this.runner.register(processInputProcessor);
-    this.runner.register(this.contextBuilder.createProcessor());
-    this.runner.register(prepareStepExtensionPoint);
-    this.runner.register(createInvokeLLMProcessor({
+    const deps = this.buildProcessorDeps();
+    this.ensureProcessorsRegistered();
+    // Merge custom descriptors over defaults: custom takes precedence
+    const descriptors = this._processorDescriptors
+      ? { ...defaultProcessorDescriptors, ...this._processorDescriptors }
+      : defaultProcessorDescriptors;
+
+    for (const [stage, descriptor] of Object.entries(descriptors)) {
+      if (stage === 'buildContext') {
+        this.runner.register(this.contextBuilder.createProcessor());
+        continue;
+      }
+      const processor = globalProcessorRegistry.resolve(descriptor, deps);
+      processor.stage = stage as import('@primo-ai/sdk').StageName;
+      this.runner.register(processor);
+    }
+  }
+
+  private buildProcessorDeps(): ProcessorDeps {
+    return {
       getLLM: (systemPrompt) => this.getLLM(systemPrompt),
       registry: this.registry,
       hookManager: this._pluginManager.hookManager,
+      eventBus: this._pluginManager.eventBus,
       modelString: this.config.model,
+    };
+  }
+
+  private ensureProcessorsRegistered(): void {
+    if (globalProcessorRegistry.has('processInput')) return;
+    globalProcessorRegistry.register('processInput', () => processInputProcessor);
+    globalProcessorRegistry.register('buildContext', () => buildContextExtensionPoint);
+    globalProcessorRegistry.register('prepareStep', () => prepareStepExtensionPoint);
+    globalProcessorRegistry.register('gateLLM', () => ({
+      stage: 'gateLLM' as const,
+      execute: async (ctx) => ctx.state,
+      isNoOp: true,
     }));
-    this.runner.register(processStepOutputProcessor);
-    this.runner.register(gateToolExtensionPoint);
-    this.runner.register(createExecuteToolsProcessor(this.registry));
-    this.runner.register(createEvaluateIterationProcessor({ eventBus: this._pluginManager.eventBus }));
-    this.runner.register(processOutputProcessor);
+    globalProcessorRegistry.register('invokeLLM', (deps?: ProcessorDeps) =>
+      createInvokeLLMProcessor({
+        getLLM: deps?.getLLM as any,
+        registry: deps?.registry as any,
+        hookManager: deps?.hookManager as any,
+        modelString: deps?.modelString ?? '',
+      }),
+    );
+    globalProcessorRegistry.register('processStepOutput', () => processStepOutputProcessor);
+    globalProcessorRegistry.register('gateTool', () => gateToolExtensionPoint);
+    globalProcessorRegistry.register('executeTools', (deps?: ProcessorDeps) =>
+      createExecuteToolsProcessor(deps?.registry as any),
+    );
+    globalProcessorRegistry.register('evaluateIteration', (deps?: ProcessorDeps) =>
+      createEvaluateIterationProcessor({ eventBus: deps?.eventBus as any }),
+    );
+    globalProcessorRegistry.register('processOutput', () => processOutputProcessor);
   }
 }
 

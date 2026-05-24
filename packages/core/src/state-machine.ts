@@ -51,4 +51,12 @@ export class StateMachine {
     const maxRetries = error.maxRetries ?? 3;
     return retryCount < maxRetries;
   }
+
+  /** Force reset to a target state, bypassing isRecoverable checks.
+   *  Intended for gap optimization internals only — Constitution absolute level protects this method. */
+  forceReset(target: AgentState = 'pending'): void {
+    const from = this._current;
+    this._current = target;
+    for (const cb of this.listeners) cb(from, target);
+  }
 }

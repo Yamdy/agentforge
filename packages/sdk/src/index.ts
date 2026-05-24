@@ -289,6 +289,34 @@ export interface Processor {
 }
 
 // ---------------------------------------------------------------------------
+// Processor Registry (Phase 1b)
+// ---------------------------------------------------------------------------
+
+/** Built-in processor names that can be resolved from the registry. */
+export type BuiltinProcessorName =
+  | 'processInput' | 'buildContext' | 'prepareStep' | 'gateLLM'
+  | 'invokeLLM' | 'processStepOutput' | 'gateTool'
+  | 'executeTools' | 'evaluateIteration' | 'processOutput';
+
+/** Describes how to obtain a Processor — either a built-in name or an external module. */
+export type ProcessorDescriptor =
+  | { builtin: BuiltinProcessorName }
+  | { module: string; export?: string; config?: Record<string, unknown> };
+
+/** Dependencies injected into Processor factories during resolution. */
+export interface ProcessorDeps {
+  getLLM?: (systemPrompt?: string) => Promise<unknown>;
+  registry?: unknown;
+  hookManager?: unknown;
+  eventBus?: unknown;
+  modelString?: string;
+  config?: Record<string, unknown>;
+}
+
+/** Factory function that creates a Processor given its dependencies. */
+export type ProcessorFactory = (deps?: ProcessorDeps) => Processor;
+
+// ---------------------------------------------------------------------------
 // Tool System
 // ---------------------------------------------------------------------------
 
@@ -588,6 +616,303 @@ export interface McpServerConfig {
 }
 
 // ---------------------------------------------------------------------------
+// Plugin Registry (Phase 3)
+// ---------------------------------------------------------------------------
+
+/** Built-in plugin IDs that can be resolved from the registry. */
+export type BuiltinPluginId =
+  | 'memory' | 'compression' | 'permission' | 'skill'
+  | 'eviction' | 'mcp' | 'validation';
+
+/** Describes how to obtain a Plugin — either a built-in id or an external module. */
+export type PluginDescriptor =
+  | { id: BuiltinPluginId; config?: Record<string, unknown> }
+  | { module: string; config?: Record<string, unknown> };
+
+/** Describes a hook to be registered from config, backed by a named plugin. */
+export interface HookDescriptor {
+  point: HookPoint;
+  plugin: BuiltinPluginId;
+  config?: Record<string, unknown>;
+  priority?: number;
+}
+
+/** Configures which tools are available to an agent. */
+export interface ToolSetConfig {
+  /** Tool names to include. '*' = all. */
+  include?: string[];
+  /** Tool names to exclude (takes precedence over include). */
+  exclude?: string[];
+  /** Custom tool definitions to register. */
+  custom?: Tool[];
+  /** Legacy: tool names to enable. */
+  enabled?: string[];
+  /** Legacy: tool names to disable. */
+  disabled?: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Mutability Policy (Phase 4)
+// ---------------------------------------------------------------------------
+
+/** Runtime mutability level for a config domain. */
+export type MutabilityLevel = 'frozen' | 'configOnly' | 'dynamic';
+
+/** Domains whose mutability can be independently controlled. */
+export type MutabilityDomain = 'pipeline' | 'processors' | 'plugins' | 'tools';
+
+/** Controls what can change at runtime and how. */
+export interface MutabilityPolicy {
+  pipeline: MutabilityLevel;
+  processors: MutabilityLevel;
+  plugins: MutabilityLevel;
+  tools: MutabilityLevel;
+  hotReload: boolean;
+  watchConfig: boolean;
+}
+
+/** Result of an Agent.reload() call. */
+export interface ReloadResult {
+  applied: boolean;
+  rejectedKeys?: string[];
+  appliedKeys?: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Autonomous Gap Optimization (Phase 5)
+// ---------------------------------------------------------------------------
+
+/** Trigger that starts a gap optimization cycle when the agent is idle. */
+export type GapTrigger =
+  | { type: 'idle'; idleTimeoutMs: number }
+  | { type: 'schedule'; cron: string }
+  | { type: 'afterRun'; minIntervalMs: number }
+  | { type: 'onError' };
+
+/** Configuration for autonomous gap optimization. */
+export interface AutonomousConfig {
+  enabled: boolean;
+  gapTriggers: GapTrigger[];
+  initialPrompt?: string;
+  nextPromptTemplate?: string;
+  maxOptimizationsPerGap?: number;
+  maxConsecutiveErrors?: number;
+  errorBackoffMs?: number;
+}
+
+/** A proposed self-modification collected during gap optimization. */
+export interface SelfModificationRequest {
+  type: 'replaceProcessor' | 'registerPlugin' | 'modifySource';
+  target: string;
+  payload: unknown;
+  riskLevel: 'L0' | 'L1' | 'L2' | 'L3' | 'L4';
+  proposedDiff?: FilePatch[];
+}
+
+// ---------------------------------------------------------------------------
+// Self-Representation (Phase 6a)
+// ---------------------------------------------------------------------------
+
+/** Health check result for a single ECC layer or component. */
+export interface HealthCheckResult {
+  healthy: boolean;
+  reason?: string;
+  metrics?: Record<string, number>;
+}
+
+/** A module tracked in the agent's self-representation. */
+export interface ModuleInfo {
+  name: string;
+  path: string;
+  responsibility: string;
+  mutability: 'frozen' | 'configOnly' | 'dynamic';
+  exports: string[];
+  dependsOn: string[];
+}
+
+/** A dependency edge between two modules. */
+export interface ModuleDependency {
+  from: string;
+  to: string;
+  type: 'uses' | 'implements' | 'extends';
+}
+
+/** ECC 12-layer diagnostic entry for self-representation. */
+export interface LayerDiagnostic {
+  layer: number;
+  name: string;
+  agentForgeComponent: string;
+  codeGated: boolean;
+  knownFailurePatterns: string[];
+  lastCheckResult?: HealthCheckResult;
+  riskLevel: 'low' | 'medium' | 'high' | 'critical';
+}
+
+/** Record of a self-modification applied to the agent. */
+export interface ModificationRecord {
+  timestamp: string;
+  module: string;
+  type: 'processor' | 'plugin' | 'config' | 'source';
+  diff: string;
+  verificationResult: 'passed' | 'failed' | 'skipped';
+  approvedBy: 'auto' | 'human' | 'constitution';
+}
+
+/** Complete self-representation of the agent's architecture. */
+export interface SelfRepresentation {
+  modules: ModuleInfo[];
+  dependencies: ModuleDependency[];
+  layerDiagnostics: LayerDiagnostic[];
+  constitution: unknown;
+  modificationHistory: ModificationRecord[];
+}
+
+// ---------------------------------------------------------------------------
+// Constitution System (Phase 6b)
+// ---------------------------------------------------------------------------
+
+/** Protection level for a file path. */
+export interface ProtectedPath {
+  pattern: string;
+  reason: string;
+  level: 'absolute' | 'approval';
+}
+
+/** Limits on diff size and mutation rate. */
+export interface DiffLimits {
+  maxFilesPerMutation: number;
+  maxLinesPerFile: number;
+  maxMutationsPerHour: number;
+  maxMutationsPerDay: number;
+  cooldownMs: number;
+}
+
+/** An immutable interface member that cannot be modified by the agent. */
+export interface ImmutableInterface {
+  module: string;
+  export: string;
+  members: string[];
+  reason: string;
+}
+
+/** Approval matrix for different risk levels. */
+export interface ApprovalMatrix {
+  L0: { description: string; mode: 'auto' };
+  L1: { description: string; mode: 'auto_with_audit'; auditTarget: string; auditEvent: string; auditPayload: string[] };
+  L2: { description: string; mode: 'human_approval' };
+  L3: { description: string; mode: 'human_approval' };
+  L4: { description: string; mode: 'always_reject' };
+}
+
+/** Constitution — the immutable boundary definition for self-modification. */
+export interface Constitution {
+  version: 1;
+  protectedPaths: ProtectedPath[];
+  diffLimits: DiffLimits;
+  immutableInterfaces: ImmutableInterface[];
+  requiredCapabilities: string[];
+  benchmarkFiles: string[];
+  approvalMatrix: ApprovalMatrix;
+}
+
+// ---------------------------------------------------------------------------
+// Verification Gate (Phase 6c)
+// ---------------------------------------------------------------------------
+
+/** Result of a single verification gate. */
+export type GateResult =
+  | { passed: true; duration: number; details?: string }
+  | { passed: false; duration: number; errors: string[]; gate: string };
+
+/** A single verification gate in the pipeline. */
+export interface VerificationGate {
+  name: string;
+  level: number;
+  timeoutMs: number;
+  execute(diff: FilePatch[], context: VerificationContext): Promise<GateResult>;
+}
+
+/** Context passed to verification gates. */
+export interface VerificationContext {
+  constitution: Constitution;
+  snapshotId: string;
+  agentId: string;
+  skipGates?: number[];
+}
+
+/** Complete verification report for a self-modification attempt. */
+export interface VerificationReport {
+  timestamp: string;
+  diff: FilePatch[];
+  gates: GateResult[];
+  overall: 'passed' | 'failed';
+  approvedBy: 'auto' | 'human';
+}
+
+/** Result of processing a self-modification request. */
+export interface SelfModificationResult {
+  accepted: boolean;
+  verificationReport?: VerificationReport;
+  rollbackSnapshotId?: string;
+  reason?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Degeneration Watchdog (Phase 6d)
+// ---------------------------------------------------------------------------
+
+/** Health check result. */
+export type HealthCheckOutcome =
+  | { healthy: true; metrics?: Record<string, number> }
+  | { healthy: false; reason: string; severity: 'warning' | 'critical' };
+
+/** A single health check definition. */
+export interface HealthCheck {
+  name: string;
+  level: 'L0' | 'L1' | 'L2';
+  check: () => Promise<HealthCheckOutcome>;
+}
+
+/** Watchdog configuration. */
+export interface WatchdogConfig {
+  checkIntervalMs: number;
+  degradationThreshold: number;
+  healthChecks: HealthCheck[];
+  autoRollback: boolean;
+  rollbackTarget: 'lastKnownGood' | 'lastSnapshot';
+}
+
+/** Watchdog runtime state. */
+export interface WatchdogState {
+  consecutiveFailures: number;
+  lastHealthySnapshot: string;
+  lastCheckTime: string;
+  totalRollbacks: number;
+}
+
+// ---------------------------------------------------------------------------
+// Mutation Budget (Phase 6e)
+// ---------------------------------------------------------------------------
+
+/** Mutation budget configuration. */
+export interface MutationBudgetConfig {
+  maxMutationsPerHour: number;
+  maxMutationsPerDay: number;
+  maxDiffLinesPerMutation: number;
+  maxFilesPerMutation: number;
+  cooldownMs: number;
+}
+
+/** Mutation budget runtime state. */
+export interface MutationBudgetState {
+  hourlyCount: number;
+  hourlyResetAt: number;
+  dailyCount: number;
+  dailyResetAt: number;
+  lastMutationAt: number;
+}
+
+// ---------------------------------------------------------------------------
 // Agent Config (skeleton)
 // ---------------------------------------------------------------------------
 
@@ -716,13 +1041,21 @@ export interface GatewayConfig {
  */
 export interface HarnessConfig {
   agents?: Record<string, Partial<AgentConfig>>;
-  tools?: { enabled?: string[]; disabled?: string[] };
-  plugins?: string[];
+  tools?: ToolSetConfig;
+  plugins?: PluginDescriptor[] | string[];
   session?: { storage?: 'file' | 'memory'; path?: string };
   modelProfiles?: ModelProfile[];
   modelGateways?: GatewayConfig[];
-  hooks?: { profile?: HookProfile; disabledHooks?: string[] };
+  hooks?: HookDescriptor[] | { profile?: HookProfile; disabledHooks?: string[] };
   skills?: { paths?: string[] };
+  /** Override default pipeline stage order. */
+  pipeline?: PipelineStageConfig;
+  /** Override which Processor is used for each pipeline stage. Keys are stage names. */
+  processors?: Record<string, ProcessorDescriptor>;
+  /** Runtime mutability policy. Controls what can change at runtime. */
+  mutability?: MutabilityPolicy | MutabilityLevel;
+  /** Autonomous gap optimization configuration. */
+  autonomous?: AutonomousConfig;
   // Phase 2 — harness processor configurations
   costCap?: {
     maxCost: number;
@@ -742,6 +1075,8 @@ export interface HarnessConfig {
   factInjection?: {
     facts: string[] | ((ctx: PipelineContext) => string[] | Promise<string[]>);
   };
+  /** Custom compat rules for provider-specific message normalization. Defaults to built-in rules. */
+  compatRules?: CompatRule[];
 }
 
 // ---------------------------------------------------------------------------
@@ -838,6 +1173,10 @@ export interface FilePatch {
   oldHash?: string;
   newHash?: string;
   type: 'created' | 'modified' | 'deleted';
+  /** New file content — used by constitution gate for content inspection. */
+  content?: string;
+  /** Original file content — used for rollback. */
+  oldContent?: string;
 }
 
 /** Persistent storage for snapshots. */

@@ -1,5 +1,41 @@
 {
   // AgentForge Server Configuration
+  //
+  // Supported fields (Phase 1a/1b/2):
+  //   pipeline    — override default pipeline stage order
+  //   processors  — override which Processor handles each pipeline stage
+  //   modelGateways — custom OpenAI-compatible API endpoints
+  //   agents      — per-agent config overrides
+  //   plugins     — plugin paths
+  //   skills      — additional skill directories
+
+  // ─── Pipeline 定义（Phase 1a）──────────────────────────────
+  // Override the default stage order. Omit to use defaults.
+  // "pipeline": {
+  //   "preLoop": ["processInput", "buildContext"],
+  //   "loop": [
+  //     "prepareStep", "gateLLM", "invokeLLM",
+  //     "processStepOutput", "gateTool", "executeTools",
+  //     "evaluateIteration"
+  //   ],
+  //   "postLoop": ["processOutput"]
+  // },
+
+  // ─── Processor 声明（Phase 2）──────────────────────────────
+  // Override which Processor is used for each pipeline stage.
+  // Keys are stage names; unspecified stages use the built-in default.
+  // "processors": {
+  //   "processInput":  { "builtin": "processInput" },
+  //   "buildContext":  { "builtin": "buildContext" },
+  //   "prepareStep":   { "builtin": "prepareStep" },
+  //   "gateLLM":       { "builtin": "gateLLM" },
+  //   "invokeLLM":     { "builtin": "invokeLLM" },
+  //   "processStepOutput": { "builtin": "processStepOutput" },
+  //   "gateTool":      { "builtin": "gateTool" },
+  //   "executeTools":  { "builtin": "executeTools" },
+  //   "evaluateIteration": { "builtin": "evaluateIteration" },
+  //   "processOutput": { "builtin": "processOutput" }
+  // },
 
   // Custom model gateways (OpenAI-compatible APIs)
   "modelGateways": [

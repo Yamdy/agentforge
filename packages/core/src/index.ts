@@ -22,7 +22,7 @@ export { deepMerge } from './config-merge.js';
 export { HarnessDecisionRecorder, type HarnessDecision, type HarnessDecisionsBag } from './harness-decisions.js';
 export { resolveDynamic } from './dynamic-resolver.js';
 export { matchProfile, applyProfile } from './model-profile.js';
-export { ConfigLoader, type ConfigSource } from './config.js';
+export { ConfigLoader, type ConfigSource, ConstitutionSchema } from './config.js';
 export { ConcurrencyController } from './concurrency-controller.js';
 export { FallbackRunner, type FallbackInvoker, type FallbackRunnerOptions } from './fallback-runner.js';
 export { TaskManagerImpl } from './task-manager.js';
@@ -41,6 +41,16 @@ export {
   type SyncEventStore,
 } from './sync-event.js';
 export { ContextBuilder, type ContextBuilderOptions } from './context-builder.js';
+export { PluginRegistryImpl, globalPluginRegistry } from './plugin-registry.js';
+export { registerBuiltinPluginsOnce } from './builtin-plugins.js';
+export { MutabilityPolicyEngine } from './mutability-policy.js';
+export { ConfigWatcher, type ConfigWatcherOptions } from './config-watcher.js';
+export { SelfRepresentationBuilder, type SelfRepresentationBuilderOptions } from './self-representation.js';
+export { ConstitutionEngine } from './constitution.js';
+export { VerificationGatePipeline, type VerificationGatePipelineOptions } from './verification-gate.js';
+export { DegenerationWatchdog, type WatchdogOptions } from './degeneration-watchdog.js';
+export { MutationBudgetEngine, type MutationBudgetOptions } from './mutation-budget.js';
+export { applySelfModification, type SelfModificationEngineContext } from './self-modification-engine.js';
 export { HarnessAPIImpl, type HarnessDeps } from './harness.js';
 export { TiktokenCounter } from './token-counter.js';
 export type { StreamEvent } from '@primo-ai/sdk';

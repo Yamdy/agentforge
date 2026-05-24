@@ -266,10 +266,104 @@ function expandVarsInString(value: string, path: string): string {
 // Zod schema for HarnessConfig validation
 // ---------------------------------------------------------------------------
 
+const PluginDescriptorSchema = z.union([
+  z.string(),  // backward compat: path string
+  z.object({ id: z.string(), config: z.record(z.string(), z.unknown()).optional() }),
+  z.object({ module: z.string(), config: z.record(z.string(), z.unknown()).optional() }),
+]);
+
+const HookDescriptorSchema = z.object({
+  point: z.string(),
+  plugin: z.string(),
+  config: z.record(z.string(), z.unknown()).optional(),
+  priority: z.number().optional(),
+});
+
+const ToolSetConfigSchema = z.object({
+  // New format (Phase 3)
+  include: z.array(z.string()).optional(),
+  exclude: z.array(z.string()).optional(),
+  custom: z.array(z.unknown()).optional(),
+  // Legacy format
+  enabled: z.array(z.string()).optional(),
+  disabled: z.array(z.string()).optional(),
+});
+
+const MutabilityLevelSchema = z.enum(['frozen', 'configOnly', 'dynamic']);
+
+const MutabilityPolicySchema = z.union([
+  MutabilityLevelSchema,
+  z.object({
+    pipeline: MutabilityLevelSchema.optional(),
+    processors: MutabilityLevelSchema.optional(),
+    plugins: MutabilityLevelSchema.optional(),
+    tools: MutabilityLevelSchema.optional(),
+    hotReload: z.boolean().optional(),
+    watchConfig: z.boolean().optional(),
+  }),
+]);
+
+const GapTriggerSchema = z.union([
+  z.object({ type: z.literal('idle'), idleTimeoutMs: z.number() }),
+  z.object({ type: z.literal('schedule'), cron: z.string() }),
+  z.object({ type: z.literal('afterRun'), minIntervalMs: z.number() }),
+  z.object({ type: z.literal('onError') }),
+]);
+
+const AutonomousConfigSchema = z.object({
+  enabled: z.boolean(),
+  gapTriggers: z.array(GapTriggerSchema),
+  initialPrompt: z.string().optional(),
+  nextPromptTemplate: z.string().optional(),
+  maxOptimizationsPerGap: z.number().optional(),
+  maxConsecutiveErrors: z.number().optional(),
+  errorBackoffMs: z.number().optional(),
+});
+
+// Phase 6b: Constitution schema
+const ProtectedPathSchema = z.object({
+  pattern: z.string(),
+  reason: z.string(),
+  level: z.enum(['absolute', 'approval']),
+});
+
+const DiffLimitsSchema = z.object({
+  maxFilesPerMutation: z.number(),
+  maxLinesPerFile: z.number(),
+  maxMutationsPerHour: z.number(),
+  maxMutationsPerDay: z.number(),
+  cooldownMs: z.number(),
+});
+
+const ImmutableInterfaceSchema = z.object({
+  module: z.string(),
+  export: z.string(),
+  members: z.array(z.string()),
+  reason: z.string(),
+});
+
+const ApprovalMatrixSchema = z.object({
+  L0: z.object({ description: z.string(), mode: z.literal('auto') }),
+  L1: z.object({ description: z.string(), mode: z.literal('auto_with_audit'), auditTarget: z.string(), auditEvent: z.string(), auditPayload: z.array(z.string()) }),
+  L2: z.object({ description: z.string(), mode: z.literal('human_approval') }),
+  L3: z.object({ description: z.string(), mode: z.literal('human_approval') }),
+  L4: z.object({ description: z.string(), mode: z.literal('always_reject') }),
+});
+
+export const ConstitutionSchema = z.object({
+  version: z.literal(1),
+  protectedPaths: z.array(ProtectedPathSchema),
+  diffLimits: DiffLimitsSchema,
+  immutableInterfaces: z.array(ImmutableInterfaceSchema),
+  requiredCapabilities: z.array(z.string()),
+  benchmarkFiles: z.array(z.string()),
+  approvalMatrix: ApprovalMatrixSchema,
+});
+
 const HarnessConfigSchema = z.object({
   agents: z.record(z.string(), z.unknown()).optional(),
-  tools: z.object({ enabled: z.array(z.string()).optional(), disabled: z.array(z.string()).optional() }).optional(),
-  plugins: z.array(z.string()).optional(),
+  tools: ToolSetConfigSchema.optional(),
+  plugins: z.array(PluginDescriptorSchema).optional(),
   session: z.object({ storage: z.enum(['file', 'memory']).optional(), path: z.string().optional() }).optional(),
   modelProfiles: z.array(z.unknown()).optional(),
   modelGateways: z.array(z.object({
@@ -278,4 +372,19 @@ const HarnessConfigSchema = z.object({
     apiKey: z.string().optional(),
   })).optional(),
   skills: z.object({ paths: z.array(z.string()).optional() }).optional(),
+  pipeline: z.object({
+    preLoop: z.array(z.string()).optional(),
+    loop: z.array(z.string()).optional(),
+    postLoop: z.array(z.string()).optional(),
+  }).optional(),
+  processors: z.record(z.string(), z.union([
+    z.object({ builtin: z.string() }),
+    z.object({ module: z.string(), export: z.string().optional(), config: z.record(z.string(), z.unknown()).optional() }),
+  ])).optional(),
+  hooks: z.union([
+    z.object({ profile: z.enum(['minimal', 'standard', 'strict']).optional(), disabledHooks: z.array(z.string()).optional() }),
+    z.array(HookDescriptorSchema),
+  ]).optional(),
+  mutability: MutabilityPolicySchema.optional(),
+  autonomous: AutonomousConfigSchema.optional(),
 }).passthrough();

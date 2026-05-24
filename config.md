@@ -94,7 +94,7 @@
 > - Phase 5 增加：间隙优化模式、`selfRef` 延迟解引用、`endAutonomousLoop` 工具、ECC 12 层适配
 > - Phase 6 增加：`StateMachine.forceReset()`、`layerDiagnostics`、Watchdog 分层实现
 
-### Phase 1a：配置接管 Pipeline（~50 行）
+### Phase 1a：配置接管 Pipeline（~50 行）✅ 已完成
 
 **目标：** HarnessConfig 能声明 Pipeline 阶段顺序。
 
@@ -106,14 +106,21 @@
 |------|------|------|
 | `sdk/src/index.ts` | `HarnessConfig` 增加 `pipeline?: PipelineStageConfig` 字段 | ~5 |
 | `core/src/config.ts` | `HarnessConfigSchema` 增加对应 Zod 验证 | ~10 |
-| `core/src/agent.ts` | 构造函数把 `config.pipeline` 传给 `LoopOrchestrator` 的 `deps?.stageConfig` | ~3 |
+| `core/src/agent.ts` | 构造函数把 `config.pipeline` 传给 `LoopOrchestrator` 的 `deps?.stageConfig`（已存在） | ~3 |
 | 测试 | 配置驱动的 Pipeline 行为验证 | ~30 |
 
-**验证标准：** 配置文件中修改 pipeline 阶段顺序 → Agent 行为跟随变化。
+**完成记录（2026-05-24）：**
+- `sdk/src/index.ts`: `HarnessConfig` 新增 `pipeline?: PipelineStageConfig` 字段
+- `core/src/config.ts`: `HarnessConfigSchema` 新增 `pipeline` Zod 验证（`preLoop`/`loop`/`postLoop` 均为 `z.array(z.string()).optional()`）
+- Agent 穿线已存在：`agent.ts` 构造函数通过 `deps.stageConfig` 传给 `LoopOrchestrator`
+- 新增测试 `core/__tests__/pipeline-config.test.ts`（8 个用例）：ConfigLoader 验证、LoopOrchestrator 穿线、Agent 穿线、Config→Agent 端到端
+- 全套 1270 测试零回归
+
+**验证标准：** 配置文件中修改 pipeline 阶段顺序 → Agent 行为跟随变化。✅ 通过
 
 ---
 
-### Phase 1b：Processor 注册表（Foundation）
+### Phase 1b：Processor 注册表（Foundation）✅ 已完成
 
 **目标：** 把 9 个硬编码 Processor 变为可查找的注册表项。
 
@@ -162,11 +169,25 @@ interface ProcessorDeps {
 
 当前 `createInvokeLLMProcessor({getLLM, registry, hookManager, modelString})` 是工厂函数，已经接受依赖注入。Phase 1b 只是把"调用哪个工厂函数"从硬编码变为注册表查找。
 
-**验证标准：** `new Agent(config)` 行为不变，但内部走注册表路径。
+**完成记录（2026-05-24）：**
+- `sdk/src/index.ts`: 新增 `BuiltinProcessorName`、`ProcessorDescriptor`、`ProcessorDeps`、`ProcessorFactory` 类型
+- `core/src/processor-registry.ts`: **新建**。`ProcessorRegistryImpl` 类（`register`/`resolve`/`has`/`list`）+ `globalProcessorRegistry` 单例
+- `core/src/processors/index.ts`: 导入时自动注册 10 个内置 Processor 到 `globalProcessorRegistry`（保留原有 re-export 向后兼容）
+- `core/src/agent.ts`:
+  - 新增 `registerBuiltinProcessorsOnce()` 幂等函数，确保 `globalProcessorRegistry` 已填充
+  - `registerBuiltinProcessors()` 改为遍历 `defaultProcessorDescriptors`，通过 `globalProcessorRegistry.resolve(descriptor, deps)` 查找
+  - `buildContext` 保持 `contextBuilder.createProcessor()` 路径（运行时依赖）
+  - 新增 `buildProcessorDeps()` 提取依赖构建逻辑
+- 新增测试 `core/__tests__/processor-registry.test.ts`（9 个用例）：register/resolve/has/list、global 注册验证、module descriptor 错误、Agent 集成
+- 全套 1270 测试零回归
+
+**实现偏差：** 原 `ProcessorRegistry` 接口设计为 `register(name: BuiltinProcessorName, ...)` 限定类型，实际实现为 `register(name: string, ...)` 更灵活；`ProcessorDeps` 使用 `unknown` 替代具体类型避免 SDK 对 core 的依赖
+
+**验证标准：** `new Agent(config)` 行为不变，但内部走注册表路径。✅ 通过
 
 ---
 
-### Phase 2：配置接管 Processor
+### Phase 2：配置接管 Processor ✅ 已完成
 
 **目标：** HarnessConfig 能声明 Processor 选择。
 
@@ -177,8 +198,18 @@ interface ProcessorDeps {
 | 文件 | 改动 |
 |------|------|
 | `sdk/src/index.ts` | `HarnessConfig` 增加 `processors` 字段 |
-| `core/src/agent.ts` | 构造函数从 `HarnessConfig.processors` 查找 Processor |
+| `core/src/agent.ts` | `AgentDependencies` 新增 `harnessConfig` 字段；构造函数从 `harnessConfig.processors` 读取并合并到 `_processorDescriptors`；`harnessConfig.pipeline` 穿线到 `stageConfig`；`harnessConfig.mutability` 穿线到 `mutabilityPolicy` |
 | 测试 | 配置驱动的 Processor 选择验证 |
+
+**完成记录（2026-05-25）：**
+- `core/src/agent.ts`:
+  - `AgentDependencies` 新增 `harnessConfig?: HarnessConfig` 字段
+  - 构造函数从 `deps.harnessConfig.processors` 读取 Processor 描述符，与 `deps.processorDescriptors` 合并（后者优先）
+  - 构造函数从 `deps.harnessConfig.pipeline` 读取 Pipeline 配置，`deps.stageConfig` 优先
+  - 构造函数从 `deps.harnessConfig.mutability` 读取 Mutability 策略，`deps.mutabilityPolicy` 优先
+  - `registerBuiltinProcessors()` 合并逻辑：`defaultProcessorDescriptors ← harnessConfig.processors ← processorDescriptors`
+- 新增测试 `core/__tests__/phase2-processor-config.test.ts`（10 个用例）：ConfigLoader processors 验证（4）、harnessConfig 自动穿线（4）、Config-to-Agent 端到端（2）
+- 全套 1375 测试零回归
 
 **HarnessConfig 扩展：**
 
@@ -194,11 +225,11 @@ export interface HarnessConfig {
 1. 读取 `deps.harnessConfig.processors` → 遍历，通过 `ProcessorRegistry.resolve()` 创建 Processor
 2. 如果配置缺失 → 使用当前默认值（行为不变）
 
-**验证标准：** 配置文件中指定 Processor → Agent 使用指定 Processor。
+**验证标准：** 配置文件中指定 Processor → Agent 使用指定 Processor。✅ 通过
 
 ---
 
-### Phase 3：配置接管 Plugin + Hook + Tool
+### Phase 3：配置接管 Plugin + Hook + Tool ✅ 已完成
 
 **目标：** 配置文件能声明 Plugin（含参数）、Hook、工具集。
 
@@ -206,58 +237,54 @@ export interface HarnessConfig {
 
 | 文件 | 改动 |
 |------|------|
-| `sdk/src/index.ts` | 新增 `PluginDescriptor`、`HookDescriptor`、`ToolSetConfig` 类型；`HarnessConfig` 增加 `plugins`（结构化）、`hooks`、`tools` 字段 |
-| `core/src/plugin-registry.ts` | **新建**。Plugin 注册表，类似 ProcessorRegistry |
-| `core/src/plugin-manager.ts` | `loadPlugin(filePath)` → `loadPlugin(descriptor: PluginDescriptor)` |
-| `core/src/hook-registry.ts` | **新建**。Hook 注册表，从配置声明创建 Hook |
-| `core/src/agent.ts` | `registerTools()` → 从配置读取工具集 |
-| `plugins/memory/index.ts` 等 | 每个 Plugin 导出 `id` + `factory` + `defaultConfig`，注册到 PluginRegistry |
+| `sdk/src/index.ts` | 新增 `BuiltinPluginId`、`PluginDescriptor`、`HookDescriptor`、`ToolSetConfig` 类型；`HarnessConfig` 的 `plugins`/`hooks`/`tools` 字段扩展 |
+| `core/src/plugin-registry.ts` | **新建**。`PluginRegistryImpl` 类 + `globalPluginRegistry` 单例，与 `ProcessorRegistry` 同构 |
+| `core/src/builtin-plugins.ts` | **新建**。`registerBuiltinPluginsOnce()` 幂等注册 6 个内置 Plugin（memory/compression/permission/skill/eviction/mcp） |
+| `core/src/plugin-manager.ts` | 新增 `loadPluginsFromDescriptors()` 方法，支持 `{ id, config }` 和 `{ module }` 两种描述符 |
+| `core/src/config.ts` | Zod schema 支持结构化 `PluginDescriptor`、`HookDescriptor`、`ToolSetConfig` 验证；向后兼容 `string[]` plugins |
+| `core/src/index.ts` | 导出 `PluginRegistryImpl`、`globalPluginRegistry`、`registerBuiltinPluginsOnce` |
+| `core/package.json` | 添加 `@primo-ai/plugins` 依赖 |
 
-**Plugin 配置化：**
+**完成记录（2026-05-24）：**
+- `sdk/src/index.ts`: 新增 `BuiltinPluginId`（6 个：memory/compression/permission/skill/eviction/mcp）、`PluginDescriptor`（id | module 两种来源）、`HookDescriptor`（point + plugin + config? + priority?）、`ToolSetConfig`（include/exclude/custom + legacy enabled/disabled）
+- `HarnessConfig.plugins`: `PluginDescriptor[] | string[]`（向后兼容）
+- `HarnessConfig.hooks`: `HookDescriptor[] | { profile?, disabledHooks? }`（向后兼容）
+- `HarnessConfig.tools`: `ToolSetConfig`（合并新旧格式，include/exclude + enabled/disabled 共存）
+- `core/src/plugin-registry.ts`: `PluginRegistryImpl`（register/resolve/has/list），工厂签名为 `(config?) => PluginFactory`
+- `core/src/builtin-plugins.ts`: `registerBuiltinPluginsOnce()` 注册 memory/compression/permission/skill/eviction/mcp
+- `core/src/plugin-manager.ts`: `loadPluginsFromDescriptors()` 处理 3 种描述符（string / {id} / {module}）
+- `core/src/config.ts`: Zod schema 新增 `PluginDescriptorSchema`（union: string | {id} | {module}）、`HookDescriptorSchema`、`ToolSetConfigSchema`（合并对象）
+- 新增测试 `core/__tests__/phase3-plugin-hook-tool.test.ts`（27 个用例）：PluginRegistry CRUD、全局注册表 6 个内置 Plugin、HookDescriptor/ToolSetConfig 类型验证、HarnessConfig 扩展字段、ConfigLoader 验证、向后兼容、loadPluginsFromDescriptors 集成
+- 全套 1308 测试零回归
 
-```typescript
-type PluginDescriptor =
-  | { id: BuiltinPluginId; config?: Record<string, unknown> }
-  | { module: string; config?: Record<string, unknown> };
+**实现偏差：**
+- 原 `hook-registry.ts` 独立 Hook 注册表未新建——HookDescriptor 通过 PluginManager 在 loadPluginsFromDescriptors 中解析，由 Plugin 工厂自行注册 Hook，无需独立的 Hook 注册表
+- 原 `agent.ts registerTools()` 从配置读取工具集未实现——ToolSetConfig 类型已定义，Agent 级工具过滤留给后续 Phase
+- `BuiltinPluginId` 仅包含 6 个已有 Plugin（原计划含 validation/costCap/rateLimit 等尚未独立为 Plugin 的功能）
+- `ToolSetConfig` 采用合并字段方案（include/exclude + enabled/disabled），而非 union 类型，简化 Zod 验证
 
-type BuiltinPluginId =
-  | 'memory' | 'compression' | 'permission' | 'skill'
-  | 'mcp' | 'eviction' | 'validation' | 'costCap'
-  | 'tokenBudget' | 'rateLimit' | 'pii' | 'moderation';
-```
-
-当前 `plugins` 字段是 `string[]`（路径数组），改为 `PluginDescriptor[]`（结构化声明）。
-
-**Hook 配置化：**
-
-```typescript
-type HookDescriptor = {
-  point: HookPoint;
-  plugin: BuiltinPluginId;
-  config?: Record<string, unknown>;
-  priority?: number;
-};
-```
-
-**Tool 配置化：**
-
-当前 `tools: { enabled?: string[]; disabled?: string[] }` 保留，但增加内置工具的自动注册：
-
-```typescript
-tools?: {
-  include?: string[];    // '*' = 全部，或指定名称
-  exclude?: string[];    // 排除列表
-  custom?: ToolDescriptor[];  // 自定义工具
-};
-```
-
-**验证标准：** 配置文件声明 Plugin + 参数 → Agent 行为与代码注册一致。
+**验证标准：** 配置文件声明 Plugin + 参数 → Agent 行为与代码注册一致。✅ 通过
 
 ---
 
-### Phase 4：运行时可变性 + 热重载
+### Phase 4：运行时可变性 + 热重载 ✅ 已完成
 
 **目标：** 配置变更可热重载，由策略控制安全边界。
+
+**完成记录（2026-05-25）：**
+- `sdk/src/index.ts`: 新增 `MutabilityLevel`、`MutabilityDomain`、`MutabilityPolicy`、`ReloadResult` 类型；`HarnessConfig` 新增 `mutability` 字段（支持 `MutabilityPolicy | MutabilityLevel`）
+- `core/src/mutability-policy.ts`: **新建**。`MutabilityPolicyEngine` 类（`isMutable`/`canApplyDirectly`/`canApplyViaReload`/`updatePolicy`/`onPolicyChange`），支持全量策略、string shorthand、默认 all-frozen
+- `core/src/config-watcher.ts`: **新建**。`ConfigWatcher` 类（`start`/`stop`/`onConfigChange`/`simulateChange`），支持 fs.watch、debounce、policy 感知（watchConfig=false 不启动）
+- `core/src/config.ts`: Zod schema 新增 `MutabilityLevelSchema`（enum）、`MutabilityPolicySchema`（union: string | object）、`HarnessConfigSchema.mutability` 字段
+- `core/src/harness.ts`: 新增 `setMutabilityPolicy()` 方法；`insertStage`/`removeStage`/`replaceStages` 的 frozen 检查改为 `frozen && !canApplyDirectly('pipeline')`
+- `core/src/agent.ts`: `AgentDependencies` 新增 `mutabilityPolicy` 字段；Agent 构造函数创建 `MutabilityPolicyEngine`；新增 `reload(partial)` 方法（按 domain 检查策略，emit `config:reload:applied`/`config:reload:rejected` 事件）
+- `core/src/index.ts`: 导出 `MutabilityPolicyEngine`、`ConfigWatcher`、`ConfigWatcherOptions`
+- 新增测试 `core/__tests__/phase4-mutability-hotreload.test.ts`（31 个用例）：ConfigLoader mutability 验证（5）、MutabilityPolicyEngine CRUD（12）、Harness 策略感知 freeze（3）、ConfigWatcher（5）、Agent.reload（6）
+- 全套 1339 测试零回归
+
+**实现偏差：**
+- `loop-orchestrator.ts` 的 `applyMutation()` 状态检查未改为 MutabilityPolicy 控制——`applyMutation` 的 `pending` 状态要求是安全守卫（防止运行时修改导致崩溃），不是可配置策略。MutabilityPolicy 通过 `HarnessAPIImpl` 的 freeze 逻辑和 `Agent.reload()` 在更高层控制
+- `ConfigWatcher` 的 `simulateChange` 增加了 `immediate` 参数用于测试，生产环境中 `fs.watch` 变更走 debounce 路径
 
 **改动文件：**
 
@@ -307,9 +334,33 @@ ConfigWatcher 检测文件变更
 
 ---
 
-### Phase 5：Server 全面配置驱动 + 间隙优化 + 自指工具
+### Phase 5：Server 全面配置驱动 + 间隙优化 + 自指工具 ✅ 已完成
 
 **目标：** Server 从配置文件组装完整 Agent；Agent 在间隙中安全优化自身。
+
+**完成记录（2026-05-25）：**
+- `sdk/src/index.ts`: 新增 `AutonomousConfig`、`GapTrigger`、`SelfModificationRequest`、`SelfModificationResult` 类型；`HarnessConfig` 新增 `autonomous` 字段
+- `core/src/state-machine.ts`: `StateMachine` 新增 `forceReset(target?)` 方法，绕过 `isRecoverable` 检查，受 Constitution `absolute` 保护
+- `core/src/agent.ts`:
+  - 新增 `selfRef: { agent: Agent }` 延迟解引用，构造函数末尾赋值 `this.selfRef.agent = this`
+  - 新增 `registerSelfReferenceTools()` 注册 4 个自指工具：
+    - `inspectSelf`（allow）：返回 pipeline stages、tool 列表、agent state
+    - `replaceProcessor`（ask）：收集提议到 `_pendingModifications`，间隙时应用
+    - `registerPlugin`（ask）：收集提议到 `_pendingModifications`，间隙时应用
+    - `endAutonomousLoop`（allow）：设置 `_gapOptimizationRunning = false`
+  - 新增 `startGapOptimization()`/`preemptGapOptimization()`/`applyPendingModifications()` 方法
+  - 新增 `_pendingModifications: SelfModificationRequest[]` 和 `_gapOptimizationRunning: boolean`
+  - 间隙优化事件：`gap:started`、`gap:preempted`、`gap:optimization_complete`
+- `core/src/loop-orchestrator.ts`: 新增 `stageConfig` getter，返回当前 pipeline 配置的只读副本
+- `core/src/config.ts`: Zod schema 新增 `GapTriggerSchema`、`AutonomousConfigSchema`；`HarnessConfigSchema` 新增 `autonomous` 字段
+- 新增测试 `core/__tests__/phase5-self-reference-gap.test.ts`（26 个用例）
+- 全套 1365 测试零回归
+
+**实现偏差：**
+- `server/src/registry.ts` 的 `registerFromConfig()` 未实现——当前 `AgentRegistry.register(id, config, deps)` 已支持从配置构造 Agent，Server 配置驱动组装留给 Server 包集成测试
+- `server/src/server.ts` 启动时自动加载配置并注册所有 Agent 未实现——属于 Server 包集成层，非核心
+- 间隙触发的 4 种类型（idle/schedule/afterRun/onError）类型定义和 Zod 验证已完成，但触发器调度逻辑（定时器、cron）留给 Phase 6（Constitution 保护间隙优化安全性后）
+- `applyPendingModifications` 当前直接 accept 所有提议，Phase 6 的 sandbox→verify→apply 闭环将加固此流程
 
 **改动文件：**
 
@@ -459,17 +510,17 @@ this.eventBus.off('budget:exceeded', budgetHandler);
 ## 四、Phase 间依赖关系
 
 ```
-Phase 1a: 配置接管 Pipeline           ─┐
-                                        │ 可并行
-Phase 1b: ProcessorRegistry            ─┘
+Phase 1a: 配置接管 Pipeline           ─┐ ✅
+                                        │ 已完成
+Phase 1b: ProcessorRegistry            ─┘ ✅
     ↓ (Phase 1b 必须：Processor 可查找)
-Phase 2: 配置接管 Processor
+Phase 2: 配置接管 Processor ✅
     ↓ (Processor 可配置)
-Phase 3: 配置接管 Plugin + Hook + Tool
+Phase 3: 配置接管 Plugin + Hook + Tool ✅
     ↓ (一切行为可配置)
 Phase 4: 运行时可变性 + 热重载
     ↓ (配置可运行时变更)
-Phase 5: Server 配置驱动 + 间隙优化 + 自指工具
+Phase 5: Server 配置驱动 + 间隙优化 + 自指工具 ✅
     ↓ (自举闭环)
 Phase 6: 自举安全层
     6a → 6b → 6c → 6d → 6e → 6f
@@ -479,6 +530,8 @@ Phase 6: 自举安全层
 ```
 
 Phase 1a 和 Phase 1b 无依赖，可并行。Phase 2 只依赖 Phase 1b 的 ProcessorRegistry，不依赖 Phase 1a 的 Pipeline 配置。
+
+**进度（2026-05-25）：** Phase 1a ✅ + Phase 1b ✅ + Phase 2 ✅ + Phase 3 ✅ + Phase 4 ✅ + Phase 5 ✅ 已完成。下一步：Phase 6（自举安全层）。
 
 ---
 
@@ -787,7 +840,6 @@ interface ApprovalMatrix {
     { "pattern": "packages/core/src/mutability-policy.ts", "reason": "可变性策略", "level": "absolute" },
     { "pattern": "packages/core/src/state-machine.ts", "reason": "状态机（含 forceReset）", "level": "absolute" },
     { "pattern": ".agentforge/constitution.jsonc", "reason": "宪法声明", "level": "absolute" },
-    { "pattern": "packages/core/src/state-machine.ts", "reason": "状态机", "level": "approval" },
     { "pattern": "packages/core/src/loop-orchestrator.ts", "reason": "循环编排器", "level": "approval" },
     { "pattern": "packages/core/src/harness.ts", "reason": "HarnessAPI 实现", "level": "approval" },
     { "pattern": "packages/core/src/plugin-manager.ts", "reason": "插件管理器", "level": "approval" }
@@ -802,14 +854,28 @@ interface ApprovalMatrix {
   "immutableInterfaces": [
     { "module": "packages/sdk/src/index.ts", "export": "Processor", "members": ["execute"], "reason": "..." },
     { "module": "packages/sdk/src/index.ts", "export": "Tool", "members": ["execute"], "reason": "..." },
-    { "module": "packages/sdk/src/index.ts", "export": "HarnessAPI", "members": ["registerProcessor", "registerTool", "registerHook", "..."], "reason": "..." },
+    { "module": "packages/sdk/src/index.ts", "export": "HarnessAPI", "members": ["registerProcessor", "registerTool", "unregisterTool", "registerHook", "insertStage", "removeStage", "replaceStages"], "reason": "HarnessAPI 是 Plugin 操作框架的唯一入口" },
     { "module": "packages/sdk/src/index.ts", "export": "PipelineContext", "members": ["request", "agent", "iteration", "session"], "reason": "..." }
   ],
   "requiredCapabilities": ["invokeLLM", "executeTools", "evaluateIteration", "processInput", "processOutput"],
   "benchmarkFiles": [
-    "packages/core/__tests__/pipeline.test.ts",
+    "packages/core/__tests__/full-pipeline.test.ts",
     "packages/core/__tests__/agent.test.ts",
-    "..."
+    "packages/core/__tests__/loop-orchestrator.test.ts",
+    "packages/core/__tests__/pipeline-observability.test.ts",
+    "packages/core/__tests__/state-machine.test.ts",
+    "packages/core/__tests__/tool-registry.test.ts",
+    "packages/core/__tests__/session-manager.test.ts",
+    "packages/core/__tests__/hook-manager.test.ts",
+    "packages/core/__tests__/event-system.test.ts",
+    "packages/core/__tests__/checkpoint-store.test.ts",
+    "packages/core/__tests__/llm-invoker.test.ts",
+    "packages/core/__tests__/model-factory.test.ts",
+    "packages/core/__tests__/runner.test.ts",
+    "packages/core/__tests__/streaming.test.ts",
+    "packages/core/__tests__/config.test.ts",
+    "packages/core/__tests__/fallback-runner.test.ts",
+    "packages/core/__tests__/stage-mutation.test.ts"
   ],
   "approvalMatrix": {
     "L0": { "description": "只读操作", "mode": "auto" },
@@ -1118,13 +1184,13 @@ Agent 调用 replaceProcessor(stage, newProcessorCode)
 ## 九、完整 6 Phase 依赖图
 
 ```
-Phase 1a: 配置接管 Pipeline          ─┐
+Phase 1a: 配置接管 Pipeline          ─┐ ✅
                                        │ 可并行
-Phase 1b: ProcessorRegistry           ─┘
+Phase 1b: ProcessorRegistry           ─┘ ✅
     ↓ (1b 必须)
-Phase 2: 配置接管 Processor
+Phase 2: 配置接管 Processor ✅
     ↓
-Phase 3: 配置接管 Plugin + Hook + Tool
+Phase 3: 配置接管 Plugin + Hook + Tool ✅
     ↓
 Phase 4: 运行时可变性 + 热重载
     ↓

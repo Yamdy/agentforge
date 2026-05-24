@@ -1,3 +1,4 @@
+// Re-export all processors for backward compatibility
 export { processInputProcessor } from './process-input.js';
 export { buildContextExtensionPoint } from './build-context.js';
 export { prepareStepExtensionPoint } from './prepare-step.js';

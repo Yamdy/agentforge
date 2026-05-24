@@ -1,6 +1,7 @@
 import type {
   EventType,
   HarnessAPI,
+  PluginDescriptor,
   PluginRegistration,
   StageMutation,
 } from '@primo-ai/sdk';
@@ -12,6 +13,8 @@ import { EventBus } from './event-bus.js';
 import { EventSystem } from './event-system.js';
 import { HookManager } from './hook-manager.js';
 import { HarnessAPIImpl } from './harness.js';
+import { globalPluginRegistry } from './plugin-registry.js';
+import { registerBuiltinPluginsOnce } from './builtin-plugins.js';
 
 export type PluginFactory = (api: HarnessAPI) => PluginRegistration | void;
 
@@ -35,12 +38,18 @@ export class PluginManager {
   private _eventSystem = new EventSystem();
   readonly hookManager: HookManager;
   private _harnessInstances: HarnessAPIImpl[] = [];
+  private _pluginNames: string[] = [];
   private resourceInstances = new Map<string, unknown>();
   private errors: Array<{ source: string; error: Error }> = [];
   private stageMutator?: (mutation: StageMutation) => void;
 
   get eventBus(): EventBus {
     return this._eventSystem.bus;
+  }
+
+  /** Names of all initialized plugins in registration order. */
+  get pluginNames(): string[] {
+    return [...this._pluginNames];
   }
 
   get eventSystem(): EventSystem {
@@ -77,6 +86,8 @@ export class PluginManager {
 
   initializePlugin(factory: PluginFactory): void {
     const api = this.createHarnessAPI();
+    const name = factory.name || `plugin-${this._harnessInstances.length}`;
+    this._pluginNames.push(name);
     factory(api);
   }
 
@@ -84,6 +95,44 @@ export class PluginManager {
     const plugins = config.plugins ?? [];
     for (const { path } of plugins) {
       await this.loadPlugin(path);
+    }
+  }
+
+  async loadPluginsFromDescriptors(descriptors: PluginDescriptor[]): Promise<void> {
+    for (const descriptor of descriptors) {
+      if (typeof descriptor === 'string') {
+        await this.loadPlugin(descriptor);
+        continue;
+      }
+      if ('id' in descriptor) {
+        try {
+          if (!globalPluginRegistry.has(descriptor.id)) {
+            throw new Error(`Builtin plugin "${descriptor.id}" not registered. Register plugins at application startup via globalPluginRegistry.register().`);
+          }
+          const factoryWrapper = globalPluginRegistry.resolve(descriptor);
+          const factory = factoryWrapper(descriptor.config);
+          this.initializePlugin(factory);
+        } catch (err) {
+          const error = err instanceof Error ? err : new Error(String(err));
+          this.eventBus.emit('plugin:load_error', { source: descriptor.id, error });
+          this.errors.push({ source: descriptor.id, error });
+        }
+        continue;
+      }
+      if ('module' in descriptor) {
+        try {
+          const module = await import(descriptor.module);
+          const factory = module.default ?? module;
+          if (typeof factory !== 'function') {
+            throw new Error(`Plugin at "${descriptor.module}" does not export a factory function`);
+          }
+          this.initializePlugin(factory);
+        } catch (err) {
+          const error = err instanceof Error ? err : new Error(String(err));
+          this.eventBus.emit('plugin:load_error', { source: descriptor.module, error });
+          this.errors.push({ source: descriptor.module, error });
+        }
+      }
     }
   }
 
@@ -103,8 +152,8 @@ export class PluginManager {
     this.stageMutator = mutator;
   }
 
-  freezeHarnessInstances(): void {
-    for (const h of this._harnessInstances) h.freeze();
+  setMutabilityPolicyOnHarnesses(policy: import('./mutability-policy.js').MutabilityPolicyEngine): void {
+    for (const h of this._harnessInstances) h.setMutabilityPolicy(policy);
   }
 
   emitEvent(eventType: EventType, ...args: unknown[]): void {
@@ -154,6 +203,7 @@ export class PluginManager {
       for (const unsub of h.getUnsubFns()) unsub();
     }
     this._harnessInstances = [];
+    this._pluginNames = [];
   }
 
   private createHarnessAPI(): HarnessAPI {
