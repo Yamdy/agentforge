@@ -289,6 +289,34 @@ export interface Processor {
 }
 
 // ---------------------------------------------------------------------------
+// Processor Registry (Phase 1b)
+// ---------------------------------------------------------------------------
+
+/** Built-in processor names that can be resolved from the registry. */
+export type BuiltinProcessorName =
+  | 'processInput' | 'buildContext' | 'prepareStep' | 'gateLLM'
+  | 'invokeLLM' | 'processStepOutput' | 'gateTool'
+  | 'executeTools' | 'evaluateIteration' | 'processOutput';
+
+/** Describes how to obtain a Processor — either a built-in name or an external module. */
+export type ProcessorDescriptor =
+  | { builtin: BuiltinProcessorName }
+  | { module: string; export?: string; config?: Record<string, unknown> };
+
+/** Dependencies injected into Processor factories during resolution. */
+export interface ProcessorDeps {
+  getLLM?: (systemPrompt?: string) => Promise<unknown>;
+  registry?: unknown;
+  hookManager?: unknown;
+  eventBus?: unknown;
+  modelString?: string;
+  config?: Record<string, unknown>;
+}
+
+/** Factory function that creates a Processor given its dependencies. */
+export type ProcessorFactory = (deps?: ProcessorDeps) => Processor;
+
+// ---------------------------------------------------------------------------
 // Tool System
 // ---------------------------------------------------------------------------
 
@@ -723,6 +751,10 @@ export interface HarnessConfig {
   modelGateways?: GatewayConfig[];
   hooks?: { profile?: HookProfile; disabledHooks?: string[] };
   skills?: { paths?: string[] };
+  /** Override default pipeline stage order. */
+  pipeline?: PipelineStageConfig;
+  /** Override which Processor is used for each pipeline stage. Keys are stage names. */
+  processors?: Record<string, ProcessorDescriptor>;
   // Phase 2 — harness processor configurations
   costCap?: {
     maxCost: number;

@@ -278,4 +278,13 @@ const HarnessConfigSchema = z.object({
     apiKey: z.string().optional(),
   })).optional(),
   skills: z.object({ paths: z.array(z.string()).optional() }).optional(),
+  pipeline: z.object({
+    preLoop: z.array(z.string()).optional(),
+    loop: z.array(z.string()).optional(),
+    postLoop: z.array(z.string()).optional(),
+  }).optional(),
+  processors: z.record(z.string(), z.union([
+    z.object({ builtin: z.string() }),
+    z.object({ module: z.string(), export: z.string().optional(), config: z.record(z.string(), z.unknown()).optional() }),
+  ])).optional(),
 }).passthrough();

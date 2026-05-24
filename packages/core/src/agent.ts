@@ -24,6 +24,7 @@ import { JsonlCheckpointStore } from './checkpoint-store.js';
 import { echoTool } from '@primo-ai/tools';
 import {
   processInputProcessor,
+  buildContextExtensionPoint,
   prepareStepExtensionPoint,
   createInvokeLLMProcessor,
   processStepOutputProcessor,
@@ -32,6 +33,8 @@ import {
   createEvaluateIterationProcessor,
   processOutputProcessor,
 } from './processors/index.js';
+import { globalProcessorRegistry } from './processor-registry.js';
+import type { ProcessorDescriptor, ProcessorDeps } from '@primo-ai/sdk';
 import { ContextBuilder } from './context-builder.js';
 
 export interface AgentDependencies {
@@ -49,6 +52,8 @@ export interface AgentDependencies {
   contextBuilder?: ContextBuilder;
   /** Override default pipeline stage order. */
   stageConfig?: PipelineStageConfig;
+  /** Override which Processor is used for each pipeline stage. Keys are stage names. */
+  processorDescriptors?: Record<string, ProcessorDescriptor>;
   /** OTel sampling config passed to auto-detected tracer. Ignored when `tracer` is provided. */
   otelSampler?: 'always_on' | 'always_off' | { ratio: number };
 }
@@ -80,6 +85,51 @@ export function autoDetectOtelTracer(
   }
 }
 
+const defaultProcessorDescriptors: Record<string, ProcessorDescriptor> = {
+  processInput: { builtin: 'processInput' },
+  buildContext: { builtin: 'buildContext' },
+  prepareStep: { builtin: 'prepareStep' },
+  gateLLM: { builtin: 'gateLLM' },
+  invokeLLM: { builtin: 'invokeLLM' },
+  processStepOutput: { builtin: 'processStepOutput' },
+  gateTool: { builtin: 'gateTool' },
+  executeTools: { builtin: 'executeTools' },
+  evaluateIteration: { builtin: 'evaluateIteration' },
+  processOutput: { builtin: 'processOutput' },
+};
+
+let _builtinsRegistered = false;
+
+function registerBuiltinProcessorsOnce(): void {
+  if (_builtinsRegistered) return;
+  _builtinsRegistered = true;
+  globalProcessorRegistry.register('processInput', () => processInputProcessor);
+  globalProcessorRegistry.register('buildContext', () => buildContextExtensionPoint);
+  globalProcessorRegistry.register('prepareStep', () => prepareStepExtensionPoint);
+  globalProcessorRegistry.register('gateLLM', () => ({
+    stage: 'gateLLM' as const,
+    execute: async (ctx) => ctx.state,
+    isNoOp: true,
+  }));
+  globalProcessorRegistry.register('invokeLLM', (deps?: ProcessorDeps) =>
+    createInvokeLLMProcessor({
+      getLLM: deps?.getLLM as any,
+      registry: deps?.registry as any,
+      hookManager: deps?.hookManager as any,
+      modelString: deps?.modelString ?? '',
+    }),
+  );
+  globalProcessorRegistry.register('processStepOutput', () => processStepOutputProcessor);
+  globalProcessorRegistry.register('gateTool', () => gateToolExtensionPoint);
+  globalProcessorRegistry.register('executeTools', (deps?: ProcessorDeps) =>
+    createExecuteToolsProcessor(deps?.registry as any),
+  );
+  globalProcessorRegistry.register('evaluateIteration', (deps?: ProcessorDeps) =>
+    createEvaluateIterationProcessor({ eventBus: deps?.eventBus as any }),
+  );
+  globalProcessorRegistry.register('processOutput', () => processOutputProcessor);
+}
+
 export class Agent {
   private config: AgentConfig;
   private runner: PipelineRunner;
@@ -94,6 +144,7 @@ export class Agent {
   private contextBuilder: ContextBuilder;
   private activeAbortController: AbortController | null = null;
   private lastContext?: PipelineContext;
+  private _processorDescriptors?: Record<string, ProcessorDescriptor>;
 
   constructor(config: AgentSimpleConfig);
   constructor(config: AgentConfig, deps?: AgentDependencies);
@@ -113,6 +164,7 @@ export class Agent {
     this.orchestrator = new LoopOrchestrator(this.runner, this._pluginManager.hookManager, store, this._pluginManager.eventBus, deps?.stageConfig);
     this.sessionManager = deps?.sessionManager;
     this._autoCheckpoint = deps?.autoCheckpoint ?? false;
+    this._processorDescriptors = deps?.processorDescriptors;
     this.registerTools();
     this.registerBuiltinProcessors();
     this._pluginManager.setStageMutator((m) => this.orchestrator.applyMutation(m));
@@ -429,20 +481,33 @@ export class Agent {
   }
 
   private registerBuiltinProcessors(): void {
-    this.runner.register(processInputProcessor);
-    this.runner.register(this.contextBuilder.createProcessor());
-    this.runner.register(prepareStepExtensionPoint);
-    this.runner.register(createInvokeLLMProcessor({
+    const deps = this.buildProcessorDeps();
+    // Ensure built-in processors are registered (idempotent)
+    registerBuiltinProcessorsOnce();
+    // Merge custom descriptors over defaults: custom takes precedence
+    const descriptors = this._processorDescriptors
+      ? { ...defaultProcessorDescriptors, ...this._processorDescriptors }
+      : defaultProcessorDescriptors;
+
+    for (const [stage, descriptor] of Object.entries(descriptors)) {
+      if (stage === 'buildContext') {
+        this.runner.register(this.contextBuilder.createProcessor());
+        continue;
+      }
+      const processor = globalProcessorRegistry.resolve(descriptor, deps);
+      processor.stage = stage as import('@primo-ai/sdk').StageName;
+      this.runner.register(processor);
+    }
+  }
+
+  private buildProcessorDeps(): ProcessorDeps {
+    return {
       getLLM: (systemPrompt) => this.getLLM(systemPrompt),
       registry: this.registry,
       hookManager: this._pluginManager.hookManager,
+      eventBus: this._pluginManager.eventBus,
       modelString: this.config.model,
-    }));
-    this.runner.register(processStepOutputProcessor);
-    this.runner.register(gateToolExtensionPoint);
-    this.runner.register(createExecuteToolsProcessor(this.registry));
-    this.runner.register(createEvaluateIterationProcessor({ eventBus: this._pluginManager.eventBus }));
-    this.runner.register(processOutputProcessor);
+    };
   }
 }
 
