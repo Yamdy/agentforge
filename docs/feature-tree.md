@@ -45,7 +45,7 @@ sdk (零依赖，纯类型)
 | IR | 能力域 | 功能点 | 对应代码 |
 |----|--------|--------|---------|
 | IR-1.1 | Pipeline Runner | 10 阶段管道按序执行，支持 preLoop/loop/postLoop 三段编排 | `core/pipeline.ts` |
-| IR-1.2 | Context Builder | 4-region 上下文装配（request/agent/iteration/session），Dynamic&lt;T&gt; 运行时解析 | `core/context-builder.ts` |
+| IR-1.2 | Context Builder | 3-region 上下文装配（agent/iteration/session），Dynamic&lt;T&gt; 运行时解析 | `core/context-builder.ts` |
 | IR-1.3 | Processor System | 8 个内置处理器（processInput→…→processOutput），no-op 扩展点 + 实质性处理器工厂 | `core/processors/*.ts` |
 | IR-1.4 | Control Flow | abort/retry/suspend/error 四种控制流，ProcessorControl API v2 | `core/control-flow.ts` |
 | IR-1.5 | Loop Orchestrator | agentic loop 编排，共享 run/stream 逻辑，含 step cap/token cap 检查 | `core/loop-orchestrator.ts` |
@@ -59,14 +59,13 @@ processInput → buildContext → [Agentic Loop:
 ] → processOutput
 ```
 
-### 4-Region Context 模型
+### 3-Region Context 模型
 
 | Region | 职责 | 关键字段 |
 |--------|------|---------|
-| `request` | 不可变输入 | input, sessionId |
 | `agent` | 配置 + 提示 + 工具声明 | config, systemPrompt, toolDeclarations, promptFragments, providerOptions |
 | `iteration` | 单步状态 | step, loopDirective, content, response, tokenUsage, pendingToolCalls, toolResults, span |
-| `session` | 跨步状态 | messageHistory, totalTokenUsage, custom（插件扩展） |
+| `session` | 跨步状态 | input, sessionId, messageHistory, totalTokenUsage, custom（插件扩展） |
 
 ---
 

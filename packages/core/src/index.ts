@@ -31,7 +31,7 @@ export { CircuitBreaker, type CircuitBreakerState, type CircuitBreakerConfig, ty
 export { InMemoryRetryStateStore, JsonlRetryStateStore, type RetryStateStore, type RetryStateEntry } from './retry-state-store.js';
 export { ModelFactory } from './model-factory.js';
 export { LoopOrchestrator, RunMode, type LoopOptions } from './loop-orchestrator.js';
-export { serialize, deserialize, migrate_v1_to_v2, SERIALIZATION_VERSION, type SerializableContext } from './serialize.js';
+export { serialize, deserialize, SERIALIZATION_VERSION, type SerializableContext } from './serialize.js';
 export { InMemoryCheckpointStore, JsonlCheckpointStore } from './checkpoint-store.js';
 export {
   InMemorySyncEventStore,

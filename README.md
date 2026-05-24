@@ -180,14 +180,13 @@ processInput → buildContext → [Agentic Loop:
 ] → processOutput
 ```
 
-Every stage receives a `PipelineContext` with four regions:
+Every stage receives a `PipelineContext` with three regions:
 
 | Region | Purpose |
 |--------|---------|
-| `request` | Immutable input (message, sessionId) |
 | `agent` | Config, system prompt, tool declarations, prompt fragments |
 | `iteration` | Per-step state (response, tool calls, loop directive, span) |
-| `session` | Cross-step state (history, token usage, plugin data) |
+| `session` | Cross-step state (input, sessionId, history, token usage, plugin data) |
 
 ```
 packages/

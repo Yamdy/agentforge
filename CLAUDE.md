@@ -51,13 +51,12 @@ packages/
 
 Dependency direction: `sdk` (zero deps) ← `tools` / `observability` ← `core` ← `plugins`.
 
-### Pipeline Context — Four Regions
+### Pipeline Context — Three Regions
 
-Every stage receives a `PipelineContext` with four regions:
-- `request` — immutable input (user message, sessionId)
+Every stage receives a `PipelineContext` with three regions:
 - `agent` — config + prompt + tool declarations + promptFragments
 - `iteration` — per-step state (step number, response, loopDirective, span)
-- `session` — cross-iteration state (messageHistory, tokenUsage, plugin custom data)
+- `session` — cross-iteration state (input, sessionId, messageHistory, tokenUsage, plugin custom data)
 
 ### Agent Lifecycle Pipeline
 

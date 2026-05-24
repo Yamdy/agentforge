@@ -1,0 +1,189 @@
+{
+  // AgentForge Constitution v1
+  //
+  // 这是 AgentForge L1 自举的不可变边界定义文件。
+  // - 此文件仅人类可修改（Agent 在任何情况下都不能修改它）。
+  // - Verification Gate 在执行自修改前检查 diff 是否触及受保护路径。
+  // - Constitution 在 Agent 启动时加载到内存，运行时内存版本为权威版本（不从磁盘重读）。
+  // - 规范层（sdk 接口定义）的更改永远拒绝（absolute）。
+  // - 安全层（constitution/watchdog/verification-gate/mutability-policy）的更改永远拒绝。
+  // - 核心运行时层（state-machine/loop-orchestrator/harness 等）的更改需人工审批（approval）。
+
+  "version": 1,
+
+  // ─── 受保护路径 ──────────────────────────────────
+  // pattern: glob 模式匹配文件路径
+  // reason:  保护原因
+  // level:   absolute = Agent 永远不可修改
+  //          approval = Agent 需人工审批才能修改
+  "protectedPaths": [
+    // ── 规范层：接口定义（absolute）─────────────────
+    {
+      "pattern": "packages/sdk/src/index.ts",
+      "reason": "规范层：所有公共接口定义。规范即实现的自举锚点（Meta-circular Agent Bootstrap 原则）",
+      "level": "absolute"
+    },
+
+    // ── 安全层：自举边界守卫（absolute）─────────────
+    {
+      "pattern": "packages/core/src/constitution.ts",
+      "reason": "宪法引擎自身。如果 Agent 能改宪法，所有保护失效",
+      "level": "absolute"
+    },
+    {
+      "pattern": "packages/core/src/verification-gate.ts",
+      "reason": "验证管道引擎。如果 Agent 能绕过或修改验证逻辑，多层门全部失效（NSRSA 证明必要）",
+      "level": "absolute"
+    },
+    {
+      "pattern": "packages/core/src/degeneration-watchdog.ts",
+      "reason": "退化看门狗。如果 Agent 能禁用看门狗，退化检测失效",
+      "level": "absolute"
+    },
+    {
+      "pattern": "packages/core/src/mutability-policy.ts",
+      "reason": "可变性策略。如果 Agent 能将自己的 mutability 提升到 dynamic，沙箱失效",
+      "level": "absolute"
+    },
+
+    // ── 宪法声明文件自身（absolute）─────────────────
+    {
+      "pattern": ".agentforge/constitution.jsonc",
+      "reason": "宪法声明文件。修改此文件等同于修改宪法——从 pure-text 层面杜绝 Agent 改宪法",
+      "level": "absolute"
+    },
+
+    // ── 核心运行时（approval）───────────────────────
+    {
+      "pattern": "packages/core/src/state-machine.ts",
+      "reason": "状态机。Agent 生命周期管理，修改可能导致状态转换逻辑错误",
+      "level": "approval"
+    },
+    {
+      "pattern": "packages/core/src/loop-orchestrator.ts",
+      "reason": "循环编排器。Agentic loop 核心编排逻辑，修改可能破坏 loop 终止保证",
+      "level": "approval"
+    },
+    {
+      "pattern": "packages/core/src/llm-invoker.ts",
+      "reason": "LLM 调用器。修改可能破坏 provider 兼容性和容错逻辑",
+      "level": "approval"
+    },
+    {
+      "pattern": "packages/core/src/tool-registry.ts",
+      "reason": "工具注册表。修改可能破坏工具执行的安全沙箱",
+      "level": "approval"
+    },
+    {
+      "pattern": "packages/core/src/harness.ts",
+      "reason": "HarnessAPI 实现。Agent 操作框架的唯一入口，修改可能绕过安全门控",
+      "level": "approval"
+    },
+    {
+      "pattern": "packages/core/src/plugin-manager.ts",
+      "reason": "插件管理器。控制插件加载和 HarnessAPI 实例创建，修改可能绕过插件安全检查",
+      "level": "approval"
+    }
+  ],
+
+  // ─── 修改限制 ────────────────────────────────────
+  "diffLimits": {
+    "maxFilesPerMutation": 3,
+    "maxLinesPerFile": 50,
+    "maxMutationsPerHour": 10,
+    "maxMutationsPerDay": 30,
+    "cooldownMs": 300000
+  },
+
+  // ─── 不可变接口签名 ──────────────────────────────
+  // 每个条目精确指定模块、导出、受保护成员和原因。
+  // 实现可以被 Agent 替换，但接口契约（成员签名）必须保持不变。
+  "immutableInterfaces": [
+    {
+      "module": "packages/sdk/src/index.ts",
+      "export": "Processor",
+      "members": ["execute"],
+      "reason": "Processor.execute 是所有行为层的基础契约"
+    },
+    {
+      "module": "packages/sdk/src/index.ts",
+      "export": "Tool",
+      "members": ["execute"],
+      "reason": "Tool.execute 是工具系统的基础契约"
+    },
+    {
+      "module": "packages/sdk/src/index.ts",
+      "export": "HarnessAPI",
+      "members": ["registerProcessor", "registerTool", "registerHook", "insertStage", "removeStage", "replaceStages"],
+      "reason": "HarnessAPI 是插件系统的唯一入口"
+    },
+    {
+      "module": "packages/sdk/src/index.ts",
+      "export": "PipelineContext",
+      "members": ["request", "agent", "iteration", "session"],
+      "reason": "四区域 Context 是规范层的核心数据结构"
+    }
+  ],
+
+  // ─── 必需保留的核心能力 ──────────────────────────
+  // Agent 不能通过自修改删除这些能力。
+  // 对应 DGM 的 "保留代码库编辑能力" 门控原则。
+  "requiredCapabilities": [
+    "invokeLLM",
+    "executeTools",
+    "evaluateIteration",
+    "processInput",
+    "processOutput"
+  ],
+
+  // ─── 验证基准文件（Agent 不可修改）───────────────
+  // Verification Gate 4 运行的固定测试文件列表。
+  // 这些文件受 same absolute-level 保护——Agent 不能通过修改测试来通过验证。
+  // 对应 DGM 实验中 Agent 删除日志函数伪造满分的对抗场景。
+  "benchmarkFiles": [
+    "packages/core/__tests__/pipeline.test.ts",
+    "packages/core/__tests__/agent.test.ts",
+    "packages/core/__tests__/loop-orchestrator.test.ts",
+    "packages/core/__tests__/session-manager.test.ts",
+    "packages/core/__tests__/circuit-breaker.test.ts",
+    "packages/core/__tests__/retry-state-store.test.ts",
+    "packages/core/__tests__/state-machine.test.ts",
+    "packages/core/__tests__/harness-gaps.test.ts",
+    "packages/core/__tests__/event-system.test.ts",
+    "packages/core/__tests__/snapshot-service.test.ts",
+    "packages/core/__tests__/checkpoint-store.test.ts",
+    "packages/core/__tests__/three-region-context.test.ts",
+    "packages/core/__tests__/plugin-manager-error-visibility.test.ts",
+    "packages/plugins/__tests__/memory-plugin.test.ts",
+    "packages/plugins/__tests__/memory-core-adapter.test.ts",
+    "packages/plugins/__tests__/permission-processor.test.ts",
+    "packages/sdk/__tests__/pipeline-stage-types.test.ts"
+  ],
+
+  // ─── 风险等级与审批模式映射 ──────────────────────
+  "approvalMatrix": {
+    "L0": {
+      "description": "只读操作（inspectSelf）",
+      "mode": "auto"
+    },
+    "L1": {
+      "description": "可逆修改（replaceProcessor，有回滚点）",
+      "mode": "auto_with_audit",
+      "auditTarget": "SyncEventStore",
+      "auditEvent": "self:mutation:auto_approved",
+      "auditPayload": ["diff", "verificationReport", "rollbackSnapshotId"]
+    },
+    "L2": {
+      "description": "不可逆修改（修改源码文件）",
+      "mode": "human_approval"
+    },
+    "L3": {
+      "description": "结构性修改（修改 Pipeline 阶段顺序）",
+      "mode": "human_approval"
+    },
+    "L4": {
+      "description": "宪法级修改（触及 absolute 保护路径）",
+      "mode": "always_reject"
+    }
+  }
+}

@@ -52,7 +52,7 @@ Compression, tool output truncation, progressive disclosure — preventing model
 - **Language**: TypeScript
 - **Execution model**: Processor Pipeline
 - **Extension + Observability**: Unified model — each pipeline stage is both extension point and span
-- **State model**: Four-region PipelineContext — `request` (immutable), `agent` (config + prompt), `iteration` (step state), `session` (cross-iteration) — replacing the former untyped `pipeline: Record<string, unknown>`
+- **State model**: Three-region PipelineContext — `agent` (config + prompt), `iteration` (step state), `session` (input + sessionId + cross-iteration state) — replacing the former untyped `pipeline: Record<string, unknown>`
 - **Plugin system**: Code factory function — `(harness: HarnessAPI) => PluginRegistration`
 - **Observability backend**: Self-built lightweight abstraction (Span/Tracer/Metrics) + OTel Bridge
 - **Sub-agents**: Dual-mode — sync (tool-like, blocking) + async (background task, event notification)
@@ -90,14 +90,13 @@ Compression, tool output truncation, progressive disclosure — preventing model
 ### Pipeline Stage
 Each stage is simultaneously an **extension point** (Processor interface), an **observability span** (auto-traced), and a **Hook point** (cross-cutting interception). One registration solves extensibility, observability, and cross-cutting concerns.
 
-### Pipeline Context — Four Regions
+### Pipeline Context — Three Regions
 
 ```
 PipelineContext
-├── request       — immutable input data (user message, session ID, metadata)
 ├── agent         — agent configuration (config, systemPrompt, toolDeclarations, promptFragments)
 ├── iteration     — current step state (step number, fullStream, response, pendingToolCalls, reasoningContent, loopDirective, span)
-└── session       — cross-iteration state (messageHistory, totalTokenUsage, custom plugin data)
+└── session       — cross-iteration state (input, sessionId, messageHistory, totalTokenUsage, custom plugin data)
 ```
 
 ### Agent Lifecycle Pipeline

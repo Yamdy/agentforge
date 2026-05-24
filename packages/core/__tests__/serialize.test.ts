@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { serialize, deserialize, SerializationVersionError, migrate_v1_to_v2 } from '../src/serialize.js';
+import { serialize, deserialize, SerializationVersionError } from '../src/serialize.js';
 import type { SerializableContext } from '../src/serialize.js';
 import type { PipelineContext } from '@primo-ai/sdk';
 
@@ -114,14 +114,13 @@ describe('serialize versioning', () => {
     expect(restored.iteration.response).toBe('done');
   });
 
-  it('treats missing version field as v1 (backward compat)', () => {
+  it('treats missing version field as v2 (default)', () => {
     const ctx = makeContext();
     const serialized = serialize(ctx);
-    // Simulate legacy data — strip version
-    const { version, ...legacyData } = serialized as SerializableContext & { version: number };
+    // Simulate data without explicit version — defaults to v2
+    const { version, ...noVersionData } = serialized as SerializableContext & { version: number };
 
-    // Should not throw
-    const restored = deserialize(legacyData);
+    const restored = deserialize(noVersionData);
     expect(restored.session.input).toBe('hello');
   });
 
@@ -160,15 +159,12 @@ describe('serialize versioning', () => {
   });
 });
 
-describe('migrate_v1_to_v2', () => {
-  it('is a function', () => {
-    expect(typeof migrate_v1_to_v2).toBe('function');
-  });
-
-  it('accepts and returns a SerializableContext unchanged', () => {
+describe('v1 format rejection', () => {
+  it('throws SerializationVersionError for v1 data', () => {
     const ctx = makeContext();
     const serialized = serialize(ctx);
-    const result = migrate_v1_to_v2(serialized);
-    expect(result).toBe(serialized);
+    const v1Data = { ...serialized, version: 1 };
+
+    expect(() => deserialize(v1Data)).toThrow(SerializationVersionError);
   });
 });
