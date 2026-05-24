@@ -679,6 +679,45 @@ export interface ReloadResult {
 }
 
 // ---------------------------------------------------------------------------
+// Autonomous Gap Optimization (Phase 5)
+// ---------------------------------------------------------------------------
+
+/** Trigger that starts a gap optimization cycle when the agent is idle. */
+export type GapTrigger =
+  | { type: 'idle'; idleTimeoutMs: number }
+  | { type: 'schedule'; cron: string }
+  | { type: 'afterRun'; minIntervalMs: number }
+  | { type: 'onError' };
+
+/** Configuration for autonomous gap optimization. */
+export interface AutonomousConfig {
+  enabled: boolean;
+  gapTriggers: GapTrigger[];
+  initialPrompt?: string;
+  nextPromptTemplate?: string;
+  maxOptimizationsPerGap?: number;
+  maxConsecutiveErrors?: number;
+  errorBackoffMs?: number;
+}
+
+/** A proposed self-modification collected during gap optimization. */
+export interface SelfModificationRequest {
+  type: 'replaceProcessor' | 'registerPlugin' | 'modifySource';
+  target: string;
+  payload: unknown;
+  riskLevel: 'L0' | 'L1' | 'L2' | 'L3';
+  proposedDiff?: FilePatch[];
+}
+
+/** Result of processing a self-modification request. */
+export interface SelfModificationResult {
+  accepted: boolean;
+  verificationReport?: unknown;
+  rollbackSnapshotId?: string;
+  reason?: string;
+}
+
+// ---------------------------------------------------------------------------
 // Agent Config (skeleton)
 // ---------------------------------------------------------------------------
 
@@ -820,6 +859,8 @@ export interface HarnessConfig {
   processors?: Record<string, ProcessorDescriptor>;
   /** Runtime mutability policy. Controls what can change at runtime. */
   mutability?: MutabilityPolicy | MutabilityLevel;
+  /** Autonomous gap optimization configuration. */
+  autonomous?: AutonomousConfig;
   // Phase 2 — harness processor configurations
   costCap?: {
     maxCost: number;

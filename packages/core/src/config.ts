@@ -303,6 +303,23 @@ const MutabilityPolicySchema = z.union([
   }),
 ]);
 
+const GapTriggerSchema = z.union([
+  z.object({ type: z.literal('idle'), idleTimeoutMs: z.number() }),
+  z.object({ type: z.literal('schedule'), cron: z.string() }),
+  z.object({ type: z.literal('afterRun'), minIntervalMs: z.number() }),
+  z.object({ type: z.literal('onError') }),
+]);
+
+const AutonomousConfigSchema = z.object({
+  enabled: z.boolean(),
+  gapTriggers: z.array(GapTriggerSchema),
+  initialPrompt: z.string().optional(),
+  nextPromptTemplate: z.string().optional(),
+  maxOptimizationsPerGap: z.number().optional(),
+  maxConsecutiveErrors: z.number().optional(),
+  errorBackoffMs: z.number().optional(),
+});
+
 const HarnessConfigSchema = z.object({
   agents: z.record(z.string(), z.unknown()).optional(),
   tools: ToolSetConfigSchema.optional(),
@@ -329,4 +346,5 @@ const HarnessConfigSchema = z.object({
     z.array(HookDescriptorSchema),
   ]).optional(),
   mutability: MutabilityPolicySchema.optional(),
+  autonomous: AutonomousConfigSchema.optional(),
 }).passthrough();

@@ -2,12 +2,14 @@ import type {
   AgentConfig,
   AgentRunResult,
   AgentSimpleConfig,
+  AutonomousConfig,
   CheckpointStore,
   MutabilityPolicy,
   PipelineContext,
   PipelineStageConfig,
   Processor,
   ReloadResult,
+  SelfModificationRequest,
   SessionManager,
   Tool,
   Tracer,
@@ -152,6 +154,9 @@ export class Agent {
   private _processorDescriptors?: Record<string, ProcessorDescriptor>;
   private mutabilityPolicyEngine: MutabilityPolicyEngine;
   private _pendingPipelineConfig?: PipelineStageConfig;
+  private selfRef: { agent: Agent } = { agent: undefined! };
+  private _pendingModifications: SelfModificationRequest[] = [];
+  private _gapOptimizationRunning = false;
 
   constructor(config: AgentSimpleConfig);
   constructor(config: AgentConfig, deps?: AgentDependencies);
@@ -176,6 +181,7 @@ export class Agent {
     this.registerTools();
     this.registerBuiltinProcessors();
     this._pluginManager.setStageMutator((m) => this.orchestrator.applyMutation(m));
+    this.selfRef.agent = this;
   }
 
   use(factory: Processor | PluginFactory): void {
@@ -440,6 +446,40 @@ export class Agent {
     this._model = null;
   }
 
+  /** Start gap optimization cycle. Emits gap:started. */
+  startGapOptimization(): void {
+    this._gapOptimizationRunning = true;
+    this.eventBus.emit('gap:started', {});
+  }
+
+  /** Preempt gap optimization when a user request arrives. Emits gap:preempted. */
+  preemptGapOptimization(): void {
+    this._gapOptimizationRunning = false;
+    this.eventBus.emit('gap:preempted', {});
+  }
+
+  /** Apply collected pending modifications from self-reference tools. */
+  async applyPendingModifications(): Promise<{ applied: SelfModificationRequest[]; rejected: SelfModificationRequest[] }> {
+    const applied: SelfModificationRequest[] = [];
+    const rejected: SelfModificationRequest[] = [];
+
+    for (const mod of this._pendingModifications) {
+      if (mod.type === 'replaceProcessor') {
+        // For Phase 5, we accept the proposal as-is. Phase 6 adds sandbox→verify→apply.
+        applied.push(mod);
+        this.eventBus.emit('gap:optimization_complete', { type: mod.type, target: mod.target });
+      } else if (mod.type === 'registerPlugin') {
+        applied.push(mod);
+        this.eventBus.emit('gap:optimization_complete', { type: mod.type, target: mod.target });
+      } else {
+        rejected.push(mod);
+      }
+    }
+
+    this._pendingModifications = [];
+    return { applied, rejected };
+  }
+
   /** Auto-invalidate cached model when the error indicates auth failure or model-not-found. */
   private autoInvalidateModel(error: unknown): void {
     if (isAuthOrNotFoundError(error)) {
@@ -522,6 +562,94 @@ export class Agent {
     for (const tool of this.config.tools ?? []) {
       this.registry.register(tool as Tool);
     }
+    this.registerSelfReferenceTools();
+  }
+
+  private registerSelfReferenceTools(): void {
+    const self = this.selfRef;
+
+    // inspectSelf — read-only, no approval needed
+    this.registry.register({
+      name: 'inspectSelf',
+      description: 'Inspect the current agent pipeline, processors, tools, and state',
+      inputSchema: { type: 'object', properties: {} },
+      execute: async () => {
+        const agent = self.agent;
+        return {
+          pipeline: {
+            preLoop: ['processInput', 'buildContext'],
+            loop: ['prepareStep', 'gateLLM', 'invokeLLM', 'processStepOutput', 'gateTool', 'executeTools', 'evaluateIteration'],
+            postLoop: ['processOutput'],
+          },
+          tools: agent.toolRegistry.getAll().map(t => t.name),
+          state: agent.state,
+        };
+      },
+    });
+
+    // replaceProcessor — requires approval, collects proposal
+    this.registry.register({
+      name: 'replaceProcessor',
+      description: 'Propose replacing a processor in the pipeline. Requires approval.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          stage: { type: 'string', description: 'Pipeline stage to replace' },
+          processorCode: { type: 'string', description: 'Code for the new processor' },
+        },
+        required: ['stage', 'processorCode'],
+      },
+      requireApproval: true,
+      execute: async (input: { stage: string; processorCode: string }) => {
+        const agent = self.agent;
+        const mod: SelfModificationRequest = {
+          type: 'replaceProcessor',
+          target: input.stage,
+          payload: input.processorCode,
+          riskLevel: 'L1',
+        };
+        (agent as any)._pendingModifications.push(mod);
+        return { proposed: true, stage: input.stage };
+      },
+    });
+
+    // registerPlugin — requires approval, collects proposal
+    this.registry.register({
+      name: 'registerPlugin',
+      description: 'Propose registering a new plugin. Requires approval.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          pluginId: { type: 'string', description: 'ID of the plugin to register' },
+          config: { type: 'object', description: 'Plugin configuration' },
+        },
+        required: ['pluginId'],
+      },
+      requireApproval: true,
+      execute: async (input: { pluginId: string; config?: Record<string, unknown> }) => {
+        const agent = self.agent;
+        const mod: SelfModificationRequest = {
+          type: 'registerPlugin',
+          target: input.pluginId,
+          payload: input.config ?? {},
+          riskLevel: 'L1',
+        };
+        (agent as any)._pendingModifications.push(mod);
+        return { proposed: true, pluginId: input.pluginId };
+      },
+    });
+
+    // endAutonomousLoop — no approval needed, sets flag
+    this.registry.register({
+      name: 'endAutonomousLoop',
+      description: 'Signal the agent to stop the autonomous gap optimization loop',
+      inputSchema: { type: 'object', properties: {} },
+      execute: async () => {
+        const agent = self.agent;
+        (agent as any)._gapOptimizationRunning = false;
+        return { ended: true };
+      },
+    });
   }
 
   private registerBuiltinProcessors(): void {
