@@ -15,6 +15,7 @@ import type { ContextBuilder } from './context-builder.js';
 import type { HookManager } from './hook-manager.js';
 import type { EventBus } from './event-bus.js';
 import type { EventSystem } from './event-system.js';
+import type { MutabilityPolicyEngine } from './mutability-policy.js';
 
 export interface HarnessDeps {
   runner: PipelineRunner;
@@ -33,8 +34,13 @@ export class HarnessAPIImpl implements HarnessAPI {
   private resources: ResourceDeclaration[] = [];
   private unsubFns: Array<() => void> = [];
   private frozen = false;
+  private mutabilityPolicy?: MutabilityPolicyEngine;
 
   constructor(private deps: HarnessDeps) {}
+
+  setMutabilityPolicy(policy: MutabilityPolicyEngine): void {
+    this.mutabilityPolicy = policy;
+  }
 
   freeze(): void { this.frozen = true; }
 
@@ -83,17 +89,23 @@ export class HarnessAPIImpl implements HarnessAPI {
   }
 
   insertStage(phase: 'preLoop' | 'loop' | 'postLoop', after: StageName, newStage: StageName): void {
-    if (this.frozen) throw new Error('Cannot mutate stages after agent has started running');
+    if (this.frozen && !this.mutabilityPolicy?.canApplyDirectly('pipeline')) {
+      throw new Error('Cannot mutate stages after agent has started running');
+    }
     this.deps.mutateStages?.({ type: 'insert', phase, after, stage: newStage });
   }
 
   removeStage(phase: 'preLoop' | 'loop' | 'postLoop', stage: StageName): void {
-    if (this.frozen) throw new Error('Cannot mutate stages after agent has started running');
+    if (this.frozen && !this.mutabilityPolicy?.canApplyDirectly('pipeline')) {
+      throw new Error('Cannot mutate stages after agent has started running');
+    }
     this.deps.mutateStages?.({ type: 'remove', phase, stage });
   }
 
   replaceStages(phase: 'preLoop' | 'loop' | 'postLoop', stages: StageName[]): void {
-    if (this.frozen) throw new Error('Cannot mutate stages after agent has started running');
+    if (this.frozen && !this.mutabilityPolicy?.canApplyDirectly('pipeline')) {
+      throw new Error('Cannot mutate stages after agent has started running');
+    }
     this.deps.mutateStages?.({ type: 'replace', phase, stages });
   }
 

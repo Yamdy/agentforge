@@ -3,9 +3,11 @@ import type {
   AgentRunResult,
   AgentSimpleConfig,
   CheckpointStore,
+  MutabilityPolicy,
   PipelineContext,
   PipelineStageConfig,
   Processor,
+  ReloadResult,
   SessionManager,
   Tool,
   Tracer,
@@ -22,6 +24,7 @@ import { AuthError, ModelNotFoundError } from './errors.js';
 import { LoopOrchestrator } from './loop-orchestrator.js';
 import { JsonlCheckpointStore } from './checkpoint-store.js';
 import { echoTool } from '@primo-ai/tools';
+import { MutabilityPolicyEngine } from './mutability-policy.js';
 import {
   processInputProcessor,
   buildContextExtensionPoint,
@@ -56,6 +59,8 @@ export interface AgentDependencies {
   processorDescriptors?: Record<string, ProcessorDescriptor>;
   /** OTel sampling config passed to auto-detected tracer. Ignored when `tracer` is provided. */
   otelSampler?: 'always_on' | 'always_off' | { ratio: number };
+  /** Mutability policy controlling what can change at runtime. */
+  mutabilityPolicy?: MutabilityPolicy;
 }
 
 export interface RunOptions {
@@ -145,6 +150,8 @@ export class Agent {
   private activeAbortController: AbortController | null = null;
   private lastContext?: PipelineContext;
   private _processorDescriptors?: Record<string, ProcessorDescriptor>;
+  private mutabilityPolicyEngine: MutabilityPolicyEngine;
+  private _pendingPipelineConfig?: PipelineStageConfig;
 
   constructor(config: AgentSimpleConfig);
   constructor(config: AgentConfig, deps?: AgentDependencies);
@@ -165,6 +172,7 @@ export class Agent {
     this.sessionManager = deps?.sessionManager;
     this._autoCheckpoint = deps?.autoCheckpoint ?? false;
     this._processorDescriptors = deps?.processorDescriptors;
+    this.mutabilityPolicyEngine = new MutabilityPolicyEngine(deps?.mutabilityPolicy);
     this.registerTools();
     this.registerBuiltinProcessors();
     this._pluginManager.setStageMutator((m) => this.orchestrator.applyMutation(m));
@@ -389,6 +397,42 @@ export class Agent {
   /** Clear conversation state so the next run/stream starts a fresh session. */
   reset(): void {
     this.lastContext = undefined;
+  }
+
+  /** Reload config changes respecting the mutability policy. */
+  reload(partial: Partial<import('@primo-ai/sdk').HarnessConfig>): ReloadResult {
+    const rejectedKeys: string[] = [];
+    const appliedKeys: string[] = [];
+
+    for (const key of Object.keys(partial)) {
+      const domain = key as import('@primo-ai/sdk').MutabilityDomain;
+      if (domain === 'pipeline' || domain === 'processors' || domain === 'plugins' || domain === 'tools') {
+        if (!this.mutabilityPolicyEngine.canApplyViaReload(domain)) {
+          rejectedKeys.push(key);
+          continue;
+        }
+      } else {
+        // Non-domain keys (e.g. costCap, tokenBudget) are always reloadable
+      }
+      appliedKeys.push(key);
+    }
+
+    // Apply pipeline changes if allowed
+    if (partial.pipeline && !rejectedKeys.includes('pipeline')) {
+      // Pipeline changes will take effect on next run via stageConfig
+      this._pendingPipelineConfig = partial.pipeline;
+    }
+
+    const applied = rejectedKeys.length === 0;
+
+    if (applied && appliedKeys.length > 0) {
+      this.eventBus.emit('config:reload:applied', { appliedKeys, rejectedKeys: [] });
+    }
+    if (rejectedKeys.length > 0) {
+      this.eventBus.emit('config:reload:rejected', { appliedKeys, rejectedKeys });
+    }
+
+    return { applied, rejectedKeys: rejectedKeys.length > 0 ? rejectedKeys : undefined, appliedKeys: appliedKeys.length > 0 ? appliedKeys : undefined };
   }
 
   /** Clear the cached model so the next run re-resolves from the factory. */

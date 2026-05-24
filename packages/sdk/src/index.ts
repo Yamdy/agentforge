@@ -616,6 +616,69 @@ export interface McpServerConfig {
 }
 
 // ---------------------------------------------------------------------------
+// Plugin Registry (Phase 3)
+// ---------------------------------------------------------------------------
+
+/** Built-in plugin IDs that can be resolved from the registry. */
+export type BuiltinPluginId =
+  | 'memory' | 'compression' | 'permission' | 'skill'
+  | 'eviction' | 'mcp' | 'validation';
+
+/** Describes how to obtain a Plugin — either a built-in id or an external module. */
+export type PluginDescriptor =
+  | { id: BuiltinPluginId; config?: Record<string, unknown> }
+  | { module: string; config?: Record<string, unknown> };
+
+/** Describes a hook to be registered from config, backed by a named plugin. */
+export interface HookDescriptor {
+  point: HookPoint;
+  plugin: BuiltinPluginId;
+  config?: Record<string, unknown>;
+  priority?: number;
+}
+
+/** Configures which tools are available to an agent. */
+export interface ToolSetConfig {
+  /** Tool names to include. '*' = all. */
+  include?: string[];
+  /** Tool names to exclude (takes precedence over include). */
+  exclude?: string[];
+  /** Custom tool definitions to register. */
+  custom?: Tool[];
+  /** Legacy: tool names to enable. */
+  enabled?: string[];
+  /** Legacy: tool names to disable. */
+  disabled?: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Mutability Policy (Phase 4)
+// ---------------------------------------------------------------------------
+
+/** Runtime mutability level for a config domain. */
+export type MutabilityLevel = 'frozen' | 'configOnly' | 'dynamic';
+
+/** Domains whose mutability can be independently controlled. */
+export type MutabilityDomain = 'pipeline' | 'processors' | 'plugins' | 'tools';
+
+/** Controls what can change at runtime and how. */
+export interface MutabilityPolicy {
+  pipeline: MutabilityLevel;
+  processors: MutabilityLevel;
+  plugins: MutabilityLevel;
+  tools: MutabilityLevel;
+  hotReload: boolean;
+  watchConfig: boolean;
+}
+
+/** Result of an Agent.reload() call. */
+export interface ReloadResult {
+  applied: boolean;
+  rejectedKeys?: string[];
+  appliedKeys?: string[];
+}
+
+// ---------------------------------------------------------------------------
 // Agent Config (skeleton)
 // ---------------------------------------------------------------------------
 
@@ -744,17 +807,19 @@ export interface GatewayConfig {
  */
 export interface HarnessConfig {
   agents?: Record<string, Partial<AgentConfig>>;
-  tools?: { enabled?: string[]; disabled?: string[] };
-  plugins?: string[];
+  tools?: ToolSetConfig;
+  plugins?: PluginDescriptor[] | string[];
   session?: { storage?: 'file' | 'memory'; path?: string };
   modelProfiles?: ModelProfile[];
   modelGateways?: GatewayConfig[];
-  hooks?: { profile?: HookProfile; disabledHooks?: string[] };
+  hooks?: HookDescriptor[] | { profile?: HookProfile; disabledHooks?: string[] };
   skills?: { paths?: string[] };
   /** Override default pipeline stage order. */
   pipeline?: PipelineStageConfig;
   /** Override which Processor is used for each pipeline stage. Keys are stage names. */
   processors?: Record<string, ProcessorDescriptor>;
+  /** Runtime mutability policy. Controls what can change at runtime. */
+  mutability?: MutabilityPolicy | MutabilityLevel;
   // Phase 2 — harness processor configurations
   costCap?: {
     maxCost: number;

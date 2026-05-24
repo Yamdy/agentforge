@@ -41,6 +41,10 @@ export {
   type SyncEventStore,
 } from './sync-event.js';
 export { ContextBuilder, type ContextBuilderOptions } from './context-builder.js';
+export { PluginRegistryImpl, globalPluginRegistry } from './plugin-registry.js';
+export { registerBuiltinPluginsOnce } from './builtin-plugins.js';
+export { MutabilityPolicyEngine } from './mutability-policy.js';
+export { ConfigWatcher, type ConfigWatcherOptions } from './config-watcher.js';
 export { HarnessAPIImpl, type HarnessDeps } from './harness.js';
 export { TiktokenCounter } from './token-counter.js';
 export type { StreamEvent } from '@primo-ai/sdk';

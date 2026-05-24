@@ -266,10 +266,47 @@ function expandVarsInString(value: string, path: string): string {
 // Zod schema for HarnessConfig validation
 // ---------------------------------------------------------------------------
 
+const PluginDescriptorSchema = z.union([
+  z.string(),  // backward compat: path string
+  z.object({ id: z.string(), config: z.record(z.string(), z.unknown()).optional() }),
+  z.object({ module: z.string(), config: z.record(z.string(), z.unknown()).optional() }),
+]);
+
+const HookDescriptorSchema = z.object({
+  point: z.string(),
+  plugin: z.string(),
+  config: z.record(z.string(), z.unknown()).optional(),
+  priority: z.number().optional(),
+});
+
+const ToolSetConfigSchema = z.object({
+  // New format (Phase 3)
+  include: z.array(z.string()).optional(),
+  exclude: z.array(z.string()).optional(),
+  custom: z.array(z.unknown()).optional(),
+  // Legacy format
+  enabled: z.array(z.string()).optional(),
+  disabled: z.array(z.string()).optional(),
+});
+
+const MutabilityLevelSchema = z.enum(['frozen', 'configOnly', 'dynamic']);
+
+const MutabilityPolicySchema = z.union([
+  MutabilityLevelSchema,
+  z.object({
+    pipeline: MutabilityLevelSchema.optional(),
+    processors: MutabilityLevelSchema.optional(),
+    plugins: MutabilityLevelSchema.optional(),
+    tools: MutabilityLevelSchema.optional(),
+    hotReload: z.boolean().optional(),
+    watchConfig: z.boolean().optional(),
+  }),
+]);
+
 const HarnessConfigSchema = z.object({
   agents: z.record(z.string(), z.unknown()).optional(),
-  tools: z.object({ enabled: z.array(z.string()).optional(), disabled: z.array(z.string()).optional() }).optional(),
-  plugins: z.array(z.string()).optional(),
+  tools: ToolSetConfigSchema.optional(),
+  plugins: z.array(PluginDescriptorSchema).optional(),
   session: z.object({ storage: z.enum(['file', 'memory']).optional(), path: z.string().optional() }).optional(),
   modelProfiles: z.array(z.unknown()).optional(),
   modelGateways: z.array(z.object({
@@ -287,4 +324,9 @@ const HarnessConfigSchema = z.object({
     z.object({ builtin: z.string() }),
     z.object({ module: z.string(), export: z.string().optional(), config: z.record(z.string(), z.unknown()).optional() }),
   ])).optional(),
+  hooks: z.union([
+    z.object({ profile: z.enum(['minimal', 'standard', 'strict']).optional(), disabledHooks: z.array(z.string()).optional() }),
+    z.array(HookDescriptorSchema),
+  ]).optional(),
+  mutability: MutabilityPolicySchema.optional(),
 }).passthrough();
