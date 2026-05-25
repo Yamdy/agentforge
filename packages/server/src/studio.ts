@@ -6,9 +6,9 @@ import { fileURLToPath } from 'node:url';
 import type { SessionStorage } from '@primo-ai/sdk';
 import { StudioObservability } from './studio/observability.js';
 import { traceRoutes } from './routes/studio/traces.js';
-import { sessionRoutes } from './routes/studio/sessions.js';
+import { sessionRoutes, studioSessionRoutes } from './routes/studio/sessions.js';
 import { metricsRoutes } from './routes/studio/metrics.js';
-import { agentRoutes } from './routes/studio/agents.js';
+import { studioAgentRoutes } from './routes/studio/agents.js';
 import type { AgentRegistry } from './registry.js';
 
 export interface StudioRouteOptions {
@@ -21,9 +21,11 @@ export function studioRoutes(opts: StudioRouteOptions): Hono {
   const app = new Hono();
 
   app.route('/traces', traceRoutes(opts.observability));
-  app.route('/sessions', sessionRoutes(opts.sessionStorage));
+  app.route('/sessions', opts.sessionStorage
+    ? studioSessionRoutes({ storage: opts.sessionStorage, registry: opts.registry })
+    : sessionRoutes(opts.sessionStorage));
   app.route('/metrics', metricsRoutes(opts.observability));
-  app.route('/agents', agentRoutes(opts.registry));
+  app.route('/agents', studioAgentRoutes(opts.registry));
 
   return app;
 }

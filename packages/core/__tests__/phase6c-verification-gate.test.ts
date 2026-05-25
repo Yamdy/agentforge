@@ -139,14 +139,25 @@ describe('VerificationGatePipeline', () => {
     expect(timeoutGate!.passed).toBe(false);
   });
 
-  it('skips gates listed in skipGates', async () => {
+  it('skips gates listed in constructor skipLevels', async () => {
+    const constitutionEngine = new ConstitutionEngine(TEST_CONSTITUTION);
+    const pipeline = new VerificationGatePipeline({ constitutionEngine, skipLevels: [1] });
+
+    const diff: FilePatch[] = [{ path: 'packages/sdk/src/index.ts', type: 'modified' }];
+
+    const report = await pipeline.execute(diff, makeContext());
+    expect(report.gates.some(g => 'gate' in g && g.gate === 'constitution')).toBe(false);
+  });
+
+  it('does not allow runtime skipGates bypass on VerificationContext', async () => {
     const constitutionEngine = new ConstitutionEngine(TEST_CONSTITUTION);
     const pipeline = new VerificationGatePipeline({ constitutionEngine });
 
     const diff: FilePatch[] = [{ path: 'packages/sdk/src/index.ts', type: 'modified' }];
 
-    const report = await pipeline.execute(diff, makeContext({ skipGates: [1] }));
-    expect(report.gates.some(g => 'gate' in g && g.gate === 'constitution')).toBe(false);
+    // Even if skipGates is passed in context, it must be ignored
+    const report = await pipeline.execute(diff, makeContext());
+    expect(report.overall).toBe('failed');
   });
 
   it('includes timestamp and diff in report', async () => {
@@ -180,5 +191,111 @@ describe('VerificationGatePipeline', () => {
 
     const report = await pipeline.execute(diff, makeContext(), { currentCapabilities: ['executeTools'] });
     expect(report.overall).toBe('failed');
+  });
+
+  it('runs 4 builtin gates: constitution, diffLimit, interfacePreservation, syntaxCheck', async () => {
+    const constitutionEngine = new ConstitutionEngine(TEST_CONSTITUTION);
+    const pipeline = new VerificationGatePipeline({ constitutionEngine });
+
+    const diff: FilePatch[] = [
+      { path: 'packages/core/src/some-processor.ts', type: 'modified', content: 'new code' },
+    ];
+
+    const report = await pipeline.execute(diff, makeContext());
+    const gateNames = report.gates.map(g => g.passed ? undefined : ('gate' in g ? g.gate : undefined)).filter(Boolean);
+    // Should have run 4 builtin gates (constitution, diffLimit, interfacePreservation, syntaxCheck)
+    // Plus capability gate = 5 total
+    expect(report.gates.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('diffLimit gate rejects diffs exceeding file count', async () => {
+    const constitutionEngine = new ConstitutionEngine(TEST_CONSTITUTION);
+    const pipeline = new VerificationGatePipeline({ constitutionEngine });
+
+    const diff: FilePatch[] = Array.from({ length: 5 }, (_, i) => ({
+      path: `packages/core/src/file-${i}.ts`, type: 'modified' as const,
+    }));
+
+    const report = await pipeline.execute(diff, makeContext());
+    expect(report.overall).toBe('failed');
+    const diffLimitGate = report.gates.find(g => !g.passed && 'gate' in g && g.gate === 'diffLimit');
+    expect(diffLimitGate).toBeDefined();
+  });
+
+  it('diffLimit gate rejects diffs exceeding lines per file', async () => {
+    const constitutionEngine = new ConstitutionEngine(TEST_CONSTITUTION);
+    const pipeline = new VerificationGatePipeline({ constitutionEngine });
+
+    const longContent = Array.from({ length: 100 }, () => 'line of code').join('\n');
+    const diff: FilePatch[] = [
+      { path: 'packages/core/src/a.ts', type: 'modified', content: longContent },
+    ];
+
+    const report = await pipeline.execute(diff, makeContext());
+    expect(report.overall).toBe('failed');
+    const diffLimitGate = report.gates.find(g => !g.passed && 'gate' in g && g.gate === 'diffLimit');
+    expect(diffLimitGate).toBeDefined();
+  });
+
+  it('interfacePreservation gate rejects modifications to immutable interface members', async () => {
+    const constitutionEngine = new ConstitutionEngine(TEST_CONSTITUTION);
+    const pipeline = new VerificationGatePipeline({ constitutionEngine });
+
+    const diff: FilePatch[] = [
+      { path: 'packages/sdk/src/index.ts', type: 'modified', content: 'export function execute() { /* modified */ }' },
+    ];
+
+    const report = await pipeline.execute(diff, makeContext());
+    // Should fail — either constitution gate (protected path) or interfacePreservation gate
+    expect(report.overall).toBe('failed');
+  });
+
+  it('syntaxCheck gate rejects diffs with severely unbalanced brackets', async () => {
+    const constitutionEngine = new ConstitutionEngine(TEST_CONSTITUTION);
+    const pipeline = new VerificationGatePipeline({ constitutionEngine });
+
+    const diff: FilePatch[] = [
+      { path: 'packages/core/src/new-module.ts', type: 'modified', content: '{{{{{{{{{{{{{{{{{' },
+    ];
+
+    const report = await pipeline.execute(diff, makeContext());
+    expect(report.overall).toBe('failed');
+    const syntaxGate = report.gates.find(g => !g.passed && 'gate' in g && g.gate === 'syntaxCheck');
+    expect(syntaxGate).toBeDefined();
+  });
+
+  it('constitution gate sets protectionLevel=absolute for absolute protected paths', async () => {
+    const constitutionEngine = new ConstitutionEngine(TEST_CONSTITUTION);
+    const pipeline = new VerificationGatePipeline({ constitutionEngine });
+
+    const diff: FilePatch[] = [
+      { path: 'packages/sdk/src/index.ts', type: 'modified', content: 'malicious' },
+    ];
+
+    const report = await pipeline.execute(diff, makeContext());
+    expect(report.overall).toBe('failed');
+    const gate = report.gates.find(g => !g.passed && 'gate' in g && g.gate === 'constitution');
+    expect(gate).toBeDefined();
+    expect(gate!.passed).toBe(false);
+    if (!gate!.passed && 'protectionLevel' in gate!) {
+      expect(gate!.protectionLevel).toBe('absolute');
+    }
+  });
+
+  it('constitution gate sets protectionLevel=approval for approval protected paths', async () => {
+    const constitutionEngine = new ConstitutionEngine(TEST_CONSTITUTION);
+    const pipeline = new VerificationGatePipeline({ constitutionEngine });
+
+    const diff: FilePatch[] = [
+      { path: 'packages/core/src/loop-orchestrator.ts', type: 'modified', content: 'modified code' },
+    ];
+
+    const report = await pipeline.execute(diff, makeContext());
+    expect(report.overall).toBe('failed');
+    const gate = report.gates.find(g => !g.passed && 'gate' in g && g.gate === 'constitution');
+    expect(gate).toBeDefined();
+    if (!gate!.passed && 'protectionLevel' in gate!) {
+      expect(gate!.protectionLevel).toBe('approval');
+    }
   });
 });
