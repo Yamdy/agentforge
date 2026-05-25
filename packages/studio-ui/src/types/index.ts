@@ -75,3 +75,65 @@ export interface AgentInfo {
   toolCount: number;
   lastRunAt: string | null;
 }
+
+export interface StudioAgentDetail {
+  id: string;
+  name: string;
+  model: string;
+  state: string;
+  toolCount: number;
+  description: string;
+}
+
+export type ChatRole = 'user' | 'assistant' | 'system';
+
+export interface ChatMessage {
+  id: string;
+  role: ChatRole;
+  content: string;
+  timestamp: string;
+  isStreaming?: boolean;
+}
+
+export interface SSEEvent {
+  type: string;
+  data: unknown;
+}
+
+export interface ConstitutionInfo {
+  version: number;
+  protectedPaths: Array<{ pattern: string; reason: string; level: string }>;
+  diffLimits: Record<string, number>;
+  approvalMatrix: Record<string, { description: string; mode: string }>;
+}
+
+export interface GateResult {
+  gate: string;
+  passed: boolean;
+  duration: number;
+  errors?: string[];
+  protectionLevel?: string;
+}
+
+export interface VerificationReportView {
+  overall: 'passed' | 'failed';
+  gates: GateResult[];
+  timestamp: string;
+  approvedBy: string;
+}
+
+export interface MutationBudgetStatus {
+  allowed: boolean;
+  reason?: string;
+  hourCount: number;
+  dayCount: number;
+}
+
+export interface ModificationRecord {
+  id: string;
+  riskLevel: string;
+  accepted: boolean;
+  reason?: string;
+  timestamp: string;
+  verificationReport?: VerificationReportView;
+}

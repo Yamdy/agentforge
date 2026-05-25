@@ -86,7 +86,8 @@ export class ConstitutionEngine {
   }
 
   getApprovalMode(level: RiskLevel): ApprovalMode {
-    return this._constitution.approvalMatrix[level].mode;
+    const entry = this._constitution.approvalMatrix[level];
+    return entry?.mode ?? 'always_reject';
   }
 
   classifyRisk(diff: Array<{ path: string; type: string }>): RiskLevel {

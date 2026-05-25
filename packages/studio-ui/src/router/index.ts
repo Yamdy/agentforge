@@ -24,6 +24,11 @@ const router = createRouter({
       component: () => import('../views/SessionListPage.vue'),
     },
     {
+      path: '/chat',
+      name: 'chat',
+      component: () => import('../views/ChatPage.vue'),
+    },
+    {
       path: '/permissions',
       name: 'permissions',
       component: () => import('../views/PermissionsPage.vue'),

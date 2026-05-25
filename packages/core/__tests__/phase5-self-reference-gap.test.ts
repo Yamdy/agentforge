@@ -307,7 +307,7 @@ describe('Phase 5: Gap optimization events', () => {
     const agent = new Agent({ model: 'test-model' });
 
     (agent as any)._pendingModifications = [
-      { type: 'replaceProcessor', stage: 'processOutput', applied: false },
+      { type: 'replaceProcessor', target: 'processOutput', riskLevel: 'L1', proposedDiff: [{ path: 'packages/core/src/processors/process-output.ts', type: 'modified', content: '// updated' }] },
     ];
 
     const result = await (agent as any).applyPendingModifications();

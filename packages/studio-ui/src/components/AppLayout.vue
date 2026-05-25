@@ -9,6 +9,7 @@ const { pendingCount } = usePermissions();
 
 const navItems = [
   { name: 'Dashboard', path: '/' },
+  { name: 'Chat', path: '/chat' },
   { name: 'Traces', path: '/traces' },
   { name: 'Sessions', path: '/sessions' },
   { name: 'Permissions', path: '/permissions' },
