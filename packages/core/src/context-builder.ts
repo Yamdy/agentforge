@@ -176,6 +176,12 @@ export class ContextBuilder {
     };
   }
 
+  /** Public wrapper for trimHistory — enables in-loop compression from processors. */
+  async compressIfNeeded(ctx: PipelineContext): Promise<PipelineContext> {
+    const model = ctx.agent.config.model;
+    return this.trimHistory(ctx, model);
+  }
+
   private async trimHistory(ctx: PipelineContext, model?: string): Promise<PipelineContext> {
     const history = ctx.session.messageHistory;
     if (!history || history.length === 0) return ctx;

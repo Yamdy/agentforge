@@ -14,6 +14,7 @@ export type PipelineStage =
   | 'processStepOutput'
   | 'gateTool'
   | 'executeTools'
+  | 'compressContext'
   | 'evaluateIteration'
   | 'processOutput';
 

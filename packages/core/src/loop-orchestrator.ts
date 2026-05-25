@@ -23,7 +23,7 @@ import type { RetryStateStore } from './retry-state-store.js';
 
 const DEFAULT_STAGE_CONFIG: PipelineStageConfig = {
   preLoop: ['processInput', 'buildContext'],
-  loop: ['prepareStep', 'gateLLM', 'invokeLLM', 'processStepOutput', 'gateTool', 'executeTools', 'evaluateIteration'],
+  loop: ['prepareStep', 'gateLLM', 'invokeLLM', 'processStepOutput', 'gateTool', 'executeTools', 'compressContext', 'evaluateIteration'],
   postLoop: ['processOutput'],
 };
 

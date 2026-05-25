@@ -8,3 +8,4 @@ export { gateToolExtensionPoint } from './gate-tool.js';
 export { createExecuteToolsProcessor } from './execute-tools.js';
 export { createEvaluateIterationProcessor, evaluateIterationProcessor } from './evaluate-iteration.js';
 export { processOutputProcessor } from './process-output.js';
+export { createCompressContextProcessor } from './compress-context.js';
