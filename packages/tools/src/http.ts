@@ -26,7 +26,7 @@ export const httpTool: Tool<
     headers: z.record(z.string(), z.string()),
     body: z.string(),
   }),
-  requireApproval: (input) => !['GET', 'HEAD'].includes(((input as Record<string, unknown>).method ?? 'GET') as string),
+  requireApproval: (input) => !['GET', 'HEAD'].includes((((input as Record<string, unknown>).method ?? 'GET') as string).toUpperCase()),
   async execute(input) {
     const { url, method = 'GET', headers = {}, body } = input;
 
