@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { resolveRequireApproval } from '../src/index.js';
 import type {
   PipelineStage,
   Processor,
@@ -110,6 +111,19 @@ describe('Tool', () => {
     expect(tool.requireApproval).toBe(true);
     expect(tool.renderCall!('x')).toBe('deleting x');
     expect(tool.renderResult!({ ok: true })).toBe('deleted [object Object]');
+  });
+
+  it('supports conditional requireApproval as a function', () => {
+    const tool: Tool<{ method: string }, unknown> = {
+      name: 'http',
+      description: 'HTTP client',
+      inputSchema: {} as Tool<{ method: string }>['inputSchema'],
+      requireApproval: (input) => !['GET', 'HEAD'].includes((input as { method: string }).method.toUpperCase()),
+      execute: async () => ({ ok: true }),
+    };
+    expect(typeof tool.requireApproval).toBe('function');
+    expect((tool.requireApproval as (input: any) => boolean)({ method: 'GET' })).toBe(false);
+    expect((tool.requireApproval as (input: any) => boolean)({ method: 'POST' })).toBe(true);
   });
 });
 
@@ -370,5 +384,28 @@ describe('LoopDirective and Regions', () => {
     expect(iter.step).toBe(3);
     expect(iter.loopDirective?.action).toBe('stop');
     expect(iter.response).toBe('done');
+  });
+});
+
+describe('resolveRequireApproval', () => {
+  it('returns false when requireApproval is undefined', () => {
+    const tool = { name: 'test' } as Tool;
+    expect(resolveRequireApproval(tool, {})).toBe(false);
+  });
+
+  it('returns the boolean value when requireApproval is a boolean', () => {
+    const toolTrue = { name: 'test', requireApproval: true } as unknown as Tool;
+    const toolFalse = { name: 'test', requireApproval: false } as unknown as Tool;
+    expect(resolveRequireApproval(toolTrue, {})).toBe(true);
+    expect(resolveRequireApproval(toolFalse, {})).toBe(false);
+  });
+
+  it('calls the function with input when requireApproval is a function', () => {
+    const tool = {
+      name: 'test',
+      requireApproval: (input: any) => input.dangerous === true,
+    } as unknown as Tool;
+    expect(resolveRequireApproval(tool, { dangerous: true })).toBe(true);
+    expect(resolveRequireApproval(tool, { dangerous: false })).toBe(false);
   });
 });

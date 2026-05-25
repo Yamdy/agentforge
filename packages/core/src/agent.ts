@@ -568,10 +568,11 @@ export class Agent {
   }
 
   private async buildContext(input: string, sessionId?: string): Promise<PipelineContext> {
+    const contextBudget = this.contextBuilder.getBudget();
     // Path 1: In-memory continuation (highest priority)
     if (this.lastContext) {
       return {
-        agent: { config: { ...this.config }, promptFragments: [], toolDeclarations: [] },
+        agent: { config: { ...this.config }, promptFragments: [], toolDeclarations: [], contextBudget },
         iteration: { step: 0 },
         session: {
           input,
@@ -590,7 +591,7 @@ export class Agent {
     if (sessionId && this.sessionManager) {
       const restored = await this.sessionManager.restore(sessionId);
       return {
-        agent: { config: { ...this.config }, promptFragments: [], toolDeclarations: [] },
+        agent: { config: { ...this.config }, promptFragments: [], toolDeclarations: [], contextBudget },
         iteration: { step: 0 },
         session: {
           input,
@@ -615,8 +616,9 @@ export class Agent {
       const record = await this.sessionManager.start(input);
       sid = record.sessionId;
     }
+    const contextBudget = this.contextBuilder.getBudget();
     return {
-      agent: { config: { ...this.config }, promptFragments: [], toolDeclarations: [] },
+      agent: { config: { ...this.config }, promptFragments: [], toolDeclarations: [], contextBudget },
       iteration: { step: 0 },
       session: { input, sessionId: sid, custom: {} },
     };

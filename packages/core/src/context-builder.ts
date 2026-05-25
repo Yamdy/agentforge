@@ -97,6 +97,11 @@ export class ContextBuilder {
     this.budget = budget;
   }
 
+  /** Returns the current context budget configuration. */
+  getBudget(): ContextBudget {
+    return this.budget;
+  }
+
   async assemble(ctx: PipelineContext): Promise<PipelineContext> {
     const model = ctx.agent.config.model;
     const profile = this.matchProfile(model);

@@ -64,6 +64,8 @@ export interface ToolResultBlock {
   name: string;
   output: unknown;
   error?: string;
+  /** Suggested next actions the LLM can take based on this tool result. */
+  suggestedActions?: string[];
 }
 
 export type ContentBlock = TextBlock | ThinkingBlock | ToolCallBlock | ToolResultBlock;
@@ -88,13 +90,15 @@ export interface ToolResult {
   mutated?: boolean;
   truncated?: boolean;
   validationError?: string;
+  /** Suggested next actions the LLM can take based on this tool result. */
+  suggestedActions?: string[];
 }
 
 /** Structured conversation message supporting tool-call round-trips. */
 export type Message =
   | { role: 'user'; content: string }
   | { role: 'assistant'; content: string; toolCalls?: ToolCall[]; reasoningContent?: string; source?: string }
-  | { role: 'tool'; content: string; toolCallId: string; toolName: string; result?: unknown; error?: string; mutated?: boolean; truncated?: boolean; validationError?: string };
+  | { role: 'tool'; content: string; toolCallId: string; toolName: string; result?: unknown; error?: string; mutated?: boolean; truncated?: boolean; validationError?: string; suggestedActions?: string[] };
 
 // ---------------------------------------------------------------------------
 // Token Counting
@@ -114,6 +118,10 @@ export interface ContextBudget {
   maxTokens: number;
   reservedForSystem?: number;
   reservedForTools?: number;
+  /** Maximum total tokens for the entire agentic loop. Overrides the derived default (maxTokens * 0.8). */
+  maxTotalTokens?: number;
+  /** Maximum tokens a single iteration can consume. Overrides the derived default (maxTotalTokens / maxIterations). */
+  maxIterationTokens?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -154,6 +162,8 @@ export interface AgentRegion {
   promptFragments: string[];
   /** Per-provider options passed through to streamText(). Keyed by provider name. */
   providerOptions?: Record<string, Record<string, unknown>>;
+  /** Context budget for coordinating ContextBuilder and evaluateIteration. */
+  contextBudget?: ContextBudget;
 }
 
 export interface IterationRegion {
@@ -185,10 +195,28 @@ export interface SessionRegion {
   custom: Record<string, unknown>;
 }
 
+/** Records a single modification to PipelineContext for tracking/debugging. */
+export interface ContextModificationRecord {
+  /** Name of the processor that made the change. */
+  processor: string;
+  /** The field/namespace key that was modified. */
+  field: string;
+  /** Timestamp (ms since epoch) of the modification. */
+  timestamp: number;
+  /** Previous value at this field, if any. */
+  previousValue?: unknown;
+}
+
 export interface PipelineContext {
   agent: AgentRegion;
   iteration: IterationRegion;
   session: SessionRegion;
+  /** @internal Modification tracking log. Populated by ProcessorContextImpl.setState(). */
+  __modifications?: ContextModificationRecord[];
+  /** Freeze the top-level properties of this context (shallow). Attached by PipelineRunner. */
+  freeze?(): Readonly<PipelineContext>;
+  /** Recursively freeze this context and all nested objects/arrays. Attached by PipelineRunner. */
+  deepFreeze?(): Readonly<PipelineContext>;
 }
 
 // ---------------------------------------------------------------------------
@@ -235,6 +263,14 @@ export interface ProcessorContext {
     usagePromise?: Promise<TokenUsage | null>;
     reasoningPromise?: Promise<string | undefined>;
   };
+  /** Set namespaced state with modification tracking. Records processor name and timestamp. */
+  setState?(namespace: string, value: unknown): void;
+  /** Get namespaced state from session.custom. */
+  getState?<T = unknown>(namespace: string): T | undefined;
+  /** Return all modification records accumulated so far. */
+  getModifications?(): ContextModificationRecord[];
+  /** Return all dot-separated namespace prefixes used (e.g. ['plugin.memory', 'plugin.compression']). */
+  getNamespaces?(): string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -351,13 +387,25 @@ export interface Tool<TInput = unknown, TOutput = unknown> {
   inputSchema: unknown;
   outputSchema?: unknown;
   execute(input: TInput, context: ToolExecutionContext): Promise<TOutput>;
-  requireApproval?: boolean;
+  requireApproval?: boolean | ((input: unknown) => boolean);
   allowOutputMutation?: boolean;
   renderCall?(input: TInput): string;
   renderResult?(output: TOutput): string;
 }
 
 export type ToolDefinition = Tool;
+
+/**
+ * Resolve the `requireApproval` field of a Tool to a boolean.
+ * If the field is a function, it is called with the tool input.
+ * If the field is undefined or a boolean, it is returned directly (undefined defaults to false).
+ */
+export function resolveRequireApproval(tool: Tool, input: unknown): boolean {
+  const ra = tool.requireApproval;
+  if (ra === undefined) return false;
+  if (typeof ra === 'boolean') return ra;
+  return ra(input);
+}
 
 // ---------------------------------------------------------------------------
 // Observability

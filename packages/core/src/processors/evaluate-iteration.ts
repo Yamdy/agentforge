@@ -1,10 +1,40 @@
-import type { Processor, ProcessorContext, ProcessorResult, LoopDirective, TokenUsage, Message, ToolCall } from '@primo-ai/sdk';
+import type { Processor, ProcessorContext, ProcessorResult, LoopDirective, TokenUsage, Message, ToolCall, ContextBudget } from '@primo-ai/sdk';
 import type { EventBus } from '../event-bus.js';
+
+/** Default maxTotalTokens when no contextBudget is provided (backward compat). */
+const DEFAULT_MAX_TOTAL_TOKENS = 100_000;
+/** Ratio of maxTokens used to derive maxTotalTokens when not explicitly set. */
+const TOTAL_BUDGET_RATIO = 0.8;
+/** Default maxIterations when not specified in config. */
+const DEFAULT_MAX_ITERATIONS = 10;
 
 export interface EvaluateIterationDeps {
   eventBus?: EventBus;
-  /** Maximum total tokens before stopping the loop. Defaults to 100_000. */
+  /** Maximum total tokens before stopping the loop. When set, overrides derived value from contextBudget. */
   maxTotalTokens?: number;
+}
+
+/** Resolve effective maxTotalTokens: explicit deps > contextBudget.maxTotalTokens > derived from contextBudget.maxTokens > default. */
+function resolveMaxTotalTokens(depsMaxTotalTokens: number | undefined, contextBudget?: ContextBudget): number {
+  // 1. Explicit deps override takes highest priority
+  if (depsMaxTotalTokens !== undefined) return depsMaxTotalTokens;
+  // 2. Explicit contextBudget.maxTotalTokens
+  if (contextBudget?.maxTotalTokens !== undefined) return contextBudget.maxTotalTokens;
+  // 3. Derive from contextBudget.maxTokens
+  if (contextBudget?.maxTokens !== undefined) return Math.floor(contextBudget.maxTokens * TOTAL_BUDGET_RATIO);
+  // 4. Fall back to default
+  return DEFAULT_MAX_TOTAL_TOKENS;
+}
+
+/** Resolve effective maxIterationTokens: explicit contextBudget.maxIterationTokens > derived from maxTotalTokens / maxIterations.
+ *  Returns undefined when no contextBudget is set (backward compat: no per-iteration limit). */
+function resolveMaxIterationTokens(contextBudget: ContextBudget | undefined, effectiveMaxTotalTokens: number, maxIterations: number): number | undefined {
+  // No budget at all → no per-iteration limit (backward compat)
+  if (!contextBudget) return undefined;
+  // 1. Explicit contextBudget.maxIterationTokens
+  if (contextBudget.maxIterationTokens !== undefined) return contextBudget.maxIterationTokens;
+  // 2. Derive from total budget / max iterations
+  return Math.floor(effectiveMaxTotalTokens / maxIterations);
 }
 
 function collectCalledToolNames(history: Message[], pendingToolCalls?: ToolCall[]): Set<string> {
@@ -28,7 +58,7 @@ const REQUIRED_TOOLS_MAX_RETRIES = 3;
 
 export function createEvaluateIterationProcessor(deps?: EvaluateIterationDeps): Processor {
   const eventBus = deps?.eventBus;
-  const maxTotalTokens = deps?.maxTotalTokens ?? 100_000;
+  const depsMaxTotalTokens = deps?.maxTotalTokens;
   let warnedUnknownTools = false;
   const failCounts: Record<string, number> = {};
 
@@ -36,6 +66,16 @@ export function createEvaluateIterationProcessor(deps?: EvaluateIterationDeps): 
     stage: 'evaluateIteration',
     execute: async (pCtx: ProcessorContext): Promise<ProcessorResult> => {
       const ctx = pCtx.state;
+      const contextBudget = ctx.agent.contextBudget;
+
+      // Resolve maxIterations from config (may be Dynamic, but evaluateIteration
+      // runs at execution time so we treat the resolved value)
+      const maxIterations = (ctx.agent.config.maxIterations as number | undefined) ?? DEFAULT_MAX_ITERATIONS;
+
+      // Resolve effective budgets
+      const effectiveMaxTotalTokens = resolveMaxTotalTokens(depsMaxTotalTokens, contextBudget);
+      const effectiveMaxIterationTokens = resolveMaxIterationTokens(contextBudget, effectiveMaxTotalTokens, maxIterations);
+
       const prevTotal = ctx.session.totalTokenUsage ?? { input: 0, output: 0 };
       const iterUsage = ctx.iteration.tokenUsage;
       if (!iterUsage) {
@@ -48,10 +88,42 @@ export function createEvaluateIterationProcessor(deps?: EvaluateIterationDeps): 
       };
 
       const totalTokens = totalTokenUsage.input + totalTokenUsage.output;
+      const iterationTokens = safeUsage.input + safeUsage.output;
 
       const requiredTools = ctx.agent.config.requiredTools;
 
-      if (totalTokens > maxTotalTokens) {
+      // Per-iteration token budget check
+      if (effectiveMaxIterationTokens !== undefined && iterationTokens > effectiveMaxIterationTokens) {
+        pCtx.span?.setAttribute('token.iteration_overflow', true);
+        pCtx.span?.setAttribute('token.iteration_total', iterationTokens);
+        pCtx.span?.setAttribute('token.iteration_budget', effectiveMaxIterationTokens);
+
+        // Emit unsatisfied if required tools are not all called
+        if (requiredTools && requiredTools.length > 0) {
+          const calledTools = collectCalledToolNames(
+            ctx.session.messageHistory ?? [],
+            ctx.iteration.pendingToolCalls,
+          );
+          const uncalled = requiredTools.filter(name => !calledTools.has(name));
+          if (uncalled.length > 0) {
+            eventBus?.emit('required_tools:unsatisfied', {
+              uncalled,
+              reason: 'iteration_token_overflow',
+              step: ctx.iteration.step,
+              sessionId: ctx.session.sessionId,
+            });
+          }
+        }
+
+        ctx.iteration.loopDirective = { action: 'stop' } as LoopDirective;
+        ctx.session.totalTokenUsage = totalTokenUsage;
+        return {
+          status: 'warning',
+          summary: `Iteration token budget exceeded: ${iterationTokens} > ${effectiveMaxIterationTokens}. Stopping loop.`,
+        };
+      }
+
+      if (totalTokens > effectiveMaxTotalTokens) {
         pCtx.span?.setAttribute('token.overflow', true);
         pCtx.span?.setAttribute('token.total', totalTokens);
 
@@ -76,7 +148,7 @@ export function createEvaluateIterationProcessor(deps?: EvaluateIterationDeps): 
         ctx.session.totalTokenUsage = totalTokenUsage;
         return {
           status: 'warning',
-          summary: `Token budget exceeded: ${totalTokens} > ${maxTotalTokens}. Stopping loop.`,
+          summary: `Token budget exceeded: ${totalTokens} > ${effectiveMaxTotalTokens}. Stopping loop.`,
         };
       }
 
