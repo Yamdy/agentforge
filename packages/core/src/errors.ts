@@ -4,6 +4,7 @@ export interface AgentErrorOptions {
   retryCount?: number;
   maxRetries?: number;
   cause?: Error;
+  retryHint?: string;
 }
 
 export class AgentForgeError extends Error {
@@ -11,6 +12,7 @@ export class AgentForgeError extends Error {
   readonly recoverable: boolean;
   readonly retryCount?: number;
   readonly maxRetries?: number;
+  readonly retryHint?: string;
 
   constructor(message: string, options: AgentErrorOptions) {
     super(message, { cause: options.cause });
@@ -19,6 +21,7 @@ export class AgentForgeError extends Error {
     this.recoverable = options.recoverable ?? false;
     this.retryCount = options.retryCount;
     this.maxRetries = options.maxRetries;
+    this.retryHint = options.retryHint;
   }
 }
 
@@ -47,8 +50,8 @@ export class ModelNotFoundError extends FatalError {
 }
 
 export class ToolExecutionError extends RecoverableError {
-  constructor(message: string, cause?: Error) {
-    super(message, { code: 'TOOL_ERROR', cause });
+  constructor(message: string, cause?: Error, retryHint?: string) {
+    super(message, { code: 'TOOL_ERROR', cause, retryHint });
   }
 }
 

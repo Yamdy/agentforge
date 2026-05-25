@@ -8,6 +8,7 @@
 export type PipelineStage =
   | 'processInput'
   | 'buildContext'
+  | 'planStep'
   | 'prepareStep'
   | 'gateLLM'
   | 'invokeLLM'
@@ -349,7 +350,7 @@ export interface Processor {
 
 /** Built-in processor names that can be resolved from the registry. */
 export type BuiltinProcessorName =
-  | 'processInput' | 'buildContext' | 'prepareStep' | 'gateLLM'
+  | 'processInput' | 'buildContext' | 'planStep' | 'prepareStep' | 'gateLLM'
   | 'invokeLLM' | 'processStepOutput' | 'gateTool'
   | 'executeTools' | 'compressContext' | 'evaluateIteration' | 'processOutput';
 

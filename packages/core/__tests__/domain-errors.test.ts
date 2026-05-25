@@ -65,4 +65,31 @@ describe('AgentForgeError hierarchy', () => {
     expect(err.retryCount).toBe(2);
     expect(err.maxRetries).toBe(3);
   });
+
+  it('AgentForgeError accepts optional retryHint', () => {
+    const err = new AgentForgeError('something broke', { code: 'GENERIC', retryHint: 'Try again with different parameters' });
+    expect(err.retryHint).toBe('Try again with different parameters');
+  });
+
+  it('AgentForgeError retryHint defaults to undefined', () => {
+    const err = new AgentForgeError('something broke', { code: 'GENERIC' });
+    expect(err.retryHint).toBeUndefined();
+  });
+
+  it('RecoverableError carries retryHint', () => {
+    const err = new RecoverableError('timeout', { code: 'TIMEOUT', retryHint: 'Retry after a delay' });
+    expect(err.retryHint).toBe('Retry after a delay');
+    expect(err.recoverable).toBe(true);
+  });
+
+  it('ToolExecutionError accepts retryHint', () => {
+    const err = new ToolExecutionError('search failed', undefined, 'Use different search parameters');
+    expect(err.retryHint).toBe('Use different search parameters');
+    expect(err.code).toBe('TOOL_ERROR');
+  });
+
+  it('ToolExecutionError retryHint defaults to undefined', () => {
+    const err = new ToolExecutionError('search failed');
+    expect(err.retryHint).toBeUndefined();
+  });
 });

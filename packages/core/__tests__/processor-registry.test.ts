@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import type { Processor, ProcessorContext, PipelineContext, StageName } from '@primo-ai/sdk';
+import type { Processor, ProcessorContext, PipelineContext, StageName, ProcessorFactory } from '@primo-ai/sdk';
 import { ProcessorRegistryImpl } from '../src/processor-registry.js';
 
 // Import processors to trigger registration with globalProcessorRegistry
@@ -79,6 +79,57 @@ describe('Phase 1b: ProcessorRegistry', () => {
       registry.register('processInput', () => makeProcessor('processInput'));
       expect(registry.has('processInput')).toBe(true);
       expect(registry.has('invokeLLM')).toBe(false);
+    });
+  });
+
+  describe('Lazy processor registration', () => {
+    it('registerLazy stores descriptor without calling factory', () => {
+      let factoryCalled = false;
+      const factory: ProcessorFactory = () => { factoryCalled = true; return makeProcessor('processInput'); };
+      registry.registerLazy('processInput', factory);
+
+      expect(factoryCalled).toBe(false);
+      expect(registry.has('processInput')).toBe(true);
+    });
+
+    it('resolveLazy returns a processor that defers factory call until execute', async () => {
+      let factoryCalled = false;
+      const factory: ProcessorFactory = () => { factoryCalled = true; return makeProcessor('processInput'); };
+      registry.registerLazy('processInput', factory);
+
+      const lazyProc = registry.resolveLazy({ builtin: 'processInput' });
+      expect(factoryCalled).toBe(false);
+      expect(lazyProc.stage).toBe('processInput');
+
+      const ctx = makeContext();
+      await lazyProc.execute(ctx);
+      expect(factoryCalled).toBe(true);
+    });
+
+    it('lazy processor caches result after first resolution', async () => {
+      let callCount = 0;
+      const factory: ProcessorFactory = () => { callCount++; return makeProcessor('processInput'); };
+      registry.registerLazy('processInput', factory);
+
+      const lazyProc = registry.resolveLazy({ builtin: 'processInput' });
+      const ctx = makeContext();
+      await lazyProc.execute(ctx);
+      await lazyProc.execute(ctx);
+      expect(callCount).toBe(1);
+    });
+
+    it('registerLazy overwrites eager registration', () => {
+      registry.register('processInput', () => makeProcessor('processInput'));
+      let lazyCalled = false;
+      registry.registerLazy('processInput', () => { lazyCalled = true; return makeProcessor('processInput'); });
+
+      // resolveLazy should use the lazy version
+      const lazyProc = registry.resolveLazy({ builtin: 'processInput' });
+      expect(lazyProc.stage).toBe('processInput');
+    });
+
+    it('resolveLazy throws for unregistered processor', () => {
+      expect(() => registry.resolveLazy({ builtin: 'unknownProcessor' as any })).toThrow(/not registered/);
     });
   });
 

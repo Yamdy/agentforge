@@ -9,3 +9,4 @@ export { createExecuteToolsProcessor } from './execute-tools.js';
 export { createEvaluateIterationProcessor, evaluateIterationProcessor } from './evaluate-iteration.js';
 export { processOutputProcessor } from './process-output.js';
 export { createCompressContextProcessor } from './compress-context.js';
+export { createPlanStepProcessor } from './plan-step.js';
