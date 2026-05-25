@@ -42,9 +42,9 @@ function makeSession(id: string, overrides?: Partial<SessionRecord>): SessionRec
 }
 
 // ---------------------------------------------------------------------------
-// Bug 1: server.ts passes registry + eventStream to sessionRoutes
+// Server passes registry + eventStream to sessionRoutes
 // ---------------------------------------------------------------------------
-describe('Bug 1 - Server passes registry and event stream to session routes', () => {
+describe('Server passes registry and event stream to session routes', () => {
   it('POST /sessions/:id/abort works through AgentForgeServer when registry is configured', async () => {
     const storage = createMockStorage([makeSession('s1')]);
 
@@ -102,9 +102,9 @@ describe('Bug 1 - Server passes registry and event stream to session routes', ()
 });
 
 // ---------------------------------------------------------------------------
-// Bug 2: POST /:id/prompt passes sessionId option to agent.run()
+// POST /:id/prompt passes sessionId option to agent.run()
 // ---------------------------------------------------------------------------
-describe('Bug 2 - POST /:id/prompt passes sessionId to agent.run()', () => {
+describe('POST /:id/prompt passes sessionId to agent.run()', () => {
   it('calls agent.run() with sessionId option', async () => {
     const sessions = [makeSession('s1')];
     const storage = createMockStorage(sessions);
@@ -134,9 +134,9 @@ describe('Bug 2 - POST /:id/prompt passes sessionId to agent.run()', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 3: registry.registerSession() is called from route handlers
+// registry.registerSession() is called from route handlers
 // ---------------------------------------------------------------------------
-describe('Bug 3 - Route handlers call registry.registerSession()', () => {
+describe('Route handlers call registry.registerSession()', () => {
   it('POST /agents/:id/run calls registerSession when sessionId is provided', async () => {
     const registry = new AgentRegistry();
     const spy = vi.spyOn(registry, 'registerSession');

@@ -9,7 +9,7 @@ import { streamText } from 'ai';
 import type { LanguageModel } from 'ai';
 import { LLMInvoker } from '../src/llm-invoker.js';
 
-describe('F-8: Stream reasoning error observability', () => {
+describe('LLMInvoker stream reasoning error is observable', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });

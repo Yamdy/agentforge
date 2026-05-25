@@ -59,10 +59,10 @@ function registerCompletingProcessors(runner: PipelineRunner) {
 }
 
 // ===========================================================================
-// G1: autoCheckpoint 启用路径
+// autoCheckpoint enabled via AgentDependencies
 // ===========================================================================
 
-describe('G1: autoCheckpoint enabled via AgentDependencies', () => {
+describe('autoCheckpoint enabled via AgentDependencies', () => {
   let dir: string;
 
   beforeEach(() => {
@@ -137,10 +137,10 @@ describe('G1: autoCheckpoint enabled via AgentDependencies', () => {
 });
 
 // ===========================================================================
-// G2: default gateTool processor
+// default gateTool processor
 // ===========================================================================
 
-describe('G2: default gateTool processor', () => {
+describe('default gateTool processor', () => {
   it('pipeline has a gateTool stage processor registered by default', () => {
     const agent = new Agent({ model: 'mock/test' });
     const processors = (agent.pipelineRunner as unknown as { processors: Processor[] }).processors;
@@ -177,10 +177,10 @@ describe('G2: default gateTool processor', () => {
 });
 
 // ===========================================================================
-// G3: token budget 可配置化
+// configurable token overflow threshold
 // ===========================================================================
 
-describe('G3: configurable token overflow threshold', () => {
+describe('configurable token overflow threshold', () => {
   it('evaluateIteration uses default 100k when no maxTotalTokens config', async () => {
     const { createEvaluateIterationProcessor } = await import('../src/processors/evaluate-iteration.js');
     const processor = createEvaluateIterationProcessor({});
@@ -259,10 +259,10 @@ describe('G3: configurable token overflow threshold', () => {
 });
 
 // ===========================================================================
-// G4: pipeline error hook
+// PipelineRunner fires error hook on stage failure
 // ===========================================================================
 
-describe('G4: PipelineRunner fires error hook on stage failure', () => {
+describe('PipelineRunner fires error hook on stage failure', () => {
   it('PipelineRunner.run() invokes hookManager error hook on processor throw', async () => {
     const runner = new PipelineRunner({});
     const eventBus = new EventBus();
@@ -330,10 +330,10 @@ describe('G4: PipelineRunner fires error hook on stage failure', () => {
 });
 
 // ===========================================================================
-// A-1: runLoop / streamEvents equivalence
+// runLoop / streamEvents equivalence
 // ===========================================================================
 
-describe('A-1: runLoop and streamEvents produce equivalent results', () => {
+describe('runLoop and streamEvents produce equivalent results', () => {
   function createOrchestrator() {
     const runner = new PipelineRunner({});
     const eventBus = new EventBus();
@@ -398,7 +398,7 @@ describe('A-1: runLoop and streamEvents produce equivalent results', () => {
 
     await orch.runLoop(ctx, baseOptions);
 
-    // After A-1 fix: runLoop should NOT call runner.run(), only runner.stream()
+    // runLoop should NOT call runner.run(), only runner.stream()
     expect(runSpy).not.toHaveBeenCalled();
     expect(streamSpy).toHaveBeenCalled();
   });

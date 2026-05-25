@@ -305,6 +305,21 @@ describe('A2AClient — streamTask', () => {
       for await (const _event of client.streamTask('bad-task')) { void _event; }
     }).rejects.toThrow(/HTTP 404/);
   });
+
+  it('handles empty stream gracefully', async () => {
+    const body = new ReadableStream({ start(controller) { controller.close(); } });
+    const mockFetch = vi.fn().mockResolvedValueOnce(
+      new Response(body, { headers: { 'content-type': 'text/event-stream' } }),
+    );
+
+    const client = new A2AClient({ card, fetch: mockFetch });
+    const events: A2AStreamEvent[] = [];
+    for await (const event of client.streamTask('nonexistent')) {
+      events.push(event);
+    }
+
+    expect(events).toHaveLength(0);
+  });
 });
 
 // ---------------------------------------------------------------------------

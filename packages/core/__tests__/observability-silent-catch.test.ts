@@ -9,14 +9,14 @@ import { SessionPersistence } from '../src/session-persistence.js';
 import type { SessionStorage, SessionEvent, ResourceDeclaration } from '@primo-ai/sdk';
 
 /**
- * F-D tests: Silent catch blocks in critical paths must emit
- * observability events instead of swallowing silently.
+ * Silent catch blocks in critical paths must emit observability events
+ * instead of swallowing silently.
  */
 
 // ---------------------------------------------------------------------------
-// F-D.1: LLMInvoker stream path — usage rejection emits event via eventBus
+// LLMInvoker stream path — usage rejection emits event via eventBus
 // ---------------------------------------------------------------------------
-describe('F-D.1: LLMInvoker stream usage fallback is observable', () => {
+describe('LLMInvoker stream usage fallback is observable', () => {
   it('emits llm:usage_unavailable via eventBus when stream usage rejects', async () => {
     const events: { type: string; data: unknown }[] = [];
     const bus = new EventBus();
@@ -59,9 +59,9 @@ describe('F-D.1: LLMInvoker stream usage fallback is observable', () => {
 });
 
 // ---------------------------------------------------------------------------
-// F-D.2: HookManager standard profile — hook failure must emit event
+// HookManager standard profile — hook failure must emit event
 // ---------------------------------------------------------------------------
-describe('F-D.2: HookManager standard profile emits error on hook failure', () => {
+describe('HookManager standard profile emits error on hook failure', () => {
   it('emits hook:error event when a hook throws in standard profile', async () => {
     const events: { type: string; data: unknown }[] = [];
     const bus = new EventBus();
@@ -83,9 +83,9 @@ describe('F-D.2: HookManager standard profile emits error on hook failure', () =
 });
 
 // ---------------------------------------------------------------------------
-// F-D.3: PluginManager shutdown — resource stop error must be observable
+// PluginManager shutdown — resource stop error must be observable
 // ---------------------------------------------------------------------------
-describe('F-D.3: PluginManager shutdown observes resource stop failure', () => {
+describe('PluginManager shutdown observes resource stop failure', () => {
   it('records error in getErrors() when resource.stop() throws', async () => {
     const runner = new PipelineRunner();
     const registry = new ToolRegistry();
@@ -110,9 +110,9 @@ describe('F-D.3: PluginManager shutdown observes resource stop failure', () => {
 });
 
 // ---------------------------------------------------------------------------
-// F-D.4: SessionPersistence — write failure must be observable
+// SessionPersistence — write failure must be observable
 // ---------------------------------------------------------------------------
-describe('F-D.4: SessionPersistence write failure is observable', () => {
+describe('SessionPersistence write failure is observable', () => {
   it('emits session:write_failed event when storage.append rejects', async () => {
     const events: { type: string; data: unknown }[] = [];
     const bus = new EventBus();
@@ -148,9 +148,9 @@ describe('F-D.4: SessionPersistence write failure is observable', () => {
 });
 
 // ---------------------------------------------------------------------------
-// F-D.5: LLMInvoker invoke path — usage fallback emits via eventBus
+// LLMInvoker invoke path — usage fallback emits via eventBus
 // ---------------------------------------------------------------------------
-describe('F-D.5: LLMInvoker invoke usage fallback is observable', () => {
+describe('LLMInvoker invoke usage fallback is observable', () => {
   it('LLMInvoker stores eventBus option for invoke path usage catch', async () => {
     const bus = new EventBus();
     const { createMockLanguageModel } = await import('./helpers.js');

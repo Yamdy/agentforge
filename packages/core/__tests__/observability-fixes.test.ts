@@ -9,16 +9,7 @@ import { createMockLanguageModel, registerMockProvider } from './helpers.js';
 import type { Tool } from '@primo-ai/sdk';
 import { z } from 'zod';
 
-/**
- * RED tests for observability fixes (P-1, P-2, P-4, P-5, P-15)
- * - P-1: Agent.getLLM() passes tracer to LLMInvoker
- * - P-2: TracerImpl.startSpan() propagates onSpanEnd so spans are exported
- * - P-4: llm.after hook receives populated response data
- * - P-5: agent.end fires even when an error occurs during run/stream
- * - P-15: tool.after hook receives result/error data from ToolRegistry
- */
-
-describe('Observability fixes — RED phase', () => {
+describe('Observability integration', () => {
   beforeEach(() => {
     registerMockProvider('mock', (modelId) =>
       createMockLanguageModel({ text: `Hello from ${modelId}!` }),
@@ -26,9 +17,9 @@ describe('Observability fixes — RED phase', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // P-1: Agent.getLLM() must pass tracer to LLMInvoker
+  // Agent passes tracer to LLMInvoker
   // ---------------------------------------------------------------------------
-  describe('P-1: Agent passes tracer to LLMInvoker', () => {
+  describe('Agent passes tracer to LLMInvoker', () => {
     it('LLMInvoker receives tracer from Agent dependencies', async () => {
       const tracer = new TracerImpl();
       const agent = new Agent(
@@ -61,9 +52,9 @@ describe('Observability fixes — RED phase', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // P-2: TracerImpl.startSpan() must call onSpanEnd callback when span ends
+  // TracerImpl exports ended spans via onSpanEnd callback
   // ---------------------------------------------------------------------------
-  describe('P-2: TracerImpl exports ended spans via onSpanEnd', () => {
+  describe('TracerImpl exports ended spans via onSpanEnd', () => {
     it('startSpan propagates onSpanEnd so ended spans are reported', () => {
       const exported: SpanData[] = [];
       const onSpanEnd = (data: SpanData) => exported.push(data);
@@ -92,9 +83,9 @@ describe('Observability fixes — RED phase', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // P-4: llm.after hook receives populated response (not undefined)
+  // llm.after hook receives populated response text
   // ---------------------------------------------------------------------------
-  describe('P-4: llm.after hook receives response text', () => {
+  describe('llm.after hook receives response text', () => {
     it('llm.after hook output contains the LLM response text', async () => {
       const llmAfterData: { input: unknown; output: unknown }[] = [];
 
@@ -119,9 +110,9 @@ describe('Observability fixes — RED phase', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // P-5: agent.end hook fires even when an error occurs
+  // agent.end hook fires even when an error occurs
   // ---------------------------------------------------------------------------
-  describe('P-5: agent.end fires on error', () => {
+  describe('agent.end fires on error', () => {
     it('agent.end hook fires when run() throws an error', async () => {
       const hookCalls: string[] = [];
 
@@ -164,9 +155,9 @@ describe('Observability fixes — RED phase', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // P-15: ToolRegistry wires HookManager from Agent, tool.after has result/error
+  // tool.after hook fires with result/error data
   // ---------------------------------------------------------------------------
-  describe('P-15: tool.after hook fires with result data via Agent pipeline', () => {
+  describe('tool.after hook fires with result data via Agent pipeline', () => {
     it('tool.after hook receives result when tool succeeds', async () => {
       const toolAfterCalls: { toolName: string; result: unknown; error?: string }[] = [];
 

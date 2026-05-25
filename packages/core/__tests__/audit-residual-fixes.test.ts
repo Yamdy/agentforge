@@ -36,12 +36,11 @@ function findToolMessage(history: Message[] | undefined): (Message & { role: 'to
 }
 
 // ---------------------------------------------------------------------------
-// R-1: outputSchema validation error should be visible in tool Message content
-// R-4: mutated/truncated/validationError flags should propagate into Messages
+// outputSchema validation error in tool Messages + mutated/truncated flag propagation
 // ---------------------------------------------------------------------------
 
-describe('R-1/R-4: outputSchema validation + flag propagation', () => {
-  it('R-1: validationError is included in tool Message content when outputSchema fails', async () => {
+describe('outputSchema validation + flag propagation', () => {
+  it('validationError is included in tool Message content when outputSchema fails', async () => {
     const registry = new ToolRegistry();
     const badTool: Tool = {
       name: 'badOutput',
@@ -71,7 +70,7 @@ describe('R-1/R-4: outputSchema validation + flag propagation', () => {
     expect(toolMsg!.content).toContain('Output validation failed');
   });
 
-  it('R-4: mutated flag propagates into tool Message', async () => {
+  it('mutated flag propagates into tool Message', async () => {
     const registry = new ToolRegistry();
     const tool: Tool = {
       name: 'mutateMe',
@@ -111,7 +110,7 @@ describe('R-1/R-4: outputSchema validation + flag propagation', () => {
     expect((toolMsg as { mutated: boolean }).mutated).toBe(true);
   });
 
-  it('R-4: truncated flag propagates into tool Message', async () => {
+  it('truncated flag propagates into tool Message', async () => {
     const registry = new ToolRegistry({ maxOutputLength: 10 });
     const tool: Tool = {
       name: 'longOutput',
@@ -140,10 +139,10 @@ describe('R-1/R-4: outputSchema validation + flag propagation', () => {
 });
 
 // ---------------------------------------------------------------------------
-// F-6: Required tools exhausted should set iteration.response, not empty
+// Required tools exhausted should set iteration.response, not empty
 // ---------------------------------------------------------------------------
 
-describe('F-6: Required tools exhausted response', () => {
+describe('Required tools exhausted response', () => {
   it('exhausted branch sets iteration.response with error message', async () => {
     const processor = createEvaluateIterationProcessor();
     const toolDecl = { name: 'requiredTool', description: 'must be called', inputSchema: {} };
@@ -176,10 +175,10 @@ describe('F-6: Required tools exhausted response', () => {
 });
 
 // ---------------------------------------------------------------------------
-// F-7: processStepOutput user message detection unreliable with memory
+// processStepOutput user message detection with memory-injected history
 // ---------------------------------------------------------------------------
 
-describe('F-7: processStepOutput user message detection', () => {
+describe('processStepOutput user message detection', () => {
   it('adds user input even when history already has user messages from memory', async () => {
     // Simulate: memory injection already prepended user messages to history
     const memoryUserMsg: Message = { role: 'user', content: 'remembered fact' };
@@ -204,10 +203,10 @@ describe('F-7: processStepOutput user message detection', () => {
 });
 
 // ---------------------------------------------------------------------------
-// F-9: Sub-agent error should preserve original error, not wrap as new Error
+// Sub-agent error should preserve original error, not wrap as new Error
 // ---------------------------------------------------------------------------
 
-describe('F-9: Sub-agent error propagation', () => {
+describe('Sub-agent error propagation', () => {
   it('sub-agent error preserves original cause chain', async () => {
     const events: { type: string; data: unknown }[] = [];
     const fakeEventBus = {
@@ -236,10 +235,10 @@ describe('F-9: Sub-agent error propagation', () => {
 });
 
 // ---------------------------------------------------------------------------
-// F-10: Compression strategy should verify post-compression budget
+// ContextBuilder post-compression budget check
 // ---------------------------------------------------------------------------
 
-describe('F-10: ContextBuilder post-compression budget check', () => {
+describe('ContextBuilder post-compression budget check', () => {
   it('re-applies compression when result still exceeds budget', async () => {
     const registry = new ToolRegistry();
     // A compression strategy that only removes 1 message per call,
