@@ -107,9 +107,8 @@ function toolNameMatch(pattern: string, toolName: string): boolean {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function getCurrentToolCall(ctx: PipelineContext): { name: string; args: Record<string, unknown> } | undefined {
-  const calls = ctx.iteration.pendingToolCalls;
-  return calls && calls.length > 0 ? { name: calls[0].name, args: calls[0].args } : undefined;
+function getAllToolCalls(ctx: PipelineContext): Array<{ name: string; args: Record<string, unknown> }> {
+  return ctx.iteration.pendingToolCalls ?? [];
 }
 
 function isDangerousTool(toolName: string): boolean {
@@ -157,112 +156,114 @@ export function createPermissionProcessor(config: PermissionConfig): Processor {
         return;
       }
 
-      const toolCall = getCurrentToolCall(ctx);
-      if (!toolCall) {
+      const toolCalls = getAllToolCalls(ctx);
+      if (toolCalls.length === 0) {
         return;
       }
 
-      // Evaluate rules (first-match-wins)
-      const matched = evaluateRules(config.rules, toolCall.name, toolCall.args);
+      for (const toolCall of toolCalls) {
+        // Evaluate rules (first-match-wins)
+        const matched = evaluateRules(config.rules, toolCall.name, toolCall.args);
 
-      if (matched) {
-        switch (matched.action) {
-          case 'allow':
-            emit({ decision: 'allow', toolName: toolCall.name, rule: matched.rule.tool, mode: config.mode });
-            return;
-          case 'deny':
-            emit({ decision: 'deny', toolName: toolCall.name, rule: matched.rule.tool, mode: config.mode });
-            pCtx.control.abort(`Permission denied: tool '${toolCall.name}' blocked by rule (deny)`);
-            return; // unreachable but satisfies TS
-          case 'ask':
-            // In plan-only mode, 'ask' is treated as deny
-            if (config.mode === 'plan-only') {
+        if (matched) {
+          switch (matched.action) {
+            case 'allow':
+              emit({ decision: 'allow', toolName: toolCall.name, rule: matched.rule.tool, mode: config.mode });
+              continue;
+            case 'deny':
               emit({ decision: 'deny', toolName: toolCall.name, rule: matched.rule.tool, mode: config.mode });
-              pCtx.control.abort(`Permission denied: tool '${toolCall.name}' requires approval (ask rule, plan-only mode)`);
+              pCtx.control.abort(`Permission denied: tool '${toolCall.name}' blocked by rule (deny)`);
               return;
-            }
-            // In interactive mode with permissionManager: await interactive decision
-            if (config.permissionManager) {
-              const permissionId = `perm-${toolCall.name}-${Date.now()}-${++permissionCounter}`;
-              const permission = {
-                permissionId,
-                sessionId: ctx.session.sessionId,
-                toolName: toolCall.name,
-                args: toolCall.args,
-                reason: `Tool '${toolCall.name}' requires approval (ask rule)`,
-                createdAt: new Date().toISOString(),
-              };
-
-              emit({ decision: 'ask', toolName: toolCall.name, rule: matched.rule.tool, mode: config.mode, permissionId });
-
-              const approved = await config.permissionManager.awaitDecision(permission);
-              if (approved) {
-                emit({ decision: 'allow', toolName: toolCall.name, rule: matched.rule.tool, mode: config.mode, permissionId });
+            case 'ask':
+              // In plan-only mode, 'ask' is treated as deny
+              if (config.mode === 'plan-only') {
+                emit({ decision: 'deny', toolName: toolCall.name, rule: matched.rule.tool, mode: config.mode });
+                pCtx.control.abort(`Permission denied: tool '${toolCall.name}' requires approval (ask rule, plan-only mode)`);
                 return;
               }
-              emit({ decision: 'deny', toolName: toolCall.name, rule: matched.rule.tool, mode: config.mode, permissionId });
-              pCtx.control.abort(`Permission denied: tool '${toolCall.name}' blocked by user`);
+              // In interactive mode with permissionManager: await interactive decision
+              if (config.permissionManager) {
+                const permissionId = `perm-${toolCall.name}-${Date.now()}-${++permissionCounter}`;
+                const permission = {
+                  permissionId,
+                  sessionId: ctx.session.sessionId,
+                  toolName: toolCall.name,
+                  args: toolCall.args,
+                  reason: `Tool '${toolCall.name}' requires approval (ask rule)`,
+                  createdAt: new Date().toISOString(),
+                };
+
+                emit({ decision: 'ask', toolName: toolCall.name, rule: matched.rule.tool, mode: config.mode, permissionId });
+
+                const approved = await config.permissionManager.awaitDecision(permission);
+                if (approved) {
+                  emit({ decision: 'allow', toolName: toolCall.name, rule: matched.rule.tool, mode: config.mode, permissionId });
+                  continue;
+                }
+                emit({ decision: 'deny', toolName: toolCall.name, rule: matched.rule.tool, mode: config.mode, permissionId });
+                pCtx.control.abort(`Permission denied: tool '${toolCall.name}' blocked by user`);
+                return;
+              }
+              // In interactive mode without permissionManager, 'ask' suspends awaiting human approval
+              emit({ decision: 'ask', toolName: toolCall.name, rule: matched.rule.tool, mode: config.mode });
+              pCtx.control.suspend(
+                `perm-${toolCall.name}-${Date.now()}`,
+                { context: ctx, nextStages: ['executeTools', 'evaluateIteration'], iteration: ctx.iteration.step },
+              );
               return;
-            }
-            // In interactive mode without permissionManager, 'ask' suspends awaiting human approval
-            emit({ decision: 'ask', toolName: toolCall.name, rule: matched.rule.tool, mode: config.mode });
-            pCtx.control.suspend(
-              `perm-${toolCall.name}-${Date.now()}`,
-              { context: ctx, nextStages: ['executeTools', 'evaluateIteration'], iteration: ctx.iteration.step },
-            );
-            return;
+          }
         }
-      }
 
-      // No rule matched — check tool's requireApproval field, then apply mode defaults
-      const tool = config.getTool?.(toolCall.name);
-      const needsApproval = tool ? resolveRequireApproval(tool, toolCall.args) : false;
+        // No rule matched — check tool's requireApproval field, then apply mode defaults
+        const tool = config.getTool?.(toolCall.name);
+        const needsApproval = tool ? resolveRequireApproval(tool, toolCall.args) : false;
 
-      if (config.mode === 'plan-only') {
-        if (isDangerousTool(toolCall.name) || needsApproval) {
-          emit({ decision: 'deny', toolName: toolCall.name, mode: config.mode });
-          pCtx.control.abort(`Permission denied: tool '${toolCall.name}' is not allowed in plan-only mode (dangerous tool)`);
-          return;
-        }
-        emit({ decision: 'allow', toolName: toolCall.name, mode: config.mode });
-        return;
-      }
-
-      // interactive mode with no matching rule
-      if (needsApproval) {
-        if (config.permissionManager) {
-          const permissionId = `perm-${toolCall.name}-${Date.now()}-${++permissionCounter}`;
-          const permission = {
-            permissionId,
-            sessionId: ctx.session.sessionId,
-            toolName: toolCall.name,
-            args: toolCall.args,
-            reason: `Tool '${toolCall.name}' requires approval (tool declaration)`,
-            createdAt: new Date().toISOString(),
-          };
-
-          emit({ decision: 'ask', toolName: toolCall.name, mode: config.mode, permissionId });
-
-          const approved = await config.permissionManager.awaitDecision(permission);
-          if (approved) {
-            emit({ decision: 'allow', toolName: toolCall.name, mode: config.mode, permissionId });
+        if (config.mode === 'plan-only') {
+          if (isDangerousTool(toolCall.name) || needsApproval) {
+            emit({ decision: 'deny', toolName: toolCall.name, mode: config.mode });
+            pCtx.control.abort(`Permission denied: tool '${toolCall.name}' is not allowed in plan-only mode (dangerous tool)`);
             return;
           }
-          emit({ decision: 'deny', toolName: toolCall.name, mode: config.mode, permissionId });
-          pCtx.control.abort(`Permission denied: tool '${toolCall.name}' blocked by user`);
+          emit({ decision: 'allow', toolName: toolCall.name, mode: config.mode });
+          continue;
+        }
+
+        // interactive mode with no matching rule
+        if (needsApproval) {
+          if (config.permissionManager) {
+            const permissionId = `perm-${toolCall.name}-${Date.now()}-${++permissionCounter}`;
+            const permission = {
+              permissionId,
+              sessionId: ctx.session.sessionId,
+              toolName: toolCall.name,
+              args: toolCall.args,
+              reason: `Tool '${toolCall.name}' requires approval (tool declaration)`,
+              createdAt: new Date().toISOString(),
+            };
+
+            emit({ decision: 'ask', toolName: toolCall.name, mode: config.mode, permissionId });
+
+            const approved = await config.permissionManager.awaitDecision(permission);
+            if (approved) {
+              emit({ decision: 'allow', toolName: toolCall.name, mode: config.mode, permissionId });
+              continue;
+            }
+            emit({ decision: 'deny', toolName: toolCall.name, mode: config.mode, permissionId });
+            pCtx.control.abort(`Permission denied: tool '${toolCall.name}' blocked by user`);
+            return;
+          }
+          // Without permissionManager, suspend awaiting human approval
+          emit({ decision: 'ask', toolName: toolCall.name, mode: config.mode });
+          pCtx.control.suspend(
+            `perm-${toolCall.name}-${Date.now()}`,
+            { context: ctx, nextStages: ['executeTools', 'evaluateIteration'], iteration: ctx.iteration.step },
+          );
           return;
         }
-        // Without permissionManager, suspend awaiting human approval
-        emit({ decision: 'ask', toolName: toolCall.name, mode: config.mode });
-        pCtx.control.suspend(
-          `perm-${toolCall.name}-${Date.now()}`,
-          { context: ctx, nextStages: ['executeTools', 'evaluateIteration'], iteration: ctx.iteration.step },
-        );
-        return;
-      }
 
-      // No approval needed: allow by default
-      emit({ decision: 'allow', toolName: toolCall.name, mode: config.mode });
+        // No approval needed: allow by default
+        emit({ decision: 'allow', toolName: toolCall.name, mode: config.mode });
+      }
     },
   };
 }

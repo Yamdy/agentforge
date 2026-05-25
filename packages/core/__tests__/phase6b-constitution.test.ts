@@ -122,3 +122,25 @@ describe('ConstitutionEngine', () => {
     expect(engine.benchmarkFiles).toEqual(['packages/core/__tests__/full-pipeline.test.ts']);
   });
 });
+
+describe('Default constitution protected paths', () => {
+  const SECURITY_MODULES = [
+    'packages/core/src/verification-gate.ts',
+    'packages/core/src/mutation-budget.ts',
+    'packages/core/src/self-modification-engine.ts',
+    'packages/core/src/degeneration-watchdog.ts',
+    'packages/core/src/circuit-breaker.ts',
+    'packages/core/src/state-machine.ts',
+    'packages/core/src/self-representation.ts',
+  ];
+
+  it('protects all security infrastructure modules from modification', async () => {
+    const { DEFAULT_CONSTITUTION } = await import('../src/default-constitution.js') as { DEFAULT_CONSTITUTION: Constitution };
+    const engine = new ConstitutionEngine(DEFAULT_CONSTITUTION);
+    for (const mod of SECURITY_MODULES) {
+      const result = engine.checkPath(mod);
+      expect(result.protected, `${mod} should be protected`).toBe(true);
+      expect(result.level, `${mod} should be absolute`).toBe('absolute');
+    }
+  });
+});

@@ -305,4 +305,119 @@ describe('PermissionProcessor', () => {
       expect(decisions[0].rule).toBeUndefined(); // No explicit rule — default deny
     });
   });
+
+  describe('multiple tool calls in a single response', () => {
+    it('denies execution when second tool call is blocked', async () => {
+      const rules: PermissionRule[] = [
+        { tool: 'safe_tool', action: 'allow' },
+        { tool: 'dangerous_tool', action: 'deny' },
+      ];
+      const processor = createPermissionProcessor({ mode: 'interactive', rules });
+
+      const ctx = makeContext({
+        iteration: {
+          step: 0,
+          pendingToolCalls: [
+            { id: 'call_1', name: 'safe_tool', args: {} },
+            { id: 'call_2', name: 'dangerous_tool', args: {} },
+          ],
+        },
+      });
+
+      const result = await executeProcessor(processor, ctx);
+      expect(result.type).toBe('abort');
+      expect(result.reason).toContain('dangerous_tool');
+    });
+
+    it('allows execution when all tool calls pass permission check', async () => {
+      const rules: PermissionRule[] = [
+        { tool: 'safe_tool_a', action: 'allow' },
+        { tool: 'safe_tool_b', action: 'allow' },
+      ];
+      const processor = createPermissionProcessor({ mode: 'interactive', rules });
+
+      const ctx = makeContext({
+        iteration: {
+          step: 0,
+          pendingToolCalls: [
+            { id: 'call_1', name: 'safe_tool_a', args: {} },
+            { id: 'call_2', name: 'safe_tool_b', args: {} },
+          ],
+        },
+      });
+
+      const result = await executeProcessor(processor, ctx);
+      expect(result.type).toBe('ok');
+    });
+
+    it('denies all dangerous tool calls in plan-only mode', async () => {
+      const rules: PermissionRule[] = [];
+      const processor = createPermissionProcessor({ mode: 'plan-only', rules });
+
+      const ctx = makeContext({
+        iteration: {
+          step: 0,
+          pendingToolCalls: [
+            { id: 'call_1', name: 'shell_exec', args: { command: 'rm -rf /' } },
+            { id: 'call_2', name: 'file_delete', args: { path: '/etc/passwd' } },
+          ],
+        },
+      });
+
+      const result = await executeProcessor(processor, ctx);
+      expect(result.type).toBe('abort');
+    });
+
+    it('denies batch when first is allowed but second is dangerous in plan-only mode', async () => {
+      const rules: PermissionRule[] = [
+        { tool: 'file_read', action: 'allow' },
+      ];
+      const processor = createPermissionProcessor({ mode: 'plan-only', rules });
+
+      const ctx = makeContext({
+        iteration: {
+          step: 0,
+          pendingToolCalls: [
+            { id: 'call_1', name: 'file_read', args: { path: '/tmp/data' } },
+            { id: 'call_2', name: 'shell_exec', args: { command: 'rm -rf /' } },
+          ],
+        },
+      });
+
+      const result = await executeProcessor(processor, ctx);
+      expect(result.type).toBe('abort');
+      expect(result.reason).toContain('shell_exec');
+    });
+
+    it('emits decision events for each checked tool call', async () => {
+      const decisions: Array<{ decision: string; toolName: string; rule?: string; mode: string }> = [];
+      const rules: PermissionRule[] = [
+        { tool: 'file_read', action: 'allow' },
+        { tool: 'file_write', action: 'deny' },
+      ];
+      const processor = createPermissionProcessor({
+        mode: 'interactive',
+        rules,
+        onDecision: (event) => decisions.push(event),
+      });
+
+      const ctx = makeContext({
+        iteration: {
+          step: 0,
+          pendingToolCalls: [
+            { id: 'call_1', name: 'file_read', args: { path: '/tmp/a' } },
+            { id: 'call_2', name: 'file_write', args: { path: '/tmp/b' } },
+          ],
+        },
+      });
+
+      await executeProcessor(processor, ctx);
+
+      expect(decisions.length).toBeGreaterThanOrEqual(2);
+      expect(decisions[0].decision).toBe('allow');
+      expect(decisions[0].toolName).toBe('file_read');
+      expect(decisions[1].decision).toBe('deny');
+      expect(decisions[1].toolName).toBe('file_write');
+    });
+  });
 });

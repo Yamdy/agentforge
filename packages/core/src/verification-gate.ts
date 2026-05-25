@@ -12,7 +12,7 @@ import { ConstitutionEngine } from './constitution.js';
 // Built-in Gates
 // ---------------------------------------------------------------------------
 
-/** Gate 1: Constitution check — protected paths and diff limits */
+/** Gate 1: Constitution — protected paths only */
 class ConstitutionGate implements VerificationGate {
   name = 'constitution';
   level = 1;
@@ -29,34 +29,103 @@ class ConstitutionGate implements VerificationGate {
         return {
           passed: false,
           duration: Date.now() - start,
-          errors: [`Path "${file.path}" is protected (${pathCheck.level}): ${pathCheck.reason}`],
+          errors: [
+            pathCheck.level === 'absolute'
+              ? `Path "${file.path}" is absolutely protected: ${pathCheck.reason}`
+              : `Path "${file.path}" requires approval: ${pathCheck.reason}`,
+          ],
           gate: 'constitution',
+          protectionLevel: pathCheck.level,
         };
       }
     }
 
-    const limitCheck = this.engine.checkDiffLimits({ files: diff.length, linesPerFile: this.maxLines(diff) });
+    return { passed: true, duration: Date.now() - start };
+  }
+}
+
+/** Gate 2: Diff Limit — file count and lines-per-file constraints */
+class DiffLimitGate implements VerificationGate {
+  name = 'diffLimit';
+  level = 2;
+  timeoutMs = 1000;
+
+  async execute(diff: FilePatch[], context: VerificationContext): Promise<GateResult> {
+    const start = Date.now();
+    const engine = new ConstitutionEngine(context.constitution);
+
+    const limitCheck = engine.checkDiffLimits({ files: diff.length, linesPerFile: maxLines(diff) });
     if (!limitCheck.withinLimits) {
       return {
         passed: false,
         duration: Date.now() - start,
         errors: [`Diff limits exceeded: ${limitCheck.reason}`],
-        gate: 'constitution',
+        gate: 'diffLimit',
       };
     }
 
     return { passed: true, duration: Date.now() - start };
   }
+}
 
-  private maxLines(diff: FilePatch[]): number {
-    let max = 0;
+/** Gate 3: Interface Preservation — immutable interface members must not be modified */
+class InterfacePreservationGate implements VerificationGate {
+  name = 'interfacePreservation';
+  level = 3;
+  timeoutMs = 2000;
+
+  async execute(diff: FilePatch[], context: VerificationContext): Promise<GateResult> {
+    const start = Date.now();
+    const engine = new ConstitutionEngine(context.constitution);
+
     for (const file of diff) {
-      if (file.content) {
-        const lines = file.content.split('\n').length;
-        if (lines > max) max = lines;
+      for (const iface of context.constitution.immutableInterfaces) {
+        if (file.path === iface.module) {
+          for (const member of iface.members) {
+            if (file.content?.includes(member)) {
+              const check = engine.checkImmutableInterface(iface.module, iface.export, member);
+              if (check.immutable) {
+                return {
+                  passed: false,
+                  duration: Date.now() - start,
+                  errors: [`Immutable interface violated: ${iface.export}.${member} in ${iface.module}: ${check.reason}`],
+                  gate: 'interfacePreservation',
+                };
+              }
+            }
+          }
+        }
       }
     }
-    return max;
+
+    return { passed: true, duration: Date.now() - start };
+  }
+}
+
+/** Gate 4: Syntax Check — basic structural validation of proposed changes */
+class SyntaxCheckGate implements VerificationGate {
+  name = 'syntaxCheck';
+  level = 4;
+  timeoutMs = 3000;
+
+  async execute(diff: FilePatch[], _context: VerificationContext): Promise<GateResult> {
+    const start = Date.now();
+
+    for (const file of diff) {
+      if (!file.content) continue;
+      const opens = (file.content.match(/[{(\[]/g) ?? []).length;
+      const closes = (file.content.match(/[})\]]/g) ?? []).length;
+      if (Math.abs(opens - closes) > 2) {
+        return {
+          passed: false,
+          duration: Date.now() - start,
+          errors: [`Syntax check failed: unbalanced brackets in ${file.path} (opens=${opens}, closes=${closes})`],
+          gate: 'syntaxCheck',
+        };
+      }
+    }
+
+    return { passed: true, duration: Date.now() - start };
   }
 }
 
@@ -92,6 +161,17 @@ class CapabilityGate implements VerificationGate {
   }
 }
 
+function maxLines(diff: FilePatch[]): number {
+  let max = 0;
+  for (const file of diff) {
+    if (file.content) {
+      const lines = file.content.split('\n').length;
+      if (lines > max) max = lines;
+    }
+  }
+  return max;
+}
+
 // ---------------------------------------------------------------------------
 // VerificationGatePipeline
 // ---------------------------------------------------------------------------
@@ -99,17 +179,24 @@ class CapabilityGate implements VerificationGate {
 export interface VerificationGatePipelineOptions {
   constitutionEngine: ConstitutionEngine;
   extraGates?: VerificationGate[];
+  /** Gate levels to skip (deployment-time decision, not runtime bypass). */
+  skipLevels?: number[];
 }
 
 export class VerificationGatePipeline {
   private gates: VerificationGate[];
   private constitutionEngine: ConstitutionEngine;
+  private skipLevels: Set<number>;
 
   constructor(options: VerificationGatePipelineOptions) {
     this.constitutionEngine = options.constitutionEngine;
+    this.skipLevels = new Set(options.skipLevels ?? []);
 
     this.gates = [
       new ConstitutionGate(options.constitutionEngine),
+      new DiffLimitGate(),
+      new InterfacePreservationGate(),
+      new SyntaxCheckGate(),
       new CapabilityGate(),
       ...(options.extraGates ?? []),
     ];
@@ -125,7 +212,7 @@ export class VerificationGatePipeline {
     const results: GateResult[] = [];
 
     for (const gate of this.gates) {
-      if (context.skipGates?.includes(gate.level)) {
+      if (this.skipLevels.has(gate.level)) {
         continue;
       }
 

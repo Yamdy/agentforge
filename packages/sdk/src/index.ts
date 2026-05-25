@@ -865,6 +865,12 @@ export interface ImmutableInterface {
   reason: string;
 }
 
+/** Risk levels for self-modification. */
+export type RiskLevel = 'L0' | 'L1' | 'L2' | 'L3' | 'L4';
+
+/** Approval modes for self-modification risk levels. */
+export type ApprovalMode = 'auto' | 'auto_with_audit' | 'human_approval' | 'always_reject';
+
 /** Approval matrix for different risk levels. */
 export interface ApprovalMatrix {
   L0: { description: string; mode: 'auto' };
@@ -892,7 +898,7 @@ export interface Constitution {
 /** Result of a single verification gate. */
 export type GateResult =
   | { passed: true; duration: number; details?: string }
-  | { passed: false; duration: number; errors: string[]; gate: string };
+  | { passed: false; duration: number; errors: string[]; gate: string; protectionLevel?: 'absolute' | 'approval' };
 
 /** A single verification gate in the pipeline. */
 export interface VerificationGate {
@@ -907,7 +913,6 @@ export interface VerificationContext {
   constitution: Constitution;
   snapshotId: string;
   agentId: string;
-  skipGates?: number[];
 }
 
 /** Complete verification report for a self-modification attempt. */

@@ -30,8 +30,10 @@ import { MutabilityPolicyEngine } from './mutability-policy.js';
 import { SelfRepresentationBuilder } from './self-representation.js';
 import { applySelfModification, type SelfModificationEngineContext } from './self-modification-engine.js';
 import { ConstitutionEngine } from './constitution.js';
+import { DEFAULT_CONSTITUTION } from './default-constitution.js';
 import { VerificationGatePipeline } from './verification-gate.js';
 import { MutationBudgetEngine } from './mutation-budget.js';
+import { PermissionManager } from './pending-permission.js';
 import type { Constitution } from '@primo-ai/sdk';
 import {
   processInputProcessor,
@@ -173,24 +175,7 @@ export class Agent {
     this.registerBuiltinProcessors();
     this._pluginManager.setStageMutator((m) => this.orchestrator.applyMutation(m));
     // Self-modification engine context: constitution → verification gates → mutation budget
-    const defaultConstitution: Constitution = {
-      version: 1,
-      protectedPaths: [
-        { pattern: 'packages/sdk/src/**', reason: 'SDK types are the contract layer', level: 'absolute' },
-        { pattern: 'packages/core/src/constitution.ts', reason: 'Constitution must not modify itself', level: 'absolute' },
-      ],
-      diffLimits: { maxFilesPerMutation: 3, maxLinesPerFile: 100, maxMutationsPerHour: 10, maxMutationsPerDay: 50, cooldownMs: 5000 },
-      immutableInterfaces: [],
-      requiredCapabilities: [],
-      benchmarkFiles: [],
-      approvalMatrix: {
-        L0: { description: 'No-op extension point', mode: 'auto' },
-        L1: { description: 'Processor replacement', mode: 'auto_with_audit', auditTarget: 'eventBus', auditEvent: 'gap:optimization_complete', auditPayload: ['type', 'target'] },
-        L2: { description: 'Plugin registration', mode: 'human_approval' },
-        L3: { description: 'Source modification', mode: 'human_approval' },
-        L4: { description: 'Constitution-level', mode: 'always_reject' },
-      },
-    };
+    const defaultConstitution = DEFAULT_CONSTITUTION;
     const constitutionEngine = new ConstitutionEngine(defaultConstitution);
     const gatePipeline = new VerificationGatePipeline({ constitutionEngine });
     const budgetEngine = new MutationBudgetEngine({
@@ -200,7 +185,13 @@ export class Agent {
       maxFilesPerMutation: defaultConstitution.diffLimits.maxFilesPerMutation,
       cooldownMs: defaultConstitution.diffLimits.cooldownMs,
     });
-    this._engineContext = { constitutionEngine, gatePipeline, budgetEngine };
+    this._engineContext = {
+      constitutionEngine,
+      gatePipeline,
+      budgetEngine,
+      permissionManager: new PermissionManager(),
+      eventBus: this._pluginManager.eventBus,
+    };
     this.selfRef.agent = this;
   }
 

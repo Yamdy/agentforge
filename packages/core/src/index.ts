@@ -47,6 +47,7 @@ export { MutabilityPolicyEngine } from './mutability-policy.js';
 export { ConfigWatcher, type ConfigWatcherOptions } from './config-watcher.js';
 export { SelfRepresentationBuilder, type SelfRepresentationBuilderOptions } from './self-representation.js';
 export { ConstitutionEngine } from './constitution.js';
+export { DEFAULT_CONSTITUTION } from './default-constitution.js';
 export { VerificationGatePipeline, type VerificationGatePipelineOptions } from './verification-gate.js';
 export { DegenerationWatchdog, type WatchdogOptions } from './degeneration-watchdog.js';
 export { MutationBudgetEngine, type MutationBudgetOptions } from './mutation-budget.js';
