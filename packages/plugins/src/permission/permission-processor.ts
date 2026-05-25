@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import type { Processor, ProcessorContext, PipelineContext, HarnessAPI, PluginRegistration } from '@primo-ai/sdk';
+import type { Processor, ProcessorContext, PipelineContext, HarnessAPI, PluginRegistration, Tool } from '@primo-ai/sdk';
+import { resolveRequireApproval } from '@primo-ai/sdk';
 import type { PermissionManager } from '@primo-ai/core';
 
 // ---------------------------------------------------------------------------
@@ -41,6 +42,11 @@ export interface PermissionConfig {
    * When not provided, falls back to current suspend behavior.
    */
   permissionManager?: PermissionManager;
+  /**
+   * Optional function to look up a Tool by name.
+   * Used to evaluate the tool's `requireApproval` field when no explicit rule matches.
+   */
+  getTool?: (name: string) => Tool | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -208,9 +214,12 @@ export function createPermissionProcessor(config: PermissionConfig): Processor {
         }
       }
 
-      // No rule matched — apply mode defaults
+      // No rule matched — check tool's requireApproval field, then apply mode defaults
+      const tool = config.getTool?.(toolCall.name);
+      const needsApproval = tool ? resolveRequireApproval(tool, toolCall.args) : false;
+
       if (config.mode === 'plan-only') {
-        if (isDangerousTool(toolCall.name)) {
+        if (isDangerousTool(toolCall.name) || needsApproval) {
           emit({ decision: 'deny', toolName: toolCall.name, mode: config.mode });
           pCtx.control.abort(`Permission denied: tool '${toolCall.name}' is not allowed in plan-only mode (dangerous tool)`);
           return;
@@ -219,7 +228,40 @@ export function createPermissionProcessor(config: PermissionConfig): Processor {
         return;
       }
 
-      // interactive mode with no matching rule: allow by default
+      // interactive mode with no matching rule
+      if (needsApproval) {
+        if (config.permissionManager) {
+          const permissionId = `perm-${toolCall.name}-${Date.now()}-${++permissionCounter}`;
+          const permission = {
+            permissionId,
+            sessionId: ctx.session.sessionId,
+            toolName: toolCall.name,
+            args: toolCall.args,
+            reason: `Tool '${toolCall.name}' requires approval (tool declaration)`,
+            createdAt: new Date().toISOString(),
+          };
+
+          emit({ decision: 'ask', toolName: toolCall.name, mode: config.mode, permissionId });
+
+          const approved = await config.permissionManager.awaitDecision(permission);
+          if (approved) {
+            emit({ decision: 'allow', toolName: toolCall.name, mode: config.mode, permissionId });
+            return;
+          }
+          emit({ decision: 'deny', toolName: toolCall.name, mode: config.mode, permissionId });
+          pCtx.control.abort(`Permission denied: tool '${toolCall.name}' blocked by user`);
+          return;
+        }
+        // Without permissionManager, suspend awaiting human approval
+        emit({ decision: 'ask', toolName: toolCall.name, mode: config.mode });
+        pCtx.control.suspend(
+          `perm-${toolCall.name}-${Date.now()}`,
+          { context: ctx, nextStages: ['executeTools', 'evaluateIteration'], iteration: ctx.iteration.step },
+        );
+        return;
+      }
+
+      // No approval needed: allow by default
       emit({ decision: 'allow', toolName: toolCall.name, mode: config.mode });
     },
   };
@@ -233,6 +275,11 @@ export interface PermissionPluginOptions {
   mode: PermissionMode;
   rules: PermissionRule[];
   permissionManager?: PermissionManager;
+  /**
+   * Optional function to look up a Tool by name.
+   * Used to evaluate the tool's `requireApproval` field when no explicit rule matches.
+   */
+  getTool?: (name: string) => Tool | undefined;
 }
 
 /**
@@ -257,6 +304,7 @@ export function permissionPlugin(options: PermissionPluginOptions): (api: Harnes
       mode: options.mode,
       rules: options.rules,
       permissionManager: options.permissionManager,
+      getTool: options.getTool,
       onDecision: (event: PermissionDecisionEvent) => {
         api.emit('permission.decision', event);
       },
