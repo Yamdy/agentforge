@@ -52,10 +52,11 @@ export function createExecuteToolsProcessor(registry: ToolRegistry): Processor {
           result: tr.output,
           error: tr.error,
         };
-        const ext = msg as unknown as { mutated?: boolean; truncated?: boolean; validationError?: unknown };
+        const ext = msg as unknown as { mutated?: boolean; truncated?: boolean; validationError?: unknown; suggestedActions?: string[] };
         if (tr.mutated) ext.mutated = true;
         if (tr.truncated) ext.truncated = true;
         if (tr.validationError) ext.validationError = tr.validationError;
+        if (tr.suggestedActions) ext.suggestedActions = tr.suggestedActions;
         return msg;
       });
 

@@ -21,7 +21,11 @@ export const globTool: Tool<
     for await (const entry of glob(pattern, { cwd })) {
       files.push(entry);
     }
-    return { files, count: files.length };
+    const result: { files: string[]; count: number; suggestedActions?: string[] } = { files, count: files.length };
+    if (files.length > 0) {
+      result.suggestedActions = ['Use file_read to view file contents'];
+    }
+    return result;
   },
   renderCall(input) {
     return `glob ${input.pattern}`;

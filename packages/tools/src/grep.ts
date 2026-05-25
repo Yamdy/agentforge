@@ -55,7 +55,14 @@ export const grepTool: Tool<
     }
 
     await walk(cwd);
-    return { matches, count: matches.length };
+    const result: { matches: { file: string; line: number; text: string }[]; count: number; suggestedActions?: string[] } = { matches, count: matches.length };
+    if (matches.length > 0) {
+      result.suggestedActions = [
+        'Use file_read to view matched files',
+        'Refine pattern to reduce results',
+      ];
+    }
+    return result;
   },
   renderCall(input) {
     return `grep "${input.pattern}"`;

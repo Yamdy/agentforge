@@ -148,6 +148,13 @@ export class ToolRegistry {
     if (mutated) result.mutated = true;
     if (truncated) result.truncated = true;
     if (validationError) result.validationError = validationError;
+    // Extract suggestedActions from tool output if present
+    if (toolOutput && typeof toolOutput === 'object' && 'suggestedActions' in toolOutput) {
+      const sa = (toolOutput as Record<string, unknown>).suggestedActions;
+      if (Array.isArray(sa)) {
+        result.suggestedActions = sa as string[];
+      }
+    }
     return result;
   }
 
