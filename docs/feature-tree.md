@@ -49,20 +49,22 @@ sdk (零依赖，纯类型)
 
 | IR | 能力域 | 功能点 | 对应代码 |
 |----|--------|--------|---------|
-| IR-1.1 | Pipeline Runner | 10 阶段管道按序执行，支持 preLoop/loop/postLoop 三段编排 | `core/pipeline.ts` |
+| IR-1.1 | Pipeline Runner | 12 阶段管道按序执行，支持 preLoop/loop/postLoop 三段编排 | `core/pipeline.ts` |
 | IR-1.2 | Context Builder | 3-region 上下文装配（agent/iteration/session），Dynamic&lt;T&gt; 运行时解析 | `core/context-builder.ts` |
-| IR-1.3 | Processor System | 8 个内置处理器（processInput→…→processOutput），no-op 扩展点 + 实质性处理器工厂 | `core/processors/*.ts` |
+| IR-1.3 | Processor System | 11 个内置处理器（processInput→…→processOutput），no-op 扩展点 + 实质性处理器工厂，可选 planStep 规划阶段 | `core/processors/*.ts` |
 | IR-1.4 | Control Flow | abort/retry/suspend/error 四种控制流，ProcessorControl API v2 | `core/control-flow.ts` |
 | IR-1.5 | Loop Orchestrator | agentic loop 编排，共享 run/stream 逻辑，含 step cap/token cap 检查 | `core/loop-orchestrator.ts` |
 | IR-1.6 | Adapters | 高级 Processor API：modifiers（消息/系统提示/工具注入）、gates（权限/配额/成本门控） | `core/adapters/` |
 
-### Pipeline 10 阶段
+### Pipeline 12 阶段
 
 ```
 processInput → buildContext → [Agentic Loop:
-  prepareStep → gateLLM → invokeLLM → processStepOutput → gateTool → executeTools → evaluateIteration
+  prepareStep → gateLLM → invokeLLM → processStepOutput → gateTool → executeTools → compressContext → evaluateIteration
 ] → processOutput
 ```
+
+> `planStep` 为可选规划阶段，通过 StageMutation 或自定义 stageConfig 在首次迭代前插入。`compressContext` 为内置循环内压缩阶段。
 
 ### 3-Region Context 模型
 
@@ -239,7 +241,7 @@ session.created, user.message, assistant.message, tool.call, tool.result, iterat
 
 | IR | 能力域 | 功能点 | 对应代码 |
 |----|--------|--------|---------|
-| IR-7.1 | Plugin Manager | 工厂模式注册，获取 HarnessAPI 注入依赖 | `core/plugin-manager.ts` |
+| IR-7.1 | Plugin Manager | 工厂模式注册，获取 HarnessAPI 注入依赖，支持 registerLazy 延迟加载 | `core/plugin-manager.ts`, `core/processor-registry.ts` |
 | IR-7.2 | Harness API | 5 子接口组合：PipelineRegistry + ToolRegistryAPI + InterceptionAPI + StageMutationAPI + LifecycleAPI | `sdk/` HarnessAPI 接口 |
 | IR-7.3 | Memory Plugin | InMemory + SQLite 后端，触发模式配置，去重/纠正/跨会话修正 | `plugins/memory/` |
 | IR-7.4 | Compression Plugin | 滑动窗口 + 自定义策略 + LLM 摘要压缩，Token 预算控制 | `plugins/compression/` |

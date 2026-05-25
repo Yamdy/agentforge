@@ -140,13 +140,13 @@ interface PipelineContext {
 
 #### `PipelineStage`
 
-11 个生命周期阶段：
+12 个生命周期阶段：
 
 ```ts
 type PipelineStage =
-  | 'processInput' | 'buildContext' | 'prepareStep'
+  | 'processInput' | 'buildContext' | 'planStep' | 'prepareStep'
   | 'gateLLM' | 'invokeLLM' | 'processStepOutput'
-  | 'gateTool' | 'executeTools' | 'evaluateIteration' | 'processOutput'
+  | 'gateTool' | 'executeTools' | 'compressContext' | 'evaluateIteration' | 'processOutput'
   | 'beforeTool' | 'execute' | 'afterTool';
 ```
 
@@ -154,9 +154,11 @@ Pipeline 流程：
 
 ```
 processInput → buildContext → [Agentic Loop:
-  prepareStep → gateLLM → invokeLLM → processStepOutput → gateTool → executeTools → evaluateIteration
+  prepareStep → gateLLM → invokeLLM → processStepOutput → gateTool → executeTools → compressContext → evaluateIteration
 ] → processOutput
 ```
+
+> **Note**: `planStep` 和 `compressContext` 是可选/内置阶段。`planStep` 需通过 `StageMutation` 或自定义 `stageConfig` 启用；`compressContext` 默认包含在循环阶段中。
 
 #### `Processor`
 
@@ -1214,12 +1216,29 @@ AgentForgeError (base)
 ```
 
 ```ts
+class AgentForgeError extends Error {
+  readonly code: string;
+  readonly recoverable: boolean;
+  readonly retryCount?: number;
+  readonly maxRetries?: number;
+  readonly retryHint?: string;    // 重试指引（可选）
+}
+
+class ToolExecutionError extends RecoverableError {
+  constructor(message: string, cause?: Error, retryHint?: string);
+}
+```
+
+```ts
 try {
   const result = await agent.run(input);
 } catch (e) {
   if (e instanceof AuthError) { /* API Key 无效 */ }
   if (e instanceof ModelNotFoundError) { /* 模型不存在 */ }
-  if (e instanceof ToolExecutionError) { /* 工具执行失败，可重试 */ }
+  if (e instanceof ToolExecutionError) {
+    /* 工具执行失败，可重试 */
+    console.log(e.retryHint); // "使用不同参数重试"
+  }
   if (e instanceof RecoverableError) { /* 可恢复错误 */ }
   if (e instanceof FatalError) { /* 不可恢复 */ }
 }
@@ -1858,7 +1877,7 @@ import {
 | `shellTool` | `{ command, cwd?, timeout? }` | `{ exitCode, stdout, stderr }` | 执行 Shell 命令 | 是 |
 | `calculatorTool` | `{ expression }` | `{ result, expression }` | 数学表达式求值 | 否 |
 | `datetimeTool` | `{ format?, timezone? }` | `{ iso, formatted, timezone, unix }` | 获取当前日期时间 | 否 |
-| `jsonTool` | `{ operation, data, path?, indent? }` | `{ result }` | JSON 解析/格式化/路径查询 | 否 |
+| `jsonTool` | `{ operation, data, path?, indent? }` | `{ result }` | JSON 解析/序列化/路径查询。stringify 可将非 JSON 输入（key=value、纯文本）转为 JSON | 否 |
 | `webSearchTool` | `{ query, maxResults? }` | `{ results, count }` | Web 搜索 | 否 |
 | `webFetchTool` | `{ url, format? }` | `{ content, url }` | Web 页面抓取 | 否 |
 | `memoryStoreTool` | `{ key, value, metadata? }` | `{ key, stored: true }` | 存储记忆 | 否 |

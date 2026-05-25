@@ -12,7 +12,7 @@ This package contains all shared types used across the AgentForge monorepo. It h
 
 | Type | Description |
 |------|-------------|
-| `PipelineStage` | Union of 10 main agent lifecycle stages |
+| `PipelineStage` | Union of 12 main agent lifecycle stages |
 | `ToolExecutionStage` | Sub-pipeline stages: `beforeTool`, `execute`, `afterTool` |
 | `StageName` | `PipelineStage \| ToolExecutionStage` plus arbitrary plugin-defined strings |
 | `Processor` | `{ stage, execute(context: ProcessorContext) => Promise<PipelineContext \| void> }` |

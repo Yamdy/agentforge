@@ -37,7 +37,7 @@
 
 Every pipeline stage is simultaneously an **extension point**, an **observability span**, and a **hook interception point** — one mechanism, three capabilities.
 
-- ⚙️ [**Pipeline Engine**](docs/feature-tree.md#sf-1-agent-pipeline-engine) — 10-stage processor pipeline with preLoop / loop / postLoop sections, 4 control flows (abort / retry / suspend / error), runtime mutability (frozen / configurable / hot-reload)
+- ⚙️ [**Pipeline Engine**](docs/feature-tree.md#sf-1-agent-pipeline-engine) — 12-stage processor pipeline with preLoop / loop / postLoop sections, 4 control flows (abort / retry / suspend / error), runtime mutability (frozen / configurable / hot-reload)
 - 🛡️ [**Self-Modification Safety**](docs/feature-tree.md#sf-12-self-modification-safety--自修改安全) — Constitution engine (L0-L4 risk levels), 4-gate verification pipeline, mutation budget, degeneration watchdog — Agent can safely modify itself with three-layer protection
 - 🧠 [**Cognitive Memory**](docs/feature-tree.md#sf-14-cognitive-memory--三层认知记忆) — Episodic (event stream) + Semantic (knowledge graph) + Working (current context) — three-layer memory mimicking human cognition
 - 🤖 [**Multi-Agent Orchestration**](docs/feature-tree.md#sf-4-multi-agent-orchestration) — Sequential, Parallel, and Router executors — declare complex workflows in a fluent pipeline
@@ -180,7 +180,7 @@ const agent = new Agent({
 
 ```
 processInput → buildContext → [Agentic Loop:
-  prepareStep → gateLLM → invokeLLM → processStepOutput → gateTool → executeTools → evaluateIteration
+  prepareStep → gateLLM → invokeLLM → processStepOutput → gateTool → executeTools → compressContext → evaluateIteration
 ] → processOutput
 ```
 

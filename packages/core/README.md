@@ -105,7 +105,7 @@ Registers a plugin or processor. Accepts a `PluginFactory` function or a `Proces
 | `JsonlCheckpointStore` | JSONL file-based checkpoint storage |
 | `serialize` / `deserialize` | PipelineContext serialization for checkpoints |
 | `registerProvider` | Register a model provider factory |
-| `AgentForgeError` | Base error class with domain hierarchy |
+| `AgentForgeError` | Base error class with domain hierarchy, `retryHint` for recovery guidance |
 | `modifiers` | High-level processor factories for context mutation |
 | `gates` | High-level processor factories for flow control |
 | `AbortControlFlow` | Control flow error for abort |

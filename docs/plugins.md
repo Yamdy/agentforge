@@ -76,7 +76,9 @@ api.registerProcessor('gateTool', {
 - `ctx.control.abort(reason)` / `ctx.control.suspend(id)` for clean flow control
 - Return `void` for in-place mutation, or return modified `PipelineContext`
 
-Available stages: `processInput`, `buildContext`, `prepareStep`, `gateLLM`, `invokeLLM`, `processStepOutput`, `gateTool`, `executeTools`, `evaluateIteration`, `processOutput`.
+Available stages: `processInput`, `buildContext`, `planStep`, `prepareStep`, `gateLLM`, `invokeLLM`, `processStepOutput`, `gateTool`, `executeTools`, `compressContext`, `evaluateIteration`, `processOutput`.
+
+> `planStep` is an optional planning stage — insert via `api.insertStage('preLoop', 'buildContext', 'planStep')` and register a processor. `compressContext` is a built-in loop stage for automatic context compression.
 
 ### Registering a Hook
 

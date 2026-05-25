@@ -37,7 +37,7 @@
 
 每个流水线阶段同时是**扩展点**、**可观测性跨度**和**钩子拦截点**——一种机制，三种能力。
 
-- ⚙️ [**流水线引擎**](docs/feature-tree.md#sf-1-agent-pipeline-engine) — 10 阶段处理器流水线，含 preLoop / loop / postLoop 区段，4 种控制流，运行时可变性（frozen / configurable / hot-reload）
+- ⚙️ [**流水线引擎**](docs/feature-tree.md#sf-1-agent-pipeline-engine) — 12 阶段处理器流水线，含 preLoop / loop / postLoop 区段，4 种控制流，运行时可变性（frozen / configurable / hot-reload）
 - 🛡️ [**安全自修改**](docs/feature-tree.md#sf-12-self-modification-safety--自修改安全) — 宪法引擎（L0-L4 风险分级）→ 四门验证 → 变异配额 → 退化看门狗，三层防线确保自修改不失控
 - 🧠 [**三层认知记忆**](docs/feature-tree.md#sf-14-cognitive-memory--三层认知记忆) — 情景记忆（事件流）+ 语义记忆（知识图谱）+ 工作记忆（当前上下文），模拟人类认知三层架构
 - 🤖 [**多智能体编排**](docs/feature-tree.md#sf-4-multi-agent-orchestration) — 顺序、并行与路由执行器，以流式流水线声明复杂工作流
@@ -180,7 +180,7 @@ const agent = new Agent({
 
 ```
 processInput → buildContext → [Agentic Loop:
-  prepareStep → gateLLM → invokeLLM → processStepOutput → gateTool → executeTools → evaluateIteration
+  prepareStep → gateLLM → invokeLLM → processStepOutput → gateTool → executeTools → compressContext → evaluateIteration
 ] → processOutput
 ```
 
