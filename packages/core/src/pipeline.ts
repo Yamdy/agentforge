@@ -1,6 +1,7 @@
 import type {
   AbortSignal,
   ErrorResult,
+  ModificationRecord,
   PipelineContext,
   PipelineStage,
   Processor,
@@ -28,7 +29,7 @@ import { ProcessorContextImpl } from './processor-context.js';
  * Uses a WeakSet to guard against circular references.
  * Skips null, non-objects, and already-frozen objects.
  */
-function deepFreeze<T>(obj: T, seen: WeakSet<object> = new WeakSet()): Readonly<T> {
+function deepFreezeObject<T>(obj: T, seen: WeakSet<object> = new WeakSet()): Readonly<T> {
   if (obj === null || typeof obj !== 'object') return obj as Readonly<T>;
   if (Object.isFrozen(obj)) return obj as Readonly<T>;
   if (seen.has(obj as object)) return obj as Readonly<T>;
@@ -38,11 +39,48 @@ function deepFreeze<T>(obj: T, seen: WeakSet<object> = new WeakSet()): Readonly<
 
   for (const value of Object.values(obj as Record<string, unknown>)) {
     if (value !== null && typeof value === 'object' && (Array.isArray(value) || Object.getPrototypeOf(value) === Object.prototype)) {
-      deepFreeze(value, seen);
+      deepFreezeObject(value, seen);
     }
   }
 
   return obj as Readonly<T>;
+}
+
+/**
+ * Attach freeze() and deepFreeze() methods to a PipelineContext object.
+ * freeze() does a shallow Object.freeze on the top-level object.
+ * deepFreeze() recursively freezes all nested plain objects/arrays.
+ */
+function withFreezeMethods<T extends PipelineContext>(ctx: T): T {
+  ctx.freeze = function () {
+    Object.freeze(ctx);
+    return ctx as Readonly<PipelineContext>;
+  };
+  ctx.deepFreeze = function () {
+    deepFreezeObject(ctx);
+    return ctx as Readonly<PipelineContext>;
+  };
+  return ctx;
+}
+
+/**
+ * Freeze a PipelineContext and attach freeze/deepFreeze methods.
+ * Used between stages for immutability.
+ */
+export function freezeContext(ctx: PipelineContext): PipelineContext {
+  const result = withFreezeMethods({ ...ctx });
+  Object.freeze(result);
+  return result;
+}
+
+/**
+ * Deep freeze a PipelineContext and attach freeze/deepFreeze methods.
+ * Used after processor execution for full immutability.
+ */
+export function deepFreezeContext(ctx: PipelineContext): PipelineContext {
+  const result = withFreezeMethods({ ...ctx });
+  deepFreezeObject(result);
+  return result;
 }
 
 export type RunResult = PipelineContext | AbortSignal | SuspensionSignal | ErrorResult;
@@ -365,7 +403,7 @@ export class PipelineRunner {
               : undefined;
 
             const content = assembleContentBlocks(chunks, toolCalls, reasoningParts);
-            ctx = deepFreeze({
+            ctx = deepFreezeContext({
               ...ctx,
               iteration: {
                 ...ctx.iteration,
@@ -431,6 +469,14 @@ export class PipelineRunner {
       try {
         const processorCtx = new ProcessorContextImpl(currentCtx);
         processorCtx.span = stageSpan;
+        // Set processor name for modification tracking and namespace validation
+        processorCtx._processorName = processor.stage;
+        // Wire up context:modified event emission
+        if (this.eventBus) {
+          processorCtx._onModification = (modifications: import('@primo-ai/sdk').ContextModificationRecord[]) => {
+            this.eventBus!.emit('context:modified', { modifications, sessionId: currentCtx.session.sessionId });
+          };
+        }
         const prevHandle = this._currentProcessorCtx?._streamHandle;
         if (prevHandle) processorCtx._streamHandle = prevHandle;
         this._currentProcessorCtx = processorCtx;
@@ -445,11 +491,11 @@ export class PipelineRunner {
           });
           this._lastStageProcessorResults.push({ stage, result });
           // Context was mutated in-place via pCtx.state
-          currentCtx = deepFreeze({ ...processorCtx.state });
+          currentCtx = deepFreezeContext({ ...processorCtx.state });
         } else {
           // Freeze result after processor execution for immutability between stages
           // result is PipelineContext | void here (ProcessorResult handled above)
-          currentCtx = deepFreeze(result ? { ...(result as PipelineContext) } : { ...processorCtx.state });
+          currentCtx = deepFreezeContext(result ? { ...(result as PipelineContext) } : { ...processorCtx.state });
         }
       } catch (error) {
         // Handle control flow exceptions from v2 API
@@ -520,7 +566,7 @@ export class PipelineRunner {
 
     const content = assembleContentBlocks(result.chunks, result.toolCalls, result.reasoningParts);
     if (this._currentProcessorCtx) this._currentProcessorCtx._streamHandle = undefined;
-    return deepFreeze({
+    return deepFreezeContext({
       ...ctx,
       iteration: {
         ...ctx.iteration,
