@@ -297,7 +297,7 @@ export interface Processor {
 export type BuiltinProcessorName =
   | 'processInput' | 'buildContext' | 'prepareStep' | 'gateLLM'
   | 'invokeLLM' | 'processStepOutput' | 'gateTool'
-  | 'executeTools' | 'evaluateIteration' | 'processOutput';
+  | 'executeTools' | 'compressContext' | 'evaluateIteration' | 'processOutput';
 
 /** Describes how to obtain a Processor — either a built-in name or an external module. */
 export type ProcessorDescriptor =

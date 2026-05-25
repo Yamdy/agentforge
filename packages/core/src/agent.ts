@@ -41,6 +41,7 @@ import {
   processStepOutputProcessor,
   gateToolExtensionPoint,
   createExecuteToolsProcessor,
+  createCompressContextProcessor,
   createEvaluateIterationProcessor,
   processOutputProcessor,
 } from './processors/index.js';
@@ -109,6 +110,7 @@ const defaultProcessorDescriptors: Record<string, ProcessorDescriptor> = {
   processStepOutput: { builtin: 'processStepOutput' },
   gateTool: { builtin: 'gateTool' },
   executeTools: { builtin: 'executeTools' },
+  compressContext: { builtin: 'compressContext' },
   evaluateIteration: { builtin: 'evaluateIteration' },
   processOutput: { builtin: 'processOutput' },
 };
@@ -746,6 +748,10 @@ export class Agent {
         this.runner.register(this.contextBuilder.createProcessor());
         continue;
       }
+      if (stage === 'compressContext') {
+        this.runner.register(createCompressContextProcessor(this.contextBuilder, this._pluginManager.eventBus));
+        continue;
+      }
       const processor = globalProcessorRegistry.resolve(descriptor, deps);
       processor.stage = stage as import('@primo-ai/sdk').StageName;
       this.runner.register(processor);
@@ -784,6 +790,9 @@ export class Agent {
     globalProcessorRegistry.register('gateTool', () => gateToolExtensionPoint);
     globalProcessorRegistry.register('executeTools', (deps?: ProcessorDeps) =>
       createExecuteToolsProcessor(deps?.registry as any),
+    );
+    globalProcessorRegistry.register('compressContext', (deps?: ProcessorDeps) =>
+      createCompressContextProcessor(undefined as any, deps?.eventBus as any),
     );
     globalProcessorRegistry.register('evaluateIteration', (deps?: ProcessorDeps) =>
       createEvaluateIterationProcessor({ eventBus: deps?.eventBus as any }),
