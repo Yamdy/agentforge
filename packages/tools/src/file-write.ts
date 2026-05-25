@@ -5,7 +5,7 @@ export const fileWriteTool: Tool<
   { path: string; content: string; encoding?: string; append?: boolean },
   { path: string; bytes: number }
 > = {
-  name: 'fileWrite',
+  name: 'file_write',
   description:
     'Write content to a file on the local filesystem. Creates parent directories if needed.',
   inputSchema: z.object({

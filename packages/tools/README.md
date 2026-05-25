@@ -21,9 +21,9 @@ const agent = new Agent({
 
 | Tool | Name | Description | Approval |
 |------|------|-------------|----------|
-| `fileReadTool` | `fileRead` | Read file contents. Supports line range via offset/limit. | No |
-| `fileWriteTool` | `fileWrite` | Write content to a file. Creates parent directories if needed. | **Yes** |
-| `fileEditTool` | `fileEdit` | Exact string replacement in a file. Set `replaceAll` for all occurrences. | **Yes** |
+| `fileReadTool` | `file_read` | Read file contents. Supports line range via offset/limit. | No |
+| `fileWriteTool` | `file_write` | Write content to a file. Creates parent directories if needed. | **Yes** |
+| `fileEditTool` | `file_edit` | Exact string replacement in a file. Set `replaceAll` for all occurrences. | **Yes** |
 | `globTool` | `glob` | Find files matching a glob pattern. Returns paths sorted by mtime. | No |
 | `grepTool` | `grep` | Search file contents by regex. Returns matches with file paths and line numbers. | No |
 
@@ -109,7 +109,7 @@ toolsByCategory.memory;  // [memoryStoreTool, memoryRetrieveTool, memoryListTool
 // Register all (or a subset) with a tool registry
 registerBuiltinTools(registry);                              // All tools
 registerBuiltinTools(registry, { exclude: ['shell'] });      // All except shell
-registerBuiltinTools(registry, { only: ['fileRead', 'grep'] }); // Only these two
+registerBuiltinTools(registry, { only: ['file_read', 'grep'] }); // Only these two
 ```
 
 ## Writing a Custom Tool

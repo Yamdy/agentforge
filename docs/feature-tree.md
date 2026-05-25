@@ -118,7 +118,7 @@ processInput → buildContext → [Agentic Loop:
 
 | 类别 | 工具 |
 |------|------|
-| file | fileRead, fileWrite, fileEdit, glob, grep |
+| file | file_read, file_write, file_edit, glob, grep |
 | web | http, webSearch, webFetch |
 | system | shell, datetime |
 | utility | calculator, json, echo |

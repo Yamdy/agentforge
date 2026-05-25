@@ -1,7 +1,7 @@
 /**
  * AgentForge 内置工具演示 — 用真实 LLM 测试全部 11 个内置工具
  *
- * 工具列表: echo, http, fileRead, fileWrite, fileEdit, glob, grep,
+ * 工具列表: echo, http, file_read, file_write, file_edit, glob, grep,
  *           shell, calculator, datetime, json
  *
  * 运行: npx tsx --env-file=.env builtin-tools-demo.ts
@@ -12,9 +12,9 @@ import { compressionPlugin, permissionPlugin } from '@primo-ai/plugins';
 import {
   echoTool,
   httpTool,
-  fileReadTool,
-  fileWriteTool,
-  fileEditTool,
+  file_readTool,
+  file_writeTool,
+  file_editTool,
   globTool,
   grepTool,
   shellTool,
@@ -73,7 +73,7 @@ writeFileSync(join(tmpDir, 'sample.ts'), `function greet(name: string): string {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const allTools = [
-  echoTool, httpTool, fileReadTool, fileWriteTool, fileEditTool,
+  echoTool, httpTool, file_readTool, file_writeTool, file_editTool,
   globTool, grepTool, shellTool, calculatorTool, datetimeTool, jsonTool,
 ];
 
@@ -157,29 +157,29 @@ async function main() {
       else fail('json', '空回复');
     } catch (e) { fail('json', '失败', e); }
 
-    // ── T5  fileWrite ───────────────────────────────────────────────────────
-    separator('T5  fileWrite — 写入文件');
+    // ── T5  file_write ───────────────────────────────────────────────────────
+    separator('T5  file_write — 写入文件');
     try {
-      const r = await query('fileWrite', `请用 fileWrite 工具在 ${tmpDir} 目录下写入一个名为 test-output.txt 的文件，内容为 "AgentForge 工具测试写入成功！"`);
-      if (r.length > 0) ok('fileWrite', `${r.length} 字符`);
-      else fail('fileWrite', '空回复');
-    } catch (e) { fail('fileWrite', '失败', e); }
+      const r = await query('file_write', `请用 file_write 工具在 ${tmpDir} 目录下写入一个名为 test-output.txt 的文件，内容为 "AgentForge 工具测试写入成功！"`);
+      if (r.length > 0) ok('file_write', `${r.length} 字符`);
+      else fail('file_write', '空回复');
+    } catch (e) { fail('file_write', '失败', e); }
 
-    // ── T6  fileRead ────────────────────────────────────────────────────────
-    separator('T6  fileRead — 读取文件');
+    // ── T6  file_read ────────────────────────────────────────────────────────
+    separator('T6  file_read — 读取文件');
     try {
-      const r = await query('fileRead', `请用 fileRead 工具读取 ${tmpDir}/hello.txt 的内容`);
-      if (r.length > 0) ok('fileRead', `${r.length} 字符`);
-      else fail('fileRead', '空回复');
-    } catch (e) { fail('fileRead', '失败', e); }
+      const r = await query('file_read', `请用 file_read 工具读取 ${tmpDir}/hello.txt 的内容`);
+      if (r.length > 0) ok('file_read', `${r.length} 字符`);
+      else fail('file_read', '空回复');
+    } catch (e) { fail('file_read', '失败', e); }
 
-    // ── T7  fileEdit ────────────────────────────────────────────────────────
-    separator('T7  fileEdit — 编辑文件');
+    // ── T7  file_edit ────────────────────────────────────────────────────────
+    separator('T7  file_edit — 编辑文件');
     try {
-      const r = await query('fileEdit', `请用 fileEdit 工具将 ${tmpDir}/hello.txt 中的 "Hello AgentForge" 替换为 "Hello AgentForge v2"`);
-      if (r.length > 0) ok('fileEdit', `${r.length} 字符`);
-      else fail('fileEdit', '空回复');
-    } catch (e) { fail('fileEdit', '失败', e); }
+      const r = await query('file_edit', `请用 file_edit 工具将 ${tmpDir}/hello.txt 中的 "Hello AgentForge" 替换为 "Hello AgentForge v2"`);
+      if (r.length > 0) ok('file_edit', `${r.length} 字符`);
+      else fail('file_edit', '空回复');
+    } catch (e) { fail('file_edit', '失败', e); }
 
     // ── T8  glob ────────────────────────────────────────────────────────────
     separator('T8  glob — 文件查找');

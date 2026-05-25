@@ -5,7 +5,7 @@ export const fileEditTool: Tool<
   { path: string; oldString: string; newString: string; replaceAll?: boolean },
   { path: string; replacements: number }
 > = {
-  name: 'fileEdit',
+  name: 'file_edit',
   description:
     'Perform exact string replacement in a file. Set replaceAll to replace all occurrences.',
   inputSchema: z.object({

@@ -889,7 +889,7 @@ interface ApprovalMatrix {
 
 **内存权威规则（缝隙 2 修补）：** Constitution 引擎在 Agent 启动时从 `.agentforge/constitution.jsonc` 加载一次，之后**内存中的版本是权威版本**，不从磁盘重新读取。Verification Gate 使用内存中的 Constitution 实例，而非磁盘上的文件。
 
-理由：Agent 可以通过 `fileWrite` 工具直接修改磁盘上的 `constitution.jsonc` 文件。如果 Gate 读磁盘文件，Agent 可以删除受保护路径列表让任何修改通过。内存权威杜绝了这个时序漏洞。
+理由：Agent 可以通过 `file_write` 工具直接修改磁盘上的 `constitution.jsonc` 文件。如果 Gate 读磁盘文件，Agent 可以删除受保护路径列表让任何修改通过。内存权威杜绝了这个时序漏洞。
 
 **执行点：** Verification Gate 的第一层就是宪法检查——diff 触及 `absolute` 保护路径 → 直接拒绝；触及 `approval` 路径 → 需人工审批。`requiredCapabilities` 确保 Agent 不会删除自己的核心能力。
 

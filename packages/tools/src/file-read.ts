@@ -5,7 +5,7 @@ export const fileReadTool: Tool<
   { path: string; encoding?: string; offset?: number; limit?: number },
   { content: string; lines: number; path: string }
 > = {
-  name: 'fileRead',
+  name: 'file_read',
   description:
     'Read file contents from the local filesystem. Supports line range via offset/limit.',
   inputSchema: z.object({
