@@ -153,6 +153,7 @@ export class Agent {
     this.registry.setHookManager(this._pluginManager.hookManager);
     this.registry.setEventBus(this._pluginManager.eventBus);
     this.runner.setHookManager(this._pluginManager.hookManager);
+    this.runner.setEventBus(this._pluginManager.eventBus);
     const store = deps?.checkpointStore ?? (deps?.checkpointDir ? new JsonlCheckpointStore<ReturnType<typeof serialize>>(deps.checkpointDir) : undefined);
     const stageConfig = deps?.stageConfig ?? deps?.harnessConfig?.pipeline as PipelineStageConfig | undefined;
     this.orchestrator = new LoopOrchestrator(this.runner, this._pluginManager.hookManager, store, this._pluginManager.eventBus, stageConfig);

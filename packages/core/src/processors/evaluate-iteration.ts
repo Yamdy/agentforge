@@ -1,4 +1,4 @@
-import type { Processor, ProcessorContext, LoopDirective, TokenUsage, Message, ToolCall } from '@primo-ai/sdk';
+import type { Processor, ProcessorContext, ProcessorResult, LoopDirective, TokenUsage, Message, ToolCall } from '@primo-ai/sdk';
 import type { EventBus } from '../event-bus.js';
 
 export interface EvaluateIterationDeps {
@@ -34,7 +34,7 @@ export function createEvaluateIterationProcessor(deps?: EvaluateIterationDeps): 
 
   return {
     stage: 'evaluateIteration',
-    execute: async (pCtx: ProcessorContext) => {
+    execute: async (pCtx: ProcessorContext): Promise<ProcessorResult> => {
       const ctx = pCtx.state;
       const prevTotal = ctx.session.totalTokenUsage ?? { input: 0, output: 0 };
       const iterUsage = ctx.iteration.tokenUsage;
@@ -74,7 +74,10 @@ export function createEvaluateIterationProcessor(deps?: EvaluateIterationDeps): 
 
         ctx.iteration.loopDirective = { action: 'stop' } as LoopDirective;
         ctx.session.totalTokenUsage = totalTokenUsage;
-        return;
+        return {
+          status: 'warning',
+          summary: `Token budget exceeded: ${totalTokens} > ${maxTotalTokens}. Stopping loop.`,
+        };
       }
 
       if (requiredTools && requiredTools.length > 0) {
@@ -142,7 +145,11 @@ export function createEvaluateIterationProcessor(deps?: EvaluateIterationDeps): 
               ctx.iteration.loopDirective = { action: 'continue' } as LoopDirective;
               ctx.iteration.pendingToolCalls = syntheticCalls;
               ctx.session.totalTokenUsage = totalTokenUsage;
-              return;
+              return {
+                status: 'warning',
+                summary: exhaustedMsg,
+                nextActions: ['executeTools'],
+              };
             }
 
             ctx.agent.promptFragments = [
@@ -152,7 +159,10 @@ export function createEvaluateIterationProcessor(deps?: EvaluateIterationDeps): 
             ctx.iteration.loopDirective = { action: 'stop' } as LoopDirective;
             ctx.iteration.response = exhaustedMsg;
             ctx.session.totalTokenUsage = totalTokenUsage;
-            return;
+            return {
+              status: 'error',
+              summary: exhaustedMsg,
+            };
           }
 
           eventBus?.emit('required_tools:incomplete', {
@@ -168,7 +178,11 @@ export function createEvaluateIterationProcessor(deps?: EvaluateIterationDeps): 
           ];
           ctx.iteration.loopDirective = { action: 'continue' } as LoopDirective;
           ctx.session.totalTokenUsage = totalTokenUsage;
-          return;
+          return {
+            status: 'warning',
+            summary: `Required tools not yet called: ${uncalled.join(', ')}`,
+            nextActions: ['invokeLLM'],
+          };
         }
       }
 
@@ -179,6 +193,14 @@ export function createEvaluateIterationProcessor(deps?: EvaluateIterationDeps): 
 
       ctx.iteration.loopDirective = directive;
       ctx.session.totalTokenUsage = totalTokenUsage;
+
+      return {
+        status: 'success',
+        summary: hasToolResults
+          ? 'Tool results present, continuing loop'
+          : 'No tool results, stopping loop',
+        nextActions: hasToolResults ? ['prepareStep'] : undefined,
+      };
     },
   };
 }

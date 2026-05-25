@@ -4,6 +4,7 @@ import type {
   PipelineContext,
   PipelineStage,
   Processor,
+  ProcessorResult,
   Span,
   StageName,
   StreamEvent,
@@ -15,6 +16,7 @@ import type {
 import { SpanType } from '@primo-ai/sdk';
 import { NoOpTracer } from '@primo-ai/observability';
 import type { HookManager } from './hook-manager.js';
+import type { EventBus } from './event-bus.js';
 import { extractTokenUsage } from './llm-invoker.js';
 import { assembleContentBlocks, textContentFromBlocks, toolCallsFromBlocks, reasoningFromBlocks } from './content-blocks.js';
 import { AbortControlFlow, SuspendControlFlow, ErrorControlFlow } from './control-flow.js';
@@ -45,9 +47,22 @@ function deepFreeze<T>(obj: T, seen: WeakSet<object> = new WeakSet()): Readonly<
 
 export type RunResult = PipelineContext | AbortSignal | SuspensionSignal | ErrorResult;
 
+/** Type guard: checks if a value is a ProcessorResult (has status + summary). */
+function isProcessorResult(value: unknown): value is ProcessorResult {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    'status' in value &&
+    'summary' in value &&
+    typeof (value as ProcessorResult).status === 'string' &&
+    typeof (value as ProcessorResult).summary === 'string'
+  );
+}
+
 export interface PipelineRunnerOptions {
   tracer?: Tracer;
   hookManager?: HookManager;
+  eventBus?: EventBus;
 }
 
 interface FullStreamCallbacks {
@@ -126,11 +141,15 @@ export class PipelineRunner {
   private processors: Processor[] = [];
   private tracer: Tracer;
   private hookManager?: HookManager;
+  private eventBus?: EventBus;
   private _currentProcessorCtx?: ProcessorContextImpl;
+  /** @internal Collected ProcessorResults from the last executeStage call, for stream emission. */
+  _lastStageProcessorResults: Array<{ stage: StageName; result: ProcessorResult }> = [];
 
   constructor(options?: PipelineRunnerOptions) {
     this.tracer = options?.tracer ?? new NoOpTracer();
     this.hookManager = options?.hookManager;
+    this.eventBus = options?.eventBus;
   }
 
   register(processor: Processor): void {
@@ -148,6 +167,10 @@ export class PipelineRunner {
 
   setHookManager(hookManager: HookManager): void {
     this.hookManager = hookManager;
+  }
+
+  setEventBus(eventBus: EventBus): void {
+    this.eventBus = eventBus;
   }
 
   async run(context: PipelineContext, stages: StageName[], options?: { signal?: globalThis.AbortSignal }): Promise<RunResult> {
@@ -237,6 +260,11 @@ export class PipelineRunner {
             return;
           }
           ctx = stageResult;
+
+          // Emit processor_result stream events for any ProcessorResults from this stage
+          for (const pr of this._lastStageProcessorResults) {
+            yield { type: 'processor_result' as const, stage: pr.stage, result: pr.result };
+          }
 
           const fullStream = this._currentProcessorCtx?._streamHandle?.fullStream;
           if (fullStream) {
@@ -397,6 +425,7 @@ export class PipelineRunner {
     }
 
     let currentCtx = ctx;
+    this._lastStageProcessorResults = [];
     for (const processor of stageProcessors) {
       // Create mutable context for processor (don't freeze before processor execution)
       try {
@@ -406,8 +435,22 @@ export class PipelineRunner {
         if (prevHandle) processorCtx._streamHandle = prevHandle;
         this._currentProcessorCtx = processorCtx;
         const result = await processor.execute(processorCtx);
-        // Freeze result after processor execution for immutability between stages
-        currentCtx = deepFreeze(result ? { ...result } : { ...processorCtx.state });
+
+        // If processor returned a ProcessorResult, emit observation event and use state
+        if (isProcessorResult(result)) {
+          this.eventBus?.emit('processor:result', {
+            stage,
+            processorResult: result,
+            sessionId: currentCtx.session.sessionId,
+          });
+          this._lastStageProcessorResults.push({ stage, result });
+          // Context was mutated in-place via pCtx.state
+          currentCtx = deepFreeze({ ...processorCtx.state });
+        } else {
+          // Freeze result after processor execution for immutability between stages
+          // result is PipelineContext | void here (ProcessorResult handled above)
+          currentCtx = deepFreeze(result ? { ...(result as PipelineContext) } : { ...processorCtx.state });
+        }
       } catch (error) {
         // Handle control flow exceptions from v2 API
         if (error instanceof AbortControlFlow) {

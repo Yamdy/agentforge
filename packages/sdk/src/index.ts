@@ -269,11 +269,29 @@ export interface ErrorResult {
 }
 
 /**
+ * Structured result returned by Processor.execute().
+ * Provides observation fields so orchestrators and debuggers can understand
+ * what each processor did without deep context knowledge.
+ *
+ * - status: outcome of the processor execution
+ * - summary: human-readable description of what happened
+ * - nextActions: suggested next steps for the LLM or orchestrator
+ * - artifacts: named references (file paths, IDs, etc.) produced by this step
+ */
+export interface ProcessorResult {
+  status: 'success' | 'warning' | 'error';
+  summary: string;
+  nextActions?: string[];
+  artifacts?: Record<string, string>;
+}
+
+/**
  * Processor -- Business logic unit in the pipeline.
  *
- * Implement execute(ctx: ProcessorContext): Promise<PipelineContext | void>
+ * Implement execute(ctx: ProcessorContext): Promise<ProcessorResult | PipelineContext | void>
  * - Access state via ctx.state, control flow via ctx.control.abort()/suspend()
- * - Return modified context or void (in-place mutation is ok)
+ * - Return ProcessorResult for structured observation, PipelineContext for context mutation,
+ *   or void for in-place mutation (backward compatible)
  *
  * Boundary rules:
  * - Need to modify ctx -> Use Processor
@@ -282,7 +300,7 @@ export interface ErrorResult {
  */
 export interface Processor {
   stage: StageName;
-  execute(context: ProcessorContext): Promise<PipelineContext | void>;
+  execute(context: ProcessorContext): Promise<ProcessorResult | PipelineContext | void>;
   /** When true, this processor is an extension point placeholder that just returns ctx unchanged. */
   isNoOp?: boolean;
   /** Execution priority within the stage (descending, default 100). Higher runs first. */
@@ -470,7 +488,9 @@ export type StreamEvent =
   | { type: 'content_block_end'; index: number; block: ContentBlock }
   | { type: 'step_complete'; step: number; tokenUsage: TokenUsage; content: ContentBlock[] }
   | { type: 'tool_execution_start'; toolCallId: string; name: string; args: unknown }
-  | { type: 'tool_execution_end'; toolCallId: string; name: string; result: unknown; error?: string };
+  | { type: 'tool_execution_end'; toolCallId: string; name: string; result: unknown; error?: string }
+  // Processor observation event (F-5)
+  | { type: 'processor_result'; stage: StageName; result: ProcessorResult };
 
 /** @deprecated Use StreamEvent — the union now includes all event types */
 export type ServerStreamEvent = StreamEvent;

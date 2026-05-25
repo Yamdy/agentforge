@@ -1,4 +1,4 @@
-import type { Processor, ProcessorContext, Message, PipelineContext } from '@primo-ai/sdk';
+import type { Processor, ProcessorContext, ProcessorResult, Message, PipelineContext } from '@primo-ai/sdk';
 
 /** Tool declaration type matching AgentRegion.toolDeclarations. */
 type ToolDeclaration = { name: string; description: string };
@@ -21,9 +21,13 @@ type ProviderOptionsModifierFn = (opts: Record<string, Record<string, unknown>>,
 export function message(fn: MessageModifierFn): Processor {
   return {
     stage: 'invokeLLM',
-    async execute(ctx: ProcessorContext) {
+    async execute(ctx: ProcessorContext): Promise<ProcessorResult> {
       const history = ctx.state.session.messageHistory ?? [];
       ctx.state.session.messageHistory = fn(history, ctx.state);
+      return {
+        status: 'success',
+        summary: 'Modified message history',
+      };
     },
   };
 }
@@ -36,13 +40,17 @@ export function message(fn: MessageModifierFn): Processor {
 export function systemPrompt(fn: SystemPromptModifierFn): Processor {
   return {
     stage: 'buildContext',
-    async execute(ctx: ProcessorContext) {
+    async execute(ctx: ProcessorContext): Promise<ProcessorResult> {
       if (ctx.state.agent.config.systemPrompt) {
         ctx.state.agent.config.systemPrompt = fn(
           ctx.state.agent.config.systemPrompt as string,
           ctx.state,
         );
       }
+      return {
+        status: 'success',
+        summary: 'Modified system prompt',
+      };
     },
   };
 }
@@ -55,11 +63,15 @@ export function systemPrompt(fn: SystemPromptModifierFn): Processor {
 export function tools(fn: ToolsModifierFn): Processor {
   return {
     stage: 'prepareStep',
-    async execute(ctx: ProcessorContext) {
+    async execute(ctx: ProcessorContext): Promise<ProcessorResult> {
       ctx.state.agent.toolDeclarations = fn(
         ctx.state.agent.toolDeclarations ?? [],
         ctx.state,
       );
+      return {
+        status: 'success',
+        summary: 'Modified tool declarations',
+      };
     },
   };
 }
@@ -72,11 +84,15 @@ export function tools(fn: ToolsModifierFn): Processor {
 export function providerOptions(fn: ProviderOptionsModifierFn): Processor {
   return {
     stage: 'invokeLLM',
-    async execute(ctx: ProcessorContext) {
+    async execute(ctx: ProcessorContext): Promise<ProcessorResult> {
       ctx.state.agent.providerOptions = fn(
         ctx.state.agent.providerOptions ?? {},
         ctx.state,
       );
+      return {
+        status: 'success',
+        summary: 'Modified provider options',
+      };
     },
   };
 }

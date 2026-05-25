@@ -1,4 +1,4 @@
-import type { Processor, ProcessorContext, PipelineContext, TokenUsage } from '@primo-ai/sdk';
+import type { Processor, ProcessorContext, ProcessorResult, PipelineContext, TokenUsage } from '@primo-ai/sdk';
 import { randomUUID } from 'node:crypto';
 
 /**
@@ -40,7 +40,7 @@ export interface CostGateConfig {
 export function permission(config: PermissionGateConfig): Processor {
   return {
     stage: 'gateTool',
-    async execute(ctx: ProcessorContext) {
+    async execute(ctx: ProcessorContext): Promise<ProcessorResult> {
       const toolCalls = ctx.state.iteration.pendingToolCalls ?? [];
       for (const tc of toolCalls) {
         const decision = config.check(tc.name, tc.args, ctx.state);
@@ -53,6 +53,10 @@ export function permission(config: PermissionGateConfig): Processor {
           ctx.control.suspend(suspensionId);
         }
       }
+      return {
+        status: 'success',
+        summary: `Permission check passed for ${toolCalls.length} tool call(s)`,
+      };
     },
   };
 }
@@ -64,12 +68,16 @@ export function permission(config: PermissionGateConfig): Processor {
 export function quota(config: QuotaGateConfig): Processor {
   return {
     stage: 'gateLLM',
-    async execute(ctx: ProcessorContext) {
+    async execute(ctx: ProcessorContext): Promise<ProcessorResult> {
       const usage = ctx.state.session.totalTokenUsage;
       if (!config.check(usage, ctx.state)) {
         const reason = config.onExceeded?.(usage, ctx.state) ?? 'Token quota exceeded';
         ctx.control.abort(reason);
       }
+      return {
+        status: 'success',
+        summary: 'Token quota check passed',
+      };
     },
   };
 }
@@ -81,7 +89,7 @@ export function quota(config: QuotaGateConfig): Processor {
 export function cost(config: CostGateConfig): Processor {
   return {
     stage: 'gateLLM',
-    async execute(ctx: ProcessorContext) {
+    async execute(ctx: ProcessorContext): Promise<ProcessorResult | void> {
       const usage = ctx.state.session.totalTokenUsage;
       if (!usage) return;
 
@@ -93,6 +101,11 @@ export function cost(config: CostGateConfig): Processor {
           ?? `Cost limit exceeded: $${currentCost.toFixed(4)} > $${config.maxCost.toFixed(4)}`;
         ctx.control.abort(reason);
       }
+
+      return {
+        status: 'success',
+        summary: `Cost check passed: $${currentCost.toFixed(4)} <= $${config.maxCost.toFixed(4)}`,
+      };
     },
   };
 }

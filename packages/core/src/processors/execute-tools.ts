@@ -1,11 +1,11 @@
-import type { Processor, ProcessorContext, Message, ToolResult } from '@primo-ai/sdk';
+import type { Processor, ProcessorContext, ProcessorResult, Message, ToolResult } from '@primo-ai/sdk';
 import { SpanAttributeKeys, SpanType } from '@primo-ai/sdk';
 import type { ToolRegistry } from '../tool-registry.js';
 
 export function createExecuteToolsProcessor(registry: ToolRegistry): Processor {
   return {
     stage: 'executeTools',
-    execute: async (pCtx: ProcessorContext) => {
+    execute: async (pCtx: ProcessorContext): Promise<ProcessorResult | void> => {
       const ctx = pCtx.state;
       const toolCalls = ctx.iteration.pendingToolCalls;
       if (!toolCalls || toolCalls.length === 0) {
@@ -13,6 +13,8 @@ export function createExecuteToolsProcessor(registry: ToolRegistry): Processor {
       }
 
       const toolResults: ToolResult[] = [];
+      const executedTools: string[] = [];
+      const failedTools: string[] = [];
       for (const tc of toolCalls) {
         const toolSpan = pCtx.span?.startChild(SpanType.TOOL_EXECUTE);
         toolSpan?.setAttribute(SpanAttributeKeys.TOOL_NAME, tc.name);
@@ -27,6 +29,11 @@ export function createExecuteToolsProcessor(registry: ToolRegistry): Processor {
             : JSON.stringify(result.output ?? '').length;
           toolSpan?.setAttribute(SpanAttributeKeys.TOOL_RESULT_SIZE, outputSize);
           toolResults.push({ ...result, toolCallId: tc.id });
+          if (result.error) {
+            failedTools.push(tc.name);
+          } else {
+            executedTools.push(tc.name);
+          }
         } finally {
           toolSpan?.end();
         }
@@ -58,6 +65,21 @@ export function createExecuteToolsProcessor(registry: ToolRegistry): Processor {
       ctx.iteration.pendingToolCalls = undefined;
       ctx.iteration.toolResults = toolResults;
       ctx.session.messageHistory = history;
+
+      const hasErrors = failedTools.length > 0;
+      const status: ProcessorResult['status'] = hasErrors
+        ? (executedTools.length > 0 ? 'warning' : 'error')
+        : 'success';
+      const summary = hasErrors
+        ? `Executed ${executedTools.length} tool(s), ${failedTools.length} failed: ${failedTools.join(', ')}`
+        : `Executed ${executedTools.length} tool(s): ${executedTools.join(', ')}`;
+
+      return {
+        status,
+        summary,
+        nextActions: hasErrors ? ['evaluateIteration'] : ['evaluateIteration'],
+        artifacts: Object.fromEntries(executedTools.map((name, i) => [`tool_${i}_${name}`, toolResults[i]?.toolCallId ?? ''])),
+      };
     },
   };
 }

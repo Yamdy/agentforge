@@ -1,4 +1,4 @@
-import type { Processor, ProcessorContext, PipelineContext } from '@primo-ai/sdk';
+import type { Processor, ProcessorContext, ProcessorResult, PipelineContext } from '@primo-ai/sdk';
 import type { ContextBuilder } from '../context-builder.js';
 import type { EventBus } from '../event-bus.js';
 
@@ -21,7 +21,7 @@ export function createCompressContextProcessor(
 ): Processor {
   return {
     stage: 'compressContext',
-    execute: async (pCtx: ProcessorContext) => {
+    execute: async (pCtx: ProcessorContext): Promise<ProcessorResult | void> => {
       const ctx = pCtx.state;
       const history = ctx.session.messageHistory;
       if (!history || history.length === 0) return;
@@ -56,7 +56,11 @@ export function createCompressContextProcessor(
         });
         // Update pCtx.state
         Object.assign(pCtx.state, result);
-        return;
+        return {
+          status: 'warning',
+          summary: `Forced context compression: ${beforeCount} → ${finalCount} messages`,
+          nextActions: ['evaluateIteration'],
+        };
       }
 
       if (didCompress) {
@@ -70,6 +74,14 @@ export function createCompressContextProcessor(
 
       // Update pCtx.state with compressed context
       Object.assign(pCtx.state, result);
+
+      if (didCompress) {
+        return {
+          status: 'success',
+          summary: `Context compressed: ${beforeCount} → ${afterCount} messages`,
+          nextActions: ['evaluateIteration'],
+        };
+      }
     },
   };
 }
