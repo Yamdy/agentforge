@@ -171,6 +171,10 @@ export class Agent {
     }
     const mutabilityPolicy = deps?.mutabilityPolicy ?? deps?.harnessConfig?.mutability as MutabilityPolicy | undefined;
     this.mutabilityPolicyEngine = new MutabilityPolicyEngine(mutabilityPolicy);
+    // Autonomous mode auto-upgrades mutability from frozen to configurable
+    if (deps?.harnessConfig?.autonomous?.enabled) {
+      this.mutabilityPolicyEngine.updatePolicy({ processors: 'configurable', plugins: 'configurable' });
+    }
     this.registerTools();
     this.registerBuiltinProcessors();
     this._pluginManager.setStageMutator((m) => this.orchestrator.applyMutation(m));
@@ -217,6 +221,10 @@ export class Agent {
 
   get pluginManager(): PluginManager {
     return this._pluginManager;
+  }
+
+  get engineContext(): SelfModificationEngineContext {
+    return this._engineContext;
   }
 
   get eventBus(): import('./event-bus.js').EventBus {
@@ -520,23 +528,79 @@ export class Agent {
   }
 
   /** Apply collected pending modifications from self-reference tools. */
-  async applyPendingModifications(): Promise<{ applied: SelfModificationRequest[]; rejected: SelfModificationRequest[] }> {
+  async applyPendingModifications(): Promise<{ applied: SelfModificationRequest[]; rejected: Array<SelfModificationRequest & { reason: string }> }> {
     const applied: SelfModificationRequest[] = [];
-    const rejected: SelfModificationRequest[] = [];
+    const rejected: Array<SelfModificationRequest & { reason: string }> = [];
 
     for (const mod of this._pendingModifications) {
-      const result = await applySelfModification(mod, this._engineContext);
-      if (result.accepted) {
+      // Mutability policy gate — reject if domain is frozen
+      if (mod.type === 'replaceProcessor' && !this.mutabilityPolicyEngine.isMutable('processors')) {
+        rejected.push({ ...mod, reason: `processors domain is frozen` });
+        this.eventBus.emit('gap:optimization_rejected', { type: mod.type, target: mod.target, reason: 'processors domain is frozen' });
+        continue;
+      }
+      if (mod.type === 'registerPlugin' && !this.mutabilityPolicyEngine.isMutable('plugins')) {
+        rejected.push({ ...mod, reason: `plugins domain is frozen` });
+        this.eventBus.emit('gap:optimization_rejected', { type: mod.type, target: mod.target, reason: 'plugins domain is frozen' });
+        continue;
+      }
+
+      // Verification gate check (constitution + diff limits + interface + syntax)
+      if (mod.proposedDiff && mod.proposedDiff.length > 0) {
+        const report = await this._engineContext.gatePipeline.execute(
+          mod.proposedDiff,
+          { constitution: this._engineContext.constitutionEngine.constitution, snapshotId: `snap-${Date.now()}`, agentId: 'self-mod' },
+        );
+        if (report.overall === 'failed') {
+          rejected.push({ ...mod, reason: `Verification gate failed` });
+          this.eventBus.emit('gap:optimization_rejected', { type: mod.type, target: mod.target, reason: 'Verification gate failed' });
+          continue;
+        }
+      }
+
+      // Execute the modification against the live pipeline
+      const applyError = await this.executeModification(mod);
+      if (applyError) {
+        rejected.push({ ...mod, reason: applyError });
+        this.eventBus.emit('gap:optimization_rejected', { type: mod.type, target: mod.target, reason: applyError });
+      } else {
         applied.push(mod);
         this.eventBus.emit('gap:optimization_complete', { type: mod.type, target: mod.target });
-      } else {
-        rejected.push(mod);
-        this.eventBus.emit('gap:optimization_rejected', { type: mod.type, target: mod.target, reason: result.reason });
       }
     }
 
     this._pendingModifications = [];
     return { applied, rejected };
+  }
+
+  /** Execute an accepted modification against the live pipeline. Returns error string on failure. */
+  private async executeModification(mod: SelfModificationRequest): Promise<string | undefined> {
+    if (mod.type === 'replaceProcessor') {
+      const descriptor = mod.payload as ProcessorDescriptor;
+      const stage = mod.target as import('@primo-ai/sdk').StageName;
+      const original = this.runner.getProcessor(stage);
+
+      try {
+        const deps = this.buildProcessorDeps();
+        const processor = globalProcessorRegistry.resolve(descriptor, deps);
+        processor.stage = stage;
+        this.runner.replace(stage, processor);
+        return undefined;
+      } catch (err) {
+        // Rollback: restore original processor
+        if (original) {
+          this.runner.replace(stage, original);
+        }
+        return `processor resolve failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+
+    if (mod.type === 'registerPlugin') {
+      // Plugin registration is a no-op for now — future implementation
+      return undefined;
+    }
+
+    return `unknown modification type: ${mod.type}`;
   }
 
   /** Auto-invalidate cached model when the error indicates auth failure or model-not-found. */
@@ -672,17 +736,23 @@ export class Agent {
         type: 'object',
         properties: {
           stage: { type: 'string', description: 'Pipeline stage to replace' },
-          processorCode: { type: 'string', description: 'Code for the new processor' },
+          descriptor: {
+            oneOf: [
+              { type: 'object', properties: { builtin: { type: 'string' } }, required: ['builtin'] },
+              { type: 'object', properties: { module: { type: 'string' }, export: { type: 'string' }, config: { type: 'object' } }, required: ['module'] },
+            ],
+            description: 'ProcessorDescriptor: { builtin: name } or { module: path }',
+          },
         },
-        required: ['stage', 'processorCode'],
+        required: ['stage', 'descriptor'],
       },
       requireApproval: true,
-      execute: async (input: { stage: string; processorCode: string }) => {
+      execute: async (input: { stage: string; descriptor: ProcessorDescriptor }) => {
         const agent = self.agent;
         const mod: SelfModificationRequest = {
           type: 'replaceProcessor',
           target: input.stage,
-          payload: input.processorCode,
+          payload: input.descriptor,
           riskLevel: 'L1',
         };
         (agent as any)._pendingModifications.push(mod);

@@ -29,6 +29,10 @@ export class MutationBudgetEngine {
     return this._state;
   }
 
+  get options(): MutationBudgetOptions {
+    return this.config;
+  }
+
   tryConsume(diff: { files: number; linesPerFile: number }): ConsumeResult {
     const now = Date.now();
 

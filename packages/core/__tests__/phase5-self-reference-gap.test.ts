@@ -5,10 +5,12 @@ import type {
   HarnessConfig,
   PipelineStageConfig,
   ProcessorDescriptor,
+  StageName,
 } from '@primo-ai/sdk';
 import { Agent, type AgentDependencies } from '../src/agent.js';
 import { StateMachine, type AgentState } from '../src/state-machine.js';
 import { ConfigLoader } from '../src/config.js';
+import { globalProcessorRegistry } from '../src/processor-registry.js';
 
 // ---------------------------------------------------------------------------
 // Phase 5: Self-Reference Tools + Gap Optimization + Server Config-Driven
@@ -304,10 +306,23 @@ describe('Phase 5: Gap optimization events', () => {
   });
 
   it('applyPendingModifications applies collected modifications', async () => {
-    const agent = new Agent({ model: 'test-model' });
+    const agent = new Agent({ model: 'test-model' }, {
+      harnessConfig: {
+        autonomous: { enabled: true, gapTriggers: [{ type: 'afterRun' }] },
+      },
+    } as any);
+
+    // Register a custom processor so replaceProcessor can resolve it
+    if (!globalProcessorRegistry.has('processOutput')) {
+      globalProcessorRegistry.register('processOutput', () => ({
+        stage: 'processOutput' as StageName,
+        name: 'default-process-output',
+        execute: async (ctx) => ctx.state,
+      }));
+    }
 
     (agent as any)._pendingModifications = [
-      { type: 'replaceProcessor', target: 'processOutput', riskLevel: 'L1', proposedDiff: [{ path: 'packages/core/src/processors/process-output.ts', type: 'modified', content: '// updated' }] },
+      { type: 'replaceProcessor', target: 'processOutput', riskLevel: 'L1', payload: { builtin: 'processOutput' } },
     ];
 
     const result = await (agent as any).applyPendingModifications();

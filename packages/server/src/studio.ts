@@ -9,6 +9,7 @@ import { traceRoutes } from './routes/studio/traces.js';
 import { sessionRoutes, studioSessionRoutes } from './routes/studio/sessions.js';
 import { metricsRoutes } from './routes/studio/metrics.js';
 import { studioAgentRoutes } from './routes/studio/agents.js';
+import { selfModificationRoutes } from './routes/studio/self-modification.js';
 import type { AgentRegistry } from './registry.js';
 
 export interface StudioRouteOptions {
@@ -26,6 +27,7 @@ export function studioRoutes(opts: StudioRouteOptions): Hono {
     : sessionRoutes(opts.sessionStorage));
   app.route('/metrics', metricsRoutes(opts.observability));
   app.route('/agents', studioAgentRoutes(opts.registry));
+  app.route('/self-modification', selfModificationRoutes({ registry: opts.registry }));
 
   return app;
 }

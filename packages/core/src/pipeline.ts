@@ -203,6 +203,12 @@ export class PipelineRunner {
     this.processors.push(processor);
   }
 
+  getProcessor(stage: StageName): Processor | undefined {
+    const matching = this.processors.filter((p) => p.stage === stage);
+    matching.sort((a, b) => (b.priority ?? 100) - (a.priority ?? 100));
+    return matching[0];
+  }
+
   setHookManager(hookManager: HookManager): void {
     this.hookManager = hookManager;
   }

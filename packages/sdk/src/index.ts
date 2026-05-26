@@ -726,7 +726,7 @@ export interface ToolSetConfig {
 // ---------------------------------------------------------------------------
 
 /** Runtime mutability level for a config domain. */
-export type MutabilityLevel = 'frozen' | 'configOnly' | 'dynamic';
+export type MutabilityLevel = 'frozen' | 'configOnly' | 'configurable' | 'dynamic';
 
 /** Domains whose mutability can be independently controlled. */
 export type MutabilityDomain = 'pipeline' | 'processors' | 'plugins' | 'tools';
@@ -795,7 +795,7 @@ export interface ModuleInfo {
   name: string;
   path: string;
   responsibility: string;
-  mutability: 'frozen' | 'configOnly' | 'dynamic';
+  mutability: MutabilityLevel;
   exports: string[];
   dependsOn: string[];
 }
