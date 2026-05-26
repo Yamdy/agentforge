@@ -3,8 +3,12 @@ import { ref, computed, nextTick, watch } from 'vue';
 import { useQuery } from '@tanstack/vue-query';
 import { fetchStudioAgents } from '../api/chat';
 import { useChat } from '../composables/useChat';
+import { useConstitution, useBudget, useWatchdog } from '../composables/useSelfModification';
 import ChatMessage from '../components/ChatMessage.vue';
 import ChatInput from '../components/ChatInput.vue';
+import PipelineStageView from '../components/PipelineStageView.vue';
+import ToolCallBlock from '../components/ToolCallBlock.vue';
+import EventLog from '../components/EventLog.vue';
 import type { StudioAgentDetail } from '../types';
 
 const agentsQuery = useQuery({
@@ -18,6 +22,46 @@ const selectedAgentId = ref<string | null>(null);
 const activeSessionId = ref<string | null>(null);
 
 const { messages, isStreaming, error, send, abort } = useChat(activeSessionId);
+
+const { constitution } = useConstitution(selectedAgentId);
+const { budget } = useBudget(selectedAgentId);
+const { watchdog } = useWatchdog(selectedAgentId);
+
+const rightTab = ref<'info' | 'observability'>('info');
+
+const pipelineStages = computed(() => {
+  if (!isStreaming.value) return [];
+  return [
+    { name: 'processInput', status: 'completed' as const },
+    { name: 'buildContext', status: 'completed' as const },
+    { name: 'prepareStep', status: 'completed' as const },
+    { name: 'invokeLLM', status: 'running' as const },
+    { name: 'processStepOutput', status: 'pending' as const },
+    { name: 'executeTools', status: 'pending' as const },
+    { name: 'evaluateIteration', status: 'pending' as const },
+    { name: 'processOutput', status: 'pending' as const },
+  ];
+});
+
+const toolCalls = computed(() => {
+  return messages.value
+    .filter(m => m.role === 'assistant' && m.content.includes('[Tool:'))
+    .map(m => ({
+      name: (m.content.match(/\[Tool: ([^\]]+)\]/) ?? ['', 'unknown'])[1],
+      status: m.content.includes('[Result:') ? 'completed' as const : 'running' as const,
+      result: m.content.includes('[Result:')
+        ? (m.content.match(/\[Result: ([^\]]+)\]/) ?? ['', ''])[1]
+        : undefined,
+    }));
+});
+
+const sessionEvents = computed(() => {
+  return messages.value.map(m => ({
+    type: m.role === 'user' ? 'user:message' : 'agent:response',
+    timestamp: m.timestamp,
+    payload: m.content.slice(0, 80),
+  }));
+});
 
 const messagesContainer = ref<HTMLElement | null>(null);
 
@@ -87,39 +131,102 @@ const selectedAgent = computed(() =>
       </div>
     </div>
 
-    <!-- Right: Session Info -->
+    <!-- Right: Info + Observability -->
     <aside v-if="selectedAgent" class="info-panel">
-      <h3 class="panel-title">Agent Info</h3>
-      <div class="info-section">
-        <div class="info-label">Name</div>
-        <div class="info-value">{{ selectedAgent.name }}</div>
+      <div class="tab-bar">
+        <button :class="['tab-btn', { active: rightTab === 'info' }]" @click="rightTab = 'info'">Info</button>
+        <button :class="['tab-btn', { active: rightTab === 'observability' }]" @click="rightTab = 'observability'">Observe</button>
       </div>
-      <div class="info-section">
-        <div class="info-label">Model</div>
-        <div class="info-value">{{ selectedAgent.model }}</div>
-      </div>
-      <div class="info-section">
-        <div class="info-label">State</div>
-        <div class="info-value">{{ selectedAgent.state }}</div>
-      </div>
-      <div class="info-section">
-        <div class="info-label">Tools</div>
-        <div class="info-value">{{ selectedAgent.toolCount }}</div>
-      </div>
-      <div v-if="selectedAgent.description" class="info-section">
-        <div class="info-label">Description</div>
-        <div class="info-value desc">{{ selectedAgent.description }}</div>
-      </div>
-      <hr class="divider" />
-      <h3 class="panel-title">Session</h3>
-      <div class="info-section">
-        <div class="info-label">Messages</div>
-        <div class="info-value">{{ messages.length }}</div>
-      </div>
-      <div class="info-section">
-        <div class="info-label">Status</div>
-        <div class="info-value">{{ isStreaming ? 'Running' : 'Idle' }}</div>
-      </div>
+
+      <template v-if="rightTab === 'info'">
+        <div class="info-section">
+          <div class="info-label">Name</div>
+          <div class="info-value">{{ selectedAgent.name }}</div>
+        </div>
+        <div class="info-section">
+          <div class="info-label">Model</div>
+          <div class="info-value">{{ selectedAgent.model }}</div>
+        </div>
+        <div class="info-section">
+          <div class="info-label">State</div>
+          <div class="info-value">{{ selectedAgent.state }}</div>
+        </div>
+        <div class="info-section">
+          <div class="info-label">Tools</div>
+          <div class="info-value">{{ selectedAgent.toolCount }}</div>
+        </div>
+        <div v-if="selectedAgent.description" class="info-section">
+          <div class="info-label">Description</div>
+          <div class="info-value desc">{{ selectedAgent.description }}</div>
+        </div>
+        <hr class="divider" />
+        <h3 class="panel-title">Session</h3>
+        <div class="info-section">
+          <div class="info-label">Messages</div>
+          <div class="info-value">{{ messages.length }}</div>
+        </div>
+        <div class="info-section">
+          <div class="info-label">Status</div>
+          <div class="info-value">{{ isStreaming ? 'Running' : 'Idle' }}</div>
+        </div>
+        <template v-if="budget">
+          <hr class="divider" />
+          <h3 class="panel-title">Mutation Budget</h3>
+          <div class="info-section">
+            <div class="info-label">Hourly</div>
+            <div class="info-value">{{ budget.state.hourlyCount }} / {{ budget.config.maxMutationsPerHour }}</div>
+          </div>
+          <div class="info-section">
+            <div class="info-label">Daily</div>
+            <div class="info-value">{{ budget.state.dailyCount }} / {{ budget.config.maxMutationsPerDay }}</div>
+          </div>
+        </template>
+      </template>
+
+      <template v-else>
+        <section class="observe-section">
+          <h4 class="section-label">Pipeline</h4>
+          <PipelineStageView :stages="pipelineStages" />
+        </section>
+
+        <section class="observe-section">
+          <h4 class="section-label">Tool Calls</h4>
+          <ToolCallBlock :tool-calls="toolCalls" />
+        </section>
+
+        <section class="observe-section">
+          <h4 class="section-label">Event Log</h4>
+          <EventLog :events="sessionEvents" :max-items="30" />
+        </section>
+
+        <template v-if="constitution">
+          <section class="observe-section">
+            <h4 class="section-label">Constitution</h4>
+            <div class="info-section">
+              <div class="info-label">Protected Paths</div>
+              <div class="info-value">{{ constitution.protectedPaths.length }}</div>
+            </div>
+            <div class="info-section">
+              <div class="info-label">Risk Levels</div>
+              <div class="info-value">{{ Object.keys(constitution.approvalMatrix).join(', ') }}</div>
+            </div>
+          </section>
+        </template>
+
+        <template v-if="watchdog">
+          <section class="observe-section">
+            <h4 class="section-label">Watchdog</h4>
+            <div class="info-section">
+              <div class="info-label">Consecutive Failures</div>
+              <div :class="['info-value', { warn: watchdog.state.consecutiveFailures > 0 }]">{{ watchdog.state.consecutiveFailures }}</div>
+            </div>
+            <div class="info-section">
+              <div class="info-label">Total Rollbacks</div>
+              <div class="info-value">{{ watchdog.state.totalRollbacks }}</div>
+            </div>
+          </section>
+        </template>
+      </template>
     </aside>
   </div>
 </template>
@@ -287,11 +394,53 @@ const selectedAgent = computed(() =>
 }
 
 .info-panel {
-  width: 200px;
+  width: 240px;
   border-left: 1px solid var(--border-color, #e0e0e0);
   background: var(--panel-bg, #fafafa);
   flex-shrink: 0;
   overflow-y: auto;
+}
+
+.tab-bar {
+  display: flex;
+  border-bottom: 1px solid var(--border-color, #e0e0e0);
+}
+
+.tab-btn {
+  flex: 1;
+  padding: 8px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary, #888);
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+}
+
+.tab-btn.active {
+  color: var(--text-primary, #111);
+  border-bottom-color: #3b82f6;
+}
+
+.observe-section {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-color, #eee);
+}
+
+.section-label {
+  margin: 0;
+  padding: 4px 16px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-secondary, #888);
+}
+
+.info-value.warn {
+  color: #f59e0b;
+  font-weight: 600;
 }
 
 .info-section {

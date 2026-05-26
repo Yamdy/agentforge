@@ -123,10 +123,20 @@ export interface VerificationReportView {
 }
 
 export interface MutationBudgetStatus {
-  allowed: boolean;
-  reason?: string;
-  hourCount: number;
-  dayCount: number;
+  state: {
+    hourlyCount: number;
+    dailyCount: number;
+    hourlyResetAt: number;
+    dailyResetAt: number;
+    lastMutationAt: number;
+  };
+  config: {
+    maxMutationsPerHour: number;
+    maxMutationsPerDay: number;
+    maxFilesPerMutation: number;
+    maxDiffLinesPerMutation: number;
+    cooldownMs: number;
+  };
 }
 
 export interface ModificationRecord {
