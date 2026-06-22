@@ -17,6 +17,7 @@ import type {
 
 import { runReplMode } from "./repl.js";
 import { runPrintMode } from "./print-mode.js";
+import { serializeEntry } from "@agentforge/shared";
 
 /** 构造一个合法的最小 AssistantMessage（stopReason "stop"，无 toolCall）。 */
 function makeAssistantMessage(text: string): AssistantMessage {
@@ -252,5 +253,46 @@ describe("cli REPL mode --resume", () => {
 				output,
 			}),
 		).rejects.toThrow(/nonexistent-id|resume|session/i);
+	});
+
+	it("--resume injects compaction summary and skips compacted messages (issue #3 e2e)", async () => {
+		const sessionId = "compacted-session";
+		const file = join(dir, `${sessionId}.jsonl`);
+
+		// 手写含 CompactionEntry 的 jsonl:
+		// 路径 [old-q, old-a, CompactionEntry(summary, firstKeptEntryId=kept-q), kept-q, kept-a]
+		// parentId 链:old-q(null) → old-a → compaction → kept-q → kept-a(leaf)。
+		const oldQId = "e-old-q";
+		const oldAId = "e-old-a";
+		const compId = "e-comp";
+		const keptQId = "e-kept-q";
+		const keptAId = "e-kept-a";
+		const ts = 1000;
+		const lines = [
+			serializeEntry({ type: "message", entryId: oldQId, parentId: null, timestamp: ts, message: { role: "user", content: "old question", timestamp: ts } } as any),
+			serializeEntry({ type: "message", entryId: oldAId, parentId: oldQId, timestamp: ts, message: { role: "assistant", content: "old answer", timestamp: ts } } as any),
+			serializeEntry({ type: "compaction", entryId: compId, parentId: oldAId, timestamp: ts, summary: "SUMMARY OF OLD", firstKeptEntryId: keptQId } as any),
+			serializeEntry({ type: "message", entryId: keptQId, parentId: compId, timestamp: ts, message: { role: "user", content: "kept question", timestamp: ts } } as any),
+			serializeEntry({ type: "message", entryId: keptAId, parentId: keptQId, timestamp: ts, message: { role: "assistant", content: "kept answer", timestamp: ts } } as any),
+		];
+		writeFileSync(file, lines.join("\n") + "\n", "utf8");
+
+		const input = makeMockInput(["follow-up", "exit"]);
+		const output = makeMockOutput();
+		const { sessionId: resumedId, resumedMessageCount } = await runReplMode(
+			["--resume", sessionId],
+			{
+				streamFn: makeMockStreamFn("resume-reply"),
+				getApiKey: () => "fake-key",
+				sessionDir: dir,
+				input,
+				output,
+			},
+		);
+
+		expect(resumedId).toBe(sessionId);
+		// rebuildMessages 注入 summary + 保留 kept-q/kept-a = 3 条;旧 old-q/old-a 被压缩跳过。
+		// 若 wiring 未调 rebuildMessages(MessageEntry-only),会是 4 条 → 测试红。
+		expect(resumedMessageCount).toBe(3);
 	});
 });

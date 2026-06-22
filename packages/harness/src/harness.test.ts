@@ -11,6 +11,7 @@ import type {
 import { AgentForgeHarness } from "./harness.js";
 import { createEventBus } from "./events.js";
 import { createMemorySession } from "./session.js";
+import * as contextBudget from "./context-budget.js";
 
 /** 构造一个合法的最小 AssistantMessage（stopReason "stop"，无 toolCall）。 */
 function makeAssistantMessage(text: string): AssistantMessage {
@@ -194,25 +195,59 @@ describe("AgentForgeHarness", () => {
 			expect(seen).toHaveLength(0);
 		});
 
-		it("budget failure does not break the main prompt flow", async () => {
+		it("does not emit context_budget when total is under the window and no component exceeds thresholds (issue #3)", async () => {
 			const events = createEventBus();
 			const session = createMemorySession();
-			// 用一个会令 audit 内部出错的 systemPrompt（非字符串）模拟 budget 失败。
-			// harness 应 try/catch 吞掉，prompt 仍正常完成。
+			const seen: any[] = [];
+			events.on("context_budget", (e: any) => seen.push(e));
+
+			// 构造 total 在 window/2 到 window 之间、无 suggestions:
+			// modelContextWindow 1000;reply 2400 chars → history ~600 tokens;
+			// history/window=0.6 < 0.8 阈值 → 无 history suggestion;
+			// tools=[] / skills=[] / systemPrompt 短 → 无其他 suggestion。
+			// total ~602 > window/2=500 → 旧条件(remaining<total)emit;新条件(total<window)不 emit。
 			const harness = new AgentForgeHarness({
 				session,
 				events,
 				tools: [],
 				provider: "anthropic",
 				model: "claude-sonnet-4-5",
-				systemPrompt: undefined as any,
-				streamFn: makeMockStreamFn("still works"),
+				systemPrompt: "x",
+				streamFn: makeMockStreamFn("a".repeat(2400)),
 				modelContextWindow: 1000,
 			});
 
 			await harness.prompt("hi");
 
-			// 主流程未抛错，assistant 消息照常落盘。
+			expect(seen).toHaveLength(0);
+		});
+
+		it("budget failure (audit throws) does not break the main prompt flow", async () => {
+			const events = createEventBus();
+			const session = createMemorySession();
+			const harness = new AgentForgeHarness({
+				session,
+				events,
+				tools: [],
+				provider: "anthropic",
+				model: "claude-sonnet-4-5",
+				systemPrompt: "test",
+				streamFn: makeMockStreamFn("still works"),
+				modelContextWindow: 1000,
+			});
+
+			// mock audit 抛错,验证 harness try/catch 吞掉,prompt 仍正常完成。
+			const spy = vi
+				.spyOn(contextBudget, "audit")
+				.mockImplementation(() => {
+					throw new Error("audit boom");
+				});
+
+			await harness.prompt("hi");
+
+			spy.mockRestore();
+
+			// 主流程未抛错,assistant 消息照常落盘。
 			const messages = harness.agent.state.messages;
 			const lastAssistant = [...messages]
 				.reverse()

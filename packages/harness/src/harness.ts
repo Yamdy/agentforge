@@ -177,8 +177,12 @@ export class AgentForgeHarness {
 				thresholds: this.budgetThresholds,
 			});
 			const remaining = headroom(report.total, this.modelContextWindow);
-			// 有建议或 headroom 不足时 emit 事件。
-			if (report.suggestions.length > 0 || remaining < report.total) {
+			// 有建议或总 token 超窗口时 emit 事件(issue #3:收紧条件,
+			// 去掉「total>window/2」中间地带,只在有可操作建议或真超窗口时报警)。
+			if (
+				report.suggestions.length > 0 ||
+				report.total > this.modelContextWindow
+			) {
 				this.events.emit({
 					type: "context_budget",
 					components: report.components,

@@ -88,6 +88,10 @@ export interface ContextBudgetEvent {
     skills: number;
     tools: number;
     history: number;
+    /**
+     * memory 组件预留字段（reserved for future slices, currently undefined）。
+     * Slice 1 instinct/memory 未建，audit 不填此字段；后续 slice 填充。
+     */
     memory?: number;
   };
   /** 总 token 数。 */
