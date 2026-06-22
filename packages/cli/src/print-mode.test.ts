@@ -4,6 +4,7 @@ import type {
 	AssistantMessage,
 	AssistantMessageEvent,
 } from "@earendil-works/pi-agent-core";
+import type { AgentForgeHarness } from "@agentforge/harness";
 
 import { parseArgs, runPrintMode } from "./print-mode.js";
 
@@ -143,5 +144,36 @@ describe("cli print mode — runPrintMode", () => {
 			getApiKey: () => "fake-key",
 		});
 		expect(output).toBe("injected reply");
+	});
+});
+
+describe("cli print mode — T8 Safety + 6 tools (no askHandler)", () => {
+	it("constructs harness with 6 tools + safety guard, no askHandler (ask degrades deny)", async () => {
+		let seenHarness: AgentForgeHarness | null = null;
+		await runPrintMode(["-p", "hi"], {
+			streamFn: makeMockStreamFn("reply"),
+			getApiKey: () => "fake-key",
+			onHarnessCreated: (h: AgentForgeHarness) => {
+				seenHarness = h;
+			},
+		});
+
+		expect(seenHarness).not.toBeNull();
+		const h = seenHarness as AgentForgeHarness;
+		// 6 tools
+		const toolNames = h.agent.state.tools.map((t: any) => t.name).sort();
+		expect(toolNames).toEqual(["bash", "edit", "glob", "grep", "read", "write"]);
+		// safety present: deny pattern blocked
+		const denyResult = await h.applySafety({
+			toolName: "bash",
+			args: { command: "rm -rf /tmp/x" },
+		});
+		expect(denyResult).toEqual({ block: true, reason: "safety:deny" });
+		// no askHandler in print mode → ask degrades to deny
+		const askResult = await h.applySafety({
+			toolName: "bash",
+			args: { command: "git push origin main" },
+		});
+		expect(askResult).toEqual({ block: true, reason: "safety:ask-no-handler" });
 	});
 });

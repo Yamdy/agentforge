@@ -20,4 +20,5 @@ export * from "./jsonl-storage.js";
 export * from "./compaction.js";
 export * from "./skills.js";
 export * from "./context-budget.js";
+export * from "./safety.js";
 export * from "./harness.js";

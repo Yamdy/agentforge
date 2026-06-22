@@ -23,22 +23,31 @@ import {
 	AgentForgeHarness,
 	createJsonlSession,
 	createEventBus,
+	createSafetyGuard,
 	rebuildMessages,
 } from "@agentforge/harness";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { SafetyContext } from "@agentforge/harness";
 
 import {
 	parseArgs,
 	DEFAULT_SYSTEM_PROMPT,
 	type ParsedArgs,
 } from "./print-mode.js";
-import { createReadTool, createBashTool } from "./tools/index.js";
+import {
+	createReadTool,
+	createBashTool,
+	createEditTool,
+	createWriteTool,
+	createGrepTool,
+	createGlobTool,
+} from "./tools/index.js";
 import { createSystemPromptWithSkills, defaultSkillDirs } from "./system-prompt.js";
 
 /** runReplMode 的可注入输入源（测试 mock 或 readline 适配）。 */
 export interface ReplInput {
-	/** 读下一行；返回 null 表示 EOF（无更多输入）。 */
-	read(): string | null;
+	/** 读下一行；返回 null 表示 EOF（无更多输入）。异步以支持 readline 逐行事件桥接。 */
+	read(): Promise<string | null>;
 }
 
 /** runReplMode 的可注入输出汇（测试 mock 或 process.stdout 适配）。 */
@@ -61,6 +70,14 @@ export interface ReplModeDeps {
 	sessionDir?: string;
 	/** 覆盖 skills 发现目录（测试用临时目录；默认 defaultSkillDirs()）。 */
 	skillDirs?: string[];
+	/**
+	 * 可选 SafetyGuard.ask 处理器（T8 §4.6）。safety.check 返回 "ask" 时调用，
+	 * 返回 true 放行、false 阻断。bin 入口传真实 readline handler；
+	 * 测试注入 mock；未提供时 ask 降级 deny（reason "safety:ask-no-handler"）。
+	 */
+	safetyAskHandler?: (ctx: SafetyContext) => boolean | Promise<boolean>;
+	/** 测试检视 hook：harness 构造后立即调用（断言 tools/safety 等）。 */
+	onHarnessCreated?: (h: AgentForgeHarness) => void;
 }
 
 /** runReplMode 的返回值。 */
@@ -113,7 +130,14 @@ export async function runReplMode(
 	}
 
 	const events = createEventBus();
-	const tools = [createReadTool(), createBashTool()];
+	const tools = [
+		createReadTool(),
+		createBashTool(),
+		createEditTool(),
+		createWriteTool(),
+		createGrepTool(),
+		createGlobTool(),
+	];
 
 	const systemPrompt = createSystemPromptWithSkills(
 		DEFAULT_SYSTEM_PROMPT,
@@ -132,7 +156,15 @@ export async function runReplMode(
 			| undefined,
 		streamFn: deps.streamFn,
 		initialMessages,
+		// T8 §4.6：接 SafetyGuard（默认规则）+ askHandler（bin 传 readline，测试 mock）。
+		// 未传 safetyAskHandler 时 ask 降级 deny（reason "safety:ask-no-handler"）。
+		safety: createSafetyGuard(),
+		safetyAskHandler: deps.safetyAskHandler,
+		cwd: process.cwd(),
 	});
+
+	// 测试检视 hook。
+	deps.onHarnessCreated?.(harness);
 
 	const output = deps.output ?? stdoutOutput();
 	const input = deps.input;
@@ -147,7 +179,7 @@ export async function runReplMode(
 
 	// REPL 循环。
 	while (true) {
-		const line = input.read();
+		const line = await input.read();
 		if (line === null) {
 			// EOF：退出。
 			break;
@@ -218,5 +250,32 @@ function stdoutOutput(): ReplOutput {
 		write(s: string) {
 			process.stdout.write(s);
 		},
+	};
+}
+
+/**
+ * 最小 readline.Interface 接口（仅 question 方法）。bin 传 node:readline createInterface
+ * 的返回值；测试可传 mock。question 以回调形式返回答案（node readline 语义）。
+ */
+export interface ReadlineLike {
+	question(query: string, callback: (answer: string) => void): void;
+}
+
+/**
+ * 构造 SafetyGuard.ask 处理器（T8 §4.6）。用 readline.Interface 的 question 提示用户
+ * "Allow ${toolName}? (y/n) "，答案 trim 低压小写 === "y" 放行，其余阻断。
+ *
+ * @param rl readline.Interface（bin 入口 createInterface 返回值）。
+ * @returns safetyAskHandler，传给 runReplMode 的 deps.safetyAskHandler。
+ */
+export function makeReadlineAskHandler(
+	rl: ReadlineLike,
+): (ctx: SafetyContext) => Promise<boolean> {
+	return (ctx: SafetyContext): Promise<boolean> => {
+		return new Promise<boolean>((resolve) => {
+			rl.question(`Allow ${ctx.toolName}? (y/n) `, (answer: string) => {
+				resolve(answer.trim().toLowerCase() === "y");
+			});
+		});
 	};
 }

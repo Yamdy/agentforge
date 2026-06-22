@@ -5,6 +5,7 @@ import type {
 	AgentMessage,
 	AgentTool,
 	AfterToolCallContext,
+	BeforeToolCallContext,
 	BeforeToolCallResult,
 } from "@earendil-works/pi-agent-core";
 import type { SessionStore } from "./session.js";
@@ -16,6 +17,11 @@ import type {
 	CompactionContext,
 } from "./compaction.js";
 import { audit, headroom, type BudgetThresholds } from "./context-budget.js";
+import type {
+	SafetyGuard,
+	SafetyContext,
+	SafetyVerdict,
+} from "./safety.js";
 
 /**
  * AgentForgeHarness：包装 pi 核心 Agent 的 harness 核心类。见 ARCHITECTURE.md §9。
@@ -64,6 +70,23 @@ export interface HarnessOptions {
 	modelContextWindow?: number;
 	/** 可选 audit 阈值覆盖（默认 DEFAULT_THRESHOLDS）。 */
 	budgetThresholds?: BudgetThresholds;
+	/**
+	 * 可选 SafetyGuard（Slice 2 §4.6）。注入后，beforeToolCall 把每次工具调用
+	 * 委托给 safety.check，据 verdict 决定 allow / block。未注入时 beforeToolCall
+	 * 返回 undefined（向后兼容）。
+	 */
+	safety?: SafetyGuard;
+	/**
+	 * 可选 ask 处理器：safety.check 返回 "ask" 时调用。返回 true 放行，
+	 * 返回 false 阻断（reason "safety:ask-denied"）。未提供时 ask 降级为 deny
+	 * （reason "safety:ask-no-handler"）。可异步。
+	 */
+	safetyAskHandler?: (ctx: SafetyContext) => boolean | Promise<boolean>;
+	/**
+	 * 可选工作目录，传入 SafetyContext.cwd 供 safety 判定 write/edit 路径归属。
+	 * 默认 process.cwd()。
+	 */
+	cwd?: string;
 }
 
 export class AgentForgeHarness {
@@ -75,6 +98,9 @@ export class AgentForgeHarness {
 	private readonly compactionTokenThreshold: number;
 	private readonly modelContextWindow?: number;
 	private readonly budgetThresholds?: BudgetThresholds;
+	private readonly safety?: SafetyGuard;
+	private readonly safetyAskHandler?: (ctx: SafetyContext) => boolean | Promise<boolean>;
+	private readonly cwd: string;
 
 	constructor(opts: HarnessOptions) {
 		this.session = opts.session;
@@ -84,6 +110,9 @@ export class AgentForgeHarness {
 		this.compactionTokenThreshold = opts.compactionTokenThreshold ?? 100000;
 		this.modelContextWindow = opts.modelContextWindow;
 		this.budgetThresholds = opts.budgetThresholds;
+		this.safety = opts.safety;
+		this.safetyAskHandler = opts.safetyAskHandler;
+		this.cwd = opts.cwd ?? process.cwd();
 
 		this._agent = new Agent({
 			initialState: {
@@ -94,7 +123,16 @@ export class AgentForgeHarness {
 			},
 			getApiKey: opts.getApiKey,
 			streamFn: opts.streamFn,
-			beforeToolCall: async (): Promise<BeforeToolCallResult | undefined> => undefined,
+			beforeToolCall: async (
+				ctx: BeforeToolCallContext,
+			): Promise<BeforeToolCallResult | undefined> => {
+				// 无 safety：向后兼容，返回 undefined。
+				if (!this.safety) return undefined;
+				return this.applySafety({
+					toolName: ctx.toolCall?.name ?? "",
+					args: ctx.args,
+				});
+			},
 			afterToolCall: async (
 				ctx: AfterToolCallContext,
 			): Promise<undefined> => {
@@ -118,6 +156,39 @@ export class AgentForgeHarness {
 	/** 暴露底层 pi Agent（供高级用法/测试检视 state）。 */
 	get agent(): Agent {
 		return this._agent;
+	}
+
+	/**
+	 * 对一次工具调用应用 Safety 裁决（Slice 2 §4.6）。
+	 *
+	 * 构造时 beforeToolCall 闭包转发到此方法；亦可被测试直接调用以验证 verdict
+	 * → block/undefined 映射。输入为工具名 + args（cwd 从 this.cwd 取）。
+	 *
+	 * - 无 this.safety → undefined（向后兼容）
+	 * - deny → { block: true, reason: "safety:deny" }
+	 * - allow → undefined
+	 * - ask + handler → handler(ctx) ? undefined : { block: true, reason: "safety:ask-denied" }
+	 * - ask 无 handler → { block: true, reason: "safety:ask-no-handler" }（降级 deny）
+	 */
+	async applySafety(input: {
+		toolName: string;
+		args: unknown;
+	}): Promise<BeforeToolCallResult | undefined> {
+		if (!this.safety) return undefined;
+		const safetyCtx: SafetyContext = {
+			toolName: input.toolName,
+			args: input.args,
+			cwd: this.cwd,
+		};
+		const verdict: SafetyVerdict = this.safety.check(safetyCtx);
+		if (verdict === "deny") return { block: true, reason: "safety:deny" };
+		if (verdict === "allow") return undefined;
+		// verdict === "ask"
+		if (this.safetyAskHandler) {
+			const ok = await this.safetyAskHandler(safetyCtx);
+			return ok ? undefined : { block: true, reason: "safety:ask-denied" };
+		}
+		return { block: true, reason: "safety:ask-no-handler" };
 	}
 
 	/**

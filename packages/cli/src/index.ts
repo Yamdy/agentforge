@@ -12,7 +12,7 @@
 import * as readline from "node:readline";
 
 import { runPrintMode } from "./print-mode.js";
-import { runReplMode, type ReplInput } from "./repl.js";
+import { runReplMode, makeReadlineAskHandler, type ReplInput } from "./repl.js";
 
 async function main(): Promise<void> {
 	const argv = process.argv.slice(2);
@@ -35,34 +35,52 @@ async function main(): Promise<void> {
 		return;
 	}
 
-	// REPL 模式：把 stdin 行缓冲成队列，runReplMode 同步消费（read 返回 null=EOF）。
-	// readline 是异步的，故 bin 入口先收集所有行到队列，EOF 后一次性驱动循环。
-	// （交互式逐行驱动留待 Slice 1+ 用 pi-tui；Slice 0 用批处理语义即可验证链路。）
-	const lineQueue: string[] = [];
-
+	// REPL 模式（T7：readline 逐行驱动，ADR-0001a）。
+	// 异步队列桥接 readline 事件与 runReplMode 的 async read()：
+	//  - pending: 已到达但尚未被 read 消费的行
+	//  - lineResolve: read 正在等待下一行（readline 事件来时直接 resolve 它）
+	// rl.on("line") push(line)；rl.on("close") push(null)（EOF 唤醒等待者）。
+	// 这样 runReplMode 可在 EOF 前就逐行 prompt，而非批处理后一次性驱动。
+	const pending: (string | null)[] = [];
+	let lineResolve: ((line: string | null) => void) | null = null;
+	const push = (line: string | null): void => {
+		if (lineResolve) {
+			const resolve = lineResolve;
+			lineResolve = null;
+			resolve(line);
+		} else {
+			pending.push(line);
+		}
+	};
 	const input: ReplInput = {
-		read(): string | null {
-			return lineQueue.length > 0 ? (lineQueue.shift() as string) : null;
+		read(): Promise<string | null> {
+			if (pending.length > 0) {
+				return Promise.resolve(pending.shift() as string | null);
+			}
+			return new Promise<string | null>((resolve) => {
+				lineResolve = resolve;
+			});
 		},
 	};
 
-	await new Promise<void>((resolve) => {
-		const rl = readline.createInterface({
-			input: process.stdin,
-			output: process.stdout,
-		});
-		rl.on("line", (line: string) => {
-			lineQueue.push(line);
-		});
-		rl.on("close", () => {
-			resolve();
-		});
+	const rl = readline.createInterface({
+		input: process.stdin,
+		output: process.stdout,
+	});
+	rl.on("line", (line: string) => {
+		push(line);
+	});
+	rl.on("close", () => {
+		push(null);
 	});
 
 	await runReplMode(argv, {
 		getApiKey,
 		input,
 		output: { write: (s) => process.stdout.write(s) },
+		// T8：REPL 模式有交互通道，传真实 readline ask handler。
+		// safety.check 返回 "ask" 时提示用户 y/n，y 放行否则阻断。
+		safetyAskHandler: makeReadlineAskHandler(rl),
 	});
 }
 

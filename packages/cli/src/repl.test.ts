@@ -18,6 +18,7 @@ import type {
 import { runReplMode } from "./repl.js";
 import { runPrintMode } from "./print-mode.js";
 import { serializeEntry } from "@agentforge/shared";
+import type { AgentForgeHarness } from "@agentforge/harness";
 
 /** 构造一个合法的最小 AssistantMessage（stopReason "stop"，无 toolCall）。 */
 function makeAssistantMessage(text: string): AssistantMessage {
@@ -65,11 +66,11 @@ function makeMockStreamFn(reply: string | ((turn: number) => string)) {
 	};
 }
 
-/** 一个可注入的输入源：按行弹出，模拟 readline。遇 "exit" 退出。 */
+/** 一个可注入的输入源：按行弹出，模拟 readline。遇 "exit" 退出。T7: read() 异步。 */
 function makeMockInput(lines: string[]) {
 	const queue = [...lines];
 	return {
-		read: (): string | null =>
+		read: async (): Promise<string | null> =>
 			queue.length === 0 ? null : (queue.shift() as string),
 		/** readline.Interface 兼容：question/close/emit/on 不需要——deps 直接用 read() */
 	};
@@ -168,6 +169,119 @@ describe("cli REPL mode — runReplMode", () => {
 		});
 		expect(sessionId).toBe("my-fixed-id");
 		expect(existsSync(join(dir, "my-fixed-id.jsonl"))).toBe(true);
+	});
+
+	it("drives harness.prompt per line with async read() (T7 line-by-line)", async () => {
+		// T7: read() is async. input returns "hello"/"world"/null → 2 prompts.
+		const queue = ["hello", "world"];
+		const input = {
+			read: async (): Promise<string | null> =>
+				queue.length === 0 ? null : (queue.shift() as string),
+		};
+		const output = makeMockOutput();
+		let promptCount = 0;
+		const streamFn = makeMockStreamFn("reply");
+		// wrap streamFn to count prompts by tracking harness via output writes:
+		// each prompt writes a "reply\n" line.
+		const result = await runReplMode([], {
+			streamFn,
+			getApiKey: () => "fake-key",
+			sessionDir: dir,
+			input,
+			output,
+		});
+		// Two non-empty lines → two prompts → two "reply\n" outputs.
+		const replyLines = output.lines().filter((l) => l === "reply\n");
+		expect(replyLines.length).toBe(2);
+		expect(result.sessionId).toBeTruthy();
+		// promptCount inferred from reply writes
+		void promptCount;
+	});
+
+	it("counts prompts via streamFn calls (T7: 2 non-empty lines → 2 prompts)", async () => {
+		const queue = ["hello", "world"];
+		const input = {
+			read: async (): Promise<string | null> =>
+				queue.length === 0 ? null : (queue.shift() as string),
+		};
+		const output = makeMockOutput();
+		let streamFnCalls = 0;
+		const streamFn = () => {
+			streamFnCalls += 1;
+			return makeMockStreamFn("reply")();
+		};
+		await runReplMode([], {
+			streamFn,
+			getApiKey: () => "fake-key",
+			sessionDir: dir,
+			input,
+			output,
+		});
+		expect(streamFnCalls).toBe(2);
+	});
+
+	it("EOF (read returns null) exits loop without prompting (T7)", async () => {
+		const input = { read: async (): Promise<string | null> => null };
+		const output = makeMockOutput();
+		let streamFnCalls = 0;
+		const streamFn = () => {
+			streamFnCalls += 1;
+			return makeMockStreamFn("reply")();
+		};
+		await runReplMode([], {
+			streamFn,
+			getApiKey: () => "fake-key",
+			sessionDir: dir,
+			input,
+			output,
+		});
+		expect(streamFnCalls).toBe(0);
+	});
+
+	it("'exit' command exits loop after prior prompts (T7)", async () => {
+		const queue = ["hello", "exit", "should-not-run"];
+		const input = {
+			read: async (): Promise<string | null> =>
+				queue.length === 0 ? null : (queue.shift() as string),
+		};
+		const output = makeMockOutput();
+		let streamFnCalls = 0;
+		const streamFn = () => {
+			streamFnCalls += 1;
+			return makeMockStreamFn("reply")();
+		};
+		await runReplMode([], {
+			streamFn,
+			getApiKey: () => "fake-key",
+			sessionDir: dir,
+			input,
+			output,
+		});
+		// "hello" prompts once; "exit" breaks; "should-not-run" never read.
+		expect(streamFnCalls).toBe(1);
+	});
+
+	it("blank line (trim empty) continues without prompting (T7)", async () => {
+		const queue = ["", "   ", "hello", ""];
+		const input = {
+			read: async (): Promise<string | null> =>
+				queue.length === 0 ? null : (queue.shift() as string),
+		};
+		const output = makeMockOutput();
+		let streamFnCalls = 0;
+		const streamFn = () => {
+			streamFnCalls += 1;
+			return makeMockStreamFn("reply")();
+		};
+		await runReplMode([], {
+			streamFn,
+			getApiKey: () => "fake-key",
+			sessionDir: dir,
+			input,
+			output,
+		});
+		// Only "hello" is non-blank → 1 prompt. Blank lines skipped via continue.
+		expect(streamFnCalls).toBe(1);
 	});
 
 	it("persists each turn to the JSONL session file synchronously", async () => {
@@ -296,3 +410,73 @@ describe("cli REPL mode --resume", () => {
 		expect(resumedMessageCount).toBe(3);
 	});
 });
+
+describe("cli REPL mode — T8 Safety + 6 tools + askHandler wiring", () => {
+	it("constructs harness with 6 tools + safety guard + askHandler injected", async () => {
+		const input = makeMockInput(["exit"]);
+		const output = makeMockOutput();
+		let seenHarness: AgentForgeHarness | null = null;
+
+		await runReplMode([], {
+			streamFn: makeMockStreamFn("reply"),
+			getApiKey: () => "fake-key",
+			sessionDir: dir,
+			input,
+			output,
+			safetyAskHandler: async () => true,
+			onHarnessCreated: (h: AgentForgeHarness) => {
+				seenHarness = h;
+			},
+		});
+
+		expect(seenHarness).not.toBeNull();
+		const h = seenHarness as AgentForgeHarness;
+		// 6 tools via public agent.state.tools: read, bash, edit, write, grep, glob
+		const toolNames = h.agent.state.tools.map((t: any) => t.name).sort();
+		expect(toolNames).toEqual(["bash", "edit", "glob", "grep", "read", "write"]);
+		// safety present: applySafety on a deny pattern ("rm -rf") returns block.
+		const denyResult = await h.applySafety({
+			toolName: "bash",
+			args: { command: "rm -rf /tmp/x" },
+		});
+		expect(denyResult).toEqual({ block: true, reason: "safety:deny" });
+		// askHandler wired: applySafety on an ask pattern ("git push") calls handler → allow.
+		const askResult = await h.applySafety({
+			toolName: "bash",
+			args: { command: "git push origin main" },
+		});
+		expect(askResult).toBeUndefined();
+	});
+
+	it("defaults safetyAskHandler to undefined when not injected (bin supplies real one)", async () => {
+		const input = makeMockInput(["exit"]);
+		const output = makeMockOutput();
+		let seenHarness: AgentForgeHarness | null = null;
+
+		await runReplMode([], {
+			streamFn: makeMockStreamFn("reply"),
+			getApiKey: () => "fake-key",
+			sessionDir: dir,
+			input,
+			output,
+			onHarnessCreated: (h: AgentForgeHarness) => {
+				seenHarness = h;
+			},
+		});
+
+		const h = seenHarness as AgentForgeHarness;
+		// safety present (deny pattern blocked)
+		const denyResult = await h.applySafety({
+			toolName: "bash",
+			args: { command: "rm -rf /tmp/x" },
+		});
+		expect(denyResult).toEqual({ block: true, reason: "safety:deny" });
+		// no askHandler → ask degrades to deny (reason "safety:ask-no-handler")
+		const askResult = await h.applySafety({
+			toolName: "bash",
+			args: { command: "git push origin main" },
+		});
+		expect(askResult).toEqual({ block: true, reason: "safety:ask-no-handler" });
+	});
+});
+

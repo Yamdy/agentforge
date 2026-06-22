@@ -14,8 +14,19 @@
 import { parseArgs as nodeParseArgs } from "node:util";
 
 import { AgentForgeHarness } from "@agentforge/harness";
-import { createEventBus, createMemorySession } from "@agentforge/harness";
-import { createReadTool, createBashTool } from "./tools/index.js";
+import {
+	createEventBus,
+	createMemorySession,
+	createSafetyGuard,
+} from "@agentforge/harness";
+import {
+	createReadTool,
+	createBashTool,
+	createEditTool,
+	createWriteTool,
+	createGrepTool,
+	createGlobTool,
+} from "./tools/index.js";
 import { createSystemPromptWithSkills, defaultSkillDirs } from "./system-prompt.js";
 
 /** print 模式解析后的 args。 */
@@ -93,6 +104,8 @@ export interface PrintModeDeps {
 	getApiKey?: (provider: string) => string | undefined | Promise<string | undefined>;
 	/** 覆盖 skills 发现目录（测试用临时目录；默认 defaultSkillDirs()）。 */
 	skillDirs?: string[];
+	/** 测试检视 hook：harness 构造后立即调用（断言 tools/safety 等）。 */
+	onHarnessCreated?: (h: AgentForgeHarness) => void;
 }
 
 /**
@@ -110,7 +123,14 @@ export async function runPrintMode(argv: string[], deps: PrintModeDeps = {}): Pr
 
 	const session = createMemorySession();
 	const events = createEventBus();
-	const tools = [createReadTool(), createBashTool()];
+	const tools = [
+		createReadTool(),
+		createBashTool(),
+		createEditTool(),
+		createWriteTool(),
+		createGrepTool(),
+		createGlobTool(),
+	];
 
 	const systemPrompt = createSystemPromptWithSkills(
 		DEFAULT_SYSTEM_PROMPT,
@@ -130,7 +150,13 @@ export async function runPrintMode(argv: string[], deps: PrintModeDeps = {}): Pr
 			| ((provider: string) => string | Promise<string | undefined>)
 			| undefined,
 		streamFn: deps.streamFn,
+		// T8 §4.6：print 模式接 SafetyGuard，但**不传** safetyAskHandler——
+		// 无人工交互通道，ask 降级 deny（reason "safety:ask-no-handler"），用户决策。
+		safety: createSafetyGuard(),
 	});
+
+	// 测试检视 hook。
+	deps.onHarnessCreated?.(harness);
 
 	await harness.prompt(args.prompt);
 
