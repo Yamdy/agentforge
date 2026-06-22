@@ -375,7 +375,11 @@ const readTool: AgentTool = {
 
 ## 11. 待定问题
 
-- REPL 终端 UI：用 `pi-tui`（成熟但重）还是自写轻量 ink-style？Slice 0 先用最简 readline，Slice 1+ 决定。
-- subagent spawn 形态：RPC 模式（独立进程）还是 in-process Agent 实例？Slice 3 决定。
-- instinct 后台分析进程：独立 node 进程还是 in-process 低频任务？Slice 4 决定。
-- 是否需要 `@agentforge/ai-extra`（pi-ai 之上的自定义 provider/模型补充）？暂不需要，直接用 pi-ai。
+> 以下已于 2026-06-22 决策，详见 `docs/adr/0001-deferred-decisions.md`（ADR-0001a-f，每条含 Revisit 触发条件）。
+
+- REPL 终端 UI：~~`pi-tui`（成熟但重）vs 自写轻量~~ → **已决策（ADR-0001a）**：自写 readline 逐行（Slice 2），pi-tui 推 Slice 5+。
+- subagent spawn 形态：~~RPC 模式（独立进程）vs in-process Agent 实例~~ → **已决策（ADR-0001b）**：in-process Agent 默认 + RPC 作 cli 模式并行建（Slice 3）。
+- instinct 后台分析进程：~~独立 node 进程 vs in-process 低频任务~~ → **已决策（ADR-0001c）**：in-process 低频任务（Slice 4）。
+- 是否需要 `@agentforge/ai-extra`（pi-ai 之上的自定义 provider/模型补充）：~~暂不需要~~ → **已决策（ADR-0001f）**：不建，用 pi-ai `registerApiProvider`。
+
+> 另：Slice 1 handoff 的两个待定问题也已决策——budget/compaction cli 启用时机（ADR-0001d，Slice 2.5 接通）、compaction 阶段边界真实检测（ADR-0001e，短期显式 stageMarker + 远期复用 Audit）。
