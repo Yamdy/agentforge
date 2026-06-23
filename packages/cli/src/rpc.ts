@@ -4,7 +4,30 @@
  * JSONL over stdio（JSON-RPC 2.0）：stdin 读请求，stdout 写响应/事件。
  * runRpcMode 为可测函数（deps 注入），bin 入口 index.ts 调用。
  */
+import { randomUUID } from "node:crypto";
+
+import {
+	AgentForgeHarness,
+	createJsonlSession,
+	createEventBus,
+	createSafetyGuard,
+	createSantaVerifier,
+	rebuildMessages,
+} from "@agentforge/harness";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { SantaVerifier } from "@agentforge/harness";
 import type { HarnessEvent } from "@agentforge/shared";
+import { parseArgs, DEFAULT_SYSTEM_PROMPT, type ParsedArgs } from "./print-mode.js";
+import {
+	createReadTool,
+	createBashTool,
+	createEditTool,
+	createWriteTool,
+	createGrepTool,
+	createGlobTool,
+} from "./tools/index.js";
+import { createSystemPromptWithSkills, defaultSkillDirs } from "./system-prompt.js";
+import { defaultSessionDir } from "./repl.js";
 
 /**
  * 把 harness EventBus 事件序列化为 JSON-RPC notification params。
@@ -116,4 +139,149 @@ export function makeError(id: RequestId | null, code: number, message: string): 
 
 export function makeNotification(method: string, params: unknown): string {
 	return JSON.stringify({ jsonrpc: "2.0", method, params });
+}
+
+// === runRpcMode（Task 4 骨架） ===
+
+/** runRpcMode 的可注入输入源（测试 mock 或 stdin 适配）。 */
+export interface RpcInput {
+	/** 读下一行；返回 null 表示 EOF。异步以支持 readline 逐行桥接。 */
+	read(): Promise<string | null>;
+}
+
+/** runRpcMode 的可注入输出汇（测试 mock 或 process.stdout 适配）。 */
+export interface RpcOutput {
+	/** 写一段文本（不含自动换行，调用方决定）。 */
+	write(s: string): void;
+}
+
+/** runRpcMode 的可注入依赖（测试用）。 */
+export interface RpcModeDeps {
+	/** mock streamFn（测试注入，避免真实 LLM 请求）。 */
+	streamFn?: any;
+	/** getApiKey 回调。真对话从 process.env 读。 */
+	getApiKey?: (provider: string) => string | undefined | Promise<string | undefined>;
+	/** 注入输入源（测试用 mock）。bin 用 stdin 适配。 */
+	input?: RpcInput;
+	/** 注入输出汇（测试用 mock）。bin 用 process.stdout 适配。 */
+	output?: RpcOutput;
+	/** 覆盖 session 目录（测试用临时目录）。 */
+	sessionDir?: string;
+	/** 覆盖 skills 发现目录（默认 defaultSkillDirs()）。 */
+	skillDirs?: string[];
+	/**
+	 * 可选注入整个 verifier（测试用 mock；默认 createSantaVerifier）。
+	 * RPC 特有：repl 不含 verifier，rpc 默认注入。
+	 */
+	verifier?: SantaVerifier;
+	/** 可选单请求超时（ms）。Task 8 实现。 */
+	promptTimeoutMs?: number;
+	/** 测试检视 hook：harness 构造后立即调用（断言 tools/verifier 等）。 */
+	onHarnessCreated?: (h: AgentForgeHarness) => void;
+}
+
+/** runRpcMode 的返回值。 */
+export interface RpcResult {
+	/** 本次会话的 sessionId（--session 指定或自动生成；--resume 时为被恢复的 id）。 */
+	sessionId: string;
+}
+
+/** 解析 sessionId：--session 指定则用之；--resume 时用 resume id；否则生成 UUID。 */
+function resolveSessionId(args: ParsedArgs): string {
+	if (args.session) return args.session;
+	if (args.resume) return args.resume;
+	return randomUUID();
+}
+
+/**
+ * 驱动 RPC 模式（JSONL over stdio, JSON-RPC 2.0）。
+ *
+ * Task 4 骨架：构造 harness（复用 repl 共享材料：6 tools / systemPrompt / safety /
+ * JSONL session / --resume initialMessages）+ RPC 特有 verifier 注入，emit ready
+ * notification，然后循环读 stdin 直到 EOF。派发逻辑 Task 5 加。
+ *
+ * @param argv cli argv（不含 node 二进制与脚本路径）。
+ * @param deps 可选注入（streamFn mock / getApiKey / input / output / sessionDir / verifier）。
+ * @returns sessionId。
+ */
+export async function runRpcMode(
+	argv: string[],
+	deps: RpcModeDeps = {},
+): Promise<RpcResult> {
+	const args = parseArgs(argv);
+	const sessionDir = deps.sessionDir ?? args.sessionDir ?? defaultSessionDir();
+	const sessionId = resolveSessionId(args);
+	const sessionPath = `${sessionDir}/${sessionId}.jsonl`;
+	const session = createJsonlSession(sessionPath);
+
+	// --resume：从已持久化 session 重建 messages 喂给 Agent initialState。
+	let initialMessages: AgentMessage[] = [];
+	if (args.resume) {
+		const leafId = session.getLeafId();
+		if (!leafId) {
+			throw new Error(
+				`--resume ${args.resume}: no existing session found (file missing or empty)`,
+			);
+		}
+		initialMessages = rebuildMessages(session.getPathToRoot(leafId));
+	}
+
+	const events = createEventBus();
+	const tools = [
+		createReadTool(),
+		createBashTool(),
+		createEditTool(),
+		createWriteTool(),
+		createGrepTool(),
+		createGlobTool(),
+	];
+	const systemPrompt = createSystemPromptWithSkills(
+		DEFAULT_SYSTEM_PROMPT,
+		deps.skillDirs ?? defaultSkillDirs(),
+	);
+
+	// RPC 特有：verifier 注入（repl 不含）。deps.verifier 优先（测试 mock）。
+	const verifier =
+		deps.verifier ??
+		createSantaVerifier({
+			provider: args.provider,
+			model: args.model,
+			getApiKey: deps.getApiKey as never,
+			streamFn: deps.streamFn,
+		});
+
+	const harness = new AgentForgeHarness({
+		session,
+		events,
+		tools,
+		provider: args.provider,
+		model: args.model,
+		systemPrompt,
+		getApiKey: deps.getApiKey as never,
+		streamFn: deps.streamFn,
+		initialMessages,
+		safety: createSafetyGuard(),
+		cwd: process.cwd(),
+		verifier,
+	});
+	deps.onHarnessCreated?.(harness);
+
+	const output = deps.output ?? {
+		write: (s: string) => {
+			process.stdout.write(s);
+		},
+	};
+	const input = deps.input;
+
+	// strict gate：ready 前不读 stdin。
+	output.write(makeNotification("ready", { sessionId }) + "\n");
+
+	if (input) {
+		// 占位循环：读到 EOF 退出（派发逻辑 Task 5 加）。
+		while ((await input.read()) !== null) {
+			// 派发在 Task 5 实现
+		}
+	}
+
+	return { sessionId };
 }

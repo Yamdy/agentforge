@@ -1,12 +1,22 @@
-import { describe, it, expect } from "vitest";
-import type { AssistantMessage } from "@earendil-works/pi-agent-core";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { randomUUID } from "node:crypto";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { AssistantMessageEventStream } from "@earendil-works/pi-ai";
+import type {
+	AssistantMessage,
+	AssistantMessageEvent,
+} from "@earendil-works/pi-agent-core";
 
 // 探针：确认 rpc 模块存在（RED 阶段 ./rpc.js 不存在 → 导入失败）。
 import "./rpc.js";
 import { serializeEvent } from "./rpc.js";
 import { parseRequest, makeResult, makeError, makeNotification,
 	PARSE_ERROR, INVALID_REQUEST, METHOD_NOT_FOUND, INVALID_PARAMS, INTERNAL_ERROR } from "./rpc.js";
+import { runRpcMode } from "./rpc.js";
 import type { HarnessEvent } from "@agentforge/shared";
+import type { AgentForgeHarness } from "@agentforge/harness";
 
 function makeAssistantMessage(text: string): AssistantMessage {
 	return {
@@ -137,5 +147,101 @@ describe("rpc — JSON-RPC protocol helpers", () => {
 		expect(JSON.parse(makeNotification("event", { type: "agent_start" }))).toEqual({
 			jsonrpc: "2.0", method: "event", params: { type: "agent_start" },
 		});
+	});
+});
+
+// === Task 4: runRpcMode skeleton ===
+
+let dir: string;
+beforeEach(() => {
+	dir = mkdtempSync(join(tmpdir(), `agentforge-rpc-${randomUUID()}`));
+});
+afterEach(() => {
+	rmSync(dir, { recursive: true, force: true });
+});
+
+/** 可注入的输入源：按行弹出，模拟 stdin。EOF 返回 null。 */
+function makeMockInput(lines: string[]) {
+	const queue = [...lines];
+	return {
+		read: async (): Promise<string | null> =>
+			queue.length === 0 ? null : (queue.shift() as string),
+	};
+}
+
+function makeMockOutput() {
+	const lines: string[] = [];
+	return { write: (s: string) => lines.push(s), lines: () => lines };
+}
+
+/**
+ * mock streamFn。pi streamFn 真实签名是 (model, llmContext, options)，
+ * 故 mock 也带这三参（虽不使用，以匹配签名）。读 llmContext.messages 可观察对话。
+ */
+function makeMockStreamFnLocal(reply: string | ((turn: number) => string)) {
+	let turn = 0;
+	return (_model: unknown, _llmContext: unknown, _options: unknown) => {
+		const text = typeof reply === "string" ? reply : reply(turn);
+		turn += 1;
+		const stream = new AssistantMessageEventStream();
+		const message = makeAssistantMessage(text);
+		const startEvent: AssistantMessageEvent = {
+			type: "start",
+			partial: message,
+		};
+		const doneEvent: AssistantMessageEvent = {
+			type: "done",
+			reason: "stop",
+			message,
+		};
+		queueMicrotask(() => {
+			stream.push(startEvent);
+			stream.push(doneEvent);
+		});
+		return stream;
+	};
+}
+
+describe("rpc — runRpcMode skeleton", () => {
+	it("emits ready notification with sessionId before reading stdin", async () => {
+		const output = makeMockOutput();
+		const { sessionId } = await runRpcMode([], {
+			streamFn: makeMockStreamFnLocal("x"), getApiKey: () => "fake-key",
+			sessionDir: dir, input: makeMockInput([]), output,
+		});
+		const firstLine = JSON.parse(output.lines()[0]);
+		expect(firstLine.method).toBe("ready");
+		expect(firstLine.params.sessionId).toBe(sessionId);
+	});
+
+	it("exits cleanly on EOF (no requests, no hang)", async () => {
+		const output = makeMockOutput();
+		await runRpcMode([], {
+			streamFn: makeMockStreamFnLocal("x"), getApiKey: () => "fake-key",
+			sessionDir: dir, input: makeMockInput([]), output,
+		});
+		expect(output.lines().length).toBe(1); // only ready
+	});
+
+	it("constructs harness with verifier injected (RPC-specific)", async () => {
+		let seen: AgentForgeHarness | null = null;
+		await runRpcMode([], {
+			streamFn: makeMockStreamFnLocal("x"), getApiKey: () => "fake-key",
+			sessionDir: dir, input: makeMockInput([]), output: makeMockOutput(),
+			onHarnessCreated: (h) => { seen = h; },
+		});
+		const h = seen as AgentForgeHarness;
+		expect(h.verifier).toBeDefined();
+		expect(h.agent.state.tools.map((t: any) => t.name).sort()).toEqual(
+			["bash", "edit", "glob", "grep", "read", "write"],
+		);
+	});
+
+	it("returns sessionId (uuid by default)", async () => {
+		const { sessionId } = await runRpcMode([], {
+			streamFn: makeMockStreamFnLocal("x"), getApiKey: () => "fake-key",
+			sessionDir: dir, input: makeMockInput([]), output: makeMockOutput(),
+		});
+		expect(sessionId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
 	});
 });
