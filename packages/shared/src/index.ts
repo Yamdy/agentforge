@@ -59,6 +59,12 @@ export interface CompactionEvent {
   firstKeptEntryId: string;
 }
 
+/** compaction 失败事件（Slice 2.5）：generateSummary/compact 抛非 abort 错时 emit，不阻塞主流程。 */
+export interface CompactionErrorEvent {
+  type: "compaction_error";
+  error: string;
+}
+
 export interface InstinctObservedEvent {
   type: "instinct_observed";
   observation: unknown;
@@ -108,6 +114,7 @@ export interface ContextBudgetEvent {
 
 export type HarnessCustomEvent =
   | CompactionEvent
+  | CompactionErrorEvent
   | InstinctObservedEvent
   | AuditFindingEvent
   | AdrRecordedEvent

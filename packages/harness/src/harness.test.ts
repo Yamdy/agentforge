@@ -11,6 +11,7 @@ import type {
 import { AgentForgeHarness } from "./harness.js";
 import { createEventBus } from "./events.js";
 import { createMemorySession } from "./session.js";
+import { createCompactor } from "./compaction.js";
 import * as contextBudget from "./context-budget.js";
 import type { SantaVerifier, Rubric, ReviewResult } from "./verification.js";
 
@@ -298,6 +299,69 @@ describe("AgentForgeHarness", () => {
 				.reverse()
 				.find((m: any) => m.role === "assistant");
 			expect(lastAssistant).toBeDefined();
+		});
+	});
+
+	describe("compaction error handling (Slice 2.5)", () => {
+		it("maybeCompact emits compaction_error and does not throw when generateSummary fails", async () => {
+			const events = createEventBus();
+			const received: any[] = [];
+			events.on("compaction_error", (e: any) => received.push(e));
+			const compactor = createCompactor();
+			const compactorDeps = {
+				generateSummary: async () => {
+					throw new Error("LLM down");
+				},
+			};
+			const harness = new AgentForgeHarness({
+				session: createMemorySession(),
+				events,
+				tools: [],
+				provider: "anthropic",
+				model: "claude-sonnet-4-5",
+				systemPrompt: "",
+				compactor,
+				compactorDeps,
+				compactionTokenThreshold: 0, // 强制每 turn 触发 shouldCompact
+				streamFn: makeMockStreamFn("ok"), // mock：user→assistant "ok"
+			});
+			// 不应抛错
+			await harness.prompt("hi");
+			expect(received).toHaveLength(1);
+			expect(received[0].type).toBe("compaction_error");
+			expect(received[0].error).toBe("LLM down");
+		});
+
+		it("maybeCompact does not emit compaction_error on AbortError", async () => {
+			const events = createEventBus();
+			const received: any[] = [];
+			events.on("compaction_error", (e: any) => received.push(e));
+			const ac = new AbortController();
+			const compactor = createCompactor();
+			const compactorDeps = {
+				generateSummary: async (_m: unknown, signal?: AbortSignal) => {
+					if (signal?.aborted)
+						throw new DOMException("aborted", "AbortError");
+					throw new Error("unreachable");
+				},
+			};
+			const harness = new AgentForgeHarness({
+				session: createMemorySession(),
+				events,
+				tools: [],
+				provider: "anthropic",
+				model: "claude-sonnet-4-5",
+				systemPrompt: "",
+				compactor,
+				compactorDeps,
+				compactionTokenThreshold: 0,
+				streamFn: makeMockStreamFn("ok"),
+			});
+			ac.abort();
+			// prompt 在 abort 时抛 "aborted"（在到达 maybeCompact 之前），
+			// 故 compaction_error 永不 emit。received 保持空。
+			await expect(harness.prompt("hi", ac.signal)).rejects.toThrow(/aborted/i);
+			expect(received).toHaveLength(0); // abort 不 emit compaction_error
 		});
 	});
 });

@@ -265,8 +265,10 @@ export class AgentForgeHarness {
 		this.appendNewMessages(beforeCount);
 
 		// Slice 1: turn 间主动压缩（见 HarnessOptions.compactor 注释）。
+		// Slice 2.5: signal 透传给 generateSummary 的 LLM 调用；失败非治理性，
+		// try/catch 内 emit compaction_error 不 rethrow（AbortError 静默）。
 		if (this.compactor && this.compactorDeps) {
-			await this.maybeCompact();
+			await this.maybeCompact(signal);
 		}
 
 		// Slice 1 issue #12: 每 turn 完成后做 ContextBudget 诊断（若注入 modelContextWindow）。
@@ -340,7 +342,7 @@ export class AgentForgeHarness {
 	 * 构造 CompactionContext：把 agent 当前 messages 与 session 路径上的
 	 * MessageEntry entryId 配对（顺序一致）。
 	 */
-	private buildCompactionContext(): CompactionContext {
+	private buildCompactionContext(signal?: AbortSignal): CompactionContext {
 		const messages = this._agent.state.messages;
 		// 从 session 叶节点路径上的 message entries 取 entryId，与 agent messages 一一对应。
 		const path = this.session.getPathToRoot(this.session.getLeafId());
@@ -356,41 +358,60 @@ export class AgentForgeHarness {
 			messages,
 			entryIds,
 			tokenThreshold: this.compactionTokenThreshold,
+			signal,
 		};
 	}
 
-	private async maybeCompact(): Promise<void> {
+	/**
+	 * Slice 2.5: 整体 try/catch 包裹——appendEntry + emit + message 替换非原子，
+	 * 任一步抛错都视为 compaction 失败。非 abort 错 emit compaction_error 不 rethrow
+	 * （不阻塞主流程）；AbortError（signal.aborted 或 DOMException AbortError）静默 return，
+	 * 因 abort 是调用方意图、非治理失败。signal 透传给 generateSummary 的 LLM 调用。
+	 */
+	private async maybeCompact(signal?: AbortSignal): Promise<void> {
 		if (!this.compactor || !this.compactorDeps) return;
-		const ctx = this.buildCompactionContext();
-		if (!this.compactor.shouldCompact(ctx)) return;
+		try {
+			const ctx = this.buildCompactionContext(signal);
+			if (!this.compactor.shouldCompact(ctx)) return;
 
-		const result = await this.compactor.compact(ctx, this.compactorDeps);
+			const result = await this.compactor.compact(ctx, this.compactorDeps);
 
-		// 落盘 CompactionEntry。
-		const compactionEntry: CompactionEntry = {
-			type: "compaction",
-			entryId: "" as any,
-			parentId: null,
-			timestamp: Date.now(),
-			summary: result.summary,
-			firstKeptEntryId: result.firstKeptEntryId,
-		} as any;
-		this.session.appendEntry(compactionEntry as any);
+			// 落盘 CompactionEntry。
+			const compactionEntry: CompactionEntry = {
+				type: "compaction",
+				entryId: "" as any,
+				parentId: null,
+				timestamp: Date.now(),
+				summary: result.summary,
+				firstKeptEntryId: result.firstKeptEntryId,
+			} as any;
+			this.session.appendEntry(compactionEntry as any);
 
-		// emit compaction 事件。
-		this.events.emit({
-			type: "compaction",
-			summary: result.summary,
-			firstKeptEntryId: result.firstKeptEntryId,
-		});
+			// emit compaction 事件。
+			this.events.emit({
+				type: "compaction",
+				summary: result.summary,
+				firstKeptEntryId: result.firstKeptEntryId,
+			});
 
-		// 替换 agent messages：[summary 消息, ...keptMessages]。
-		// summary 作为一条 user 消息注入，让 LLM 看到压缩后的历史。
-		const summaryMessage: AgentMessage = {
-			role: "user",
-			content: `[Previous context summary]\n${result.summary}`,
-			timestamp: Date.now(),
-		} as any;
-		this._agent.state.messages = [summaryMessage, ...result.keptMessages];
+			// 替换 agent messages：[summary 消息, ...keptMessages]。
+			// summary 作为一条 user 消息注入，让 LLM 看到压缩后的历史。
+			const summaryMessage: AgentMessage = {
+				role: "user",
+				content: `[Previous context summary]\n${result.summary}`,
+				timestamp: Date.now(),
+			} as any;
+			this._agent.state.messages = [summaryMessage, ...result.keptMessages];
+		} catch (err) {
+			// abort 非治理失败，静默不 emit compaction_error。
+			if (
+				signal?.aborted ||
+				(err instanceof DOMException && err.name === "AbortError")
+			) {
+				return;
+			}
+			const error = err instanceof Error ? err.message : String(err);
+			this.events.emit({ type: "compaction_error", error });
+		}
 	}
 }
