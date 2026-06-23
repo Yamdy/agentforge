@@ -141,6 +141,60 @@ export function makeNotification(method: string, params: unknown): string {
 	return JSON.stringify({ jsonrpc: "2.0", method, params });
 }
 
+// === dispatch（Task 5）===
+
+/**
+ * 派发单个 JSON-RPC 请求到 harness。
+ *
+ * prompt 分支：onEvent 订阅 harness 事件 → serializeEvent → event notification；
+ * harness.prompt（可选 promptTimeoutMs race 超时）→ result with messages。
+ * 缺 input → INVALID_PARAMS。未知 method → METHOD_NOT_FOUND。
+ *
+ * 不抛错：所有错误以 makeError 写到 output（保证主循环继续）。
+ */
+async function dispatch(
+	harness: AgentForgeHarness,
+	req: { id: RequestId; method: string; params: unknown },
+	output: { write(s: string): void },
+	deps: RpcModeDeps,
+): Promise<void> {
+	if (req.method === "prompt") {
+		const params = req.params as { input?: string };
+		if (typeof params.input !== "string") {
+			output.write(makeError(req.id, INVALID_PARAMS, "prompt requires params.input: string") + "\n");
+			return;
+		}
+		const unsubscribe = harness.onEvent((e) => {
+			const serialized = serializeEvent(e);
+			if (serialized) output.write(makeNotification("event", serialized) + "\n");
+		});
+		try {
+			const promptPromise = harness.prompt(params.input);
+			if (deps.promptTimeoutMs) {
+				let timer: ReturnType<typeof setTimeout> | undefined;
+				const timeout = new Promise<never>((_, reject) => {
+					timer = setTimeout(() => reject(new Error("timeout")), deps.promptTimeoutMs);
+				});
+				try {
+					await Promise.race([promptPromise, timeout]);
+				} finally {
+					if (timer) clearTimeout(timer);
+				}
+			} else {
+				await promptPromise;
+			}
+			unsubscribe();
+			const messages = harness.agent.state.messages;
+			output.write(makeResult(req.id, { messages }) + "\n");
+		} catch (err) {
+			unsubscribe();
+			output.write(makeError(req.id, INTERNAL_ERROR, err instanceof Error ? err.message : String(err)) + "\n");
+		}
+		return;
+	}
+	output.write(makeError(req.id, METHOD_NOT_FOUND, `method not found: ${req.method}`) + "\n");
+}
+
 // === runRpcMode（Task 4 骨架） ===
 
 /** runRpcMode 的可注入输入源（测试 mock 或 stdin 适配）。 */
@@ -277,9 +331,17 @@ export async function runRpcMode(
 	output.write(makeNotification("ready", { sessionId }) + "\n");
 
 	if (input) {
-		// 占位循环：读到 EOF 退出（派发逻辑 Task 5 加）。
-		while ((await input.read()) !== null) {
-			// 派发在 Task 5 实现
+		while (true) {
+			const line = await input.read();
+			if (line === null) break;
+			const trimmed = line.trim();
+			if (trimmed === "") continue;
+			const parsed = parseRequest(trimmed);
+			if (!parsed.ok) {
+				output.write(makeError(parsed.id, parsed.code, parsed.code === PARSE_ERROR ? "parse error" : "invalid request") + "\n");
+				continue;
+			}
+			await dispatch(harness, parsed.value, output, deps);
 		}
 	}
 

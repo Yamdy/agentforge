@@ -56,4 +56,49 @@ describe("EventBus", () => {
 
     expect(agentEndHandler).not.toHaveBeenCalled();
   });
+
+  test("wildcard '*' handler receives every emitted event regardless of type", () => {
+    const bus = createEventBus();
+    const wildcard = vi.fn();
+    bus.on("*", wildcard);
+
+    const start = { type: "agent_start" } as HarnessEvent;
+    const end = { type: "agent_end", messages: [] } as HarnessEvent;
+    const toolEnd = { type: "tool_execution_end", toolCallId: "tc-1" } as HarnessEvent;
+    bus.emit(start);
+    bus.emit(end);
+    bus.emit(toolEnd);
+
+    expect(wildcard).toHaveBeenCalledTimes(3);
+    expect(wildcard).toHaveBeenNthCalledWith(1, start);
+    expect(wildcard).toHaveBeenNthCalledWith(2, end);
+    expect(wildcard).toHaveBeenNthCalledWith(3, toolEnd);
+  });
+
+  test("wildcard handler receives events in addition to type-specific handlers", () => {
+    const bus = createEventBus();
+    const specific = vi.fn();
+    const wildcard = vi.fn();
+    bus.on("agent_start", specific);
+    bus.on("*", wildcard);
+
+    const event = { type: "agent_start" } as HarnessEvent;
+    bus.emit(event);
+
+    expect(specific).toHaveBeenCalledWith(event);
+    expect(wildcard).toHaveBeenCalledWith(event);
+  });
+
+  test("wildcard handler stops receiving after unsubscribe", () => {
+    const bus = createEventBus();
+    const wildcard = vi.fn();
+    const unsubscribe = bus.on("*", wildcard);
+
+    bus.emit({ type: "agent_start" } as HarnessEvent);
+    expect(wildcard).toHaveBeenCalledTimes(1);
+
+    unsubscribe();
+    bus.emit({ type: "agent_end", messages: [] } as HarnessEvent);
+    expect(wildcard).toHaveBeenCalledTimes(1);
+  });
 });

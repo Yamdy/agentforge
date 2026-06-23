@@ -10,7 +10,7 @@ import type {
 } from "@earendil-works/pi-agent-core";
 import type { SessionStore } from "./session.js";
 import type { EventBus } from "./events.js";
-import type { MessageEntry, CompactionEntry } from "@agentforge/shared";
+import type { HarnessEvent, MessageEntry, CompactionEntry } from "@agentforge/shared";
 import type {
 	Compactor,
 	CompactDeps,
@@ -165,6 +165,14 @@ export class AgentForgeHarness {
 	/** 暴露底层 pi Agent（供高级用法/测试检视 state）。 */
 	get agent(): Agent {
 		return this._agent;
+	}
+
+	/**
+	 * 订阅所有 harness 事件（RPC 等外部消费者用）。返回 unsubscribe。
+	 * 委托给 EventBus 的通配符 handler（type "*"）。非 breaking：未调用则无副作用。
+	 */
+	onEvent(handler: (e: HarnessEvent) => void): () => void {
+		return this.events.on("*", handler);
 	}
 
 	/**

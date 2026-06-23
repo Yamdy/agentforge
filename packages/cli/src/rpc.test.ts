@@ -245,3 +245,33 @@ describe("rpc — runRpcMode skeleton", () => {
 		expect(sessionId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
 	});
 });
+
+describe("rpc — prompt method", () => {
+	it("prompt request → event notifications + result with messages", async () => {
+		const req = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "prompt", params: { input: "hello" } });
+		const output = makeMockOutput();
+		await runRpcMode([], {
+			streamFn: makeMockStreamFnLocal("reply-text"), getApiKey: () => "fake-key",
+			sessionDir: dir, input: makeMockInput([req]), output,
+		});
+		const lines = output.lines().map((l) => JSON.parse(l));
+		const result = lines.find((l) => l.id === 1 && l.result);
+		expect(result).toBeDefined();
+		expect(result.result.messages).toBeInstanceOf(Array);
+		expect(result.result.messages.length).toBeGreaterThan(0);
+		expect(JSON.stringify(result.result.messages.at(-1))).toContain("reply-text");
+	});
+
+	it("prompt with missing input → INVALID_PARAMS, continues to next request", async () => {
+		const req1 = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "prompt", params: {} });
+		const req2 = JSON.stringify({ jsonrpc: "2.0", id: 2, method: "prompt", params: { input: "ok" } });
+		const output = makeMockOutput();
+		await runRpcMode([], {
+			streamFn: makeMockStreamFnLocal("r"), getApiKey: () => "fake-key",
+			sessionDir: dir, input: makeMockInput([req1, req2]), output,
+		});
+		const lines = output.lines().map((l) => JSON.parse(l));
+		expect(lines.find((l) => l.id === 1).error.code).toBe(INVALID_PARAMS);
+		expect(lines.find((l) => l.id === 2 && l.result)).toBeDefined();
+	});
+});
