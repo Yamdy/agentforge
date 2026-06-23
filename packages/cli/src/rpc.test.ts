@@ -4,6 +4,8 @@ import type { AssistantMessage } from "@earendil-works/pi-agent-core";
 // 探针：确认 rpc 模块存在（RED 阶段 ./rpc.js 不存在 → 导入失败）。
 import "./rpc.js";
 import { serializeEvent } from "./rpc.js";
+import { parseRequest, makeResult, makeError, makeNotification,
+	PARSE_ERROR, INVALID_REQUEST, METHOD_NOT_FOUND, INVALID_PARAMS, INTERNAL_ERROR } from "./rpc.js";
 import type { HarnessEvent } from "@agentforge/shared";
 
 function makeAssistantMessage(text: string): AssistantMessage {
@@ -91,5 +93,49 @@ describe("rpc — serializeEvent whitelist", () => {
 	it("returns undefined for token-stream message_update event", () => {
 		const event = { type: "message_update", message: {}, assistantMessageEvent: { delta: "tok" } } as unknown as HarnessEvent;
 		expect(serializeEvent(event)).toBeUndefined();
+	});
+});
+
+describe("rpc — JSON-RPC protocol helpers", () => {
+	it("parseRequest parses a valid prompt request", () => {
+		const line = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "prompt", params: { input: "hi" } });
+		const req = parseRequest(line);
+		expect(req.ok).toBe(true);
+		if (req.ok) {
+			expect(req.value.method).toBe("prompt");
+			expect(req.value.id).toBe(1);
+			expect(req.value.params).toEqual({ input: "hi" });
+		}
+	});
+
+	it("parseRequest returns PARSE_ERROR for invalid JSON", () => {
+		const req = parseRequest("{not json");
+		expect(req.ok).toBe(false);
+		if (!req.ok) expect(req.code).toBe(PARSE_ERROR);
+	});
+
+	it("parseRequest returns INVALID_REQUEST for missing method", () => {
+		const req = parseRequest(JSON.stringify({ jsonrpc: "2.0", id: 1 }));
+		expect(req.ok).toBe(false);
+		if (!req.ok) expect(req.code).toBe(INVALID_REQUEST);
+	});
+
+	it("makeResult builds a JSON-RPC success response", () => {
+		expect(JSON.parse(makeResult(1, { messages: [] }))).toEqual({
+			jsonrpc: "2.0", id: 1, result: { messages: [] },
+		});
+	});
+
+	it("makeError builds a JSON-RPC error response with null id for parse errors", () => {
+		const out = JSON.parse(makeError(null, PARSE_ERROR, "bad json"));
+		expect(out.id).toBeNull();
+		expect(out.error.code).toBe(PARSE_ERROR);
+		expect(out.error.message).toBe("bad json");
+	});
+
+	it("makeNotification builds a notification (no id)", () => {
+		expect(JSON.parse(makeNotification("event", { type: "agent_start" }))).toEqual({
+			jsonrpc: "2.0", method: "event", params: { type: "agent_start" },
+		});
 	});
 });

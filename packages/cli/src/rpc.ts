@@ -71,3 +71,49 @@ export function serializeEvent(
 			return undefined;
 	}
 }
+
+/** JSON-RPC 2.0 标准错误码。 */
+export const PARSE_ERROR = -32700;
+export const INVALID_REQUEST = -32600;
+export const METHOD_NOT_FOUND = -32601;
+export const INVALID_PARAMS = -32602;
+export const INTERNAL_ERROR = -32603;
+
+export type RequestId = number | string;
+
+export type ParsedRequest =
+	| { ok: true; value: { id: RequestId; method: string; params: unknown } }
+	| { ok: false; code: number; id: RequestId | null };
+
+/** 解析一行 stdin 为 JSON-RPC 请求。JSON 非法 → PARSE_ERROR(id=null)；结构不全 → INVALID_REQUEST。 */
+export function parseRequest(line: string): ParsedRequest {
+	let obj: unknown;
+	try {
+		obj = JSON.parse(line);
+	} catch {
+		return { ok: false, code: PARSE_ERROR, id: null };
+	}
+	if (typeof obj !== "object" || obj === null) {
+		return { ok: false, code: INVALID_REQUEST, id: null };
+	}
+	const o = obj as { jsonrpc?: unknown; id?: unknown; method?: unknown; params?: unknown };
+	if (typeof o.method !== "string") {
+		return { ok: false, code: INVALID_REQUEST, id: null };
+	}
+	if (o.id !== undefined && typeof o.id !== "number" && typeof o.id !== "string") {
+		return { ok: false, code: INVALID_REQUEST, id: null };
+	}
+	return { ok: true, value: { id: o.id as RequestId, method: o.method, params: o.params ?? {} } };
+}
+
+export function makeResult(id: RequestId, result: unknown): string {
+	return JSON.stringify({ jsonrpc: "2.0", id, result });
+}
+
+export function makeError(id: RequestId | null, code: number, message: string): string {
+	return JSON.stringify({ jsonrpc: "2.0", id, error: { code, message } });
+}
+
+export function makeNotification(method: string, params: unknown): string {
+	return JSON.stringify({ jsonrpc: "2.0", method, params });
+}
