@@ -43,6 +43,7 @@ import {
 	createGlobTool,
 } from "./tools/index.js";
 import { createSystemPromptWithSkills, defaultSkillDirs } from "./system-prompt.js";
+import { createCompactionConfig } from "./compaction-config.js";
 
 /** runReplMode 的可注入输入源（测试 mock 或 readline 适配）。 */
 export interface ReplInput {
@@ -112,6 +113,13 @@ export function buildHarness(opts: {
 		DEFAULT_SYSTEM_PROMPT,
 		opts.skillDirs ?? defaultSkillDirs(),
 	);
+	// Slice 2.5 T4：构造 compaction/budget 四字段并注入 harness（repl/rpc 共用）。
+	// getApiKey 缺省时给一个返回 undefined 的 stub，保持 createCompactionConfig 签名满足。
+	const compaction = createCompactionConfig({
+		provider: opts.args.provider,
+		model: opts.args.model,
+		getApiKey: opts.getApiKey ?? (() => undefined),
+	});
 	return new AgentForgeHarness({
 		session: opts.session,
 		events,
@@ -128,6 +136,10 @@ export function buildHarness(opts: {
 		safetyAskHandler: opts.safetyAskHandler,
 		cwd: process.cwd(),
 		verifier: opts.verifier,
+		compactor: compaction.compactor,
+		compactorDeps: compaction.compactorDeps,
+		modelContextWindow: compaction.modelContextWindow,
+		budgetThresholds: compaction.budgetThresholds,
 	});
 }
 

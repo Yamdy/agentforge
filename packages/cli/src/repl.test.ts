@@ -480,6 +480,38 @@ describe("cli REPL mode — T8 Safety + 6 tools + askHandler wiring", () => {
 	});
 });
 
+describe("cli REPL mode — Slice 2.5 T4 compaction wiring", () => {
+	it("buildHarness injects compaction config (4 fields) into AgentForgeHarness", async () => {
+		const input = makeMockInput(["exit"]);
+		const output = makeMockOutput();
+		let seenHarness: AgentForgeHarness | null = null;
+
+		await runReplMode([], {
+			streamFn: makeMockStreamFn("reply"),
+			getApiKey: () => "fake-key",
+			sessionDir: dir,
+			input,
+			output,
+			onHarnessCreated: (h: AgentForgeHarness) => {
+				seenHarness = h;
+			},
+		});
+
+		expect(seenHarness).not.toBeNull();
+		const h = seenHarness as AgentForgeHarness;
+		// 4 compaction/budget 字段经 buildHarness → createCompactionConfig 注入。
+		// 字段为 private readonly，经 cast 检视（与现有 T8 测试 inspect private 同路径）。
+		expect((h as any).compactor).toBeDefined();
+		expect((h as any).compactorDeps).toBeDefined();
+		// modelContextWindow = getModel("deepseek", "deepseek-v4-pro").contextWindow（真值 > 0）。
+		expect(typeof (h as any).modelContextWindow).toBe("number");
+		expect((h as any).modelContextWindow).toBeGreaterThan(0);
+		// budgetThresholds = DEFAULT_THRESHOLDS（含 audit/warn/critical 数值键）。
+		expect((h as any).budgetThresholds).toBeDefined();
+		expect((h as any).budgetThresholds).toBeTypeOf("object");
+	});
+});
+
 describe("makeReadlineBridge", () => {
 	it("read returns pushed lines in FIFO order", async () => {
 		const b = makeReadlineBridge();
