@@ -47,6 +47,9 @@ importers:
       '@earendil-works/pi-ai':
         specifier: ^0.79.9
         version: 0.79.9(ws@8.21.0)(zod@4.4.3)
+      typebox:
+        specifier: 1.1.38
+        version: 1.1.38
 
   packages/shared:
     dependencies:
