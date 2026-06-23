@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { randomUUID } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AssistantMessageEventStream } from "@earendil-works/pi-ai";
@@ -404,5 +404,39 @@ describe("rpc — error codes", () => {
 		const err = lines.find((l) => l.id === 1).error;
 		expect(err.code).toBe(INTERNAL_ERROR);
 		expect(err.message).toContain("reviewer boom");
+	});
+});
+
+describe("rpc — JSONL persistence + --resume", () => {
+	it("prompt persists user+assistant entries to session jsonl", async () => {
+		const req = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "prompt", params: { input: "hello" } });
+		const { sessionId } = await runRpcMode([], {
+			streamFn: makeMockStreamFnLocal("reply"), getApiKey: () => "fake-key",
+			sessionDir: dir, input: makeMockInput([req]), output: makeMockOutput(),
+		});
+		const file = join(dir, `${sessionId}.jsonl`);
+		expect(existsSync(file)).toBe(true);
+		const lines = readFileSync(file, "utf8").split("\n").filter((l) => l.length);
+		expect(lines.length).toBe(2); // 1 user + 1 assistant
+	});
+
+	it("--resume loads existing session as initial messages", async () => {
+		const seedId = "seed-rpc";
+		const seedReq = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "prompt", params: { input: "seed-q" } });
+		await runRpcMode(["--session", seedId], {
+			streamFn: makeMockStreamFnLocal("seed-a"), getApiKey: () => "fake-key",
+			sessionDir: dir, input: makeMockInput([seedReq]), output: makeMockOutput(),
+		});
+		expect(existsSync(join(dir, `${seedId}.jsonl`))).toBe(true);
+
+		const followReq = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "prompt", params: { input: "follow-up" } });
+		const output = makeMockOutput();
+		const { sessionId } = await runRpcMode(["--resume", seedId], {
+			streamFn: makeMockStreamFnLocal("follow-a"), getApiKey: () => "fake-key",
+			sessionDir: dir, input: makeMockInput([followReq]), output,
+		});
+		expect(sessionId).toBe(seedId);
+		const result = output.lines().map((l) => JSON.parse(l)).find((l) => l.id === 1 && l.result);
+		expect(result.result.messages.length).toBeGreaterThanOrEqual(3); // seed(2) + follow user+assistant
 	});
 });
