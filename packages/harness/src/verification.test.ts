@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import { AssistantMessageEventStream } from "@earendil-works/pi-ai";
+import type { AgentMessage, AssistantMessageEvent } from "@earendil-works/pi-agent-core";
 
 import {
 	extractReviewerVerdict,
@@ -274,5 +275,128 @@ describe("verification: createSantaVerifier.verifyUntilNice", () => {
 		await v.verifyUntilNice("init", rubric, async (o) => o, 2);
 		// 2 rounds × 2 reviewers = 4 calls
 		expect(totalCalls).toBe(4);
+	});
+});
+
+// === Task 4: 默认 reviewerRun 真实 Agent 集成测试 ===
+//
+// mock streamFn 验证默认 reviewerRun（真实 Agent + submit_review 工具）接线。
+// pi agentLoop 调用 streamFn 形如 streamFunction(model, llmContext, options)，
+// 其中 llmContext.messages 是 convertToLlm 后的 LLM Message[]（保留 assistant
+// toolCall block 原样，defaultConvertToLlm 仅 filter role，不改写结构）。
+//
+// pi toolUse loop：assistant 产出 toolCall(stopReason toolUse) → agent 执行
+// submit_review → toolResult 进 messages → 继续 loop 再调 streamFn → 返回
+// stop(stopReason stop) → idle。extractReviewerVerdict 从 agent.state.messages
+// 提取 submit_review toolCall。
+//
+// 调整说明（brief Step 2）：brief 原 mock 签名为 (messages) => stream，但 pi
+// 实际调用 streamFunction(model, llmContext, options)。故 mock 改为
+// (model, llmContext, options)，从 llmContext.messages 读取消息判断 hasSubmit。
+// 核心改 verification.ts：无。
+
+/** 构造最小 assistant message（含给定 content blocks + stopReason）。 */
+function makeAssistantMessage(
+	content: any[],
+	stopReason: "stop" | "toolUse",
+): any {
+	return {
+		role: "assistant",
+		content,
+		api: "anthropic",
+		provider: "anthropic",
+		model: "claude-sonnet-4-5",
+		usage: {
+			input: 1,
+			output: 1,
+			cacheRead: 0,
+			cacheWrite: 0,
+			totalTokens: 2,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+		},
+		stopReason,
+		timestamp: Date.now(),
+	};
+}
+
+/**
+ * mock streamFn：llmContext.messages 未含 submit_review toolCall 时返回
+ * submit_review toolCall（toolUse），已含时返回 stop。无状态，2 reviewer 共享各自正确。
+ *
+ * pi 调用形如 streamFunction(model, llmContext, options)；messages 从
+ * llmContext.messages 取（已 convertToLlm，assistant toolCall block 保留）。
+ *
+ * hasSubmit 判定：扫 assistant 消息的 content toolCall block，name ===
+ * SUBMIT_REVIEW_TOOL_NAME 即视为已提交。**不**用 JSON.stringify 全串匹配——
+ * reviewer system prompt 内含 "submit_review" 字样（指示 reviewer 调该工具），
+ * 全串匹配会误判首次调用 hasSubmit=true，导致 mock 永不产出 toolCall，
+ * extractReviewerVerdict 取不到 → 保守 naughty（brief Step 2 预警的失败信号）。
+ */
+function makeReviewerStreamFn(verdict: "nice" | "naughty", issues: Issue[]) {
+	return (_model: any, llmContext: any, _options: any) => {
+		const stream = new AssistantMessageEventStream();
+		const messages: any[] = llmContext?.messages ?? [];
+		const hasSubmit = messages.some(
+			(m: any) =>
+				m?.role === "assistant" &&
+				Array.isArray(m?.content) &&
+				m.content.some(
+					(b: any) => b?.type === "toolCall" && b?.name === SUBMIT_REVIEW_TOOL_NAME,
+				),
+		);
+		let message: any;
+		let reason: "stop" | "toolUse";
+		if (hasSubmit) {
+			message = makeAssistantMessage([{ type: "text", text: "done" }], "stop");
+			reason = "stop";
+		} else {
+			message = makeAssistantMessage(
+				[
+					{ type: "text", text: "reviewing" },
+					{
+						type: "toolCall",
+						id: "call-submit",
+						name: SUBMIT_REVIEW_TOOL_NAME,
+						arguments: { verdict, issues },
+					},
+				],
+				"toolUse",
+			);
+			reason = "toolUse";
+		}
+		const startEvent: AssistantMessageEvent = { type: "start", partial: message };
+		const doneEvent: AssistantMessageEvent = { type: "done", reason, message };
+		queueMicrotask(() => {
+			stream.push(startEvent);
+			stream.push(doneEvent);
+		});
+		return stream;
+	};
+}
+
+describe("verification: default reviewerRun (real Agent + submit_review)", () => {
+	it("extracts verdict from a real reviewer agent that calls submit_review", async () => {
+		const v = createSantaVerifier({
+			provider: "anthropic",
+			model: "claude-sonnet-4-5",
+			streamFn: makeReviewerStreamFn("nice", []),
+		});
+		const r = await v.review("output", { criteria: ["c1"] });
+		expect(r.verdict).toBe("nice");
+		expect(r.reviews).toHaveLength(2);
+		expect(r.reviews.every((rv) => rv.verdict === "nice")).toBe(true);
+	});
+
+	it("returns naughty when real reviewers call submit_review with naughty", async () => {
+		const v = createSantaVerifier({
+			provider: "anthropic",
+			model: "claude-sonnet-4-5",
+			streamFn: makeReviewerStreamFn("naughty", [
+				{ severity: "high", description: "bug" },
+			]),
+		});
+		const r = await v.review("output", { criteria: ["c1"] });
+		expect(r.verdict).toBe("naughty");
+		expect(r.issues.length).toBeGreaterThanOrEqual(1);
 	});
 });
