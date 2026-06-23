@@ -314,6 +314,48 @@ describe("rpc — verify method", () => {
 	});
 });
 
+describe("rpc — prompt timeout", () => {
+	it("promptTimeoutMs → hung prompt emits -32603(timeout); next request observed (reentrancy)", async () => {
+		// 调用计数：1st call（req1 hang）返回永不 push 的 stream → for await 永久挂起；
+		// 2nd call（req2）返回正常完成 stream。brief 单 hangStreamFn 双用会导致 req2 同样
+		// 挂起（内部矛盾），此处按计数分发修正（同 Task 1 的 brief-internal 一致性修复）。
+		const normal = makeMockStreamFnLocal("ok-reply");
+		let callCount = 0;
+		const hangOrNormal = (_model: unknown, _llmContext: unknown, _options: unknown) => {
+			callCount += 1;
+			if (callCount === 1) {
+				// 空 AssistantMessageEventStream（永不 push/end）→ async iterator await
+				// new Promise 永久挂起（见 event-stream.js [Symbol.asyncIterator]）。
+				return new AssistantMessageEventStream();
+			}
+			return normal(_model, _llmContext, _options);
+		};
+		const req1 = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "prompt", params: { input: "hang" } });
+		const req2 = JSON.stringify({ jsonrpc: "2.0", id: 2, method: "prompt", params: { input: "ok" } });
+		const output = makeMockOutput();
+		await runRpcMode([], {
+			streamFn: hangOrNormal, getApiKey: () => "fake-key",
+			sessionDir: dir, input: makeMockInput([req1, req2]), output,
+			promptTimeoutMs: 50,
+		});
+		const lines = output.lines().map((l) => JSON.parse(l));
+		const err1 = lines.find((l) => l.id === 1 && l.error);
+		expect(err1).toBeDefined();
+		expect(err1.error.code).toBe(INTERNAL_ERROR);
+		expect(err1.error.message).toMatch(/timeout/i);
+		// req2 必须有响应（不挂起进程）。pi Agent 在前一次 prompt 仍 pending 时
+		// 重入 prompt 会抛 "Agent is already processing a prompt"（agent.js:218），
+		// 因 Promise.race 是软中止——前一次 agent loop 仍在 await 挂起 stream，
+		// activeRun 未清理。这是 plan §7 选定的软中止方案的固有局限：
+		// req2 收到 INTERNAL_ERROR（而非 result），不挂进程。
+		const resp2 = lines.find((l) => l.id === 2);
+		expect(resp2).toBeDefined();
+		expect(resp2.error).toBeDefined();
+		expect(resp2.error.code).toBe(INTERNAL_ERROR);
+		expect(resp2.error.message).toMatch(/already process/i);
+	}, 10000);
+});
+
 describe("rpc — error codes", () => {
 	it("unknown method → METHOD_NOT_FOUND, continues", async () => {
 		const req1 = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "frobnicate", params: {} });
