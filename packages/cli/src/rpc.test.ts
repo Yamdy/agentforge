@@ -275,3 +275,41 @@ describe("rpc — prompt method", () => {
 		expect(lines.find((l) => l.id === 2 && l.result)).toBeDefined();
 	});
 });
+
+describe("rpc — verify method", () => {
+	it("verify request → result ReviewResult via injected mock verifier (no events)", async () => {
+		const mockVerifier = {
+			review: async () => ({
+				verdict: "nice" as const, issues: [],
+				reviews: [{ verdict: "nice" as const, issues: [] }, { verdict: "nice" as const, issues: [] }],
+			}),
+			verifyUntilNice: async () => { throw new Error("not used"); },
+		};
+		const req = JSON.stringify({
+			jsonrpc: "2.0", id: 1, method: "verify",
+			params: { output: "some code", rubric: { criteria: ["works"] } },
+		});
+		const output = makeMockOutput();
+		await runRpcMode([], {
+			streamFn: makeMockStreamFnLocal("x"), getApiKey: () => "fake-key",
+			sessionDir: dir, input: makeMockInput([req]), output,
+			verifier: mockVerifier as never,
+		});
+		const lines = output.lines().map((l) => JSON.parse(l));
+		const result = lines.find((l) => l.id === 1 && l.result);
+		expect(result.result).toMatchObject({ verdict: "nice", issues: [] });
+		expect(lines.filter((l) => l.method === "event").length).toBe(0); // no mid events
+	});
+
+	it("verify with missing output → INVALID_PARAMS", async () => {
+		const req = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "verify", params: { rubric: { criteria: ["x"] } } });
+		const output = makeMockOutput();
+		await runRpcMode([], {
+			streamFn: makeMockStreamFnLocal("x"), getApiKey: () => "fake-key",
+			sessionDir: dir, input: makeMockInput([req]), output,
+			verifier: { review: async () => ({ verdict: "nice", issues: [], reviews: [] }) } as never,
+		});
+		const lines = output.lines().map((l) => JSON.parse(l));
+		expect(lines.find((l) => l.id === 1).error.code).toBe(INVALID_PARAMS);
+	});
+});

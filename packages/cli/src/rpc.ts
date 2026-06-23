@@ -192,6 +192,20 @@ async function dispatch(
 		}
 		return;
 	}
+	if (req.method === "verify") {
+		const params = req.params as { output?: string; rubric?: { criteria?: string[] } };
+		if (typeof params.output !== "string" || !params.rubric || !Array.isArray(params.rubric.criteria)) {
+			output.write(makeError(req.id, INVALID_PARAMS, "verify requires params.output: string + params.rubric: {criteria: string[]}") + "\n");
+			return;
+		}
+		try {
+			const reviewResult = await harness.verify(params.output, params.rubric as never);
+			output.write(makeResult(req.id, reviewResult) + "\n");
+		} catch (err) {
+			output.write(makeError(req.id, INTERNAL_ERROR, err instanceof Error ? err.message : String(err)) + "\n");
+		}
+		return;
+	}
 	output.write(makeError(req.id, METHOD_NOT_FOUND, `method not found: ${req.method}`) + "\n");
 }
 
