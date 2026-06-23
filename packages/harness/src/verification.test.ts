@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 
 import {
@@ -177,5 +177,102 @@ describe("verification: createSantaVerifier.review (reviewerRun injected)", () =
 		});
 		await v.review("output", rubric);
 		expect(calls).toHaveLength(2);
+	});
+});
+
+describe("verification: createSantaVerifier.verifyUntilNice", () => {
+	const rubric: Rubric = { criteria: ["c1"] };
+
+	it("converges on round 1 when initial output is nice", async () => {
+		const run: ReviewerRun = async () => ({ verdict: "nice", issues: [] });
+		const v = createSantaVerifier({
+			provider: "anthropic",
+			model: "claude-sonnet-4-5",
+			reviewerRun: run,
+		});
+		const fixFn = vi.fn(async (o: string) => `${o}-fixed`);
+		const r = await v.verifyUntilNice("init", rubric, fixFn);
+		expect(r.verdict).toBe("nice");
+		expect(r.rounds).toBe(1);
+		expect(r.history).toHaveLength(1);
+		expect(fixFn).not.toHaveBeenCalled();
+	});
+
+	it("converges on round 2 after fixFn revises output", async () => {
+		let reviewCount = 0;
+		const run: ReviewerRun = async () => {
+			reviewCount++;
+			// 每 review 调 2 次（2 reviewer），reviewCount<=2 为第 1 轮（naughty）。
+			return reviewCount <= 2
+				? { verdict: "naughty", issues: [{ severity: "high", description: "bug" }] }
+				: { verdict: "nice", issues: [] };
+		};
+		const v = createSantaVerifier({
+			provider: "anthropic",
+			model: "claude-sonnet-4-5",
+			reviewerRun: run,
+		});
+		const fixFn = vi.fn(async (o: string, _issues: Issue[]) => `${o}-fixed`);
+		const r = await v.verifyUntilNice("init", rubric, fixFn, 3);
+		expect(r.verdict).toBe("nice");
+		expect(r.rounds).toBe(2);
+		expect(r.history).toHaveLength(2);
+		expect(fixFn).toHaveBeenCalledTimes(1);
+	});
+
+	it("returns naughty after maxRounds without convergence", async () => {
+		const run: ReviewerRun = async () => ({
+			verdict: "naughty",
+			issues: [{ severity: "high", description: "persistent bug" }],
+		});
+		const v = createSantaVerifier({
+			provider: "anthropic",
+			model: "claude-sonnet-4-5",
+			reviewerRun: run,
+		});
+		const fixFn = vi.fn(async (o: string) => `${o}-fixed`);
+		const r = await v.verifyUntilNice("init", rubric, fixFn, 3);
+		expect(r.verdict).toBe("naughty");
+		expect(r.rounds).toBe(3);
+		expect(r.history).toHaveLength(3);
+		expect(fixFn).toHaveBeenCalledTimes(3);
+	});
+
+	it("passes previous round's issues to fixFn", async () => {
+		let reviewCount = 0;
+		const run: ReviewerRun = async () => {
+			reviewCount++;
+			return reviewCount <= 2
+				? { verdict: "naughty", issues: [{ severity: "high", description: "THE ISSUE" }] }
+				: { verdict: "nice", issues: [] };
+		};
+		const v = createSantaVerifier({
+			provider: "anthropic",
+			model: "claude-sonnet-4-5",
+			reviewerRun: run,
+		});
+		const seenIssues: Issue[][] = [];
+		const fixFn = vi.fn(async (o: string, issues: Issue[]) => {
+			seenIssues.push(issues);
+			return `${o}-fixed`;
+		});
+		await v.verifyUntilNice("init", rubric, fixFn, 3);
+		expect(seenIssues[0].some((x) => x.description === "THE ISSUE")).toBe(true);
+	});
+
+	it("uses fresh reviewers each round (reviewerRun called 2x per round)", async () => {
+		let totalCalls = 0;
+		const run: ReviewerRun = async () => {
+			totalCalls++;
+			return { verdict: "naughty", issues: [{ severity: "low", description: "x" }] };
+		};
+		const v = createSantaVerifier({
+			provider: "anthropic",
+			model: "claude-sonnet-4-5",
+			reviewerRun: run,
+		});
+		await v.verifyUntilNice("init", rubric, async (o) => o, 2);
+		// 2 rounds × 2 reviewers = 4 calls
+		expect(totalCalls).toBe(4);
 	});
 });

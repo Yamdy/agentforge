@@ -257,9 +257,23 @@ export function createSantaVerifier(deps: SantaVerifierDeps): SantaVerifier {
 		return gateReview(verdicts);
 	};
 
-	// verifyUntilNice 在 Task 3 实现；此处先占位抛错，Task 3 替换。
-	const verifyUntilNice: SantaVerifier["verifyUntilNice"] = async () => {
-		throw new Error("verifyUntilNice not implemented yet");
+	const verifyUntilNice: SantaVerifier["verifyUntilNice"] = async (
+		initialOutput,
+		rubric,
+		fixFn,
+		maxRounds = 3,
+	) => {
+		let output = initialOutput;
+		const history: ReviewResult[] = [];
+		for (let round = 1; round <= maxRounds; round++) {
+			const result = await review(output, rubric); // 每轮 fresh reviewer（review 内 new）
+			history.push(result);
+			if (result.verdict === "nice") {
+				return { output, verdict: "nice", rounds: round, history };
+			}
+			output = await fixFn(output, result.issues);
+		}
+		return { output, verdict: "naughty", rounds: maxRounds, history };
 	};
 
 	return { review, verifyUntilNice };
