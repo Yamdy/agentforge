@@ -313,3 +313,45 @@ describe("rpc — verify method", () => {
 		expect(lines.find((l) => l.id === 1).error.code).toBe(INVALID_PARAMS);
 	});
 });
+
+describe("rpc — error codes", () => {
+	it("unknown method → METHOD_NOT_FOUND, continues", async () => {
+		const req1 = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "frobnicate", params: {} });
+		const req2 = JSON.stringify({ jsonrpc: "2.0", id: 2, method: "prompt", params: { input: "ok" } });
+		const output = makeMockOutput();
+		await runRpcMode([], {
+			streamFn: makeMockStreamFnLocal("r"), getApiKey: () => "fake-key",
+			sessionDir: dir, input: makeMockInput([req1, req2]), output,
+		});
+		const lines = output.lines().map((l) => JSON.parse(l));
+		expect(lines.find((l) => l.id === 1).error.code).toBe(METHOD_NOT_FOUND);
+		expect(lines.find((l) => l.id === 2).result).toBeDefined();
+	});
+
+	it("parse error → -32700 with null id, continues", async () => {
+		const output = makeMockOutput();
+		await runRpcMode([], {
+			streamFn: makeMockStreamFnLocal("r"), getApiKey: () => "fake-key",
+			sessionDir: dir,
+			input: makeMockInput(["{not json", JSON.stringify({ jsonrpc: "2.0", id: 2, method: "prompt", params: { input: "ok" } })]),
+			output,
+		});
+		const lines = output.lines().map((l) => JSON.parse(l));
+		expect(lines.find((l) => l.error && l.id === null).error.code).toBe(PARSE_ERROR);
+		expect(lines.find((l) => l.id === 2).result).toBeDefined();
+	});
+
+	it("internal error when harness.verify throws → -32603", async () => {
+		const req = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "verify", params: { output: "x", rubric: { criteria: ["c"] } } });
+		const output = makeMockOutput();
+		await runRpcMode([], {
+			streamFn: makeMockStreamFnLocal("x"), getApiKey: () => "fake-key",
+			sessionDir: dir, input: makeMockInput([req]), output,
+			verifier: { review: async () => { throw new Error("reviewer boom"); }, verifyUntilNice: async () => { throw new Error("x"); } } as never,
+		});
+		const lines = output.lines().map((l) => JSON.parse(l));
+		const err = lines.find((l) => l.id === 1).error;
+		expect(err.code).toBe(INTERNAL_ERROR);
+		expect(err.message).toContain("reviewer boom");
+	});
+});
