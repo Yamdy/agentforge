@@ -14,6 +14,7 @@ import { createMemorySession } from "./session.js";
 import { createCompactor } from "./compaction.js";
 import * as contextBudget from "./context-budget.js";
 import type { SantaVerifier, Rubric, ReviewResult } from "./verification.js";
+import type { HarnessEvent } from "@agentforge/shared";
 
 /** 构造一个合法的最小 AssistantMessage（stopReason "stop"，无 toolCall）。 */
 function makeAssistantMessage(text: string): AssistantMessage {
@@ -305,8 +306,8 @@ describe("AgentForgeHarness", () => {
 	describe("compaction error handling (Slice 2.5)", () => {
 		it("maybeCompact emits compaction_error and does not throw when generateSummary fails", async () => {
 			const events = createEventBus();
-			const received: any[] = [];
-			events.on("compaction_error", (e: any) => received.push(e));
+			const received: HarnessEvent[] = [];
+			events.on("compaction_error", (e) => received.push(e));
 			const compactor = createCompactor();
 			const compactorDeps = {
 				generateSummary: async () => {
@@ -334,15 +335,20 @@ describe("AgentForgeHarness", () => {
 
 		it("maybeCompact does not emit compaction_error on AbortError", async () => {
 			const events = createEventBus();
-			const received: any[] = [];
-			events.on("compaction_error", (e: any) => received.push(e));
+			const received: HarnessEvent[] = [];
+			events.on("compaction_error", (e) => received.push(e));
 			const ac = new AbortController();
 			const compactor = createCompactor();
+			// 关键：generateSummary 在 compact await 内部延迟 abort 后抛 AbortError，
+			// 使 abort 落在 maybeCompact 的 try 块里（而非 prompt 的前置 abort 检查），
+			// 从而真正驱动 catch 分支（harness.ts:407-411）。
+			let generateSummaryCalled = false;
 			const compactorDeps = {
 				generateSummary: async (_m: unknown, signal?: AbortSignal) => {
-					if (signal?.aborted)
-						throw new DOMException("aborted", "AbortError");
-					throw new Error("unreachable");
+					generateSummaryCalled = true;
+					await new Promise((r) => setTimeout(r, 10));
+					ac.abort();
+					throw new DOMException("aborted", "AbortError");
 				},
 			};
 			const harness = new AgentForgeHarness({
@@ -357,11 +363,15 @@ describe("AgentForgeHarness", () => {
 				compactionTokenThreshold: 0,
 				streamFn: makeMockStreamFn("ok"),
 			});
-			ac.abort();
-			// prompt 在 abort 时抛 "aborted"（在到达 maybeCompact 之前），
-			// 故 compaction_error 永不 emit。received 保持空。
-			await expect(harness.prompt("hi", ac.signal)).rejects.toThrow(/aborted/i);
-			expect(received).toHaveLength(0); // abort 不 emit compaction_error
+			// 不预 abort：让 prompt 正常进入 maybeCompact，abort 在 generateSummary 内部触发。
+			// maybeCompact catch 见 signal.aborted===true 静默 return（不 emit）。
+			// prompt 的 abort 检查在 maybeCompact 之前（harness.ts:260，waitForIdle 后立即判），
+			// 此处 abort 落在 maybeCompact 内部，已越过该检查，故 prompt 正常 resolve。
+			await harness.prompt("hi", ac.signal);
+			// 证明 catch 分支确被执行（generateSummary 被调到 = maybeCompact try 块已进入）。
+			expect(generateSummaryCalled).toBe(true);
+			// abort 非治理失败，不 emit compaction_error。
+			expect(received).toHaveLength(0);
 		});
 	});
 });
