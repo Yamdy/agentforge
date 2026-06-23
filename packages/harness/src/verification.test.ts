@@ -6,9 +6,11 @@ import {
 	gateReview,
 	defaultReviewerSystemPrompt,
 	createSubmitReviewTool,
+	createSantaVerifier,
 	SUBMIT_REVIEW_TOOL_NAME,
 	type Rubric,
 	type ReviewerVerdict,
+	type ReviewerRun,
 	type Issue,
 } from "./verification.js";
 
@@ -114,5 +116,66 @@ describe("verification: createSubmitReviewTool", () => {
 		const tool = createSubmitReviewTool();
 		expect(tool.name).toBe(SUBMIT_REVIEW_TOOL_NAME);
 		expect(tool.parameters).toBeDefined();
+	});
+});
+
+describe("verification: createSantaVerifier.review (reviewerRun injected)", () => {
+	const rubric: Rubric = { criteria: ["c1"] };
+
+	it("returns nice when both reviewers are nice", async () => {
+		const niceRun: ReviewerRun = async () => ({ verdict: "nice", issues: [] });
+		const v = createSantaVerifier({
+			provider: "anthropic",
+			model: "claude-sonnet-4-5",
+			reviewerRun: niceRun,
+		});
+		const r = await v.review("output", rubric);
+		expect(r.verdict).toBe("nice");
+		expect(r.reviews).toHaveLength(2);
+	});
+
+	it("returns naughty when one reviewer is naughty", async () => {
+		let i = 0;
+		const run: ReviewerRun = async () => {
+			i++;
+			return i === 1
+				? { verdict: "nice", issues: [] }
+				: { verdict: "naughty", issues: [{ severity: "high", description: "bug" }] };
+		};
+		const v = createSantaVerifier({
+			provider: "anthropic",
+			model: "claude-sonnet-4-5",
+			reviewerRun: run,
+		});
+		const r = await v.review("output", rubric);
+		expect(r.verdict).toBe("naughty");
+		expect(r.issues).toHaveLength(1);
+	});
+
+	it("returns naughty with conservative issue when a reviewer did not submit (reviewerRun returns undefined)", async () => {
+		const run: ReviewerRun = async () => undefined;
+		const v = createSantaVerifier({
+			provider: "anthropic",
+			model: "claude-sonnet-4-5",
+			reviewerRun: run,
+		});
+		const r = await v.review("output", rubric);
+		expect(r.verdict).toBe("naughty");
+		expect(r.issues.some((x) => x.description.includes("did not submit"))).toBe(true);
+	});
+
+	it("invokes reviewerRun twice per review (fresh reviewers)", async () => {
+		const calls: number[] = [];
+		const run: ReviewerRun = async () => {
+			calls.push(1);
+			return { verdict: "nice", issues: [] };
+		};
+		const v = createSantaVerifier({
+			provider: "anthropic",
+			model: "claude-sonnet-4-5",
+			reviewerRun: run,
+		});
+		await v.review("output", rubric);
+		expect(calls).toHaveLength(2);
 	});
 });

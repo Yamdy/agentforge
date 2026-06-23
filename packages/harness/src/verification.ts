@@ -1,4 +1,6 @@
 import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
+import { Agent } from "@earendil-works/pi-agent-core";
+import { getModel } from "@earendil-works/pi-ai";
 import { Type, type Static } from "typebox";
 
 /**
@@ -160,4 +162,105 @@ export function gateReview(reviews: ReviewerVerdict[]): ReviewResult {
 	const verdict = reviews.every((r) => r.verdict === "nice") ? "nice" : "naughty";
 	const issues = reviews.flatMap((r) => r.issues);
 	return { verdict, issues, reviews };
+}
+
+// === SantaVerifier ===
+
+/**
+ * reviewer 运行器：给定 systemPrompt，跑一个独立 reviewer agent 并返回其裁决。
+ * 返回 undefined 表示 reviewer 正常完成但未调 submit_review（调用方保守 naughty）。
+ *
+ * 可注入以便测试（mock 直接返回 ReviewerVerdict，绕开真实 Agent loop）。
+ * 默认实现（createDefaultReviewerRun）用真实 Agent + submit_review 工具。
+ */
+export type ReviewerRun = (systemPrompt: string) => Promise<ReviewerVerdict | undefined>;
+
+export interface SantaVerifier {
+	review(output: string, rubric: Rubric): Promise<ReviewResult>;
+	verifyUntilNice(
+		initialOutput: string,
+		rubric: Rubric,
+		fixFn: FixFn,
+		maxRounds?: number,
+	): Promise<VerifyUntilNiceResult>;
+}
+
+export interface SantaVerifierDeps {
+	provider: string;
+	model: string;
+	getApiKey?: (provider: string) => string | Promise<string | undefined>;
+	/** 测试 mock；真对话不传走 pi-ai 默认 stream。 */
+	streamFn?: any;
+	/** 默认 defaultReviewerSystemPrompt。 */
+	reviewerSystemPromptBuilder?: (rubric: Rubric, output: string) => string;
+	/**
+	 * 可注入的 reviewer 运行器（测试 mock）。
+	 * 未提供时用 createDefaultReviewerRun（真实 Agent）。
+	 */
+	reviewerRun?: ReviewerRun;
+	cwd?: string;
+}
+
+/** reviewer 未调 submit_review 时的保守 issue。 */
+const NO_SUBMIT_ISSUE: Issue = {
+	severity: "high",
+	description: "reviewer did not submit structured review",
+};
+
+/**
+ * 默认 reviewerRun：new 独立 Agent（无共享上下文）+ prompt + extractReviewerVerdict。
+ * 真实 LLM 路径；测试通常注入 mock reviewerRun 绕开。
+ */
+function createDefaultReviewerRun(deps: SantaVerifierDeps): ReviewerRun {
+	return async (systemPrompt: string) => {
+		const tool = createSubmitReviewTool();
+		const agent = new Agent({
+			initialState: {
+				systemPrompt,
+				model: getModel(deps.provider as any, deps.model as any),
+				tools: [tool],
+				messages: [],
+			},
+			getApiKey: deps.getApiKey,
+			streamFn: deps.streamFn,
+		});
+		await agent.prompt(
+			"Review the output against the rubric. Call submit_review with your verdict and issues.",
+		);
+		await agent.waitForIdle();
+		const v = extractReviewerVerdict(agent.state.messages);
+		return v;
+	};
+}
+
+/**
+ * 创建 SantaVerifier。review() 内部对每次调用 spawn 2 个独立 reviewer（fresh，
+ * 无共享上下文），gate 后返回 ReviewResult。
+ */
+export function createSantaVerifier(deps: SantaVerifierDeps): SantaVerifier {
+	const buildPrompt = deps.reviewerSystemPromptBuilder ?? defaultReviewerSystemPrompt;
+	const runReviewer: ReviewerRun =
+		deps.reviewerRun ?? createDefaultReviewerRun(deps);
+
+	const review: SantaVerifier["review"] = async (output, rubric) => {
+		const systemPrompt = buildPrompt(rubric, output);
+		// 2 个独立 reviewer（fresh，无共享上下文）。Promise.all 并行 spawn。
+		const verdicts = await Promise.all(
+			[0, 1].map(async () => {
+				const v = await runReviewer(systemPrompt);
+				return v ?? {
+					verdict: "naughty" as const,
+					issues: [NO_SUBMIT_ISSUE],
+				};
+			}),
+		);
+		return gateReview(verdicts);
+	};
+
+	// verifyUntilNice 在 Task 3 实现；此处先占位抛错，Task 3 替换。
+	const verifyUntilNice: SantaVerifier["verifyUntilNice"] = async () => {
+		throw new Error("verifyUntilNice not implemented yet");
+	};
+
+	return { review, verifyUntilNice };
 }
