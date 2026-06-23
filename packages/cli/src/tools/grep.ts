@@ -34,6 +34,12 @@ export interface GrepToolDetails {
  * content 进 LLM；details 供 UI/audit。
  * rg 无匹配退出码=1（非错误）：返回空 content，不 throw。
  * rg 不存在 → throw "ripgrep (rg) not installed"。
+ *
+ * 环境要求：PATH 需有真实 rg 可执行文件（经 node:child_process exec 调用）。
+ * Claude Code 内置 bash 的 rg 是 shell function（路由 claude.exe 包装器），node exec 不可调——
+ * 会话内真对话时 grep 会 throw，LLM 收到 error 可改用 bash 工具替代；用户独立终端运行
+ * agentforge 需自装 ripgrep（cargo install ripgrep / scoop install ripgrep）。glob 工具无此依赖。
+ * 详见 ARCHITECTURE.md §5。
  */
 export function createGrepTool(): AgentTool<typeof grepSchema, GrepToolDetails> {
   return {

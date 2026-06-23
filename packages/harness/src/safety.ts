@@ -73,7 +73,7 @@ export function createSafetyGuard(rules?: Partial<SafetyRules>): SafetyGuard {
 				if (frozenAllowDir) {
 					const resolved = path.resolve(ctx.cwd, p);
 					const allowed = path.resolve(ctx.cwd, frozenAllowDir);
-					if (!resolved.startsWith(allowed)) return "deny";
+					if (resolved !== allowed && !resolved.startsWith(allowed + path.sep)) return "deny";
 				}
 				if (fs.existsSync(path.resolve(ctx.cwd, p))) return "ask";
 				return "allow";
@@ -83,7 +83,7 @@ export function createSafetyGuard(rules?: Partial<SafetyRules>): SafetyGuard {
 				if (frozenAllowDir) {
 					const resolved = path.resolve(ctx.cwd, p);
 					const allowed = path.resolve(ctx.cwd, frozenAllowDir);
-					if (!resolved.startsWith(allowed)) return "deny";
+					if (resolved !== allowed && !resolved.startsWith(allowed + path.sep)) return "deny";
 				}
 				return "allow";
 			}

@@ -119,6 +119,21 @@ describe("SafetyGuard - edit with freeze", () => {
 	});
 });
 
+describe("SafetyGuard - freeze prefix 边界（防 /safe-hack 绕过 /safe）", () => {
+	it("freeze /safe 后写 /safe-hack/x → deny（write prefix 边界）", () => {
+		const guard = createSafetyGuard();
+		guard.freeze("/safe");
+		// /safe-hack 以 /safe 为前缀但非其子目录，不应绕过 freeze
+		expect(guard.check(writeCtx("/safe-hack/x"))).toBe("deny");
+	});
+
+	it("freeze /safe 后 edit /safe-hack/x → deny（edit prefix 边界）", () => {
+		const guard = createSafetyGuard();
+		guard.freeze("/safe");
+		expect(guard.check(editCtx("/safe-hack/x"))).toBe("deny");
+	});
+});
+
 describe("SafetyGuard - read-only tools", () => {
 	it("read → allow", () => {
 		const guard = createSafetyGuard();

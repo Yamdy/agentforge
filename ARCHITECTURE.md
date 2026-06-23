@@ -222,6 +222,8 @@ agentforge/
 
 内置工具从 pi `coding-agent/src/core/tools/` 精简移植（read/bash/edit/write 必备，grep/glob/ls 可选）。工具实现遵循 compendium `agent-harness-construction` 的 observation 格式（`status/summary/next_actions/artifacts`）与 error recovery contract。
 
+**grep 工具依赖系统 `rg` 二进制**：经 `node:child_process` exec 调用 ripgrep，要求 `PATH` 有真实 `rg` 可执行文件。Claude Code 内置 bash 的 `rg` 是 shell function（路由 claude.exe 包装器），node exec 不可调——会话内真对话时 grep throw "ripgrep (rg) not installed"，LLM 收到 error 可改用 bash 工具替代；用户独立终端运行 agentforge 需自装 ripgrep（`cargo install ripgrep` / `scoop install ripgrep` / `choco install ripgrep`）。glob 工具无此依赖（node:fs 自实现）。
+
 ---
 
 ## 6. compendium 方法论 → 模块 落地映射
