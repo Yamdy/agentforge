@@ -123,10 +123,12 @@ export function parseRequest(line: string): ParsedRequest {
 	if (typeof o.method !== "string") {
 		return { ok: false, code: INVALID_REQUEST, id: null };
 	}
-	if (o.id !== undefined && typeof o.id !== "number" && typeof o.id !== "string") {
+	// spec §5.1：请求必须有 id（不支持客户端→服务端 notification）。
+	// id 缺失或类型非法（非 number/string）→ INVALID_REQUEST，id=null（无 id 可回显）。
+	if (typeof o.id !== "number" && typeof o.id !== "string") {
 		return { ok: false, code: INVALID_REQUEST, id: null };
 	}
-	return { ok: true, value: { id: o.id as RequestId, method: o.method, params: o.params ?? {} } };
+	return { ok: true, value: { id: o.id, method: o.method, params: o.params ?? {} } };
 }
 
 export function makeResult(id: RequestId, result: unknown): string {
@@ -195,11 +197,33 @@ async function dispatch(
 			output.write(makeError(req.id, INVALID_PARAMS, "verify requires params.output: string + params.rubric: {criteria: string[]}") + "\n");
 			return;
 		}
+		// spec §7：verify hang 防护。harness.verify/verifier.review 无 signal 通道
+		// （reviewer Agents 独立无状态，每次 review 新建），故用 Promise.race 软中止：
+		// 超时 → emit -32603(timeout)，清 timer，继续下一请求（in-flight reviewer 后台
+		// 跑完无害，下次 verify 新建 reviewer）。
+		const ac = new AbortController();
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		if (deps.promptTimeoutMs) {
+			timer = setTimeout(() => ac.abort(), deps.promptTimeoutMs);
+		}
 		try {
-			const reviewResult = await harness.verify(params.output, params.rubric as never);
+			const verifyPromise = harness.verify(params.output, params.rubric as never);
+			const reviewResult = deps.promptTimeoutMs
+				? await Promise.race([
+					verifyPromise,
+					new Promise<never>((_, reject) => {
+						ac.signal.addEventListener("abort", () => reject(new Error("timeout")), { once: true });
+					}),
+				])
+				: await verifyPromise;
 			output.write(makeResult(req.id, reviewResult) + "\n");
 		} catch (err) {
-			output.write(makeError(req.id, INTERNAL_ERROR, err instanceof Error ? err.message : String(err)) + "\n");
+			const message = ac.signal.aborted
+				? "timeout"
+				: (err instanceof Error ? err.message : String(err));
+			output.write(makeError(req.id, INTERNAL_ERROR, message) + "\n");
+		} finally {
+			if (timer) clearTimeout(timer);
 		}
 		return;
 	}

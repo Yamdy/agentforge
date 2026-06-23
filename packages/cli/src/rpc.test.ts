@@ -408,6 +408,59 @@ describe("rpc — error codes", () => {
 	});
 });
 
+// === Slice 3.5 修复：spec §5.1 / §7 must-fix ===
+
+describe("rpc — parseRequest rejects id-less request (spec §5.1)", () => {
+	it("id-less prompt request → INVALID_REQUEST (no client→server notifications)", () => {
+		const line = JSON.stringify({ jsonrpc: "2.0", method: "prompt", params: { input: "hi" } });
+		const req = parseRequest(line);
+		expect(req.ok).toBe(false);
+		if (!req.ok) {
+			expect(req.code).toBe(INVALID_REQUEST);
+			expect(req.id).toBeNull();
+		}
+	});
+
+	it("id of wrong type (boolean) → INVALID_REQUEST", () => {
+		const line = JSON.stringify({ jsonrpc: "2.0", id: true, method: "prompt", params: { input: "hi" } });
+		const req = parseRequest(line);
+		expect(req.ok).toBe(false);
+		if (!req.ok) expect(req.code).toBe(INVALID_REQUEST);
+	});
+});
+
+describe("rpc — verify hang protection (spec §7)", () => {
+	it("promptTimeoutMs → hung verifier emits -32603(timeout); req2 not blocked", async () => {
+		// 永不 resolve 的 mock verifier（模拟 reviewer LLM stall）。
+		const hungVerifier = {
+			review: () => new Promise(() => {}),
+			verifyUntilNice: async () => { throw new Error("not used"); },
+		};
+		// req1 用 hung verifier；req2 用立即 resolve 的 verifier。两请求分两次 runRpcMode
+		// 会各自构造 harness，无法在单次 runRpcMode 内换 verifier——故单次 run 内 hung
+		// verifier 同时服务 req1 与 req2：req1 超时软中止后 req2 也会超时（同一 hung
+		// verifier）。验证 req1 timeout + req2 也得到响应（不是被 req1 阻塞 hang）。
+		const req1 = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "verify", params: { output: "a", rubric: { criteria: ["c"] } } });
+		const req2 = JSON.stringify({ jsonrpc: "2.0", id: 2, method: "verify", params: { output: "b", rubric: { criteria: ["c"] } } });
+		const output = makeMockOutput();
+		await runRpcMode([], {
+			streamFn: makeMockStreamFnLocal("x"), getApiKey: () => "fake-key",
+			sessionDir: dir, input: makeMockInput([req1, req2]), output,
+			verifier: hungVerifier as never,
+			promptTimeoutMs: 50,
+		});
+		const lines = output.lines().map((l) => JSON.parse(l));
+		const err1 = lines.find((l) => l.id === 1 && l.error);
+		expect(err1).toBeDefined();
+		expect(err1.error.code).toBe(INTERNAL_ERROR);
+		expect(err1.error.message).toMatch(/timeout/i);
+		// req2 必须得到响应（自身也是 timeout error，但关键是不被 req1 hang 阻塞——
+		// 修复前 req1 永不 resolve，runRpcMode 读循环永远停在 await harness.verify，req2 无响应）。
+		const resp2 = lines.find((l) => l.id === 2);
+		expect(resp2).toBeDefined();
+	}, 10000);
+});
+
 describe("rpc — JSONL persistence + --resume", () => {
 	it("prompt persists user+assistant entries to session jsonl", async () => {
 		const req = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "prompt", params: { input: "hello" } });
