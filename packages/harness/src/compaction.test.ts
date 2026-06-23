@@ -106,7 +106,11 @@ function makeMockStreamFn(text: string) {
 /** 构造一组 messages + 并行 entryIds。 */
 function buildContext(
 	messages: AgentMessage[],
-	opts: { tokenThreshold: number; isAtStageBoundary?: () => boolean },
+	opts: {
+		tokenThreshold: number;
+		isAtStageBoundary?: () => boolean;
+		signal?: AbortSignal;
+	},
 ): CompactionContext {
 	const entryIds = messages.map((_, i) => `entry-${i}`);
 	return {
@@ -114,6 +118,7 @@ function buildContext(
 		entryIds,
 		tokenThreshold: opts.tokenThreshold,
 		isAtStageBoundary: opts.isAtStageBoundary ?? (() => false),
+		signal: opts.signal,
 	};
 }
 
@@ -356,6 +361,25 @@ describe("Compactor", () => {
 			expect((result.keptMessages[1] as any).role).toBe("assistant");
 			// 旧 turn 被压成 summary
 			expect(result.summary).toBe("S");
+		});
+
+		it("passes ctx.signal through to generateSummary", async () => {
+			const ac = new AbortController();
+			const seenSignals: (AbortSignal | undefined)[] = [];
+			const compactor = createCompactor();
+			const ctx = buildContext(
+				[makeUserMessage("hi"), makeAssistantMessage("hello")],
+				{ tokenThreshold: 0, signal: ac.signal },
+			);
+			const deps = {
+				generateSummary: async (_messages: unknown, signal?: AbortSignal) => {
+					seenSignals.push(signal);
+					return "summary";
+				},
+			};
+			const result = await compactor.compact(ctx, deps);
+			expect(seenSignals).toEqual([ac.signal]);
+			expect(result.summary).toBe("summary");
 		});
 	});
 

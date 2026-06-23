@@ -32,12 +32,15 @@ export interface CompactionContext {
 	tokenThreshold: number;
 	/** 可注入的阶段边界判断函数（Slice 1 默认 false，不硬编码阶段检测）。 */
 	isAtStageBoundary?: () => boolean;
+	/** 可选 abort signal，透传给 generateSummary 的 LLM 调用（Slice 2.5）。 */
+	signal?: AbortSignal;
 }
 
 /** compact 的外部依赖（注入以便测试 mock）。 */
 export interface CompactDeps {
-	/** 生成 summary（测试用 mock 返回固定串；真对话用 pi-ai streamSimple/agent）。 */
-	generateSummary: (messages: AgentMessage[]) => Promise<string>;
+	/** 生成 summary（测试用 mock 返回固定串；真对话用 pi-ai streamSimple/agent）。
+	 * 可选 signal 透传给底层 LLM 调用（Slice 2.5），向后兼容不传 signal 的 mock。 */
+	generateSummary: (messages: AgentMessage[], signal?: AbortSignal) => Promise<string>;
 }
 
 /** compact 的产物。 */
@@ -228,7 +231,7 @@ export function createCompactor(opts: CompactorOptions = {}): Compactor {
 			const { cutIndex } = findCutPoint(messages, budget);
 			const messagesToSummarize = messages.slice(0, cutIndex);
 			const keptMessages = messages.slice(cutIndex);
-			const summary = await deps.generateSummary(messagesToSummarize);
+			const summary = await deps.generateSummary(messagesToSummarize, ctx.signal);
 			const firstKeptEntryId = ctx.entryIds[cutIndex] ?? "";
 			const fileOps = extractFileOps(messagesToSummarize);
 			return { summary, firstKeptEntryId, keptMessages, fileOps };
