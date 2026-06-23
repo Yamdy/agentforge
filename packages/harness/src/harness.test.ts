@@ -147,6 +147,50 @@ describe("AgentForgeHarness", () => {
 			await harness.prompt("hi");
 			expect(harness.agent.state.isStreaming).toBe(false);
 		});
+
+		it("on signal abort: throws, filters aborted assistant msg from session, releases activeRun", async () => {
+			// streamFn：第 1 次 hang-on-abort（push error event 让 agent loop 退出），
+			// 第 2 次正常完成（start + done）。验证 abort 后 activeRun 释放、下次 prompt 不被拒。
+			let callCount = 0;
+			const abortThenNormal = (_m: unknown, _ctx: unknown, opts: { signal?: AbortSignal } = {}) => {
+				callCount += 1;
+				const stream = new AssistantMessageEventStream();
+				if (callCount === 1) {
+					const abortedMsg: AssistantMessage = {
+						...makeAssistantMessage("partial"),
+						stopReason: "aborted",
+						errorMessage: "aborted",
+					};
+					opts.signal?.addEventListener("abort", () => {
+						stream.push({ type: "error", reason: "aborted", error: abortedMsg });
+					});
+				} else {
+					const message = makeAssistantMessage("ok");
+					queueMicrotask(() => {
+						stream.push({ type: "start", partial: message });
+						stream.push({ type: "done", reason: "stop", message });
+					});
+				}
+				return stream;
+			};
+			const { harness, session } = buildHarness({ streamFn: abortThenNormal as any });
+			const ac = new AbortController();
+			// 延迟 abort 让 agent loop 先启动（activeRun 就绪、streamFn 注册 signal 监听）。
+			setTimeout(() => ac.abort(), 50);
+
+			await expect(harness.prompt("hang", ac.signal)).rejects.toThrow(/aborted/i);
+
+			// activeRun 必须已释放——下一次 prompt 不抛 "already processing"。
+			const ac2 = new AbortController();
+			await expect(harness.prompt("next", ac2.signal)).resolves.toBeUndefined();
+
+			// session 路径上不应含 stopReason==="aborted" 的 assistant 消息。
+			const path = session.getPathToRoot(session.getLeafId());
+			const aborted = path.filter(
+				(e: any) => e?.type === "message" && e?.message?.role === "assistant" && e?.message?.stopReason === "aborted",
+			);
+			expect(aborted).toHaveLength(0);
+		});
 	});
 
 	describe("context budget (issue #12)", () => {

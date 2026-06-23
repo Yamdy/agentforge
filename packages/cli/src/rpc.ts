@@ -168,27 +168,24 @@ async function dispatch(
 			const serialized = serializeEvent(e);
 			if (serialized) output.write(makeNotification("event", serialized) + "\n");
 		});
+		const ac = new AbortController();
+		let timer: ReturnType<typeof setTimeout> | undefined;
 		try {
-			const promptPromise = harness.prompt(params.input);
 			if (deps.promptTimeoutMs) {
-				let timer: ReturnType<typeof setTimeout> | undefined;
-				const timeout = new Promise<never>((_, reject) => {
-					timer = setTimeout(() => reject(new Error("timeout")), deps.promptTimeoutMs);
-				});
-				try {
-					await Promise.race([promptPromise, timeout]);
-				} finally {
-					if (timer) clearTimeout(timer);
-				}
-			} else {
-				await promptPromise;
+				timer = setTimeout(() => ac.abort(), deps.promptTimeoutMs);
 			}
+			await harness.prompt(params.input, ac.signal);
 			unsubscribe();
 			const messages = harness.agent.state.messages;
 			output.write(makeResult(req.id, { messages }) + "\n");
 		} catch (err) {
 			unsubscribe();
-			output.write(makeError(req.id, INTERNAL_ERROR, err instanceof Error ? err.message : String(err)) + "\n");
+			const message = (ac.signal.aborted || (err instanceof Error && /timeout/i.test(err.message)))
+				? "timeout"
+				: (err instanceof Error ? err.message : String(err));
+			output.write(makeError(req.id, INTERNAL_ERROR, message) + "\n");
+		} finally {
+			if (timer) clearTimeout(timer);
 		}
 		return;
 	}

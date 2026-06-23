@@ -232,24 +232,34 @@ export class AgentForgeHarness {
 	 * 若注入了 compactor，turn 完成并落盘后主动调 shouldCompact + compact，
 	 * 持久化 CompactionEntry、emit compaction 事件，并把 agent messages 替换为
 	 * [summary 消息, ...keptMessages]。
+	 *
+	 * 可选 signal：若提供且 abort，触发 agent.abort() 真中止 pi Agent 当前 run
+	 * （runWithLifecycle 的 finally → finishRun 释放 activeRun）。streamFn 契约
+	 * 要求 honor options.signal 并终止 stream，否则 agent loop 永久挂起。
+	 * 注意：abort 后 agent.state.messages 可能含 stopReason==="aborted" 的半成品
+	 * assistant 消息——这里过滤掉，不污染 session/--resume 历史。
 	 */
-	async prompt(input: string): Promise<void> {
+	async prompt(input: string, signal?: AbortSignal): Promise<void> {
+		if (signal) {
+			if (signal.aborted) {
+				this._agent.abort();
+			} else {
+				signal.addEventListener("abort", () => this._agent.abort(), { once: true });
+			}
+		}
 		const beforeCount = this._agent.state.messages.length;
 		await this._agent.prompt(input);
 		await this._agent.waitForIdle();
 
-		const messages = this._agent.state.messages;
-		for (let i = beforeCount; i < messages.length; i++) {
-			const message = messages[i] as AgentMessage;
-			const entry: MessageEntry = {
-				type: "message",
-				entryId: "" as any,
-				parentId: null,
-				timestamp: Date.now(),
-				message,
-			} as any;
-			this.session.appendEntry(entry as any);
+		// 若调用方 signal 被 abort，throw 让上层（rpc timeout）映射为错误。
+		// agent loop 已正常退出（streamFn honor signal），activeRun 已释放；
+		// throw 前先（在 appendNewMessages 内）过滤掉 abort 半成品消息再落盘 session。
+		if (signal?.aborted) {
+			this.appendNewMessages(beforeCount);
+			throw new Error("aborted");
 		}
+
+		this.appendNewMessages(beforeCount);
 
 		// Slice 1: turn 间主动压缩（见 HarnessOptions.compactor 注释）。
 		if (this.compactor && this.compactorDeps) {
@@ -260,6 +270,28 @@ export class AgentForgeHarness {
 		// 诊断性，try/catch 防 budget 失败影响主流程。
 		if (this.modelContextWindow) {
 			this.maybeAuditBudget();
+		}
+	}
+
+	/**
+	 * 把 agent.state.messages[beforeCount..] 的新消息 append 到 session。
+	 * 过滤 stopReason==="aborted" 的半成品 assistant 消息（abort 产生，不进 --resume 历史）。
+	 */
+	private appendNewMessages(beforeCount: number): void {
+		const messages = this._agent.state.messages;
+		for (let i = beforeCount; i < messages.length; i++) {
+			const message = messages[i] as AgentMessage;
+			if (message.role === "assistant" && message.stopReason === "aborted") {
+				continue;
+			}
+			const entry: MessageEntry = {
+				type: "message",
+				entryId: "" as any,
+				parentId: null,
+				timestamp: Date.now(),
+				message,
+			} as any;
+			this.session.appendEntry(entry as any);
 		}
 	}
 

@@ -321,14 +321,25 @@ describe("rpc — prompt timeout", () => {
 		// 挂起（内部矛盾），此处按计数分发修正（同 Task 1 的 brief-internal 一致性修复）。
 		const normal = makeMockStreamFnLocal("ok-reply");
 		let callCount = 0;
-		const hangOrNormal = (_model: unknown, _llmContext: unknown, _options: unknown) => {
+		const hangOrNormal = (_model: unknown, _llmContext: unknown, options: { signal?: AbortSignal } = {}) => {
 			callCount += 1;
 			if (callCount === 1) {
-				// 空 AssistantMessageEventStream（永不 push/end）→ async iterator await
-				// new Promise 永久挂起（见 event-stream.js [Symbol.asyncIterator]）。
-				return new AssistantMessageEventStream();
+				// 模拟真实 provider：永不主动 push，但 honor options.signal——
+				// abort 时 push 一个 error event（stopReason "aborted"）让 agent loop
+				// 的 for await 退出、runWithLifecycle finally → finishRun 释放 activeRun。
+				// 空 stream + 无 signal 监听会永久挂起（event-stream.js asyncIterator）。
+				const stream = new AssistantMessageEventStream();
+				const abortedMessage: AssistantMessage = {
+					...makeAssistantMessage(""),
+					stopReason: "aborted",
+					errorMessage: "aborted",
+				};
+				options.signal?.addEventListener("abort", () => {
+					stream.push({ type: "error", reason: "aborted", error: abortedMessage });
+				});
+				return stream;
 			}
-			return normal(_model, _llmContext, _options);
+			return normal(_model, _llmContext, options);
 		};
 		const req1 = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "prompt", params: { input: "hang" } });
 		const req2 = JSON.stringify({ jsonrpc: "2.0", id: 2, method: "prompt", params: { input: "ok" } });
@@ -343,16 +354,14 @@ describe("rpc — prompt timeout", () => {
 		expect(err1).toBeDefined();
 		expect(err1.error.code).toBe(INTERNAL_ERROR);
 		expect(err1.error.message).toMatch(/timeout/i);
-		// req2 必须有响应（不挂起进程）。pi Agent 在前一次 prompt 仍 pending 时
-		// 重入 prompt 会抛 "Agent is already processing a prompt"（agent.js:218），
-		// 因 Promise.race 是软中止——前一次 agent loop 仍在 await 挂起 stream，
-		// activeRun 未清理。这是 plan §7 选定的软中止方案的固有局限：
-		// req2 收到 INTERNAL_ERROR（而非 result），不挂进程。
+		// req2 必须成功：harness.prompt 现在接 signal，超时触发 agent.abort()，
+		// 真中止释放 pi Agent 的 activeRun（runWithLifecycle finally → finishRun）。
+		// hangOrNormal 的 hang stream 必须 honor options.signal（push error event
+		// 让 agent loop 退出）；否则 stream 永久挂起、finishRun 永不跑。
 		const resp2 = lines.find((l) => l.id === 2);
 		expect(resp2).toBeDefined();
-		expect(resp2.error).toBeDefined();
-		expect(resp2.error.code).toBe(INTERNAL_ERROR);
-		expect(resp2.error.message).toMatch(/already process/i);
+		expect(resp2.result).toBeDefined();
+		expect(resp2.error).toBeUndefined();
 	}, 10000);
 });
 
