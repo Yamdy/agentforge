@@ -12,6 +12,7 @@ import { AgentForgeHarness } from "./harness.js";
 import { createEventBus } from "./events.js";
 import { createMemorySession } from "./session.js";
 import * as contextBudget from "./context-budget.js";
+import type { SantaVerifier, Rubric, ReviewResult } from "./verification.js";
 
 /** 构造一个合法的最小 AssistantMessage（stopReason "stop"，无 toolCall）。 */
 function makeAssistantMessage(text: string): AssistantMessage {
@@ -254,5 +255,75 @@ describe("AgentForgeHarness", () => {
 				.find((m: any) => m.role === "assistant");
 			expect(lastAssistant).toBeDefined();
 		});
+	});
+});
+
+describe("AgentForgeHarness verifier mounting", () => {
+	it("verify() delegates to the injected verifier.review", async () => {
+		const fakeReview = vi.fn(async (): Promise<ReviewResult> => ({
+			verdict: "nice",
+			issues: [],
+			reviews: [
+				{ verdict: "nice", issues: [] },
+				{ verdict: "nice", issues: [] },
+			],
+		}));
+		const verifier: SantaVerifier = {
+			review: fakeReview,
+			verifyUntilNice: vi.fn(async () => ({
+				output: "o",
+				verdict: "nice",
+				rounds: 1,
+				history: [],
+			})) as any,
+		};
+		const events = createEventBus();
+		const session = createMemorySession();
+		const harness = new AgentForgeHarness({
+			session,
+			events,
+			tools: [],
+			provider: "anthropic",
+			model: "claude-sonnet-4-5",
+			systemPrompt: "test",
+			streamFn: () => ({}) as any,
+			verifier,
+		});
+		const rubric: Rubric = { criteria: ["c1"] };
+		const r = await harness.verify("output", rubric);
+		expect(fakeReview).toHaveBeenCalledTimes(1);
+		expect(r.verdict).toBe("nice");
+	});
+
+	it("verify() throws when no verifier is configured", async () => {
+		const events = createEventBus();
+		const session = createMemorySession();
+		const harness = new AgentForgeHarness({
+			session,
+			events,
+			tools: [],
+			provider: "anthropic",
+			model: "claude-sonnet-4-5",
+			systemPrompt: "test",
+			streamFn: () => ({}) as any,
+		});
+		await expect(harness.verify("output", { criteria: ["c1"] })).rejects.toThrow(
+			/no verifier/i,
+		);
+	});
+
+	it("exposes verifier via getter (undefined when not injected)", () => {
+		const events = createEventBus();
+		const session = createMemorySession();
+		const harness = new AgentForgeHarness({
+			session,
+			events,
+			tools: [],
+			provider: "anthropic",
+			model: "claude-sonnet-4-5",
+			systemPrompt: "test",
+			streamFn: () => ({}) as any,
+		});
+		expect(harness.verifier).toBeUndefined();
 	});
 });

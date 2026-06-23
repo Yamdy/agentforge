@@ -22,6 +22,7 @@ import type {
 	SafetyContext,
 	SafetyVerdict,
 } from "./safety.js";
+import type { SantaVerifier, Rubric, ReviewResult } from "./verification.js";
 
 /**
  * AgentForgeHarness：包装 pi 核心 Agent 的 harness 核心类。见 ARCHITECTURE.md §9。
@@ -87,6 +88,12 @@ export interface HarnessOptions {
 	 * 默认 process.cwd()。
 	 */
 	cwd?: string;
+	/**
+	 * 可选 SantaVerifier（Slice 3 §4.8）。注入后，harness.verify(output, rubric)
+	 * 委托 verifier.review。未注入时 verify() throw "no verifier configured"。
+	 * harness.prompt 不自动触发 verifier（被动工具，调用方显式调）。
+	 */
+	verifier?: SantaVerifier;
 }
 
 export class AgentForgeHarness {
@@ -101,6 +108,7 @@ export class AgentForgeHarness {
 	private readonly safety?: SafetyGuard;
 	private readonly safetyAskHandler?: (ctx: SafetyContext) => boolean | Promise<boolean>;
 	private readonly cwd: string;
+	private readonly _verifier?: SantaVerifier;
 
 	constructor(opts: HarnessOptions) {
 		this.session = opts.session;
@@ -113,6 +121,7 @@ export class AgentForgeHarness {
 		this.safety = opts.safety;
 		this.safetyAskHandler = opts.safetyAskHandler;
 		this.cwd = opts.cwd ?? process.cwd();
+		this._verifier = opts.verifier;
 
 		this._agent = new Agent({
 			initialState: {
@@ -189,6 +198,23 @@ export class AgentForgeHarness {
 			return ok ? undefined : { block: true, reason: "safety:ask-denied" };
 		}
 		return { block: true, reason: "safety:ask-no-handler" };
+	}
+
+	/**
+	 * 对抗验证（Slice 3 §4.8）：委托注入的 verifier.review(output, rubric)。
+	 * 未注入 verifier 时 throw "no verifier configured"。
+	 * 不自动触发——调用方显式调（harness.prompt 不调）。
+	 */
+	async verify(output: string, rubric: Rubric): Promise<ReviewResult> {
+		if (!this._verifier) {
+			throw new Error("no verifier configured");
+		}
+		return this._verifier.review(output, rubric);
+	}
+
+	/** 暴露注入的 verifier（高级用法访问 verifyUntilNice）；未注入时 undefined。 */
+	get verifier(): SantaVerifier | undefined {
+		return this._verifier;
 	}
 
 	/**
