@@ -15,7 +15,7 @@ import type {
 	AssistantMessageEvent,
 } from "@earendil-works/pi-agent-core";
 
-import { runReplMode } from "./repl.js";
+import { runReplMode, makeReadlineBridge } from "./repl.js";
 import { runPrintMode } from "./print-mode.js";
 import { serializeEntry } from "@agentforge/shared";
 import type { AgentForgeHarness } from "@agentforge/harness";
@@ -477,6 +477,29 @@ describe("cli REPL mode — T8 Safety + 6 tools + askHandler wiring", () => {
 			args: { command: "git push origin main" },
 		});
 		expect(askResult).toEqual({ block: true, reason: "safety:ask-no-handler" });
+	});
+});
+
+describe("makeReadlineBridge", () => {
+	it("read returns pushed lines in FIFO order", async () => {
+		const b = makeReadlineBridge();
+		b.push("a");
+		b.push("b");
+		expect(await b.read()).toBe("a");
+		expect(await b.read()).toBe("b");
+	});
+
+	it("read awaits until a line is pushed (no line buffered)", async () => {
+		const b = makeReadlineBridge();
+		const pending = b.read();
+		b.push("x");
+		expect(await pending).toBe("x");
+	});
+
+	it("read returns null on EOF (push null)", async () => {
+		const b = makeReadlineBridge();
+		b.push(null);
+		expect(await b.read()).toBeNull();
 	});
 });
 

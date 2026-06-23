@@ -472,6 +472,12 @@ describe("rpc — JSONL persistence + --resume", () => {
 		expect(existsSync(file)).toBe(true);
 		const lines = readFileSync(file, "utf8").split("\n").filter((l) => l.length);
 		expect(lines.length).toBe(2); // 1 user + 1 assistant
+		// A7：解析每行 JSON 断言 role（不只断言行数），防落盘角色错乱回归。
+		const entries = lines.map((l) => JSON.parse(l));
+		expect(entries[0].type).toBe("message");
+		expect(entries[0].message.role).toBe("user");
+		expect(entries[1].type).toBe("message");
+		expect(entries[1].message.role).toBe("assistant");
 	});
 
 	it("--resume loads existing session as initial messages", async () => {
@@ -491,7 +497,7 @@ describe("rpc — JSONL persistence + --resume", () => {
 		});
 		expect(sessionId).toBe(seedId);
 		const result = output.lines().map((l) => JSON.parse(l)).find((l) => l.id === 1 && l.result);
-		expect(result.result.messages.length).toBeGreaterThanOrEqual(3); // seed(2) + follow user+assistant
+		expect(result.result.messages.length).toBe(4); // seed(2) + follow user+assistant
 	});
 });
 

@@ -244,6 +244,9 @@ export class AgentForgeHarness {
 			if (signal.aborted) {
 				this._agent.abort();
 			} else {
+				// {once:true}：abort 触发后 listener 自动移除。正常路径（无 abort）listener
+				// 残留至 signal 被 GC——rpc per-request AbortController 短生命周期，无泄漏；
+				// 长生命周期 signal 由调用方自行管理（A4 文档化，handoff note）。
 				signal.addEventListener("abort", () => this._agent.abort(), { once: true });
 			}
 		}

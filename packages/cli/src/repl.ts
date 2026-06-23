@@ -27,7 +27,7 @@ import {
 	rebuildMessages,
 } from "@agentforge/harness";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { SafetyContext } from "@agentforge/harness";
+import type { SafetyContext, SantaVerifier } from "@agentforge/harness";
 
 import {
 	parseArgs,
@@ -48,6 +48,87 @@ import { createSystemPromptWithSkills, defaultSkillDirs } from "./system-prompt.
 export interface ReplInput {
 	/** 读下一行；返回 null 表示 EOF（无更多输入）。异步以支持 readline 逐行事件桥接。 */
 	read(): Promise<string | null>;
+}
+
+/**
+ * 把逐行事件源桥接为异步 read() 队列（ADR-0001a readline 逐行）。
+ * 返回 { read, push }：read 消费一行（null=EOF），push 喂 readline 'line'/'close' 事件。
+ * pending 缓存已到达未消费的行；lineResolve 是 read 正在等待的 resolver
+ * （有 line 到达时直接 resolve 它，不入 pending）。
+ *
+ * bin 入口（index.ts）rpc/repl 两分支共用，消除重复队列桥接代码（A6）。
+ */
+export function makeReadlineBridge(): {
+	read(): Promise<string | null>;
+	push: (line: string | null) => void;
+} {
+	const pending: (string | null)[] = [];
+	let lineResolve: ((line: string | null) => void) | null = null;
+	const push = (line: string | null): void => {
+		if (lineResolve) {
+			const resolve = lineResolve;
+			lineResolve = null;
+			resolve(line);
+		} else {
+			pending.push(line);
+		}
+	};
+	const read = (): Promise<string | null> => {
+		if (pending.length > 0) {
+			return Promise.resolve(pending.shift() as string | null);
+		}
+		return new Promise<string | null>((resolve) => {
+			lineResolve = resolve;
+		});
+	};
+	return { read, push };
+}
+
+/**
+ * 构造 rpc/repl 共享的 AgentForgeHarness（A2：消除两 mode 重复构造）。
+ * tools/systemPrompt/safety/events/cwd 统一；rpc 传 verifier，repl 传 safetyAskHandler。
+ * --resume 的 initialMessages 计算留调用方（repl 还需 resumedMessageCount）。
+ */
+export function buildHarness(opts: {
+	args: ParsedArgs;
+	session: ReturnType<typeof createJsonlSession>;
+	initialMessages: AgentMessage[];
+	streamFn?: any;
+	getApiKey?: (provider: string) => string | undefined | Promise<string | undefined>;
+	skillDirs?: string[];
+	verifier?: SantaVerifier;
+	safetyAskHandler?: (ctx: SafetyContext) => boolean | Promise<boolean>;
+}): AgentForgeHarness {
+	const events = createEventBus();
+	const tools = [
+		createReadTool(),
+		createBashTool(),
+		createEditTool(),
+		createWriteTool(),
+		createGrepTool(),
+		createGlobTool(),
+	];
+	const systemPrompt = createSystemPromptWithSkills(
+		DEFAULT_SYSTEM_PROMPT,
+		opts.skillDirs ?? defaultSkillDirs(),
+	);
+	return new AgentForgeHarness({
+		session: opts.session,
+		events,
+		tools,
+		provider: opts.args.provider,
+		model: opts.args.model,
+		systemPrompt,
+		getApiKey: opts.getApiKey as
+			| ((provider: string) => string | Promise<string | undefined>)
+			| undefined,
+		streamFn: opts.streamFn,
+		initialMessages: opts.initialMessages,
+		safety: createSafetyGuard(),
+		safetyAskHandler: opts.safetyAskHandler,
+		cwd: process.cwd(),
+		verifier: opts.verifier,
+	});
 }
 
 /** runReplMode 的可注入输出汇（测试 mock 或 process.stdout 适配）。 */
@@ -129,38 +210,16 @@ export async function runReplMode(
 		resumedMessageCount = result.messages.length;
 	}
 
-	const events = createEventBus();
-	const tools = [
-		createReadTool(),
-		createBashTool(),
-		createEditTool(),
-		createWriteTool(),
-		createGrepTool(),
-		createGlobTool(),
-	];
-
-	const systemPrompt = createSystemPromptWithSkills(
-		DEFAULT_SYSTEM_PROMPT,
-		deps.skillDirs ?? defaultSkillDirs(),
-	);
-
-	const harness = new AgentForgeHarness({
+	const harness = buildHarness({
+		args,
 		session,
-		events,
-		tools,
-		provider: args.provider,
-		model: args.model,
-		systemPrompt,
-		getApiKey: deps.getApiKey as
-			| ((provider: string) => string | Promise<string | undefined>)
-			| undefined,
-		streamFn: deps.streamFn,
 		initialMessages,
+		streamFn: deps.streamFn,
+		getApiKey: deps.getApiKey,
+		skillDirs: deps.skillDirs,
 		// T8 §4.6：接 SafetyGuard（默认规则）+ askHandler（bin 传 readline，测试 mock）。
 		// 未传 safetyAskHandler 时 ask 降级 deny（reason "safety:ask-no-handler"）。
-		safety: createSafetyGuard(),
 		safetyAskHandler: deps.safetyAskHandler,
-		cwd: process.cwd(),
 	});
 
 	// 测试检视 hook。

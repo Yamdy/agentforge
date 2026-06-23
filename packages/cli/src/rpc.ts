@@ -9,15 +9,13 @@ import { randomUUID } from "node:crypto";
 import {
 	AgentForgeHarness,
 	createJsonlSession,
-	createEventBus,
-	createSafetyGuard,
 	createSantaVerifier,
 	rebuildMessages,
 } from "@agentforge/harness";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { SantaVerifier } from "@agentforge/harness";
 import type { HarnessEvent } from "@agentforge/shared";
-import { parseArgs, DEFAULT_SYSTEM_PROMPT, type ParsedArgs } from "./print-mode.js";
+import { parseArgs, type ParsedArgs } from "./print-mode.js";
 import {
 	createReadTool,
 	createBashTool,
@@ -27,7 +25,7 @@ import {
 	createGlobTool,
 } from "./tools/index.js";
 import { createSystemPromptWithSkills, defaultSkillDirs } from "./system-prompt.js";
-import { defaultSessionDir } from "./repl.js";
+import { defaultSessionDir, buildHarness } from "./repl.js";
 
 /**
  * 把 harness EventBus 事件序列化为 JSON-RPC notification params。
@@ -177,16 +175,16 @@ async function dispatch(
 				timer = setTimeout(() => ac.abort(), deps.promptTimeoutMs);
 			}
 			await harness.prompt(params.input, ac.signal);
-			unsubscribe();
 			const messages = harness.agent.state.messages;
 			output.write(makeResult(req.id, { messages }) + "\n");
 		} catch (err) {
-			unsubscribe();
 			const message = (ac.signal.aborted || (err instanceof Error && /timeout/i.test(err.message)))
 				? "timeout"
 				: (err instanceof Error ? err.message : String(err));
 			output.write(makeError(req.id, INTERNAL_ERROR, message) + "\n");
 		} finally {
+			// A3：unsubscribe hoist 到 finally（单调用点，替代 success+catch 双调）。
+			unsubscribe();
 			if (timer) clearTimeout(timer);
 		}
 		return;
@@ -315,42 +313,25 @@ export async function runRpcMode(
 		initialMessages = rebuildMessages(session.getPathToRoot(leafId));
 	}
 
-	const events = createEventBus();
-	const tools = [
-		createReadTool(),
-		createBashTool(),
-		createEditTool(),
-		createWriteTool(),
-		createGrepTool(),
-		createGlobTool(),
-	];
-	const systemPrompt = createSystemPromptWithSkills(
-		DEFAULT_SYSTEM_PROMPT,
-		deps.skillDirs ?? defaultSkillDirs(),
-	);
-
 	// RPC 特有：verifier 注入（repl 不含）。deps.verifier 优先（测试 mock）。
 	const verifier =
 		deps.verifier ??
 		createSantaVerifier({
 			provider: args.provider,
 			model: args.model,
-			getApiKey: deps.getApiKey as never,
+			getApiKey: deps.getApiKey as
+				| ((provider: string) => string | Promise<string | undefined>)
+				| undefined,
 			streamFn: deps.streamFn,
 		});
 
-	const harness = new AgentForgeHarness({
+	const harness = buildHarness({
+		args,
 		session,
-		events,
-		tools,
-		provider: args.provider,
-		model: args.model,
-		systemPrompt,
-		getApiKey: deps.getApiKey as never,
-		streamFn: deps.streamFn,
 		initialMessages,
-		safety: createSafetyGuard(),
-		cwd: process.cwd(),
+		streamFn: deps.streamFn,
+		getApiKey: deps.getApiKey,
+		skillDirs: deps.skillDirs,
 		verifier,
 	});
 	deps.onHarnessCreated?.(harness);
