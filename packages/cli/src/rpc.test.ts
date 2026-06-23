@@ -15,6 +15,7 @@ import { serializeEvent } from "./rpc.js";
 import { parseRequest, makeResult, makeError, makeNotification,
 	PARSE_ERROR, INVALID_REQUEST, METHOD_NOT_FOUND, INVALID_PARAMS, INTERNAL_ERROR } from "./rpc.js";
 import { runRpcMode } from "./rpc.js";
+import { parseArgs } from "./print-mode.js";
 import type { HarnessEvent } from "@agentforge/shared";
 import type { AgentForgeHarness } from "@agentforge/harness";
 
@@ -438,5 +439,14 @@ describe("rpc — JSONL persistence + --resume", () => {
 		expect(sessionId).toBe(seedId);
 		const result = output.lines().map((l) => JSON.parse(l)).find((l) => l.id === 1 && l.result);
 		expect(result.result.messages.length).toBeGreaterThanOrEqual(3); // seed(2) + follow user+assistant
+	});
+});
+
+describe("rpc — parseArgs --rpc flag", () => {
+	it("parseArgs recognizes --rpc", () => {
+		expect(parseArgs(["--rpc"]).rpc).toBe(true);
+	});
+	it("parseArgs defaults rpc to false", () => {
+		expect(parseArgs([]).rpc).toBe(false);
 	});
 });

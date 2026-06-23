@@ -45,6 +45,8 @@ export interface ParsedArgs {
 	session?: string;
 	/** 可选 resume 目标 session id（Task 9 REPL 用，--resume <id>）。 */
 	resume?: string;
+	/** 是否进入 RPC 模式（--rpc，Slice 3.5）。 */
+	rpc: boolean;
 }
 
 /** 默认 provider/model（DeepSeek 原生 KnownProvider，pi-ai 内置注册）。 */
@@ -76,6 +78,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
 			"session-dir": { type: "string" },
 			session: { type: "string" },
 			resume: { type: "string" },
+			rpc: { type: "boolean", default: false },
 		},
 		allowPositionals: false,
 		strict: true,
@@ -90,6 +93,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
 		sessionDir: values["session-dir"] as string | undefined,
 		session: values.session as string | undefined,
 		resume: values.resume as string | undefined,
+		rpc: (values.rpc as boolean) ?? false,
 	};
 }
 

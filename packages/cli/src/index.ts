@@ -13,6 +13,7 @@ import * as readline from "node:readline";
 
 import { runPrintMode } from "./print-mode.js";
 import { runReplMode, makeReadlineAskHandler, type ReplInput } from "./repl.js";
+import { runRpcMode } from "./rpc.js";
 
 async function main(): Promise<void> {
 	const argv = process.argv.slice(2);
@@ -20,6 +21,7 @@ async function main(): Promise<void> {
 	// 最小检测：有 -p/--print 即 print 模式（runPrintMode 内部会精确解析）。
 	const hasPrintFlag =
 		argv.includes("-p") || argv.includes("--print");
+	const hasRpcFlag = argv.includes("--rpc");
 
 	// getApiKey：从 process.env 透传（pi-ai 约定名）。
 	// pi-ai env-api-keys 约定：provider 名大写 + _API_KEY。deepseek → DEEPSEEK_API_KEY。
@@ -32,6 +34,41 @@ async function main(): Promise<void> {
 		// 不传 streamFn → 走 Agent 默认 streamSimple → 真实 SSE 流。
 		const output = await runPrintMode(argv, { getApiKey });
 		process.stdout.write(output + "\n");
+		return;
+	}
+
+	if (hasRpcFlag) {
+		// RPC 模式（Slice 3.5）：stdin 逐行 JSON-RPC，stdout JSONL。
+		// 复用 repl 异步队列桥接 readline 事件与 runRpcMode 的 async read()。
+		const pending: (string | null)[] = [];
+		let lineResolve: ((line: string | null) => void) | null = null;
+		const push = (line: string | null): void => {
+			if (lineResolve) {
+				const resolve = lineResolve;
+				lineResolve = null;
+				resolve(line);
+			} else {
+				pending.push(line);
+			}
+		};
+		const input = {
+			read(): Promise<string | null> {
+				if (pending.length > 0) {
+					return Promise.resolve(pending.shift() as string | null);
+				}
+				return new Promise<string | null>((resolve) => {
+					lineResolve = resolve;
+				});
+			},
+		};
+		const rl = readline.createInterface({ input: process.stdin });
+		rl.on("line", (line: string) => push(line));
+		rl.on("close", () => push(null));
+		await runRpcMode(argv, {
+			getApiKey,
+			input,
+			output: { write: (s) => process.stdout.write(s) },
+		});
 		return;
 	}
 
