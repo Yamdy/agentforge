@@ -25,9 +25,9 @@ function createSummaryGenerator(
 ): (messages: AgentMessage[], signal?: AbortSignal) => Promise<string> {
   return async (messages, signal?) => {
     const apiKey = await getApiKey(provider);
-    // AgentMessage[]（pi-agent-core 超集，含 UI-only 角色）→ pi-ai Message[]。
-    // compaction 摘要输入为对话历史（LLM-compatible），此处做边界 cast，
-    // 与 pi-agent-core convertToLlm 在 LLM 调用前的转换同义。
+    // agentforge 当前不增强 CustomAgentMessages，故 AgentMessage 结构即 pi-ai Message，
+    // 此处直接传给 completeSimple。若未来引入 UI-only 角色，须改调 agent.convertToLlm
+    // 或在 generateSummary 入口过滤，否则非 LLM 消息会被发给摘要 LLM。
     const assistant = await completeSimple(
       model,
       { systemPrompt: SUMMARIZE_PROMPT, messages: messages as unknown as Message[] },

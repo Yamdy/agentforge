@@ -38,7 +38,7 @@ import { defaultSessionDir, buildHarness } from "./repl.js";
  *   message_start | message_update | message_end |
  *   tool_execution_start | tool_execution_update | tool_execution_end
  * harness 自定义（@agentforge/shared）：
- *   compaction | instinct_observed | audit_finding | adr_recorded | context_budget
+ *   compaction | compaction_error | instinct_observed | audit_finding | adr_recorded | context_budget
  */
 export function serializeEvent(
 	event: HarnessEvent,
