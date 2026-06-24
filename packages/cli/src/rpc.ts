@@ -71,6 +71,10 @@ export function serializeEvent(
 			const e = event as { summary: string; firstKeptEntryId: string };
 			return { type, summary: e.summary, firstKeptEntryId: e.firstKeptEntryId };
 		}
+		case "compaction_error": {
+			const e = event as { error: string };
+			return { type, error: e.error };
+		}
 		case "context_budget": {
 			const e = event as {
 				components: unknown;

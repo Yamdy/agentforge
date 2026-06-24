@@ -81,6 +81,11 @@ describe("rpc — serializeEvent whitelist", () => {
 		expect(serializeEvent(event)).toMatchObject({ type: "compaction", summary: "SUMMARY" });
 	});
 
+	it("serializes compaction_error event", () => {
+		const event = { type: "compaction_error", error: "LLM down" } as unknown as HarnessEvent;
+		expect(serializeEvent(event)).toEqual({ type: "compaction_error", error: "LLM down" });
+	});
+
 	it("serializes agent_start event", () => {
 		const event = { type: "agent_start" } as unknown as HarnessEvent;
 		expect(serializeEvent(event)).toEqual({ type: "agent_start" });
