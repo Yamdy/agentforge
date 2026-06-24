@@ -374,6 +374,55 @@ describe("AgentForgeHarness", () => {
 			expect(received).toHaveLength(0);
 		});
 	});
+
+	describe("compaction end-to-end integration (Slice 2.5 T7)", () => {
+		it("end-to-end: multi-turn over threshold triggers compaction + context_budget", async () => {
+			const events = createEventBus();
+			const seen: HarnessEvent[] = [];
+			events.on("*", (e) => seen.push(e));
+			const session = createMemorySession();
+			const compactor = createCompactor();
+			const compactorDeps = { generateSummary: async () => "SUMMARY" };
+			// 阈值调整说明（对齐真实行为，非 brief 字面值 10/50）：
+			// - compactionTokenThreshold: 5。estimateTokens 每条 min 1 token（chars/4）。
+			//   turn1 = [user "turn1"(2), assistant "reply"(2)] = 4 tokens < 5 → 不触发；
+			//   turn2 累计 [turn1, reply, turn2, reply] = 8 tokens > 5 → 触发 compaction。
+			//   brief 的 10 在 2 turn 短消息下永不超阈值，故降至 5。
+			// - modelContextWindow: 8。maybeAuditBudget 在 maybeCompact 之后跑：turn2 压缩后
+			//   messages = [summary(~9 tokens), user "turn2"(2), assistant "reply"(2)]，
+			//   total ~14 > 8 且 history 占比 > 0.8 → emit context_budget。
+			//   brief 的 50 在压缩后 total ~14 < 50 且占比 < 0.8 → 不触发，故降至 8。
+			const harness = new AgentForgeHarness({
+				session,
+				events,
+				tools: [],
+				provider: "anthropic",
+				model: "claude-sonnet-4-5",
+				systemPrompt: "",
+				compactor,
+				compactorDeps,
+				compactionTokenThreshold: 5,
+				modelContextWindow: 8,
+				streamFn: makeMockStreamFn("reply"), // user→assistant "reply"
+			});
+			await harness.prompt("turn1");
+			await harness.prompt("turn2");
+
+			const compactionEvents = seen.filter((e) => e.type === "compaction");
+			const budgetEvents = seen.filter((e) => e.type === "context_budget");
+			expect(compactionEvents.length).toBeGreaterThanOrEqual(1);
+			expect((compactionEvents[0] as any).summary).toBe("SUMMARY");
+			// messages 被替换为 [summary, ...kept]：summary 作为 user 消息注入，
+			// content 形如 "[Previous context summary]\nSUMMARY"（见 harness.ts maybeCompact）。
+			const msgs = harness.agent.state.messages;
+			expect(msgs[0]).toMatchObject({ role: "user" });
+			expect((msgs[0] as any).content).toContain("[Previous context summary]");
+			// 保留区应含 turn2 的 user + assistant（切点对齐 turn 边界，turn1 被压缩）。
+			expect(msgs.length).toBeGreaterThanOrEqual(2);
+			expect(budgetEvents.length).toBeGreaterThanOrEqual(1);
+			expect((budgetEvents[0] as any).type).toBe("context_budget");
+		});
+	});
 });
 
 describe("AgentForgeHarness verifier mounting", () => {
