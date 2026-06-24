@@ -8,12 +8,19 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { createCompactor, DEFAULT_THRESHOLDS } from "@agentforge/harness";
 import type { CompactDeps } from "@agentforge/harness";
 
-/** generateSummary 的 systemPrompt（草案；质量留待 Slice 4 instinct / 人工评估）。 */
+/**
+ * generateSummary 的 systemPrompt。Slice 4-A Approach A：加强约束禁止幻觉
+ * （T9 + T1 暴露 DeepSeek 对旧措辞产生不相关幻觉）。保持 systemPrompt channel
+ * 不变（T9 证 systemPrompt effective，根因是措辞）。channel swap（B）/streamSimple（C）
+ * 为轮试候选，见 plan Task 5。
+ */
 export const SUMMARIZE_PROMPT =
-  "Summarize the preceding conversation history concisely for context retention. " +
-  "Preserve: key decisions and their rationale, files read/written/edited (with paths), " +
-  "important errors encountered and resolutions, and any unfinished tasks. " +
-  "Omit verbatim tool-call arguments and large file contents. Output only the summary prose.";
+  "Summarize the preceding conversation for context retention. " +
+  "Output ONLY a factual summary. Do NOT continue the conversation. " +
+  "Do NOT invent or add information not present in the conversation. " +
+  "Preserve: key decisions and their rationale; files read/written/edited " +
+  "(with paths); important errors encountered and resolutions; unfinished tasks. " +
+  "Omit verbatim tool-call arguments and large file contents.";
 
 /**
  * 构造 generateSummary：用 completeSimple 非流式取摘要，honor signal，await 异步 getApiKey。

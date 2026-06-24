@@ -59,4 +59,30 @@ describe("createCompactionConfig", () => {
     expect(typeof SUMMARIZE_PROMPT).toBe("string");
     expect(SUMMARIZE_PROMPT.length).toBeGreaterThan(0);
   });
+
+  it("SUMMARIZE_PROMPT contains anti-hallucination constraint (Approach A)", () => {
+    // T9 + Slice 4-A T1 暴露 DeepSeek 对旧 prompt 幻觉；新 prompt 须明确禁止编造
+    expect(SUMMARIZE_PROMPT).toMatch(/Do NOT invent/i);
+    expect(SUMMARIZE_PROMPT).toMatch(/Do NOT continue the conversation/i);
+  });
+
+  it("generateSummary keeps systemPrompt channel + messages in order (Approach A: wording-only)", async () => {
+    const { completeSimple } = await import("@earendil-works/pi-ai");
+    (completeSimple as any).mockClear();
+    const cfg = createCompactionConfig({
+      provider: "deepseek",
+      model: "deepseek-v4-pro",
+      getApiKey: () => "key",
+    });
+    const msgs: AgentMessage[] = [
+      { role: "user", content: "q1", timestamp: 0 } as AgentMessage,
+      { role: "assistant", content: [{ type: "text", text: "a1" }], timestamp: 1 } as AgentMessage,
+    ];
+    await cfg.compactorDeps.generateSummary(msgs);
+    const call = (completeSimple as any).mock.calls.at(-1);
+    // Approach A: systemPrompt = SUMMARIZE_PROMPT（channel 不变，未移到 user message）
+    expect(call?.[1]?.systemPrompt).toBe(SUMMARIZE_PROMPT);
+    // messages 原序，未在首插指令 user message
+    expect(call?.[1]?.messages).toEqual(msgs as unknown as any[]);
+  });
 });
