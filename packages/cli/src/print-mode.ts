@@ -28,6 +28,7 @@ import {
 	createGlobTool,
 } from "./tools/index.js";
 import { createSystemPromptWithSkills, defaultSkillDirs } from "./system-prompt.js";
+import { createCompactionConfig } from "./compaction-config.js";
 
 /** print 模式解析后的 args。 */
 export interface ParsedArgs {
@@ -141,6 +142,13 @@ export async function runPrintMode(argv: string[], deps: PrintModeDeps = {}): Pr
 		deps.skillDirs ?? defaultSkillDirs(),
 	);
 
+	// Slice 2.5 T5：构造 compaction/budget 四字段并注入 harness（与 buildHarness 同构）。
+	// getApiKey 缺省时给一个返回 undefined 的 stub，保持 createCompactionConfig 签名满足。
+	const compaction = createCompactionConfig({
+		provider: args.provider,
+		model: args.model,
+		getApiKey: deps.getApiKey ?? (() => undefined),
+	});
 	const harness = new AgentForgeHarness({
 		session,
 		events,
@@ -157,6 +165,10 @@ export async function runPrintMode(argv: string[], deps: PrintModeDeps = {}): Pr
 		// T8 §4.6：print 模式接 SafetyGuard，但**不传** safetyAskHandler——
 		// 无人工交互通道，ask 降级 deny（reason "safety:ask-no-handler"），用户决策。
 		safety: createSafetyGuard(),
+		compactor: compaction.compactor,
+		compactorDeps: compaction.compactorDeps,
+		modelContextWindow: compaction.modelContextWindow,
+		budgetThresholds: compaction.budgetThresholds,
 	});
 
 	// 测试检视 hook。

@@ -147,6 +147,29 @@ describe("cli print mode — runPrintMode", () => {
 	});
 });
 
+describe("cli print mode — compaction injection (Slice 2.5 T5)", () => {
+	it("runPrintMode injects compaction config (4 fields)", async () => {
+		let seen: any;
+		await runPrintMode(
+			["-p", "hi", "--provider", "deepseek", "--model", "deepseek-v4-pro"],
+			{
+				streamFn: makeMockStreamFn("ok"),
+				getApiKey: () => "key",
+				onHarnessCreated: (h) => {
+					seen = h;
+				},
+			},
+		);
+		expect(seen).toBeDefined();
+		// 4 compaction/budget 字段均注入（private，经 (h as any) 检视，与 T4 repl 测试同构）。
+		expect((seen as any).modelContextWindow).toBeGreaterThan(0);
+		expect((seen as any).compactor).toBeDefined();
+		expect((seen as any).compactorDeps).toBeDefined();
+		expect((seen as any).compactorDeps.generateSummary).toBeTypeOf("function");
+		expect((seen as any).budgetThresholds).toBeDefined();
+	});
+});
+
 describe("cli print mode — T8 Safety + 6 tools (no askHandler)", () => {
 	it("constructs harness with 6 tools + safety guard, no askHandler (ask degrades deny)", async () => {
 		let seenHarness: AgentForgeHarness | null = null;
