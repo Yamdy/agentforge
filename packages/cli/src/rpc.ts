@@ -13,7 +13,7 @@ import {
 	rebuildMessages,
 } from "@agentforge/harness";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { SantaVerifier } from "@agentforge/harness";
+import type { SantaVerifier, Rubric } from "@agentforge/harness";
 import type { HarnessEvent } from "@agentforge/shared";
 import { parseArgs, type ParsedArgs } from "./print-mode.js";
 import {
@@ -209,7 +209,7 @@ async function dispatch(
 			timer = setTimeout(() => ac.abort(), deps.promptTimeoutMs);
 		}
 		try {
-			const verifyPromise = harness.verify(params.output, params.rubric as never);
+			const verifyPromise = harness.verify(params.output, params.rubric as Rubric);
 			const reviewResult = deps.promptTimeoutMs
 				? await Promise.race([
 					verifyPromise,

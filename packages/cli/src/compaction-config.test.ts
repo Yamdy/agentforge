@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { createCompactionConfig, SUMMARIZE_PROMPT } from "./compaction-config.js";
 
 vi.mock("@earendil-works/pi-ai", () => ({
@@ -33,7 +34,7 @@ describe("createCompactionConfig", () => {
       getApiKey: async () => "async-key",
     });
     const summary = await cfg.compactorDeps.generateSummary(
-      [{ role: "user", content: "old", timestamp: 0 }] as any,
+      [{ role: "user", content: "old", timestamp: 0 }] as AgentMessage[],
     );
     expect(completeSimple).toHaveBeenCalled();
     expect(summary).toBe("mocked summary");
@@ -50,7 +51,7 @@ describe("createCompactionConfig", () => {
       model: "deepseek-v4-pro",
       getApiKey: () => "key",
     });
-    const summary = await cfg.compactorDeps.generateSummary([] as any);
+    const summary = await cfg.compactorDeps.generateSummary([] as AgentMessage[]);
     expect(summary).toBe("");
   });
 

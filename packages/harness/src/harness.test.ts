@@ -14,7 +14,7 @@ import { createMemorySession } from "./session.js";
 import { createCompactor } from "./compaction.js";
 import * as contextBudget from "./context-budget.js";
 import type { SantaVerifier, Rubric, ReviewResult } from "./verification.js";
-import type { HarnessEvent } from "@agentforge/shared";
+import type { HarnessEvent, CompactionErrorEvent } from "@agentforge/shared";
 
 /** 构造一个合法的最小 AssistantMessage（stopReason "stop"，无 toolCall）。 */
 function makeAssistantMessage(text: string): AssistantMessage {
@@ -410,7 +410,7 @@ describe("AgentForgeHarness", () => {
 
 			const compactionEvents = seen.filter((e) => e.type === "compaction");
 			const budgetEvents = seen.filter((e) => e.type === "context_budget");
-			expect(compactionEvents.length).toBeGreaterThanOrEqual(1);
+			expect(compactionEvents.length).toBe(1);
 			expect((compactionEvents[0] as any).summary).toBe("SUMMARY");
 			// messages 被替换为 [summary, ...kept]：summary 作为 user 消息注入，
 			// content 形如 "[Previous context summary]\nSUMMARY"（见 harness.ts maybeCompact）。
@@ -419,7 +419,7 @@ describe("AgentForgeHarness", () => {
 			expect((msgs[0] as any).content).toContain("[Previous context summary]");
 			// 保留区应含 turn2 的 user + assistant（切点对齐 turn 边界，turn1 被压缩）。
 			expect(msgs.length).toBeGreaterThanOrEqual(2);
-			expect(budgetEvents.length).toBeGreaterThanOrEqual(1);
+			expect(budgetEvents.length).toBe(1);
 			expect((budgetEvents[0] as any).type).toBe("context_budget");
 		});
 	});
@@ -465,7 +465,7 @@ describe("AgentForgeHarness", () => {
 			// 连续失败：每 turn emit 一次 compaction_error（3 turn = 3 次）。
 			const compactionErrors = seen.filter((e) => e.type === "compaction_error");
 			expect(compactionErrors).toHaveLength(3);
-			expect((compactionErrors[0] as any).error).toBe("always fails");
+			expect((compactionErrors[0] as CompactionErrorEvent).error).toBe("always fails");
 			// 历史未被压缩替换：3 turn × (user+assistant) = 6 条消息。
 			expect(harness.agent.state.messages.length).toBe(6);
 			// context_budget 在历史膨胀后 fire：至少一次 total > window(8)。

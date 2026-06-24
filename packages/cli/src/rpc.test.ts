@@ -17,7 +17,7 @@ import { parseRequest, makeResult, makeError, makeNotification,
 import { runRpcMode } from "./rpc.js";
 import { parseArgs } from "./print-mode.js";
 import type { HarnessEvent } from "@agentforge/shared";
-import type { AgentForgeHarness } from "@agentforge/harness";
+import type { AgentForgeHarness, SantaVerifier } from "@agentforge/harness";
 
 function makeAssistantMessage(text: string): AssistantMessage {
 	return {
@@ -299,7 +299,7 @@ describe("rpc — verify method", () => {
 		await runRpcMode([], {
 			streamFn: makeMockStreamFnLocal("x"), getApiKey: () => "fake-key",
 			sessionDir: dir, input: makeMockInput([req]), output,
-			verifier: mockVerifier as never,
+			verifier: mockVerifier as unknown as SantaVerifier,
 		});
 		const lines = output.lines().map((l) => JSON.parse(l));
 		const result = lines.find((l) => l.id === 1 && l.result);
@@ -313,7 +313,7 @@ describe("rpc — verify method", () => {
 		await runRpcMode([], {
 			streamFn: makeMockStreamFnLocal("x"), getApiKey: () => "fake-key",
 			sessionDir: dir, input: makeMockInput([req]), output,
-			verifier: { review: async () => ({ verdict: "nice", issues: [], reviews: [] }) } as never,
+			verifier: { review: async () => ({ verdict: "nice", issues: [], reviews: [] }) } as unknown as SantaVerifier,
 		});
 		const lines = output.lines().map((l) => JSON.parse(l));
 		expect(lines.find((l) => l.id === 1).error.code).toBe(INVALID_PARAMS);
@@ -404,7 +404,7 @@ describe("rpc — error codes", () => {
 		await runRpcMode([], {
 			streamFn: makeMockStreamFnLocal("x"), getApiKey: () => "fake-key",
 			sessionDir: dir, input: makeMockInput([req]), output,
-			verifier: { review: async () => { throw new Error("reviewer boom"); }, verifyUntilNice: async () => { throw new Error("x"); } } as never,
+			verifier: { review: async () => { throw new Error("reviewer boom"); }, verifyUntilNice: async () => { throw new Error("x"); } } as unknown as SantaVerifier,
 		});
 		const lines = output.lines().map((l) => JSON.parse(l));
 		const err = lines.find((l) => l.id === 1).error;
@@ -451,7 +451,7 @@ describe("rpc — verify hang protection (spec §7)", () => {
 		await runRpcMode([], {
 			streamFn: makeMockStreamFnLocal("x"), getApiKey: () => "fake-key",
 			sessionDir: dir, input: makeMockInput([req1, req2]), output,
-			verifier: hungVerifier as never,
+			verifier: hungVerifier as unknown as SantaVerifier,
 			promptTimeoutMs: 50,
 		});
 		const lines = output.lines().map((l) => JSON.parse(l));

@@ -372,7 +372,7 @@ describe("Compactor", () => {
 				{ tokenThreshold: 0, signal: ac.signal },
 			);
 			const deps = {
-				generateSummary: async (_messages: unknown, signal?: AbortSignal) => {
+				generateSummary: async (_messages: AgentMessage[], signal?: AbortSignal) => {
 					seenSignals.push(signal);
 					return "summary";
 				},
@@ -454,7 +454,7 @@ describe("Compactor", () => {
 
 			await harness.prompt("trigger compaction");
 
-			expect(seen.length).toBeGreaterThanOrEqual(1);
+			expect(seen.length).toBe(1);
 			expect(seen[0].type).toBe("compaction");
 			expect(seen[0].summary).toBe("S");
 		});
