@@ -409,6 +409,60 @@ describe("cli REPL mode --resume", () => {
 		// 若 wiring 未调 rebuildMessages(MessageEntry-only),会是 4 条 → 测试红。
 		expect(resumedMessageCount).toBe(3);
 	});
+
+	it("--resume rebuild injects CompactionEntry summary as first message (T8 post-wiring)", async () => {
+		// T8: 验证 T4 buildHarness 接通后，--resume 经 rebuildMessages 重建的
+		// initialMessages 仍正确注入 CompactionEntry summary（issue #3 wiring 存活）。
+		// 与 issue #3 e2e 互补：该测试只断言 count，此处经 onHarnessCreated 直接
+		// 检视 agent.state.messages[0]，确认 summary 内容被注入为 user 消息。
+		const sessionId = "t8-compacted";
+		const file = join(dir, `${sessionId}.jsonl`);
+		const oldQId = "t8-old-q";
+		const oldAId = "t8-old-a";
+		const compId = "t8-comp";
+		const keptQId = "t8-kept-q";
+		const keptAId = "t8-kept-a";
+		const ts = 2000;
+		const lines = [
+			serializeEntry({ type: "message", entryId: oldQId, parentId: null, timestamp: ts, message: { role: "user", content: "old question", timestamp: ts } } as any),
+			serializeEntry({ type: "message", entryId: oldAId, parentId: oldQId, timestamp: ts, message: { role: "assistant", content: "old answer", timestamp: ts } } as any),
+			serializeEntry({ type: "compaction", entryId: compId, parentId: oldAId, timestamp: ts, summary: "T8 SUMMARY TEXT", firstKeptEntryId: keptQId } as any),
+			serializeEntry({ type: "message", entryId: keptQId, parentId: compId, timestamp: ts, message: { role: "user", content: "kept question", timestamp: ts } } as any),
+			serializeEntry({ type: "message", entryId: keptAId, parentId: keptQId, timestamp: ts, message: { role: "assistant", content: "kept answer", timestamp: ts } } as any),
+		];
+		writeFileSync(file, lines.join("\n") + "\n", "utf8");
+
+		const input = makeMockInput(["exit"]);
+		const output = makeMockOutput();
+		let seenHarness: AgentForgeHarness | null = null;
+		const { sessionId: resumedId, resumedMessageCount } = await runReplMode(
+			["--resume", sessionId],
+			{
+				streamFn: makeMockStreamFn("resume-reply"),
+				getApiKey: () => "fake-key",
+				sessionDir: dir,
+				input,
+				output,
+				onHarnessCreated: (h: AgentForgeHarness) => {
+					seenHarness = h;
+				},
+			},
+		);
+
+		expect(resumedId).toBe(sessionId);
+		expect(resumedMessageCount).toBe(3);
+		// 直接检视 agent initialState.messages：summary 注入为首条 user 消息，
+		// content 形如 "[Previous context summary]\nT8 SUMMARY TEXT"（rebuildMessages session.ts:114）。
+		expect(seenHarness).not.toBeNull();
+		const msgs = (seenHarness as AgentForgeHarness).agent.state.messages;
+		expect(msgs.length).toBe(3);
+		expect(msgs[0]).toMatchObject({ role: "user" });
+		expect((msgs[0] as any).content).toContain("[Previous context summary]");
+		expect((msgs[0] as any).content).toContain("T8 SUMMARY TEXT");
+		// 旧 old-q/old-a 被压缩跳过；保留区 = kept-q + kept-a。
+		expect((msgs[1] as any).content).toBe("kept question");
+		expect((msgs[2] as any).content).toBe("kept answer");
+	});
 });
 
 describe("cli REPL mode — T8 Safety + 6 tools + askHandler wiring", () => {

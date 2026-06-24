@@ -423,6 +423,57 @@ describe("AgentForgeHarness", () => {
 			expect((budgetEvents[0] as any).type).toBe("context_budget");
 		});
 	});
+
+	describe("persistent compaction failure (Slice 2.5 T8)", () => {
+		it("persistent compaction failure: context_budget fires when total exceeds window", async () => {
+			const events = createEventBus();
+			const seen: HarnessEvent[] = [];
+			events.on("*", (e) => seen.push(e));
+			const compactor = createCompactor();
+			// generateSummary 每次都抛错：maybeCompact catch emit compaction_error 不 rethrow，
+			// messages 不被替换 → 历史每 turn 持续膨胀。maybeAuditBudget 在 maybeCompact 之后
+			// 仍执行（harness.ts:271→277），历史超 window 时 emit context_budget。
+			const compactorDeps = {
+				generateSummary: async () => {
+					throw new Error("always fails");
+				},
+			};
+			// 阈值说明（对齐真实行为，非 brief 字面值 10/50）：
+			// - compactionTokenThreshold: 0。强制每 turn shouldCompact=true → compact → 抛错。
+			//   brief 的 10 在短消息下未必每 turn 触发，0 确保连续失败。
+			// - modelContextWindow: 8。estimateTokens: "turnN"(5 chars)=2, "reply"(5)=2。
+			//   turn0=[u,a]=4 tokens, maybeAuditBudget: 4>8? 否, history 4/8=0.5<0.8 → 不 emit。
+			//   turn1=[u,a,u,a]=8, maybeAuditBudget: history 8/8=1.0>0.8 → suggestion → emit。
+			//   turn2=[u,a,u,a,u,a]=12, maybeAuditBudget: total 12>8 → emit。
+			//   brief 的 50 在 3 turn 短消息下 total 最大 ~12 < 50 → 永不超窗口，故降至 8。
+			//   断言 filter total>8（非 brief 字面 50）以匹配真实 window。
+			const harness = new AgentForgeHarness({
+				session: createMemorySession(),
+				events,
+				tools: [],
+				provider: "anthropic",
+				model: "claude-sonnet-4-5",
+				systemPrompt: "",
+				compactor,
+				compactorDeps,
+				compactionTokenThreshold: 0,
+				modelContextWindow: 8,
+				streamFn: makeMockStreamFn("reply"),
+			});
+			for (let i = 0; i < 3; i++) await harness.prompt(`turn${i}`);
+
+			// 连续失败：每 turn emit 一次 compaction_error（3 turn = 3 次）。
+			const compactionErrors = seen.filter((e) => e.type === "compaction_error");
+			expect(compactionErrors).toHaveLength(3);
+			expect((compactionErrors[0] as any).error).toBe("always fails");
+			// 历史未被压缩替换：3 turn × (user+assistant) = 6 条消息。
+			expect(harness.agent.state.messages.length).toBe(6);
+			// context_budget 在历史膨胀后 fire：至少一次 total > window(8)。
+			const budgetEvents = seen.filter((e) => e.type === "context_budget");
+			const overWindow = budgetEvents.filter((e: any) => e.total > 8);
+			expect(overWindow.length).toBeGreaterThanOrEqual(1);
+		});
+	});
 });
 
 describe("AgentForgeHarness verifier mounting", () => {
