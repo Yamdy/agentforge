@@ -9,7 +9,8 @@
  * pi-ai 未暴露 tokenizer）。history 复用 compaction.estimateTotalTokens，
  * 字符串/块在此模块新增 estimateStringTokens。
  *
- * memory 组件 Slice 1 有意省略（instinct/memory 未建），接口预留 memory? 字段后续 slice 填充。
+ * memory 组件：T6 起由 audit(input.memory) 估 tokens 单独计入 components.memory，
+ * 不并入 systemPrompt（避免双重计数）；T7 由 harness 传入 instinctBlock。
  */
 import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import { estimateTotalTokens } from "./compaction.js";
@@ -42,7 +43,7 @@ export interface BudgetComponents {
 	skills: number;
 	tools: number;
 	history: number;
-	/** memory 组件占位预留（Slice 1 instinct/memory 未建，audit 不填 → undefined）。 */
+	/** memory 组件 tokens（T6 起 audit 填充：input.memory 估 tokens；未传 → undefined）。 */
 	memory?: number;
 }
 
@@ -65,6 +66,11 @@ export interface BudgetAuditInput {
 	tools: AgentTool[];
 	/** 对话历史（复用 compaction.estimateTotalTokens）。 */
 	messages: AgentMessage[];
+	/**
+	 * memory 块（instinct/memory 文本，独立于 systemPrompt 估 tokens，避免双重计数）。
+	 * T6 接通；T7 由 harness 传入 instinctBlock。
+	 */
+	memory?: string;
 	/** 可配置阈值。 */
 	thresholds?: BudgetThresholds;
 	/** 模型上下文窗口（用于 history 占比建议与 headroom）。 */
@@ -116,14 +122,20 @@ export function audit(input: BudgetAuditInput): BudgetReport {
 		}
 	}
 	const history = estimateTotalTokens(input.messages);
+	const memory = input.memory ? estimateStringTokens(input.memory) : undefined;
 	const components: BudgetComponents = {
 		systemPrompt,
 		skills,
 		tools,
 		history,
+		memory,
 	};
 	const total =
-		components.systemPrompt + components.skills + components.tools + components.history;
+		components.systemPrompt +
+		components.skills +
+		components.tools +
+		components.history +
+		(memory ?? 0);
 	if (skills > thresholds.skillsBlock) {
 		const names = input.skills.map((s) => s.name).join(", ");
 		suggestions.push({

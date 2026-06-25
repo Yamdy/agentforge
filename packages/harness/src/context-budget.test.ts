@@ -234,3 +234,49 @@ describe("headroom", () => {
 		expect(() => headroom(report.total, 1)).not.toThrow();
 	});
 });
+
+describe("audit memory component", () => {
+	it("fills components.memory when memory provided, included in total", () => {
+		const report = audit({
+			systemPrompt: "base",
+			skills: [],
+			tools: [],
+			messages: [],
+			memory: "<learned_instincts>x</learned_instincts>",
+		} as any);
+		expect(report.components.memory).toBeGreaterThan(0);
+		expect(report.total).toBeGreaterThanOrEqual(
+			report.components.memory + report.components.systemPrompt,
+		);
+	});
+
+	it("memory undefined when not provided", () => {
+		const report = audit({
+			systemPrompt: "base",
+			skills: [],
+			tools: [],
+			messages: [],
+		} as any);
+		expect(report.components.memory).toBeUndefined();
+	});
+
+	it("systemPrompt does NOT include memory tokens (no double count)", () => {
+		const basePrompt = "base";
+		const memoryBlock = "<learned_instincts>" + "x".repeat(400) + "</learned_instincts>";
+		const withMem = audit({
+			systemPrompt: basePrompt,
+			skills: [],
+			tools: [],
+			messages: [],
+			memory: memoryBlock,
+		} as any);
+		const withoutMem = audit({
+			systemPrompt: basePrompt,
+			skills: [],
+			tools: [],
+			messages: [],
+		} as any);
+		expect(withMem.components.systemPrompt).toBe(withoutMem.components.systemPrompt);
+		expect(withMem.components.memory).toBeGreaterThan(0);
+	});
+});
