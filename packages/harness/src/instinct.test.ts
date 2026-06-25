@@ -170,6 +170,7 @@ describe("InstinctStore.extract", () => {
     expect(extractRun).toHaveBeenCalled();
     const passedObs = extractRun.mock.calls[0][0] as any[];
     expect(passedObs.length).toBeLessThan(50);
+    expect(warnSpy).toHaveBeenCalled();
     warnSpy.mockRestore();
   });
 });

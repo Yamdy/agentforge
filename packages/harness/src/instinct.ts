@@ -37,8 +37,17 @@ export function formatInstinctsForSystemPrompt(instincts: Instinct[]): string {
   return `<learned_instincts>\n${lines.join("\n")}\n</learned_instincts>`;
 }
 
+/** LLM 实际产出的部分 instinct 候选：仅 trigger/action/confidence/domain/evidence。id/scope/时间戳由 extract() 补齐。 */
+export interface ExtractedInstinct {
+  trigger: string;
+  action: string;
+  confidence: number;
+  domain: string;
+  evidence?: string[];
+}
+
 export interface ExtractRun {
-  (observations: Observation[], signal?: AbortSignal): Promise<Instinct[]>;
+  (observations: Observation[], signal?: AbortSignal): Promise<ExtractedInstinct[]>;
 }
 
 export interface InstinctStore {
