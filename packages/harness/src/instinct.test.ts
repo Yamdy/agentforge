@@ -66,6 +66,29 @@ describe("InstinctStore.observe", () => {
     expect(JSON.parse(lines[0]).data.content.length).toBe(500);
     expect(JSON.parse(lines[1]).kind).toBe("assistant_message");
   });
+  it("message_end assistant array content → real text, not [object Object]", () => {
+    const dir = tmpDataDir();
+    const store = createInstinctStore({ projectHash: null, dataDir: dir });
+    // pi-ai AssistantMessage.content 恒为数组；直接 String(array) 会得到 "[object Object]"。
+    store.observe({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "hi" }] } } as any);
+    const lines = readFileSync(join(dir, "observations.jsonl"), "utf-8").trim().split("\n");
+    const obs = JSON.parse(lines[0]);
+    expect(obs.kind).toBe("assistant_message");
+    expect(obs.data.content).toBe("hi");
+    expect(obs.data.content).not.toBe("[object Object]");
+  });
+  it("message_end user array content (long) → truncated real text, not [object Object]", () => {
+    const dir = tmpDataDir();
+    const store = createInstinctStore({ projectHash: null, dataDir: dir });
+    const long = "x".repeat(600);
+    store.observe({ type: "message_end", message: { role: "user", content: [{ type: "text", text: long }] } } as any);
+    const lines = readFileSync(join(dir, "observations.jsonl"), "utf-8").trim().split("\n");
+    const obs = JSON.parse(lines[0]);
+    expect(obs.kind).toBe("user_message");
+    expect(obs.data.content.length).toBe(500);
+    expect(obs.data.content).toBe("x".repeat(500));
+    expect(obs.data.content).not.toBe("[object Object]");
+  });
   it("ignores unrelated events", () => {
     const dir = tmpDataDir();
     const store = createInstinctStore({ projectHash: "abc", dataDir: dir });

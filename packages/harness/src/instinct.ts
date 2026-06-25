@@ -77,6 +77,23 @@ function truncate(s: string, n: number): string { return s.length > n ? s.slice(
 function clamp(n: number, lo: number, hi: number): number { return Math.max(lo, Math.min(hi, n)); }
 function normalizeTrigger(t: string): string { return t.trim().toLowerCase(); }
 
+/**
+ * 将 Message.content 序列化为纯文本，兼容 string 与 block 数组两种形式。
+ * pi-ai UserMessage.content: string | (TextContent | ImageContent)[]
+ * pi-ai AssistantMessage.content: (TextContent | ThinkingContent | ToolCall)[] — 恒为数组
+ * 仅 text block 贡献文本；ThinkingContent/ToolCall/ImageContent 跳过
+ * （tool_call 已由 tool_execution_end 单独记录为 tool_call observation）。
+ * 直接 String(array) 会得到 "[object Object]"，污染 EXTRACT_PROMPT 学习信号。
+ */
+function contentToString(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((b: any) => b?.type === "text" ? String(b.text ?? "") : "")
+    .filter(Boolean)
+    .join("\n");
+}
+
 function observationsPath(dataDir: string, projectHash: string | null): string {
   return projectHash
     ? join(dataDir, "projects", projectHash, "observations.jsonl")
@@ -159,8 +176,8 @@ export function createInstinctStore(opts: {
     }
     if ((event as any).type === "message_end") {
       const msg = (event as any).message;
-      if (msg?.role === "user") return [{ timestamp: ts, projectHash, kind: "user_message", data: { content: truncate(String(msg.content ?? ""), TRUNCATE_CONTENT) } }];
-      if (msg?.role === "assistant") return [{ timestamp: ts, projectHash, kind: "assistant_message", data: { content: truncate(String(msg.content ?? ""), TRUNCATE_CONTENT) } }];
+      if (msg?.role === "user") return [{ timestamp: ts, projectHash, kind: "user_message", data: { content: truncate(contentToString(msg.content), TRUNCATE_CONTENT) } }];
+      if (msg?.role === "assistant") return [{ timestamp: ts, projectHash, kind: "assistant_message", data: { content: truncate(contentToString(msg.content), TRUNCATE_CONTENT) } }];
     }
     return [];
   }
