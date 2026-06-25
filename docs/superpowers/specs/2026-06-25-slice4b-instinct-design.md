@@ -98,7 +98,9 @@ interface Instinct {
 }
 ```
 
-**id 派生**：`trigger.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40)`。同 trigger → 同 id → 去重合并。
+**id 派生**：`trigger.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40)`。
+
+**去重合并基础（红队修正，防静默腐败）**：dedup 基于 **trigger 文本相等**（normalize 后），非仅 id——避免两 distinct instinct 共享 40 字符前缀碰撞到同 id 后静默合并（语义平均 + confidence 膨胀 + 应用到所有未来 session 的腐败路径）。extract 时按 trigger 相等查重（详见 §7.2）。
 
 ## 6. 持久化与 project scope
 
@@ -128,12 +130,15 @@ project scope 三级 fallback（cli 层计算）：
 ### 7.2 extract
 
 - 触发：cli session end 调 `await harness.extract()`。print 完成 / repl 退出两出口。
-- 执行：`extractRun(observations, EXTRACT_PROMPT)`。默认实现 = `completeSimple(model, {systemPrompt: EXTRACT_PROMPT, messages: [{role:"user", content: JSON.stringify(observations)}]}, {apiKey})`（与 compaction `createSummaryGenerator` 同形，复用 `env-config.getApiKeyFromEnv` + MiMo 默认）。
-- `EXTRACT_PROMPT` 约束 LLM 输出严格 JSON `{instincts: [{trigger, action, confidence, domain, evidence}]}`：强约束措辞 + "Do NOT invent" + 只从给定 observations 提炼（复用 4-A SUMMARIZE_PROMPT 教训）。MiMo 零幻觉已证（4-C），extract 可靠性有底。
-- observations 体积：extract 传 session 全量 observations（`JSON.stringify`）。MiMo ctx 1048576 足够日常 session；observations 极大超 ctx 的情况 4-B 不处理（依赖未来轮转/归档，见 §10）。
-- **去重/合并**：extract 产出后，每条按 `id` 查已有：
-  - 已存在 → `confidence = min(0.9, old.confidence + 0.1)`（重复观察↑）+ `evidence` 追加新证据（限 5 条，去重）+ `updatedAt` 刷新
-  - 不存在 → 新建 `confidence = clamp(LLM 值, 0.3, 0.9)` + `scope = "project"`（4-B 不自动 promote）
+- 执行：`extractRun(observations, EXTRACT_PROMPT)`。默认实现 = `completeSimple(model, {systemPrompt: EXTRACT_PROMPT, messages: [{role:"user", content: JSON.stringify(observations)}]}, {apiKey})`，复用 `env-config.getApiKeyFromEnv` + MiMo 默认。**注（红队修正）**：借鉴 compaction `createSummaryGenerator` 的 completeSimple 包装 + getApiKey 模式，但结构不同——`createSummaryGenerator(model, getApiKey, provider)` 是 cli 层闭包，`extractRun: (observations, signal) => Instinct[]` 是 pre-bound 注入 InstinctStore（构造时绑定 model/getApiKey/provider）。
+- `EXTRACT_PROMPT` 约束 LLM 输出严格 JSON `{instincts: [{trigger, action, confidence, domain, evidence}]}`：强约束措辞 + "Do NOT invent" + 只从给定 observations 提炼（复用 4-A SUMMARIZE_PROMPT 教训）。
+- **可靠性边界（红队修正）**：4-C 的"MiMo 零幻觉"只证 compaction summary 不幻觉，**不证**从 tool-call traces 提炼可泛化 instinct 的有效性——后者更难（推断意图、区分一次性纠正 vs 稳定偏好、避免重述）。learning 有效性是本 slice 价值前提，须 **T1 探针 gate**（§9）验证后方可进实现。
+- **confidence 校准（红队修正）**：create→`clamp(LLM, 0.3, 0.9)`、repeat→`+0.1 cap 0.9`、apply 阈值 `>=0.5` 是**未校准初值**——+0.1/repeat 对低初始 confidence 几乎无效（LLM 初始 confidence 主导）。T1 探针观察真实 confidence 分布后校准（可能调大 repeat 增量或降低 apply 阈值）。
+- observations 体积 backstop：extract 传 session 全量 observations（`JSON.stringify`）。MiMo ctx 1048576 足够日常 session；**extract 前估算 observations tokens，超 ctx 80% 时截断最旧 observations（保留近期）+ stderr 警告**（避免静默 extract 失败）。长期轮转/归档仍 defer（§10）。
+- **去重/合并（红队修正，见 §5 id 派生）**：按 **trigger 文本相等**（normalize 后）查重，非仅 id：
+  - trigger 相等 → 合并：`confidence = min(0.9, old.confidence + 0.1)` + `evidence` 追加（限 5，去重）+ `updatedAt` 刷新
+  - id 碰撞但 trigger 不同（40 字符前缀碰撞）→ **不合并**，新 instinct id 加数字后缀（`-2`/`-3`…）防异义碰撞静默腐败
+  - 新 trigger → 新建 `confidence = clamp(LLM 值, 0.3, 0.9)` + `scope = "project"`（4-B 不自动 promote）
 - extract 失败（LLM 错/JSON 解析错/IO 错）try/catch，stderr 打印 `[instinct] extract failed: <msg>`，session end 继续退出（best-effort，非主路径，不 emit 治理事件）。
 
 ### 7.3 apply
@@ -146,8 +151,8 @@ project scope 三级 fallback（cli 层计算）：
 
 ### 7.4 memory 组件（补 Slice 1 ContextBudget 缺口）
 
-- `maybeAuditBudget` 改造：若 `this._instinctBlock` 非空，`audit` 输入传 `memory: this._instinctBlock`（新增 `BudgetAuditInput.memory?: string`）。
-- `context-budget.audit`：`components.memory = memory ? estimateStringTokens(memory) : undefined`；`total` 含 memory。`systemPrompt` 组件只估 `baseSystemPrompt`（harness 传 basePrompt 而非拼接后的，避免双重计算）。
+- `maybeAuditBudget` 改造（红队修正，避免双重计算）：当前 `maybeAuditBudget`（harness.ts:309-339）读 `this._agent.state.systemPrompt`——apply 后此值是 basePrompt+instinctBlock 拼接体，直接传 audit 会让 systemPrompt 组件含 instinct 块，再叠加 memory 组件 = **双重计算**。改造：`audit` 输入传 `systemPrompt: this._baseSystemPrompt`（harness 构造时存的原始 basePrompt，不含 instinct 块）+ `memory: this._instinctBlock`（新增 `BudgetAuditInput.memory?: string`）。
+- `context-budget.audit`：`components.memory = memory ? estimateStringTokens(memory) : undefined`；`total` 含 memory；`systemPrompt` 组件只估 basePrompt。
 - Slice 1 预留的 `BudgetComponents.memory?` 字段真正填充。`context_budget` 事件可反映 instinct 开销。
 
 ### 7.5 `/instincts` repl 命令
@@ -156,7 +161,7 @@ project scope 三级 fallback（cli 层计算）：
   - 读 project（当前 projectHash）+ global instinct，按 scope 分组、confidence 降序
   - 输出：`id | scope | confidence | trigger → action`（每条一行）+ evidence 条数
   - 空时打印 "No instincts learned yet for this project."
-- 只读查询，不改状态。print/rpc 模式不接（repl 专属，与 readline 逐行一致）。
+- 只读查询，不改状态。print/rpc 模式不接（repl 专属，与 readline 逐行一致）。rpc 用户 4-B 可直接读 `~/.agentforge/projects/<hash>/instincts/*.json` 查看；未来可加 rpc method（defer）。
 
 ## 8. 错误处理（best-effort，全链不阻塞主流程）
 
@@ -173,15 +178,17 @@ project scope 三级 fallback（cli 层计算）：
 
 ## 9. 测试策略（TDD，与 Slice 2.5/3/3.5 一致）
 
-- **单元**（`harness/src/instinct.test.ts`）：observe 适配四类事件 + observations.jsonl 落盘；extract 用 mock `extractRun`（返回固定 instinct JSON）验去重/合并（同 id confidence +0.1 上限 0.9、evidence 追加限 5、新 id 新建 clamp）；loadInstincts confidence>=0.5 过滤 + 上限 20 + 降序；formatInstinctsForSystemPrompt 空块返回 ""；project scope 三级 fallback（mock git）。
+- **T1 前置探针 gate（红队修正，learning 有效性验证）**：实现前手跑 `EXTRACT_PROMPT` 对 2-3 真实 observation traces（从过往 session observations.jsonl 取，或构造典型：用户纠正 / tool error 重试 / 重复工作流），眼看产出 instinct 是否 (a) 非平凡（非"run tests → run tests"重述）(b) 跨重跑稳定（trigger 措辞一致）(c) 可操作。**gate**：若产出平凡/不稳定，则 EXTRACT_PROMPT 或 observation 信号需重设，不进实现。同时据真实 confidence 分布校准 §7.2 confidence 参数。探针脚本验证后删除（仿 4-C verify-mimo.mjs）。
+
+- **单元**（`harness/src/instinct.test.ts`）：observe 适配四类事件 + observations.jsonl 落盘；extract 用 mock `extractRun`（返回固定 instinct JSON）验去重/合并（trigger 相等 confidence +0.1 上限 0.9、id 碰撞 trigger 不同加后缀不合并、evidence 追加限 5、新 trigger 新建 clamp）；loadInstincts confidence>=0.5 过滤 + 上限 20 + 降序；formatInstinctsForSystemPrompt 空块返回 ""；project scope 三级 fallback（mock git）。
 - **集成**（`harness.test.ts`）：harness 注入 InstinctStore，验 apply 拼 systemPrompt（构造后 `agent.state.systemPrompt` 含 `<learned_instincts>`）+ observe 订阅 EventBus（emit tool_execution_end 后 observations.jsonl 多一条）+ extract 触发持久化。
-- **memory 组件**（`context-budget.test.ts`）：audit 传 memory 字段，components.memory 填值 + total 含 memory + systemPrompt 只估 basePrompt（不双重计算）。
+- **memory 组件**（`context-budget.test.ts`）：audit 传 `systemPrompt=basePrompt` + `memory=instinctBlock`，显式断言 `components.systemPrompt === estimate(basePrompt)` + `components.memory === estimate(instinctBlock)` + `total` 含 memory 且 instinct 块 token **不**出现在 systemPrompt 组件（不双重计算）。
 - **cli**：session end 调 extract（print/repl 两出口 mock）+ `/instincts` 命令输出格式 + project scope 计算（mock git）。
 - **真对话验证**（T9 等价）：MiMo 跑工具对话 → session end extract → 检查 `~/.agentforge/projects/<hash>/instincts/` 产出 → 重启 session 检查 systemPrompt 含 instinct 块。`AGENTFORGE_PROJECT_DIR` 注入固定 hash 避免污染真实 instinct 库。
 
 ## 10. 陷阱与边界
 
-- pi Agent `systemPrompt` 构造时定，session 中途 extract 新增不影响当前 session（跨 session，符合设计，非 bug）。
+- 4-B **选择不在 session 中途 mutate systemPrompt**（红队修正）：pi `AgentState.systemPrompt`（types.d.ts:280）实为可设字段（compaction 已 mutate `state.messages`），apply 跨 session 通过下次 harness 构造注入新 instinct 块，非 pi 强制不可变。session 中途 extract 新增不影响当前 session systemPrompt（符合 D2 跨 session 设计，非 bug）。
 - extract await 阻塞 repl 退出——用户已交互完，可接受；print 模式 await 在回复输出后，不影响体验。
 - observations.jsonl 无上限增长——4-B 不做轮转/归档（defer），靠 content 截断控单体体积；长期使用需归档（记待办）。
 - `InstinctObservedEvent`（shared 已预留）4-B **不 emit**——observe 阶段每条 observation emit 太碎；observations 直接落盘。事件类型保留供未来 Audit 消费。
