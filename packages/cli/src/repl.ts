@@ -27,7 +27,7 @@ import {
 	rebuildMessages,
 } from "@agentforge/harness";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { SafetyContext, SantaVerifier } from "@agentforge/harness";
+import type { SafetyContext, SantaVerifier, InstinctStore } from "@agentforge/harness";
 
 import {
 	parseArgs,
@@ -44,6 +44,7 @@ import {
 } from "./tools/index.js";
 import { createSystemPromptWithSkills, defaultSkillDirs } from "./system-prompt.js";
 import { createCompactionConfig } from "./compaction-config.js";
+import { createInstinctConfig, formatInstinctsList } from "./instinct-config.js";
 
 /** runReplMode 的可注入输入源（测试 mock 或 readline 适配）。 */
 export interface ReplInput {
@@ -99,6 +100,7 @@ export function buildHarness(opts: {
 	skillDirs?: string[];
 	verifier?: SantaVerifier;
 	safetyAskHandler?: (ctx: SafetyContext) => boolean | Promise<boolean>;
+	instinct?: InstinctStore;
 }): AgentForgeHarness {
 	const events = createEventBus();
 	const tools = [
@@ -140,6 +142,7 @@ export function buildHarness(opts: {
 		compactorDeps: compaction.compactorDeps,
 		modelContextWindow: compaction.modelContextWindow,
 		budgetThresholds: compaction.budgetThresholds,
+		instinct: opts.instinct,
 	});
 }
 
@@ -161,6 +164,8 @@ export interface ReplModeDeps {
 	output?: ReplOutput;
 	/** 覆盖 session 目录（测试用临时目录）。bin 默认 <cwd>/.agentforge/sessions。 */
 	sessionDir?: string;
+	/** 覆盖 instinct 持久化目录（默认 ~/.agentforge，见 instinct-config.ts）。 */
+	instinctDataDir?: string;
 	/** 覆盖 skills 发现目录（测试用临时目录；默认 defaultSkillDirs()）。 */
 	skillDirs?: string[];
 	/**
@@ -222,6 +227,13 @@ export async function runReplMode(
 		resumedMessageCount = result.messages.length;
 	}
 
+	// Slice 4-B T9：构造 instinct config 并注入 harness（observe/apply/extract 通路）。
+	const instinctCfg = createInstinctConfig({
+		provider: args.provider,
+		model: args.model,
+		getApiKey: deps.getApiKey ?? (() => undefined),
+		dataDir: deps.instinctDataDir,
+	});
 	const harness = buildHarness({
 		args,
 		session,
@@ -232,6 +244,7 @@ export async function runReplMode(
 		// T8 §4.6：接 SafetyGuard（默认规则）+ askHandler（bin 传 readline，测试 mock）。
 		// 未传 safetyAskHandler 时 ask 降级 deny（reason "safety:ask-no-handler"）。
 		safetyAskHandler: deps.safetyAskHandler,
+		instinct: instinctCfg.instinct,
 	});
 
 	// 测试检视 hook。
@@ -262,6 +275,12 @@ export async function runReplMode(
 		if (trimmed === EXIT_COMMAND) {
 			break;
 		}
+		// Slice 4-B T9：/instincts 只读列出已学 instinct，不调 harness.prompt。
+		if (trimmed === "/instincts") {
+			const all = harness.instinctStore?.loadInstincts() ?? [];
+			output.write(formatInstinctsList(all) + "\n");
+			continue;
+		}
 
 		await harness.prompt(trimmed);
 
@@ -278,6 +297,13 @@ export async function runReplMode(
 				output.write(textBlock.text + "\n");
 			}
 		}
+	}
+
+	// Slice 4-B T9：session-end extract（EOF/exit，best-effort，失败不阻断）。
+	try {
+		await harness.extract();
+	} catch {
+		/* best-effort, session end */
 	}
 
 	return { sessionId, resumedMessageCount };

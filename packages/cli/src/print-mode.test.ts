@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { AssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type {
 	AssistantMessage,
@@ -167,6 +167,37 @@ describe("cli print mode — compaction injection (Slice 2.5 T5)", () => {
 		expect((seen as any).compactorDeps).toBeDefined();
 		expect((seen as any).compactorDeps.generateSummary).toBeTypeOf("function");
 		expect((seen as any).budgetThresholds).toBeDefined();
+	});
+});
+
+describe("cli print mode — Slice 4-B T9 instinct session-end extract", () => {
+	it("calls harness.extract() after prompt", async () => {
+		let extracted = false;
+		const streamFn = makeMockStreamFn("reply");
+		await runPrintMode(["-p", "hi"], {
+			streamFn,
+			getApiKey: () => "fake-key",
+			onHarnessCreated: (h) => {
+				vi.spyOn(h, "extract").mockImplementation(async () => {
+					extracted = true;
+				});
+			},
+		});
+		expect(extracted).toBe(true);
+	});
+
+	it("best-effort: swallows extract() rejection (no throw to caller)", async () => {
+		const streamFn = makeMockStreamFn("reply");
+		// extract() throws — runPrintMode must swallow (try/catch best-effort).
+		await expect(
+			runPrintMode(["-p", "hi"], {
+				streamFn,
+				getApiKey: () => "fake-key",
+				onHarnessCreated: (h) => {
+					vi.spyOn(h, "extract").mockRejectedValue(new Error("extract boom"));
+				},
+			}),
+		).resolves.toBe("reply");
 	});
 });
 

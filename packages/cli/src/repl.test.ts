@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import {
 	mkdtempSync,
@@ -563,6 +563,125 @@ describe("cli REPL mode — Slice 2.5 T4 compaction wiring", () => {
 		// budgetThresholds = DEFAULT_THRESHOLDS（含 audit/warn/critical 数值键）。
 		expect((h as any).budgetThresholds).toBeDefined();
 		expect((h as any).budgetThresholds).toBeTypeOf("object");
+	});
+});
+
+describe("cli REPL mode — Slice 4-B T9 /instincts + session-end extract", () => {
+	it("/instincts command prints instinct list (not prompt)", async () => {
+		const input = makeMockInput(["/instincts", "exit"]);
+		const output = makeMockOutput();
+		let streamFnCalls = 0;
+		const streamFn = () => {
+			streamFnCalls += 1;
+			return makeMockStreamFn("reply")();
+		};
+
+		await runReplMode([], {
+			streamFn,
+			getApiKey: () => "fake-key",
+			sessionDir: dir,
+			input,
+			output,
+			onHarnessCreated: (h: AgentForgeHarness) => {
+				// Inject an instinct into the store via loadInstincts spy.
+				vi.spyOn(h.instinctStore!, "loadInstincts").mockReturnValue([
+					{
+						id: "use-strict-mode",
+						trigger: "writing js",
+						action: "add use strict",
+						confidence: 0.8,
+						domain: "js",
+						scope: "project",
+						projectHash: null,
+						evidence: ["e1", "e2"],
+						createdAt: 1,
+						updatedAt: 2,
+					} as any,
+				]);
+			},
+		});
+
+		const all = output.lines().join("\n");
+		// instinct line present
+		expect(all).toContain("use-strict-mode");
+		expect(all).toContain("writing js");
+		expect(all).toContain("add use strict");
+		expect(all).toMatch(/evidence: 2/);
+		// /instincts must NOT call harness.prompt → streamFn never invoked.
+		expect(streamFnCalls).toBe(0);
+	});
+
+	it("/instincts with no instincts prints the empty placeholder", async () => {
+		const input = makeMockInput(["/instincts", "exit"]);
+		const output = makeMockOutput();
+		await runReplMode([], {
+			streamFn: makeMockStreamFn("reply"),
+			getApiKey: () => "fake-key",
+			sessionDir: dir,
+			input,
+			output,
+			onHarnessCreated: (h: AgentForgeHarness) => {
+				vi.spyOn(h.instinctStore!, "loadInstincts").mockReturnValue([]);
+			},
+		});
+		const all = output.lines().join("\n");
+		expect(all).toContain("No instincts learned yet for this project.");
+	});
+
+	it("calls harness.extract() on exit", async () => {
+		const input = makeMockInput(["exit"]);
+		const output = makeMockOutput();
+		let extracted = false;
+		await runReplMode([], {
+			streamFn: makeMockStreamFn("reply"),
+			getApiKey: () => "fake-key",
+			sessionDir: dir,
+			input,
+			output,
+			onHarnessCreated: (h: AgentForgeHarness) => {
+				vi.spyOn(h, "extract").mockImplementation(async () => {
+					extracted = true;
+				});
+			},
+		});
+		expect(extracted).toBe(true);
+	});
+
+	it("calls harness.extract() on EOF", async () => {
+		// EOF: input exhausted (read returns null) without "exit".
+		const input = makeMockInput(["hello"]);
+		const output = makeMockOutput();
+		let extracted = false;
+		await runReplMode([], {
+			streamFn: makeMockStreamFn("reply"),
+			getApiKey: () => "fake-key",
+			sessionDir: dir,
+			input,
+			output,
+			onHarnessCreated: (h: AgentForgeHarness) => {
+				vi.spyOn(h, "extract").mockImplementation(async () => {
+					extracted = true;
+				});
+			},
+		});
+		expect(extracted).toBe(true);
+	});
+
+	it("best-effort: swallows extract() rejection on exit", async () => {
+		const input = makeMockInput(["exit"]);
+		const output = makeMockOutput();
+		await expect(
+			runReplMode([], {
+				streamFn: makeMockStreamFn("reply"),
+				getApiKey: () => "fake-key",
+				sessionDir: dir,
+				input,
+				output,
+				onHarnessCreated: (h: AgentForgeHarness) => {
+					vi.spyOn(h, "extract").mockRejectedValue(new Error("extract boom"));
+				},
+			}),
+		).resolves.toBeDefined();
 	});
 });
 

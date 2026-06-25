@@ -17,8 +17,26 @@ import {
   EXTRACT_PROMPT,
   type ExtractRun,
   type ExtractedInstinct,
+  type Instinct,
   type Observation,
 } from "@agentforge/harness";
+
+/**
+ * 格式化 instinct 列表为 /instincts REPL 命令的可读文本（Slice 4-B T9）。
+ * 空 → "No instincts learned yet for this project."；非空每行
+ * `id | scope | confidence | trigger → action (evidence: N)`。
+ */
+export function formatInstinctsList(instincts: Instinct[]): string {
+  if (instincts.length === 0) {
+    return "No instincts learned yet for this project.";
+  }
+  return instincts
+    .map(
+      (i) =>
+        `${i.id} | ${i.scope} | ${i.confidence} | ${i.trigger} → ${i.action} (evidence: ${i.evidence.length})`,
+    )
+    .join("\n");
+}
 
 export function createExtractRun(
   model: ReturnType<typeof getModel>,

@@ -26,6 +26,7 @@ import {
 } from "./tools/index.js";
 import { createSystemPromptWithSkills, defaultSkillDirs } from "./system-prompt.js";
 import { defaultSessionDir, buildHarness } from "./repl.js";
+import { createInstinctConfig } from "./instinct-config.js";
 
 /**
  * 把 harness EventBus 事件序列化为 JSON-RPC notification params。
@@ -329,6 +330,13 @@ export async function runRpcMode(
 			streamFn: deps.streamFn,
 		});
 
+	// Slice 4-B T9：rpc 注入 instinct（observe/apply active；extract DEFERRED——
+	// rpc 无明确 session end，不触发 extract）。
+	const instinctCfg = createInstinctConfig({
+		provider: args.provider,
+		model: args.model,
+		getApiKey: deps.getApiKey ?? (() => undefined),
+	});
 	const harness = buildHarness({
 		args,
 		session,
@@ -337,6 +345,7 @@ export async function runRpcMode(
 		getApiKey: deps.getApiKey,
 		skillDirs: deps.skillDirs,
 		verifier,
+		instinct: instinctCfg.instinct,
 	});
 	deps.onHarnessCreated?.(harness);
 

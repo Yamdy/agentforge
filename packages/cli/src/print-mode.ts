@@ -30,6 +30,7 @@ import {
 } from "./tools/index.js";
 import { createSystemPromptWithSkills, defaultSkillDirs } from "./system-prompt.js";
 import { createCompactionConfig } from "./compaction-config.js";
+import { createInstinctConfig } from "./instinct-config.js";
 
 /** print 模式解析后的 args。 */
 export interface ParsedArgs {
@@ -150,6 +151,12 @@ export async function runPrintMode(argv: string[], deps: PrintModeDeps = {}): Pr
 		model: args.model,
 		getApiKey: deps.getApiKey ?? (() => undefined),
 	});
+	// Slice 4-B T9：构造 instinct config 并注入 harness（observe/apply/extract 通路）。
+	const instinctCfg = createInstinctConfig({
+		provider: args.provider,
+		model: args.model,
+		getApiKey: deps.getApiKey ?? (() => undefined),
+	});
 	const harness = new AgentForgeHarness({
 		session,
 		events,
@@ -170,12 +177,20 @@ export async function runPrintMode(argv: string[], deps: PrintModeDeps = {}): Pr
 		compactorDeps: compaction.compactorDeps,
 		modelContextWindow: compaction.modelContextWindow,
 		budgetThresholds: compaction.budgetThresholds,
+		instinct: instinctCfg.instinct,
 	});
 
 	// 测试检视 hook。
 	deps.onHarnessCreated?.(harness);
 
 	await harness.prompt(args.prompt);
+
+	// Slice 4-B T9：session-end extract（best-effort，失败不阻断输出）。
+	try {
+		await harness.extract();
+	} catch {
+		/* best-effort, session end */
+	}
 
 	// 从 agent.state.messages 取最后 assistant 消息的 text content
 	const messages = harness.agent.state.messages;
