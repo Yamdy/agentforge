@@ -693,10 +693,13 @@ describe("harness instinct integration", () => {
 			streamFn: mockStreamFn(),
 			instinct,
 		});
+		// Slice 4-B T10 prefer-args 去重：无 args 的 tool_execution_end 被跳过（pi 原生事件无 args，
+		// 仅 harness afterToolCall emit 带 args）。此集成测试须发带 args 事件才会落盘 observations.jsonl。
 		events.emit({
 			type: "tool_execution_end",
 			toolCallId: "1",
 			toolName: "bash",
+			args: { command: "ls -la" },
 			result: {},
 			isError: false,
 		} as any);
@@ -708,6 +711,72 @@ describe("harness instinct integration", () => {
 		const parsed = JSON.parse(lines.split("\n")[0] as string);
 		expect(parsed.kind).toBe("tool_call");
 		expect(parsed.data.toolName).toBe("bash");
+		expect(parsed.data.argsSummary).toContain("ls -la");
+	});
+
+	it("afterToolCall emit tool_execution_end 含 args(AfterToolCallContext.args)", async () => {
+		const events = createEventBus();
+		const emitted: any[] = [];
+		events.on("*", (e) => emitted.push(e));
+		// read tool:接收 {path}，返回文本结果。
+		const readTool: AgentTool = {
+			name: "read",
+			label: "Read",
+			description: "read a file",
+			parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] } as any,
+			execute: async () => ({
+				content: [{ type: "text", text: "file-content" }],
+				details: {},
+			}),
+		};
+		// mockStreamFn：第一次调用返回带 toolCall block 的 assistant message（stopReason "toolUse"），
+		// 后续调用返回纯文本 stop 消息，避免 agent loop 死循环。
+		let callCount = 0;
+		const toolCallStreamFn = () => {
+			callCount++;
+			const stream = new AssistantMessageEventStream();
+			const message: AssistantMessage = callCount === 1
+				? {
+						role: "assistant",
+						content: [
+							{ type: "toolCall", id: "tc-1", name: "read", arguments: { path: "x" } },
+						],
+						api: "anthropic" as any,
+						provider: "anthropic",
+						model: "claude-sonnet-4-5",
+						usage: {
+							input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2,
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+						},
+						stopReason: "toolUse",
+						timestamp: Date.now(),
+					}
+				: makeAssistantMessage("done");
+			const startEvent: AssistantMessageEvent = { type: "start", partial: message };
+			const doneEvent: AssistantMessageEvent = {
+				type: "done",
+				reason: callCount === 1 ? "toolUse" : "stop",
+				message,
+			};
+			queueMicrotask(() => {
+				stream.push(startEvent);
+				stream.push(doneEvent);
+			});
+			return stream;
+		};
+		const h = new AgentForgeHarness({
+			session: createMemorySession(),
+			events,
+			tools: [readTool],
+			provider: "anthropic",
+			model: "claude-sonnet-4-5",
+			systemPrompt: "BASE",
+			streamFn: toolCallStreamFn,
+		});
+		await h.prompt("读 x");
+		const toolEv = emitted.find((e) => e.type === "tool_execution_end");
+		expect(toolEv).toBeDefined();
+		expect(toolEv.args).toEqual({ path: "x" }); // args 非空,深等于工具参数
 	});
 
 	it("extract() delegates to instinctStore.extract()", async () => {

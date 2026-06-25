@@ -112,12 +112,24 @@ export interface ContextBudgetEvent {
   headroom: number;
 }
 
+/** harness afterToolCall emit 的 tool 事件(带 args,区别于 pi 原生 tool_execution_end 无 args 字段)。
+ *  Slice 4-B T10:argsSummary gap 修复——harness emit 带 args,instinct observe prefer-args 去重。 */
+export interface HarnessToolExecutionEndEvent {
+  type: "tool_execution_end";
+  toolCallId: string;
+  toolName: string;
+  args: unknown; // AfterToolCallContext.args
+  result: unknown;
+  isError: boolean;
+}
+
 export type HarnessCustomEvent =
   | CompactionEvent
   | CompactionErrorEvent
   | InstinctObservedEvent
   | AuditFindingEvent
   | AdrRecordedEvent
-  | ContextBudgetEvent;
+  | ContextBudgetEvent
+  | HarnessToolExecutionEndEvent;
 
 export type HarnessEvent = AgentEvent | HarnessCustomEvent;

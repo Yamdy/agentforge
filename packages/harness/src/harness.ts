@@ -10,7 +10,12 @@ import type {
 } from "@earendil-works/pi-agent-core";
 import type { SessionStore } from "./session.js";
 import type { EventBus } from "./events.js";
-import type { HarnessEvent, MessageEntry, CompactionEntry } from "@agentforge/shared";
+import type {
+	HarnessEvent,
+	HarnessToolExecutionEndEvent,
+	MessageEntry,
+	CompactionEntry,
+} from "@agentforge/shared";
 import type {
 	Compactor,
 	CompactDeps,
@@ -190,9 +195,10 @@ export class AgentForgeHarness {
 					type: "tool_execution_end",
 					toolCallId: ctx.toolCall.id,
 					toolName: ctx.toolCall.name,
+					args: ctx.args,
 					result: ctx.result,
 					isError: ctx.isError,
-				} as any);
+				} satisfies HarnessToolExecutionEndEvent);
 				return undefined;
 			},
 		});
