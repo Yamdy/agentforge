@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { deriveId, formatInstinctsForSystemPrompt, type Instinct } from "./instinct.js";
+import { mkdtempSync, readFileSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createInstinctStore, deriveId, formatInstinctsForSystemPrompt, type Instinct } from "./instinct.js";
+
+function tmpDataDir() { return mkdtempSync(join(tmpdir(), "instinct-")); }
 
 describe("deriveId", () => {
   it("lowercases + replaces non-alnum with - + truncates 40", () => {
@@ -25,5 +30,51 @@ describe("formatInstinctsForSystemPrompt", () => {
     expect(block).toContain("when running tests in a package → use pnpm --filter <pkg> test");
     expect(block).toContain("0.7");
     expect(block).toContain("</learned_instincts>");
+  });
+});
+
+describe("InstinctStore.observe", () => {
+  it("tool_execution_end (no error) → tool_call observation", () => {
+    const dir = tmpDataDir();
+    const store = createInstinctStore({ projectHash: "abc", dataDir: dir });
+    store.observe({ type: "tool_execution_end", toolCallId: "1", toolName: "bash", result: {}, isError: false } as any);
+    const lines = readFileSync(join(dir, "projects/abc/observations.jsonl"), "utf-8").trim().split("\n");
+    expect(lines.length).toBe(1);
+    const obs = JSON.parse(lines[0]);
+    expect(obs.kind).toBe("tool_call");
+    expect(obs.projectHash).toBe("abc");
+    expect(obs.data.toolName).toBe("bash");
+    expect(obs.data.isError).toBe(false);
+  });
+  it("tool_execution_end isError → tool_call + tool_error", () => {
+    const dir = tmpDataDir();
+    const store = createInstinctStore({ projectHash: "abc", dataDir: dir });
+    store.observe({ type: "tool_execution_end", toolCallId: "1", toolName: "read", result: {}, isError: true } as any);
+    const lines = readFileSync(join(dir, "projects/abc/observations.jsonl"), "utf-8").trim().split("\n");
+    expect(lines.length).toBe(2);
+    expect(JSON.parse(lines[0]).kind).toBe("tool_call");
+    expect(JSON.parse(lines[1]).kind).toBe("tool_error");
+  });
+  it("message_end user/assistant → user_message/assistant_message, content truncated ~500", () => {
+    const dir = tmpDataDir();
+    const store = createInstinctStore({ projectHash: null, dataDir: dir });
+    const long = "x".repeat(600);
+    store.observe({ type: "message_end", message: { role: "user", content: long } } as any);
+    store.observe({ type: "message_end", message: { role: "assistant", content: "hi" } } as any);
+    const lines = readFileSync(join(dir, "observations.jsonl"), "utf-8").trim().split("\n"); // global fallback
+    expect(JSON.parse(lines[0]).kind).toBe("user_message");
+    expect(JSON.parse(lines[0]).data.content.length).toBe(500);
+    expect(JSON.parse(lines[1]).kind).toBe("assistant_message");
+  });
+  it("ignores unrelated events", () => {
+    const dir = tmpDataDir();
+    const store = createInstinctStore({ projectHash: "abc", dataDir: dir });
+    store.observe({ type: "agent_start" } as any);
+    store.observe({ type: "context_budget", components: {}, total: 0, suggestions: [], headroom: 0 } as any);
+    expect(existsSync(join(dir, "projects/abc/observations.jsonl"))).toBe(false);
+  });
+  it("observe IO failure swallowed (no throw)", () => {
+    const store = createInstinctStore({ projectHash: "abc", dataDir: "/nonexistent-root/no-perm" });
+    expect(() => store.observe({ type: "tool_execution_end", toolCallId: "1", toolName: "bash", result: {}, isError: false } as any)).not.toThrow();
   });
 });
