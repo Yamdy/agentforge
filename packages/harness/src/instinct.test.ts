@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { mkdtempSync, readFileSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
+import { describe, it, expect, vi } from "vitest";
+import { mkdtempSync, readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInstinctStore, deriveId, formatInstinctsForSystemPrompt, type Instinct } from "./instinct.js";
@@ -104,5 +104,72 @@ describe("InstinctStore.loadInstincts", () => {
     writeFileSync(join(dir, "projects/abc/instincts/bad.json"), "{not json");
     const store = createInstinctStore({ projectHash: "abc", dataDir: dir });
     expect(store.loadInstincts()).toEqual([]);
+  });
+});
+
+describe("InstinctStore.extract", () => {
+  it("creates new instinct (clamp confidence)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "instinct-"));
+    const extractRun = vi.fn(async () => [{ trigger: "when tests fail on import", action: "check alias config", confidence: 0.99, domain: "testing", evidence: ["obs1"] }]);
+    const store = createInstinctStore({ projectHash: "abc", dataDir: dir, extractRun });
+    store.observe({ type: "tool_execution_end", toolCallId: "1", toolName: "bash", result: {}, isError: true } as any);
+    await store.extract();
+    const files = readdirSync(join(dir, "projects/abc/instincts"));
+    expect(files).toHaveLength(1);
+    const inst = JSON.parse(readFileSync(join(dir, "projects/abc/instincts", files[0]), "utf-8")) as Instinct;
+    expect(inst.confidence).toBe(0.9); // clamp 0.99→0.9
+    expect(inst.scope).toBe("project");
+    expect(inst.id).toBe(deriveId("when tests fail on import"));
+  });
+  it("merges on trigger equal: confidence +0.1 cap 0.9, evidence append dedup cap 5", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "instinct-"));
+    mkdirSync(join(dir, "projects/abc/instincts"), { recursive: true });
+    const existing: Instinct = { id: "when-tests-fail-on-import", trigger: "when tests fail on import", action: "check alias", confidence: 0.5, domain: "testing", scope: "project", projectHash: "abc", evidence: ["e1"], createdAt: 1, updatedAt: 1 };
+    writeFileSync(join(dir, "projects/abc/instincts/when-tests-fail-on-import.json"), JSON.stringify(existing));
+    const extractRun = vi.fn(async () => [{ trigger: "when tests fail on import", action: "check alias", confidence: 0.5, domain: "testing", evidence: ["e2"] }]);
+    const store = createInstinctStore({ projectHash: "abc", dataDir: dir, extractRun });
+    store.observe({ type: "tool_execution_end", toolCallId: "1", toolName: "bash", result: {}, isError: true } as any);
+    await store.extract();
+    const inst = JSON.parse(readFileSync(join(dir, "projects/abc/instincts/when-tests-fail-on-import.json"), "utf-8")) as Instinct;
+    expect(inst.confidence).toBe(0.6); // 0.5 + 0.1
+    expect(inst.evidence).toEqual(["e1", "e2"]);
+  });
+  it("id collision but different trigger → not merged, suffix -2", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "instinct-"));
+    mkdirSync(join(dir, "projects/abc/instincts"), { recursive: true });
+    // Both triggers kebab to the SAME 40-char id: "when-running-tests-fail-on-import-in-pro"
+    // (slice(0,40) cuts off "...ject alpha"/"...ject beta" — only "pro" survives)
+    const existing: Instinct = { id: "when-running-tests-fail-on-import-in-pro", trigger: "when running tests fail on import in project alpha", action: "a1", confidence: 0.5, domain: "testing", scope: "project", projectHash: "abc", evidence: ["e1"], createdAt: 1, updatedAt: 1 };
+    writeFileSync(join(dir, "projects/abc/instincts/when-running-tests-fail-on-import-in-pro.json"), JSON.stringify(existing));
+    // 不同 trigger 但同 id（40 字符前缀碰撞）
+    const extractRun = vi.fn(async () => [{ trigger: "when running tests fail on import in project beta", action: "a2", confidence: 0.5, domain: "testing", evidence: ["e2"] }]);
+    const store = createInstinctStore({ projectHash: "abc", dataDir: dir, extractRun });
+    store.observe({ type: "tool_execution_end", toolCallId: "1", toolName: "bash", result: {}, isError: true } as any);
+    await store.extract();
+    const files = readdirSync(join(dir, "projects/abc/instincts")).map((f) => f.replace(/\.json$/, ""));
+    expect(files.sort()).toEqual(["when-running-tests-fail-on-import-in-pro", "when-running-tests-fail-on-import-in-pro-2"]);
+  });
+  it("extractRun failure → stderr, no throw, no persistence", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "instinct-"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const extractRun = vi.fn(async () => { throw new Error("llm boom"); });
+    const store = createInstinctStore({ projectHash: "abc", dataDir: dir, extractRun });
+    store.observe({ type: "tool_execution_end", toolCallId: "1", toolName: "bash", result: {}, isError: true } as any);
+    await expect(store.extract()).resolves.toBeUndefined();
+    expect(errSpy).toHaveBeenCalled();
+    expect(readdirSync(join(dir, "projects/abc/instincts"))).toEqual([]);
+    errSpy.mockRestore();
+  });
+  it("observations exceed ctx 80% → truncate oldest + warn", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "instinct-"));
+    const extractRun = vi.fn(async (obs: any[]) => [{ trigger: "t", action: "a", confidence: 0.5, domain: "x", evidence: [] }]);
+    const store = createInstinctStore({ projectHash: "abc", dataDir: dir, extractRun, modelContextWindow: 100 });
+    for (let i = 0; i < 50; i++) store.observe({ type: "message_end", message: { role: "user", content: "x".repeat(200) } } as any);
+    const warnSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    await store.extract();
+    expect(extractRun).toHaveBeenCalled();
+    const passedObs = extractRun.mock.calls[0][0] as any[];
+    expect(passedObs.length).toBeLessThan(50);
+    warnSpy.mockRestore();
   });
 });
