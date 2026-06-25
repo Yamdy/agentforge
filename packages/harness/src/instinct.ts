@@ -64,14 +64,23 @@ const REPEAT_STEP = 0.1;
 const EVIDENCE_CAP = 5;
 const OBS_CTX_RATIO = 0.8;
 
-/** Extract 阶段 LLM system prompt：约束严格 JSON 输出 + 禁止幻觉。 */
+/**
+ * Extract 阶段 LLM system prompt。T1 探针 gate 后收紧（v2）：
+ *  - 强制 trigger/action 泛化（禁止具体文件名/路径/单次字面事件）——修场景 3 平凡重述。
+ *  - 禁止字面序列重述，要求提炼底层偏好。
+ *  - 明确证据门槛：用户纠正 / error→retry 修复 / 重复 2+ 次模式；单次孤立事件 → 空。
+ *  - 强调 ONLY JSON（no fences/prose）——配合 createExtractRun parseInstinctsJson 容错。
+ */
 export const EXTRACT_PROMPT =
   "You are an instinct extractor. From the given tool-use observations, extract atomic " +
-  '"instincts" (one trigger → one action) that represent stable user preferences or repeated ' +
-  "patterns (user corrections, error resolutions, repeated workflows). Output ONLY strict JSON: " +
-  '{"instincts":[{"trigger":"when ...","action":"...","confidence":0.3-0.9,"domain":"testing|git|code-style|debugging|workflow","evidence":["..."]}]}. ' +
-  "Do NOT invent. Only extract patterns genuinely supported by the observations. Empty " +
-  '{"instincts":[]} if no stable pattern.';
+  '"instincts" (one trigger → one action) representing stable, GENERALIZABLE user preferences ' +
+  "or repeated patterns (user corrections, error resolutions, repeated workflows).\n\n" +
+  "RULES:\n" +
+  "- GENERALIZE: trigger and action must describe a generalizable condition/behavior, NEVER a specific filename, path, or single literal event. Bad: 'when reading a.ts → edit a.ts'. Good: 'when editing a file → read it first'.\n" +
+  "- NO RESTATEMENT: do not restate the observation sequence; extract the underlying preference.\n" +
+  "- EVIDENCE: extract only on real signal — a user correction, an error→retry fix, or a pattern repeated 2+ times. A single isolated event with no correction → omit.\n" +
+  "- Do NOT invent. No stable pattern → empty.\n\n" +
+  'Output ONLY the JSON object (no markdown fences, no prose): {"instincts":[{"trigger":"when ...","action":"...","confidence":0.3-0.9,"domain":"testing|git|code-style|debugging|workflow","evidence":["..."]}]} or {"instincts":[]}.';
 
 function truncate(s: string, n: number): string { return s.length > n ? s.slice(0, n) : s; }
 function clamp(n: number, lo: number, hi: number): number { return Math.max(lo, Math.min(hi, n)); }

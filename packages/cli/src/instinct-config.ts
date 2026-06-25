@@ -38,6 +38,36 @@ export function formatInstinctsList(instincts: Instinct[]): string {
     .join("\n");
 }
 
+/**
+ * 解析 extract LLM 文本为 ExtractedInstinct[]。容错 LLM 非 strict JSON 输出：
+ *  1. 剥 markdown 围栏（```json ... ```）—— MiMo 实测常包裹（T1 探针发现），
+ *     旧代码直接 JSON.parse 会抛错 → catch 静默返回 []，丢弃有效 instinct。
+ *  2. 失败则提取首个 {...} 块再解析——LLM 可能在 JSON 前后加散文（场景 2 实测）。
+ *  无 valid instincts → []（best-effort，extract 失败不应阻断 session end）。
+ */
+function parseInstinctsJson(text: string): ExtractedInstinct[] {
+  let s = text.trim();
+  const fence = s.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/);
+  if (fence) s = fence[1].trim();
+  try {
+    const parsed = JSON.parse(s);
+    return Array.isArray(parsed.instincts) ? (parsed.instincts as ExtractedInstinct[]) : [];
+  } catch {
+    /* fall through to brace extraction */
+  }
+  // LLM 可能在 JSON 前后加散文——提取首个 {...} 块再解析
+  const braceMatch = s.match(/\{[\s\S]*\}/);
+  if (braceMatch) {
+    try {
+      const parsed = JSON.parse(braceMatch[0]);
+      return Array.isArray(parsed.instincts) ? (parsed.instincts as ExtractedInstinct[]) : [];
+    } catch {
+      /* give up */
+    }
+  }
+  return [];
+}
+
 export function createExtractRun(
   model: ReturnType<typeof getModel>,
   getApiKey: (provider: string) => string | undefined | Promise<string | undefined>,
@@ -52,12 +82,7 @@ export function createExtractRun(
       { apiKey, signal },
     );
     const text = (res.content as any[]).find((b) => b?.type === "text")?.text ?? "";
-    try {
-      const parsed = JSON.parse(text);
-      return Array.isArray(parsed.instincts) ? (parsed.instincts as ExtractedInstinct[]) : [];
-    } catch {
-      return [];
-    }
+    return parseInstinctsJson(text);
   };
 }
 
