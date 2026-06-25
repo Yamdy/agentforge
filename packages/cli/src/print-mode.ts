@@ -9,7 +9,8 @@
  * 设计：核心逻辑抽成可测函数 runPrintMode(args, deps?)，deps={streamFn?, getApiKey?}
  * 便于测试注入 mock streamFn（不调真实 LLM）。bin 入口调用它。
  *
- * API key 绝不硬编码——从 process.env 读（环境变量名按 pi-ai 约定，如 DEEPSEEK_API_KEY）。
+ * API key 绝不硬编码——由 index.ts 的 getApiKeyFromEnv 从 process.env 读（按 pi-ai
+ * env-api-keys 约定，见 env-config.ts；如 XIAOMI_TOKEN_PLAN_CN_API_KEY）。
  */
 import { parseArgs as nodeParseArgs } from "node:util";
 
@@ -36,9 +37,9 @@ export interface ParsedArgs {
 	print: boolean;
 	/** print 模式的 prompt 文本。 */
 	prompt?: string;
-	/** provider 名，默认 "deepseek"。 */
+	/** provider 名，默认 "xiaomi-token-plan-cn"。 */
 	provider: string;
-	/** model id，默认 "deepseek-v4-pro"。 */
+	/** model id，默认 "mimo-v2.5-pro"。 */
 	model: string;
 	/** 可选 session 目录（Task 8 持久化用，Task 7 暂不用）。 */
 	sessionDir?: string;
@@ -50,9 +51,9 @@ export interface ParsedArgs {
 	rpc: boolean;
 }
 
-/** 默认 provider/model（DeepSeek 原生 KnownProvider，pi-ai 内置注册）。 */
-export const DEFAULT_PROVIDER = "deepseek";
-export const DEFAULT_MODEL = "deepseek-v4-pro";
+/** 默认 provider/model（MiMo via xiaomi-token-plan-cn，pi-ai 内置 KnownProvider）。 */
+export const DEFAULT_PROVIDER = "xiaomi-token-plan-cn";
+export const DEFAULT_MODEL = "mimo-v2.5-pro";
 
 /** 默认 systemPrompt。 */
 export const DEFAULT_SYSTEM_PROMPT =
@@ -63,8 +64,8 @@ export const DEFAULT_SYSTEM_PROMPT =
  *
  * 支持的 flag 最小集：
  *  - -p, --print <prompt>     ：进入 print 模式，prompt 为下一参数。
- *  - --provider <name>        ：覆盖默认 provider（deepseek）。
- *  - --model <id>             ：覆盖默认 model（deepseek-v4-pro）。
+ *  - --provider <name>        ：覆盖默认 provider（xiaomi-token-plan-cn）。
+ *  - --model <id>             ：覆盖默认 model（mimo-v2.5-pro）。
  *  - --session-dir <path>     ：可选 session 目录。
  *
  * 用 node:util parseArgs（strict）做最小手写解析。

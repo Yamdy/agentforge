@@ -64,10 +64,10 @@ describe("cli print mode — parseArgs", () => {
 		expect(args.prompt).toBe("world");
 	});
 
-	it("defaults provider to deepseek and model to deepseek-v4-pro", () => {
+	it("defaults provider to xiaomi-token-plan-cn and model to mimo-v2.5-pro", () => {
 		const args = parseArgs(["-p", "hi"]);
-		expect(args.provider).toBe("deepseek");
-		expect(args.model).toBe("deepseek-v4-pro");
+		expect(args.provider).toBe("xiaomi-token-plan-cn");
+		expect(args.model).toBe("mimo-v2.5-pro");
 	});
 
 	it("overrides provider/model via --provider/--model", () => {

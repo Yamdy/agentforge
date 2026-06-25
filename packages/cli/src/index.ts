@@ -14,6 +14,7 @@ import * as readline from "node:readline";
 import { runPrintMode } from "./print-mode.js";
 import { runReplMode, makeReadlineAskHandler, makeReadlineBridge } from "./repl.js";
 import { runRpcMode } from "./rpc.js";
+import { getApiKeyFromEnv } from "./env-config.js";
 
 async function main(): Promise<void> {
 	const argv = process.argv.slice(2);
@@ -23,12 +24,10 @@ async function main(): Promise<void> {
 		argv.includes("-p") || argv.includes("--print");
 	const hasRpcFlag = argv.includes("--rpc");
 
-	// getApiKey：从 process.env 透传（pi-ai 约定名）。
-	// pi-ai env-api-keys 约定：provider 名大写 + _API_KEY。deepseek → DEEPSEEK_API_KEY。
-	const getApiKey = (provider: string): string | undefined => {
-		const envName = `${provider.toUpperCase()}_API_KEY`;
-		return process.env[envName];
-	};
+	// getApiKey：从 process.env 读（按 pi-ai env-api-keys 约定，见 env-config.ts）。
+	// 用 getApiKeyFromEnv 而非自拼 env 名——含 `-` 的 provider（如 xiaomi-token-plan-cn）
+	// 须按 pi-ai 映射读 XIAOMI_TOKEN_PLAN_CN_API_KEY（非非法的 XIAOMI-TOKEN-PLAN-CN_API_KEY）。
+	const getApiKey = getApiKeyFromEnv;
 
 	if (hasPrintFlag) {
 		// 不传 streamFn → 走 Agent 默认 streamSimple → 真实 SSE 流。
