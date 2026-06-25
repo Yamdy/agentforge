@@ -23,3 +23,4 @@ export * from "./context-budget.js";
 export * from "./safety.js";
 export * from "./harness.js";
 export * from "./verification.js";
+export * from "./instinct.js";
