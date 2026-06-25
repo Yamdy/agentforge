@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mkdtempSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, readFileSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInstinctStore, deriveId, formatInstinctsForSystemPrompt, type Instinct } from "./instinct.js";
@@ -76,5 +76,33 @@ describe("InstinctStore.observe", () => {
   it("observe IO failure swallowed (no throw)", () => {
     const store = createInstinctStore({ projectHash: "abc", dataDir: "/nonexistent-root/no-perm" });
     expect(() => store.observe({ type: "tool_execution_end", toolCallId: "1", toolName: "bash", result: {}, isError: false } as any)).not.toThrow();
+  });
+});
+
+describe("InstinctStore.loadInstincts", () => {
+  it("reads project + global instincts, unfiltered", () => {
+    const dir = mkdtempSync(join(tmpdir(), "instinct-"));
+    mkdirSync(join(dir, "projects/abc/instincts"), { recursive: true });
+    mkdirSync(join(dir, "instincts"), { recursive: true });
+    const projInst: Instinct = { id: "p1", trigger: "t1", action: "a1", confidence: 0.3, domain: "x", scope: "project", projectHash: "abc", evidence: [], createdAt: 1, updatedAt: 1 };
+    const globalInst: Instinct = { id: "g1", trigger: "t2", action: "a2", confidence: 0.9, domain: "x", scope: "global", projectHash: null, evidence: [], createdAt: 1, updatedAt: 1 };
+    writeFileSync(join(dir, "projects/abc/instincts/p1.json"), JSON.stringify(projInst));
+    writeFileSync(join(dir, "instincts/g1.json"), JSON.stringify(globalInst));
+    const store = createInstinctStore({ projectHash: "abc", dataDir: dir });
+    const all = store.loadInstincts();
+    expect(all).toHaveLength(2);
+    expect(all.map(i => i.id).sort()).toEqual(["g1", "p1"]);
+  });
+  it("returns empty when no files", () => {
+    const dir = mkdtempSync(join(tmpdir(), "instinct-"));
+    const store = createInstinctStore({ projectHash: "abc", dataDir: dir });
+    expect(store.loadInstincts()).toEqual([]);
+  });
+  it("ignores malformed instinct json (best-effort)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "instinct-"));
+    mkdirSync(join(dir, "projects/abc/instincts"), { recursive: true });
+    writeFileSync(join(dir, "projects/abc/instincts/bad.json"), "{not json");
+    const store = createInstinctStore({ projectHash: "abc", dataDir: dir });
+    expect(store.loadInstincts()).toEqual([]);
   });
 });

@@ -1,5 +1,5 @@
 import type { HarnessEvent } from "@agentforge/shared";
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
@@ -58,6 +58,38 @@ function observationsPath(dataDir: string, projectHash: string | null): string {
     : join(dataDir, "observations.jsonl");
 }
 
+/** instinct 持久化目录：project 作用域 → `<dataDir>/projects/<hash>/instincts`；global → `<dataDir>/instincts`。 */
+function instinctsDir(dataDir: string, projectHash: string | null): string {
+  return projectHash
+    ? join(dataDir, "projects", projectHash, "instincts")
+    : join(dataDir, "instincts");
+}
+
+/** 从单个目录读全部 `.json` instinct；目录缺失返回 []，单文件 malformed 静默跳过（best-effort）。 */
+function readInstinctsFromDir(dir: string): Instinct[] {
+  let files: string[];
+  try { files = readdirSync(dir); } catch { return []; }
+  const out: Instinct[] = [];
+  for (const f of files) {
+    if (!f.endsWith(".json")) continue;
+    try {
+      out.push(JSON.parse(readFileSync(join(dir, f), "utf-8")) as Instinct);
+    } catch { /* malformed: skip */ }
+  }
+  return out;
+}
+
+/**
+ * 读 project + global instinct 文件，未过滤。
+ * 模块级 helper，供 `InstinctStore.loadInstincts()` 和未来 T5 `extract()` 复用。
+ * projectHash=null → 仅 global；非空 → project 目录 + global 目录合并。
+ */
+export function readAllInstincts(dataDir: string, projectHash: string | null): Instinct[] {
+  const proj = projectHash ? readInstinctsFromDir(instinctsDir(dataDir, projectHash)) : [];
+  const global = readInstinctsFromDir(instinctsDir(dataDir, null));
+  return [...proj, ...global];
+}
+
 export function createInstinctStore(opts: {
   projectHash: string | null;
   extractRun?: ExtractRun;
@@ -94,7 +126,7 @@ export function createInstinctStore(opts: {
 
   return {
     observe(event) { for (const o of adapt(event)) appendObservation(o); },
-    loadInstincts() { return []; }, // T4 填
+    loadInstincts() { return readAllInstincts(dataDir, projectHash); },
     async extract() { /* T5 填 */ },
   };
 }
