@@ -23,6 +23,10 @@ import type {
 	SafetyVerdict,
 } from "./safety.js";
 import type { SantaVerifier, Rubric, ReviewResult } from "./verification.js";
+import {
+	formatInstinctsForSystemPrompt,
+	type InstinctStore,
+} from "./instinct.js";
 
 /**
  * AgentForgeHarness：包装 pi 核心 Agent 的 harness 核心类。见 ARCHITECTURE.md §9。
@@ -94,6 +98,17 @@ export interface HarnessOptions {
 	 * harness.prompt 不自动触发 verifier（被动工具，调用方显式调）。
 	 */
 	verifier?: SantaVerifier;
+	/**
+	 * 可选 InstinctStore（Slice 4-B §T7）。注入后，构造时 apply：
+	 *   1. loadInstincts → filter confidence>=0.5 → sort desc → cap 20 →
+	 *      formatInstinctsForSystemPrompt → append 到 systemPrompt（before new Agent）。
+	 *   2. store _baseSystemPrompt（原始 opts.systemPrompt）+ _instinctBlock（格式化块）。
+	 *   3. new Agent 之后 observe：events.on("*", e => instinct.observe(e))。
+	 * maybeAuditBudget 传 systemPrompt=_baseSystemPrompt + memory=_instinctBlock
+	 * （避免 instinct tokens 在 systemPrompt + memory 双重计数）。
+	 * extract(signal?) 委托 instinctStore.extract。
+	 */
+	instinct?: InstinctStore;
 }
 
 export class AgentForgeHarness {
@@ -109,6 +124,12 @@ export class AgentForgeHarness {
 	private readonly safetyAskHandler?: (ctx: SafetyContext) => boolean | Promise<boolean>;
 	private readonly cwd: string;
 	private readonly _verifier?: SantaVerifier;
+	/** Slice 4-B T7: 注入的 InstinctStore（apply/observe/extract 委托目标）。 */
+	private readonly _instinct?: InstinctStore;
+	/** Slice 4-B T7: 原始 opts.systemPrompt（不含 instinct block）—— maybeAuditBudget 据此避免双重计数。 */
+	private readonly _baseSystemPrompt: string;
+	/** Slice 4-B T7: 格式化 instinct 块（无 instinct / 全被滤 → ""）。maybeAuditBudget 作 memory 传入。 */
+	private readonly _instinctBlock: string;
 
 	constructor(opts: HarnessOptions) {
 		this.session = opts.session;
@@ -122,10 +143,30 @@ export class AgentForgeHarness {
 		this.safetyAskHandler = opts.safetyAskHandler;
 		this.cwd = opts.cwd ?? process.cwd();
 		this._verifier = opts.verifier;
+		this._instinct = opts.instinct;
+		this._baseSystemPrompt = opts.systemPrompt;
+
+		// apply（before new Agent）：load + filter confidence>=0.5 + sort desc + cap 20 +
+		// format → instinctBlock。Agent 的 initialState.systemPrompt = basePrompt + block，
+		// 让 LLM 看到学到的 instincts。loadInstincts/format 失败静默降级为 "" 块。
+		let instinctBlock = "";
+		if (this._instinct) {
+			try {
+				const all = this._instinct.loadInstincts();
+				const filtered = all
+					.filter((i) => i.confidence >= 0.5)
+					.sort((a, b) => b.confidence - a.confidence)
+					.slice(0, 20);
+				instinctBlock = formatInstinctsForSystemPrompt(filtered);
+			} catch {
+				instinctBlock = "";
+			}
+		}
+		this._instinctBlock = instinctBlock;
 
 		this._agent = new Agent({
 			initialState: {
-				systemPrompt: opts.systemPrompt,
+				systemPrompt: opts.systemPrompt + instinctBlock,
 				model: getModel(opts.provider as any, opts.model as any),
 				tools: opts.tools,
 				messages: opts.initialMessages ?? [],
@@ -160,6 +201,12 @@ export class AgentForgeHarness {
 		this._agent.subscribe((e: AgentEvent) => {
 			this.events.emit(e as any);
 		});
+
+		// Slice 4-B T7 observe：instinctStore 订阅全部 harness 事件（通配符）。
+		// instinct.observe 内部 adapt 把 tool_execution_end / message_end 等转成 Observation 持久化。
+		if (this._instinct) {
+			this.events.on("*", (e) => this._instinct!.observe(e));
+		}
 	}
 
 	/** 暴露底层 pi Agent（供高级用法/测试检视 state）。 */
@@ -223,6 +270,21 @@ export class AgentForgeHarness {
 	/** 暴露注入的 verifier（高级用法访问 verifyUntilNice）；未注入时 undefined。 */
 	get verifier(): SantaVerifier | undefined {
 		return this._verifier;
+	}
+
+	/**
+	 * Slice 4-B T7: 委托注入的 instinctStore.extract(signal)。
+	 * 未注入 instinct 时静默 no-op。extract 在 session 末尾由调用方显式触发；
+	 * 中途 extract 不修改当前 session 的 systemPrompt（Agent 已构造，apply 不可逆）——
+	 * 新 instincts 在下次构造（下次 session）时才会被 apply 注入（D2 设计意图）。
+	 */
+	async extract(signal?: AbortSignal): Promise<void> {
+		await this._instinct?.extract(signal);
+	}
+
+	/** 暴露注入的 InstinctStore；未注入时 undefined。 */
+	get instinctStore(): InstinctStore | undefined {
+		return this._instinct;
 	}
 
 	/**
@@ -309,14 +371,17 @@ export class AgentForgeHarness {
 	private maybeAuditBudget(): void {
 		if (!this.modelContextWindow) return;
 		try {
-			const systemPrompt = this._agent.state.systemPrompt ?? "";
+			// Slice 4-B T7 红队修正：用 _baseSystemPrompt（不含 instinct 块）+ memory=_instinctBlock，
+			// 避免 instinct tokens 同时计入 systemPrompt 与 memory（双重计数）。
+			// _instinctBlock 为 "" 时传 undefined（audit 内部 0 而非占位 token）。
 			const report = audit({
-				systemPrompt,
+				systemPrompt: this._baseSystemPrompt,
 				skills: [],
 				tools: this._agent.state.tools,
 				messages: this._agent.state.messages,
 				modelContextWindow: this.modelContextWindow,
 				thresholds: this.budgetThresholds,
+				memory: this._instinctBlock || undefined,
 			});
 			const remaining = headroom(report.total, this.modelContextWindow);
 			// 有建议或总 token 超窗口时 emit 事件(issue #3:收紧条件,

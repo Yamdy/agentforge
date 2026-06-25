@@ -7,14 +7,39 @@ import type {
 	AssistantMessageEvent,
 	AgentTool,
 } from "@earendil-works/pi-agent-core";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { AgentForgeHarness } from "./harness.js";
 import { createEventBus } from "./events.js";
 import { createMemorySession } from "./session.js";
 import { createCompactor } from "./compaction.js";
 import * as contextBudget from "./context-budget.js";
+import { estimateStringTokens } from "./context-budget.js";
 import type { SantaVerifier, Rubric, ReviewResult } from "./verification.js";
 import type { HarnessEvent, CompactionErrorEvent } from "@agentforge/shared";
+import {
+	createInstinctStore,
+	formatInstinctsForSystemPrompt,
+	type Instinct,
+} from "./instinct.js";
+
+/** 构造一个 Instinct JSON 写到 `<dir>/projects/<hash>/instincts/<id>.json`。 */
+function writeInstinct(dir: string, inst: Instinct): void {
+	mkdirSync(join(dir, "projects", inst.projectHash ?? "_", "instincts"), {
+		recursive: true,
+	});
+	writeFileSync(
+		join(dir, "projects", inst.projectHash ?? "_", "instincts", `${inst.id}.json`),
+		JSON.stringify(inst),
+	);
+}
+
+/** mock streamFn for instinct integration tests：复用 makeMockStreamFn 风格。 */
+function mockStreamFn(text = "ok") {
+	return makeMockStreamFn(text);
+}
 
 /** 构造一个合法的最小 AssistantMessage（stopReason "stop"，无 toolCall）。 */
 function makeAssistantMessage(text: string): AssistantMessage {
@@ -545,3 +570,218 @@ describe("AgentForgeHarness verifier mounting", () => {
 		expect(harness.verifier).toBeUndefined();
 	});
 });
+
+describe("harness instinct integration", () => {
+	it("apply: constructs agent with instinct block in systemPrompt", () => {
+		const dir = mkdtempSync(join(tmpdir(), "h-inst-"));
+		const inst: Instinct = {
+			id: "x",
+			trigger: "when t",
+			action: "do a",
+			confidence: 0.7,
+			domain: "x",
+			scope: "project",
+			projectHash: "abc",
+			evidence: [],
+			createdAt: 1,
+			updatedAt: 1,
+		};
+		writeInstinct(dir, inst);
+		const instinct = createInstinctStore({ projectHash: "abc", dataDir: dir });
+		const h = new AgentForgeHarness({
+			session: createMemorySession(),
+			events: createEventBus(),
+			tools: [],
+			provider: "xiaomi-token-plan-cn",
+			model: "mimo-v2.5-pro",
+			systemPrompt: "BASE",
+			streamFn: mockStreamFn(),
+			instinct,
+		});
+		expect(h.agent.state.systemPrompt).toContain("BASE");
+		expect(h.agent.state.systemPrompt).toContain("<learned_instincts>");
+		expect(h.instinctStore).toBe(instinct);
+	});
+
+	it("apply filters confidence>=0.5 + cap 20 (sort desc, none below 0.5)", () => {
+		const dir = mkdtempSync(join(tmpdir(), "h-cap-"));
+		const now = Date.now();
+		// 25 instincts: 5 with confidence below 0.5 (0.3, 0.35, 0.4, 0.45, 0.49)
+		// + 20 with confidence >= 0.5 ranging 0.50..0.90 (step 0.02 → 21 values, take 20).
+		const below: Instinct[] = [];
+		for (let i = 0; i < 5; i++) {
+			const c = 0.3 + i * 0.05;
+			const id = `below-${i}`;
+			below.push({
+				id,
+				trigger: `when below ${i}`,
+				action: `skip ${i}`,
+				confidence: c,
+				domain: "testing",
+				scope: "project",
+				projectHash: "abc",
+				evidence: [],
+				createdAt: now,
+				updatedAt: now,
+			});
+		}
+		const above: Instinct[] = [];
+		// 20 instincts with confidence 0.50..0.90 step ~0.02 (20 distinct values).
+		for (let i = 0; i < 20; i++) {
+			const c = 0.5 + (i * 0.4) / 19; // 0.50 .. 0.90 inclusive
+			const id = `above-${i}`;
+			above.push({
+				id,
+				trigger: `when above ${i}`,
+				action: `do ${i}`,
+				confidence: c,
+				domain: "testing",
+				scope: "project",
+				projectHash: "abc",
+				evidence: [],
+				createdAt: now,
+				updatedAt: now,
+			});
+		}
+		for (const inst of [...below, ...above]) writeInstinct(dir, inst);
+
+		const instinct = createInstinctStore({ projectHash: "abc", dataDir: dir });
+		const h = new AgentForgeHarness({
+			session: createMemorySession(),
+			events: createEventBus(),
+			tools: [],
+			provider: "xiaomi-token-plan-cn",
+			model: "mimo-v2.5-pro",
+			systemPrompt: "BASE",
+			streamFn: mockStreamFn(),
+			instinct,
+		});
+		const prompt = h.agent.state.systemPrompt;
+		// block present
+		expect(prompt).toContain("<learned_instincts>");
+		// none of the below-0.5 instincts injected
+		for (const b of below) {
+			expect(prompt).not.toContain(b.trigger);
+		}
+		// exactly 20 of the above instincts injected (all of them, since 20 >= 0.5)
+		let injectedCount = 0;
+		for (const a of above) {
+			if (prompt.includes(a.trigger)) injectedCount++;
+		}
+		expect(injectedCount).toBe(20);
+		// Cap 20: even if 25 qualified, only 20 lines in the block.
+		const blockMatch = prompt.match(/<learned_instincts>([\s\S]*?)<\/learned_instincts>/);
+		expect(blockMatch).not.toBeNull();
+		const lines = (blockMatch![1] as string).trim().split("\n").filter(Boolean);
+		expect(lines.length).toBe(20);
+		// Sorted desc by confidence: first line's trigger should be the highest-confidence one (above-19, 0.90).
+		const highest = above[above.length - 1];
+		expect(lines[0]).toContain(highest.trigger);
+	});
+
+	it("observe: emit tool_execution_end → observations.jsonl grows", () => {
+		const dir = mkdtempSync(join(tmpdir(), "h-obs-"));
+		const instinct = createInstinctStore({ projectHash: "abc", dataDir: dir });
+		const events = createEventBus();
+		new AgentForgeHarness({
+			session: createMemorySession(),
+			events,
+			tools: [],
+			provider: "xiaomi-token-plan-cn",
+			model: "mimo-v2.5-pro",
+			systemPrompt: "BASE",
+			streamFn: mockStreamFn(),
+			instinct,
+		});
+		events.emit({
+			type: "tool_execution_end",
+			toolCallId: "1",
+			toolName: "bash",
+			result: {},
+			isError: false,
+		} as any);
+		const lines = readFileSync(
+			join(dir, "projects", "abc", "observations.jsonl"),
+			"utf-8",
+		).trim();
+		expect(lines).toBeTruthy();
+		const parsed = JSON.parse(lines.split("\n")[0] as string);
+		expect(parsed.kind).toBe("tool_call");
+		expect(parsed.data.toolName).toBe("bash");
+	});
+
+	it("extract() delegates to instinctStore.extract()", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "h-ext-"));
+		const instinct = createInstinctStore({
+			projectHash: "abc",
+			dataDir: dir,
+			extractRun: async () => [],
+		});
+		const spy = vi.spyOn(instinct, "extract").mockResolvedValue();
+		const h = new AgentForgeHarness({
+			session: createMemorySession(),
+			events: createEventBus(),
+			tools: [],
+			provider: "xiaomi-token-plan-cn",
+			model: "mimo-v2.5-pro",
+			systemPrompt: "BASE",
+			streamFn: mockStreamFn(),
+			instinct,
+		});
+		await h.extract();
+		expect(spy).toHaveBeenCalled();
+	});
+
+	it("maybeAuditBudget passes baseSystemPrompt + memory (no double count)", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "h-budget-"));
+		const inst: Instinct = {
+			id: "mem",
+			trigger: "when mem",
+			action: "use memory",
+			confidence: 0.8,
+			domain: "workflow",
+			scope: "project",
+			projectHash: "abc",
+			evidence: [],
+			createdAt: 1,
+			updatedAt: 1,
+		};
+		writeInstinct(dir, inst);
+		const instinct = createInstinctStore({ projectHash: "abc", dataDir: dir });
+		const BASE = "BASE_PROMPT_FOR_BUDGET";
+		const expectedBlock = formatInstinctsForSystemPrompt([inst]);
+		const expectedSystemTokens = estimateStringTokens(BASE);
+		const expectedMemoryTokens = estimateStringTokens(expectedBlock);
+
+		const events = createEventBus();
+		const seen: any[] = [];
+		events.on("context_budget", (e) => seen.push(e));
+		const harness = new AgentForgeHarness({
+			session: createMemorySession(),
+			events,
+			tools: [],
+			provider: "xiaomi-token-plan-cn",
+			model: "mimo-v2.5-pro",
+			systemPrompt: BASE,
+			streamFn: mockStreamFn("reply"),
+			instinct,
+			// 极小窗口强制 emit context_budget 事件（history 短但 total 仍可能不超；
+			// modelContextWindow + history 占比阈值触发 history suggestion）。
+			modelContextWindow: 4,
+		});
+		await harness.prompt("hi");
+
+		// 至少触发一次 context_budget。
+		expect(seen.length).toBeGreaterThanOrEqual(1);
+		const evt = seen[0];
+		expect(evt.type).toBe("context_budget");
+		// systemPrompt 组件 == estimate(BASE)，不含 instinct block（避免双重计数）。
+		expect(evt.components.systemPrompt).toBe(expectedSystemTokens);
+		// memory 组件 == estimate(block)。
+		expect(evt.components.memory).toBe(expectedMemoryTokens);
+		// agent 实际 systemPrompt 仍是 BASE + block（apply 注入）。
+		expect(harness.agent.state.systemPrompt).toContain(BASE);
+		expect(harness.agent.state.systemPrompt).toContain("<learned_instincts>");
+	});
+});
+
