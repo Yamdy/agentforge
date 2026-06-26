@@ -91,9 +91,15 @@ export function serializeEvent(
 				headroom: e.headroom,
 			};
 		}
+		case "audit_finding": {
+			// Slice 5 Task 8：推 audit_finding（severity + finding 全量）。
+			// Finding schema 见 harness/audit.ts；此处 cast 读字段（union 无 narrowing）。
+			const e = event as { severity: string; finding: unknown };
+			return { type, severity: e.severity, finding: e.finding };
+		}
 		default:
 			// 非白名单（turn_*、message_start、message_update 逐 token 流、
-			// tool_execution_start/update、instinct_observed、audit_finding、adr_recorded、未知）
+			// tool_execution_start/update、instinct_observed、adr_recorded、未知）
 			return undefined;
 	}
 }

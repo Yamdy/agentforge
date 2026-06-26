@@ -501,6 +501,74 @@ describe("AgentForgeHarness", () => {
 	});
 });
 
+describe("AgentForgeHarness auditor integration (Slice 5 Task 5)", () => {
+	it("emits audit_finding events after prompt when an auditor is injected", async () => {
+		const events = createEventBus();
+		const session = createMemorySession();
+		const seen: HarnessEvent[] = [];
+		events.on("audit_finding", (e: any) => seen.push(e));
+
+		// Mock auditor: subscribe 绑定 bus;scan 返 1 条 finding(经 bus emit audit_finding)。
+		let subscribedBus: any = null;
+		const mockFinding = {
+			severity: "critical" as const,
+			title: "Hallucinated tool execution",
+			mechanism: "test mechanism",
+			sourceLayer: "tool-execution",
+			rootCause: "test root cause",
+			evidenceRefs: ["tc-1"],
+			confidence: 0.9,
+			recommendedFix: "test fix",
+		};
+		const auditor = {
+			activeLayers: ["tool-execution", "answer-shaping"],
+			scan: vi.fn((_state: any, _evs: any) => {
+				// 真实 createAuditor.scan 经已绑定的 bus emit audit_finding per finding。
+				subscribedBus.emit({
+					type: "audit_finding",
+					severity: mockFinding.severity,
+					finding: mockFinding,
+				});
+				return [mockFinding];
+			}),
+			subscribe: vi.fn((bus: any) => {
+				subscribedBus = bus;
+			}),
+		};
+
+		const harness = new AgentForgeHarness({
+			session,
+			events,
+			tools: [],
+			provider: "anthropic",
+			model: "claude-sonnet-4-5",
+			systemPrompt: "test",
+			streamFn: makeMockStreamFn("reply"),
+			auditor: auditor as any,
+		});
+
+		// 构造时 subscribe 被调用,传入同一个 events bus。
+		expect(auditor.subscribe).toHaveBeenCalledTimes(1);
+		expect(subscribedBus).toBe(events);
+
+		await harness.prompt("hi");
+
+		// prompt 末尾 scan 被调用(至少一次)。
+		expect(auditor.scan).toHaveBeenCalled();
+		// audit_finding 事件被 emit(数量 == scan 返回的 findings 数)。
+		expect(seen.length).toBeGreaterThanOrEqual(1);
+		const finding = seen[0] as any;
+		expect(finding.type).toBe("audit_finding");
+		expect(finding.severity).toBe("critical");
+		expect(finding.finding).toEqual(mockFinding);
+	});
+
+	it("does not throw when no auditor is injected (backward compatible)", async () => {
+		const { harness } = buildHarness({ streamFn: makeMockStreamFn("reply") });
+		await expect(harness.prompt("hi")).resolves.toBeUndefined();
+	});
+});
+
 describe("AgentForgeHarness verifier mounting", () => {
 	it("verify() delegates to the injected verifier.review", async () => {
 		const fakeReview = vi.fn(async (): Promise<ReviewResult> => ({

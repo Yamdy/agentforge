@@ -110,6 +110,25 @@ describe("rpc — serializeEvent whitelist", () => {
 		const event = { type: "message_update", message: {}, assistantMessageEvent: { delta: "tok" } } as unknown as HarnessEvent;
 		expect(serializeEvent(event)).toBeUndefined();
 	});
+
+	it("serializes audit_finding event (type + severity + finding)", () => {
+		const finding = {
+			severity: "critical",
+			title: "hallucinated tool execution",
+			mechanism: "assistant emitted toolCall with no matching tool_execution_end",
+			sourceLayer: "tool-execution",
+			rootCause: "tool-call id missing from events",
+			evidenceRefs: ["call-42"],
+			confidence: 0.9,
+			recommendedFix: "ensure harness afterToolCall emits execution_end",
+		};
+		const event = {
+			type: "audit_finding", severity: "critical", finding,
+		} as unknown as HarnessEvent;
+		expect(serializeEvent(event)).toEqual({
+			type: "audit_finding", severity: "critical", finding,
+		});
+	});
 });
 
 describe("rpc — JSON-RPC protocol helpers", () => {

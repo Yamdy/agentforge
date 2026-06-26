@@ -211,3 +211,46 @@ describe("SkillRegistry.invokeSkill", () => {
 		);
 	});
 });
+
+/**
+ * Slice 5 Task 7: council skill 文件发现。
+ * <repoRoot>/.agentforge/skills/council/SKILL.md 必须被 loadSkills 发现,
+ * 并出现在 daily/library 列表 + formatSkillsForSystemPrompt 输出中。
+ * 见 spec §4.3 + plan Task 7 Step 2。
+ */
+describe("council skill (Slice 5 Task 7)", () => {
+	const repoRoot = join(__dirname, "..", "..", "..");
+	const skillsDir = join(repoRoot, ".agentforge", "skills");
+
+	it("loadSkills discovers the council skill from <repoRoot>/.agentforge/skills", () => {
+		const skills = loadSkills([skillsDir]);
+		const council = skills.find((s) => s.name === "council");
+		expect(council).toBeDefined();
+		expect(council!.description).toBeTruthy();
+		// spec §4.3: 四角色独立段落,防 voice collapse
+		expect(council!.content).toContain("## architect");
+		expect(council!.content).toContain("## skeptic");
+		expect(council!.content).toContain("## user-advocate");
+		expect(council!.content).toContain("## operator");
+		expect(council!.content).toContain("## 综合");
+	});
+
+	it("classifies council into daily or library", () => {
+		const skills = loadSkills([skillsDir]);
+		const council = skills.find((s) => s.name === "council");
+		expect(council).toBeDefined();
+		const cls = classifySkill(council!);
+		expect(["daily", "library"]).toContain(cls);
+	});
+
+	it("formatSkillsForSystemPrompt includes council when daily", () => {
+		const skills = loadSkills([skillsDir]);
+		const council = skills.find((s) => s.name === "council");
+		expect(council).toBeDefined();
+		const daily = skills.filter((s) => classifySkill(s) === "daily");
+		if (daily.some((s) => s.name === "council")) {
+			const block = formatSkillsForSystemPrompt(daily);
+			expect(block).toContain("<name>council</name>");
+		}
+	});
+});

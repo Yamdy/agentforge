@@ -32,6 +32,7 @@ import {
 	formatInstinctsForSystemPrompt,
 	type InstinctStore,
 } from "./instinct.js";
+import type { Auditor } from "./audit.js";
 
 /**
  * AgentForgeHarness：包装 pi 核心 Agent 的 harness 核心类。见 ARCHITECTURE.md §9。
@@ -114,6 +115,12 @@ export interface HarnessOptions {
 	 * extract(signal?) 委托 instinctStore.extract。
 	 */
 	instinct?: InstinctStore;
+	/**
+	 * 可选 Auditor（Slice 5 §4.4）。注入后，构造时 `auditor.subscribe(events)` 挂载
+	 * 事件累积;prompt() 末尾(appendNewMessages 后)调 `auditor.scan(state, recentEvents)`，
+	 * scan 内部 emit `audit_finding` per finding。未注入时无副作用(向后兼容)。
+	 */
+	auditor?: Auditor;
 }
 
 export class AgentForgeHarness {
@@ -131,6 +138,8 @@ export class AgentForgeHarness {
 	private readonly _verifier?: SantaVerifier;
 	/** Slice 4-B T7: 注入的 InstinctStore（apply/observe/extract 委托目标）。 */
 	private readonly _instinct?: InstinctStore;
+	/** Slice 5 T5: 注入的 Auditor（subscribe + prompt 末尾 scan）。 */
+	private readonly _auditor?: Auditor;
 	/** Slice 4-B T7: 原始 opts.systemPrompt（不含 instinct block）—— maybeAuditBudget 据此避免双重计数。 */
 	private readonly _baseSystemPrompt: string;
 	/** Slice 4-B T7: 格式化 instinct 块（无 instinct / 全被滤 → ""）。maybeAuditBudget 作 memory 传入。 */
@@ -149,6 +158,7 @@ export class AgentForgeHarness {
 		this.cwd = opts.cwd ?? process.cwd();
 		this._verifier = opts.verifier;
 		this._instinct = opts.instinct;
+		this._auditor = opts.auditor;
 		this._baseSystemPrompt = opts.systemPrompt;
 
 		// apply（before new Agent）：load + filter confidence>=0.5 + sort desc + cap 20 +
@@ -212,6 +222,12 @@ export class AgentForgeHarness {
 		// instinct.observe 内部 adapt 把 tool_execution_end / message_end 等转成 Observation 持久化。
 		if (this._instinct) {
 			this.events.on("*", (e) => this._instinct!.observe(e));
+		}
+
+		// Slice 5 T5: auditor 订阅 events bus（累积 events 到环形 buffer 等）。
+		// scan 在 prompt 末尾由 harness 主动触发（见 prompt()）。
+		if (this._auditor) {
+			this._auditor.subscribe(this.events);
 		}
 	}
 
@@ -343,6 +359,18 @@ export class AgentForgeHarness {
 		// 诊断性，try/catch 防 budget 失败影响主流程。
 		if (this.modelContextWindow) {
 			this.maybeAuditBudget();
+		}
+
+		// Slice 5 T5: prompt 末尾调 auditor.scan(state, recentEvents)。
+		// recentEvents 传 []：createAuditor.scan 入参为空时回落到 subscribe 累积的 buffer
+		// （spec §4.4：recentEvents 从 subscribe buffer 取），并经已绑定的 bus emit audit_finding。
+		// 诊断性，try/catch 防 audit 失败影响主流程。
+		if (this._auditor) {
+			try {
+				this._auditor.scan(this._agent.state, []);
+			} catch {
+				// audit 失败不影响主流程。
+			}
 		}
 	}
 
