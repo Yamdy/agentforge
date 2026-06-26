@@ -37,7 +37,7 @@ describe("InstinctStore.observe", () => {
   it("tool_execution_end (no error) → tool_call observation", () => {
     const dir = tmpDataDir();
     const store = createInstinctStore({ projectHash: "abc", dataDir: dir });
-    store.observe({ type: "tool_execution_end", toolCallId: "1", toolName: "bash", result: {}, isError: false } as any);
+    store.observe({ type: "tool_execution_end", toolCallId: "1", toolName: "bash", args: { command: "ls -la" }, result: {}, isError: false } as any);
     const lines = readFileSync(join(dir, "projects/abc/observations.jsonl"), "utf-8").trim().split("\n");
     expect(lines.length).toBe(1);
     const obs = JSON.parse(lines[0]);
@@ -45,11 +45,12 @@ describe("InstinctStore.observe", () => {
     expect(obs.projectHash).toBe("abc");
     expect(obs.data.toolName).toBe("bash");
     expect(obs.data.isError).toBe(false);
+    expect(obs.data.argsSummary).toContain("ls -la");
   });
   it("tool_execution_end isError → tool_call + tool_error", () => {
     const dir = tmpDataDir();
     const store = createInstinctStore({ projectHash: "abc", dataDir: dir });
-    store.observe({ type: "tool_execution_end", toolCallId: "1", toolName: "read", result: {}, isError: true } as any);
+    store.observe({ type: "tool_execution_end", toolCallId: "1", toolName: "read", args: { path: "src/x.ts" }, result: {}, isError: true } as any);
     const lines = readFileSync(join(dir, "projects/abc/observations.jsonl"), "utf-8").trim().split("\n");
     expect(lines.length).toBe(2);
     expect(JSON.parse(lines[0]).kind).toBe("tool_call");
@@ -89,6 +90,54 @@ describe("InstinctStore.observe", () => {
     expect(obs.data.content).toBe("x".repeat(500));
     expect(obs.data.content).not.toBe("[object Object]");
   });
+  it("prefer-args 去重:同 toolCallId 两事件(带 args 先 / 无 args 先)只记一条且 argsSummary 存活", () => {
+    // 顺序 1:带 args 先(harness),无 args 后(pi 原生)
+    const dir1 = tmpDataDir();
+    const s1 = createInstinctStore({ projectHash: "abc", dataDir: dir1 });
+    s1.observe({ type: "tool_execution_end", toolCallId: "t1", toolName: "read", args: { path: "a.ts" }, result: {}, isError: false } as any);
+    s1.observe({ type: "tool_execution_end", toolCallId: "t1", toolName: "read", result: {}, isError: false } as any); // pi 原生无 args
+    const lines1 = readFileSync(join(dir1, "projects/abc/observations.jsonl"), "utf-8").trim().split("\n");
+    expect(lines1.length).toBe(1);
+    expect(JSON.parse(lines1[0]).data.argsSummary).toContain("a.ts");
+
+    // 顺序 2:无 args 先(pi 原生),带 args 后(harness)——red-team 担心的 ordering 变化
+    const dir2 = tmpDataDir();
+    const s2 = createInstinctStore({ projectHash: "abc", dataDir: dir2 });
+    s2.observe({ type: "tool_execution_end", toolCallId: "t2", toolName: "read", result: {}, isError: false } as any);
+    s2.observe({ type: "tool_execution_end", toolCallId: "t2", toolName: "read", args: { path: "b.ts" }, result: {}, isError: false } as any);
+    const lines2 = readFileSync(join(dir2, "projects/abc/observations.jsonl"), "utf-8").trim().split("\n");
+    expect(lines2.length).toBe(1);
+    expect(JSON.parse(lines2[0]).data.argsSummary).toContain("b.ts"); // 保留带 args 的
+  });
+
+  it("无 args 事件单独 emit(pi 原生,无 harness 重复)→ 不记录 tool_call observation", () => {
+    const dir = tmpDataDir();
+    const store = createInstinctStore({ projectHash: "abc", dataDir: dir });
+    store.observe({ type: "tool_execution_end", toolCallId: "t3", toolName: "read", result: {}, isError: false } as any);
+    expect(existsSync(join(dir, "projects/abc/observations.jsonl"))).toBe(false); // prefer-args 跳过,不落盘
+  });
+
+  it("redactArgs: bash command 含 API_KEY/Bearer/sk- → redacted", () => {
+    const dir = tmpDataDir();
+    const store = createInstinctStore({ projectHash: "abc", dataDir: dir });
+    store.observe({ type: "tool_execution_end", toolCallId: "1", toolName: "bash", args: { command: "export API_KEY=sk-abc123 && curl -H 'Authorization: Bearer xyz' https://user:pass@host" }, result: {}, isError: false } as any);
+    const lines = readFileSync(join(dir, "projects/abc/observations.jsonl"), "utf-8").trim().split("\n");
+    const summary = JSON.parse(lines[0]).data.argsSummary;
+    expect(summary).not.toContain("sk-abc123");
+    expect(summary).not.toContain("Bearer xyz");
+    expect(summary).not.toContain("user:pass");
+    expect(summary).toContain("<redacted>");
+  });
+
+  it("redactArgs: read 工具 path 不 redact(文件名非 secret)", () => {
+    const dir = tmpDataDir();
+    const store = createInstinctStore({ projectHash: "abc", dataDir: dir });
+    store.observe({ type: "tool_execution_end", toolCallId: "1", toolName: "read", args: { path: "src/secret.ts" }, result: {}, isError: false } as any);
+    const lines = readFileSync(join(dir, "projects/abc/observations.jsonl"), "utf-8").trim().split("\n");
+    const summary = JSON.parse(lines[0]).data.argsSummary;
+    expect(summary).toContain("src/secret.ts");
+  });
+
   it("ignores unrelated events", () => {
     const dir = tmpDataDir();
     const store = createInstinctStore({ projectHash: "abc", dataDir: dir });
@@ -135,7 +184,7 @@ describe("InstinctStore.extract", () => {
     const dir = mkdtempSync(join(tmpdir(), "instinct-"));
     const extractRun = vi.fn(async () => [{ trigger: "when tests fail on import", action: "check alias config", confidence: 0.99, domain: "testing", evidence: ["obs1"] }]);
     const store = createInstinctStore({ projectHash: "abc", dataDir: dir, extractRun });
-    store.observe({ type: "tool_execution_end", toolCallId: "1", toolName: "bash", result: {}, isError: true } as any);
+    store.observe({ type: "tool_execution_end", toolCallId: "1", toolName: "bash", args: { command: "pnpm test" }, result: {}, isError: true } as any);
     await store.extract();
     const files = readdirSync(join(dir, "projects/abc/instincts"));
     expect(files).toHaveLength(1);
@@ -151,7 +200,7 @@ describe("InstinctStore.extract", () => {
     writeFileSync(join(dir, "projects/abc/instincts/when-tests-fail-on-import.json"), JSON.stringify(existing));
     const extractRun = vi.fn(async () => [{ trigger: "when tests fail on import", action: "check alias", confidence: 0.5, domain: "testing", evidence: ["e2"] }]);
     const store = createInstinctStore({ projectHash: "abc", dataDir: dir, extractRun });
-    store.observe({ type: "tool_execution_end", toolCallId: "1", toolName: "bash", result: {}, isError: true } as any);
+    store.observe({ type: "tool_execution_end", toolCallId: "1", toolName: "bash", args: { command: "pnpm test" }, result: {}, isError: true } as any);
     await store.extract();
     const inst = JSON.parse(readFileSync(join(dir, "projects/abc/instincts/when-tests-fail-on-import.json"), "utf-8")) as Instinct;
     expect(inst.confidence).toBe(0.6); // 0.5 + 0.1
@@ -167,7 +216,7 @@ describe("InstinctStore.extract", () => {
     // 不同 trigger 但同 id（40 字符前缀碰撞）
     const extractRun = vi.fn(async () => [{ trigger: "when running tests fail on import in project beta", action: "a2", confidence: 0.5, domain: "testing", evidence: ["e2"] }]);
     const store = createInstinctStore({ projectHash: "abc", dataDir: dir, extractRun });
-    store.observe({ type: "tool_execution_end", toolCallId: "1", toolName: "bash", result: {}, isError: true } as any);
+    store.observe({ type: "tool_execution_end", toolCallId: "1", toolName: "bash", args: { command: "pnpm test" }, result: {}, isError: true } as any);
     await store.extract();
     const files = readdirSync(join(dir, "projects/abc/instincts")).map((f) => f.replace(/\.json$/, ""));
     expect(files.sort()).toEqual(["when-running-tests-fail-on-import-in-pro", "when-running-tests-fail-on-import-in-pro-2"]);
@@ -177,7 +226,7 @@ describe("InstinctStore.extract", () => {
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const extractRun = vi.fn(async () => { throw new Error("llm boom"); });
     const store = createInstinctStore({ projectHash: "abc", dataDir: dir, extractRun });
-    store.observe({ type: "tool_execution_end", toolCallId: "1", toolName: "bash", result: {}, isError: true } as any);
+    store.observe({ type: "tool_execution_end", toolCallId: "1", toolName: "bash", args: { command: "pnpm test" }, result: {}, isError: true } as any);
     await expect(store.extract()).resolves.toBeUndefined();
     expect(errSpy).toHaveBeenCalled();
     expect(readdirSync(join(dir, "projects/abc/instincts"))).toEqual([]);

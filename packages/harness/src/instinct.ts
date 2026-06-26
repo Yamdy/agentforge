@@ -86,6 +86,38 @@ function truncate(s: string, n: number): string { return s.length > n ? s.slice(
 function clamp(n: number, lo: number, hi: number): number { return Math.max(lo, Math.min(hi, n)); }
 function normalizeTrigger(t: string): string { return t.trim().toLowerCase(); }
 
+/** bash/shell 类工具名集合。 */
+const SHELL_TOOLS = new Set(["bash", "sh", "shell", "zsh", "fish", "powershell", "pwsh"]);
+
+/** 常见 shell secret pattern → <redacted>。(red-team Important 4:200-cap 会 truncate mid-secret,故先 redact) */
+const SECRET_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
+  [/((?:[A-Z0-9_]*)(?:API_KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL))\s*[:=]\s*\S+/gi, "$1=<redacted>"],
+  [/Authorization\s*:\s*Bearer\s+\S+/gi, "Authorization: Bearer <redacted>"],
+  [/-H\s+['"]\s*Authorization:[^'"]*['"]/gi, "-H 'Authorization: <redacted>'"],
+  [/(postgres|mongodb|redis|mysql|amqp):\/\/[^:\s]+:[^@\s]+@/gi, "$1://<user>:<redacted>@"],
+  [/https?:\/\/[^\s/:]+:[^\s/:]+@[^\s/]+/gi, "https://<user>:<redacted>@<host>"],
+  [/\bsk-[A-Za-z0-9_-]{16,}\b/g, "sk-<redacted>"],
+];
+
+function redactString(s: string): string {
+  let out = s;
+  for (const [re, repl] of SECRET_PATTERNS) out = out.replace(re, repl);
+  return out;
+}
+
+/**
+ * 序列化 tool args 为 argsSummary(截断 ~200 字符)。bash/shell 类工具的 command 字段先 redact secret pattern。
+ * 非 shell 工具(read/edit/write 的 path)不含 secret,直接 stringify。
+ */
+function redactArgs(toolName: string, args: unknown): string {
+  let safe: unknown = args;
+  if (SHELL_TOOLS.has(toolName) && args && typeof args === "object" && "command" in (args as Record<string, unknown>)) {
+    const a = args as Record<string, unknown>;
+    safe = { ...a, command: redactString(String(a.command ?? "")) };
+  }
+  return truncate(JSON.stringify(safe), TRUNCATE_ARGS);
+}
+
 /**
  * 将 Message.content 序列化为纯文本，兼容 string 与 block 数组两种形式。
  * pi-ai UserMessage.content: string | (TextContent | ImageContent)[]
@@ -178,7 +210,11 @@ export function createInstinctStore(opts: {
     const ts = Date.now();
     if ((event as any).type === "tool_execution_end") {
       const e = event as any;
-      const argsSummary = e.args ? truncate(JSON.stringify(e.args), TRUNCATE_ARGS) : undefined;
+      // prefer-args 去重(Slice 4-B T10):跳过无 args 的 tool_execution_end
+      // (pi 原生事件无 args 字段 types.d.ts:392;harness afterToolCall emit 带 args)。
+      // 不依赖 emit 顺序——无论 pi 原生还是 harness 先发,无 args 的被跳过,带 args 的被记录。
+      if (e.args === undefined) return [];
+      const argsSummary = redactArgs(e.toolName, e.args);
       const out: Observation[] = [{ timestamp: ts, projectHash, kind: "tool_call", data: { toolName: e.toolName, argsSummary, isError: e.isError } }];
       if (e.isError) out.push({ timestamp: ts, projectHash, kind: "tool_error", data: { toolName: e.toolName, isError: true } });
       return out;
