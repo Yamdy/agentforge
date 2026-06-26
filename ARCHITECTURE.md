@@ -103,7 +103,7 @@ agentforge/
 
 ### 4.3 ContextBudget
 
-- **职责**：审计 system prompt / skills / tools / memory / history 的 token 开销，给出优化建议（哪个 skill 该降级 LIBRARY、哪个 tool schema 太大、history 是否该 compaction）。pi 无此模块，完全自写。Slice 1 memory 组件有意省略（instinct/memory 未建），接口预留 `memory?` 字段后续 slice 填充。
+- **职责**：审计 system prompt / skills / tools / memory / history 的 token 开销，给出优化建议（哪个 skill 该降级 LIBRARY、哪个 tool schema 太大、history 是否该 compaction）。pi 无此模块，完全自写。`memory` 组件 Slice 4-B instinct 落地（`BudgetAuditInput.memory?` + `components.memory` + `total` 含 memory）。
 - **核心接口**（实现用扁平输入，更可测可组合）：
   ```ts
   interface ContextBudget {
@@ -111,7 +111,7 @@ agentforge/
     headroom(total: number, modelContextWindow: number): number;  // 剩余可用 token
   }
   ```
-  Slice 1 已挂载 harness：`prompt` 每 turn 完成后（`modelContextWindow` 注入时）调 `audit`，有建议或 headroom 不足则 emit `context_budget` 事件（诊断性，try/catch 不阻塞主流程）。cli 尚未传 `modelContextWindow`，机制就绪未启用。
+  Slice 1 已挂载 harness：`prompt` 每 turn 完成后（`modelContextWindow` 注入时）调 `audit`，有建议或 headroom 不足则 emit `context_budget` 事件（诊断性，try/catch 不阻塞主流程）。Slice 2.5 cli 三 mode（print/repl/rpc）已接通——`createCompactionConfig` 传 `modelContextWindow`（= `model.contextWindow`）/`compactor`/`compactorDeps`/`budgetThresholds`，机制已启用。
 - **compendium 映射**：`context-budget`（"MCP 是最大杠杆，每 tool schema ~500 tokens"）。
 - **pi 蓝本**：无。compendium 独有。
 
