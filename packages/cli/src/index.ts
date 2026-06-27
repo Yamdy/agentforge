@@ -29,6 +29,19 @@ async function main(): Promise<void> {
 	// 须按 pi-ai 映射读 XIAOMI_TOKEN_PLAN_CN_API_KEY（非非法的 XIAOMI-TOKEN-PLAN-CN_API_KEY）。
 	const getApiKey = getApiKeyFromEnv;
 
+	// loop 子命令(优先于 -p/--rpc flag):agentforge loop --prompt ... --max-runs ...
+	// spec D5:子命令清晰,未来 agentforge rfc-dag 同构。
+	const hasLoopSubcommand = argv[0] === "loop";
+	if (hasLoopSubcommand) {
+		const { runLoopMode } = await import("./loop/loop-mode.js");
+		await runLoopMode(argv.slice(1), {
+			getApiKey: async (p: string) => getApiKeyFromEnv(p),
+			provider: "deepseek",
+			model: "deepseek-chat",
+		});
+		return;
+	}
+
 	if (hasPrintFlag) {
 		// 不传 streamFn → 走 Agent 默认 streamSimple → 真实 SSE 流。
 		const output = await runPrintMode(argv, { getApiKey });
