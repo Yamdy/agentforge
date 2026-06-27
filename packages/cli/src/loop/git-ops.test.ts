@@ -47,6 +47,14 @@ describe("DryRunGitOps", () => {
 		expect(await git.currentBranch()).toBe("feature");
 	});
 
+	it("createBranch 分支已存在 → 不抛(-B 重建,防上轮 loop 残留冲突)", async () => {
+		// 模拟上轮 loop 残留的同名 iter 分支
+		sh("git branch feature");
+		// createBranch 同名 → -B 重建,不抛 already exists(问题④)
+		await git.createBranch("feature");
+		expect(await git.currentBranch()).toBe("feature");
+	});
+
 	it("commit(有改动)→ true 且 working tree 干净 + message 落盘", async () => {
 		await git.createBranch("feature");
 		await git.checkout("feature");

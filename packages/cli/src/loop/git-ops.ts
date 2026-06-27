@@ -25,6 +25,11 @@ export interface DryRunGitOpsOptions {
 	cwd: string;
 }
 
+/**
+ * DryRunGitOps:名「DryRun」实指「不 push/不开 PR」(dry-run 自举),**本地 git 操作全真执行**
+ * (checkout -B/createBranch、add+commit、merge、tag、branch -D 均真跑)。命名遗留,非阻塞;
+ * 未来真 GitHub adapter 替代后可重命名 LocalGitOps。spec §1 自举 dry-run。
+ */
 export class DryRunGitOps implements GitOps {
 	private readonly cwd: string;
 
@@ -38,7 +43,8 @@ export class DryRunGitOps implements GitOps {
 	}
 
 	async createBranch(name: string): Promise<void> {
-		await this.run(`checkout -b ${name}`);
+		// -B:若分支存在(上轮 loop 残留 iter 分支)则重建,不抛 already exists(问题④)。
+		await this.run(`checkout -B ${name}`);
 	}
 
 	async checkout(name: string): Promise<void> {
