@@ -97,6 +97,10 @@ describe("cli print mode — parseArgs", () => {
 	it("throws on -p without a value", () => {
 		expect(() => parseArgs(["-p"])).toThrow();
 	});
+
+	it("throws when --print and --rpc are both given (mutually exclusive)", () => {
+		expect(() => parseArgs(["-p", "hi", "--rpc"])).toThrow(/mutually exclusive|--print.*--rpc|--rpc.*--print/i);
+	});
 });
 
 describe("cli print mode — runPrintMode", () => {

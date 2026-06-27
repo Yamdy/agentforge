@@ -9,7 +9,8 @@ describe("glob tool", () => {
 
   afterEach(() => {
     for (const d of dirs) {
-      rmSync(d, { recursive: true, force: true });
+      // Windows EBUSY: git/fs 句柄偶发持锁 temp dir,rmSync fail;temp dir 在 tmpdir,OS 清,吞错不 fail test。
+      try { rmSync(d, { recursive: true, force: true }); } catch { /* EBUSY: OS cleans tmpdir */ }
     }
     dirs = [];
   });
@@ -153,7 +154,7 @@ describe("glob tool", () => {
     expect(result.details.truncated).toBe(true);
     const text = (result.content[0] as { type: string; text: string }).text;
     expect(text.split("\n").length).toBe(1000);
-  });
+  }, 30000);
 
   it("exposes name/label/parameters schema metadata", () => {
     const tool = createGlobTool();

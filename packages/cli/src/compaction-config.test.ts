@@ -85,4 +85,38 @@ describe("createCompactionConfig", () => {
     // messages 原序，未在首插指令 user message
     expect(call?.[1]?.messages).toEqual(msgs as unknown as any[]);
   });
+
+  it("returns disabled compactor (shouldCompact always false) when AGENTFORGE_DISABLE_COMPACTION=1", () => {
+    const prev = process.env.AGENTFORGE_DISABLE_COMPACTION;
+    process.env.AGENTFORGE_DISABLE_COMPACTION = "1";
+    try {
+      const cfg = createCompactionConfig({
+        provider: "deepseek",
+        model: "deepseek-v4-pro",
+        getApiKey: () => "key",
+      });
+      // 超阈值 ctx(正常会 compact),disabled 应 false。
+      const ctx = { messages: [{ role: "user", content: "x", timestamp: 0 }], tokenThreshold: 0 } as any;
+      expect(cfg.compactor.shouldCompact(ctx)).toBe(false);
+    } finally {
+      if (prev === undefined) delete process.env.AGENTFORGE_DISABLE_COMPACTION;
+      else process.env.AGENTFORGE_DISABLE_COMPACTION = prev;
+    }
+  });
+
+  it("compactor shouldCompact=true (normal) when AGENTFORGE_DISABLE_COMPACTION unset (对照:开关真生效)", () => {
+    const prev = process.env.AGENTFORGE_DISABLE_COMPACTION;
+    delete process.env.AGENTFORGE_DISABLE_COMPACTION;
+    try {
+      const cfg = createCompactionConfig({
+        provider: "deepseek",
+        model: "deepseek-v4-pro",
+        getApiKey: () => "key",
+      });
+      const ctx = { messages: [{ role: "user", content: "x", timestamp: 0 }], tokenThreshold: 0 } as any;
+      expect(cfg.compactor.shouldCompact(ctx)).toBe(true);
+    } finally {
+      if (prev !== undefined) process.env.AGENTFORGE_DISABLE_COMPACTION = prev;
+    }
+  });
 });

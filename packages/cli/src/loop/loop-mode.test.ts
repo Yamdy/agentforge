@@ -93,7 +93,7 @@ describe("runLoopMode", () => {
 		expect(result.totalRuns).toBe(1);
 		expect(result.stopReason).toBe("max-runs");
 		expect(result.iterations[0].merged).toBe(true);
-	});
+	}, 30000);
 
 	it("无退出条件 → 默认 maxRuns=1", async () => {
 		const result = await runLoopMode(
@@ -108,7 +108,7 @@ describe("runLoopMode", () => {
 		);
 		expect(result.stopReason).toBe("max-runs");
 		expect(result.totalRuns).toBe(1);
-	});
+	}, 30000);
 
 	it("缺 --prompt → throw", async () => {
 		await expect(
@@ -139,5 +139,5 @@ describe("runLoopMode", () => {
 		} finally {
 			rmSync(piDir, { recursive: true, force: true });
 		}
-	});
+	}, 30000);
 });

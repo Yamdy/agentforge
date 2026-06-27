@@ -88,6 +88,11 @@ export function parseArgs(argv: string[]): ParsedArgs {
 	});
 
 	const prompt = values.print as string | undefined;
+	const rpc = (values.rpc as boolean) ?? false;
+	// D RPC 扩展:--print 与 --rpc 互斥(同时传报错,避免静默走 print 丢 rpc 意图)。
+	if (prompt !== undefined && rpc) {
+		throw new Error("--print and --rpc are mutually exclusive");
+	}
 	return {
 		print: prompt !== undefined,
 		prompt,
@@ -96,7 +101,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
 		sessionDir: values["session-dir"] as string | undefined,
 		session: values.session as string | undefined,
 		resume: values.resume as string | undefined,
-		rpc: (values.rpc as boolean) ?? false,
+		rpc,
 	};
 }
 

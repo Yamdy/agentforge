@@ -6,7 +6,7 @@ import { getModel, completeSimple } from "@earendil-works/pi-ai";
 import type { Message } from "@earendil-works/pi-ai";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { createCompactor, DEFAULT_THRESHOLDS } from "@agentforge/harness";
-import type { CompactDeps } from "@agentforge/harness";
+import type { CompactDeps, Compactor } from "@agentforge/harness";
 
 /**
  * generateSummary 的 systemPrompt。Slice 4-A Approach A：加强约束禁止幻觉
@@ -53,6 +53,23 @@ export interface CreateCompactionConfigOpts {
   stageMarkers?: string[];
 }
 
+/**
+ * 禁用 compaction 的 env 开关(Slice 4-C defer:全换 MiMo 后 compaction 不幻觉,
+ * 但长对话仍触发;env 降级可选)。AGENTFORGE_DISABLE_COMPACTION=1/true → disabled compactor。
+ */
+function isCompactionDisabled(): boolean {
+  const v = process.env.AGENTFORGE_DISABLE_COMPACTION;
+  return v === "1" || v === "true";
+}
+
+/** disabled compactor:shouldCompact 永返 false → harness maybeCompact 不触发(compact 不会被调)。 */
+const DISABLED_COMPACTOR: Compactor = {
+  shouldCompact: () => false,
+  compact: async () => {
+    throw new Error("compaction disabled (AGENTFORGE_DISABLE_COMPACTION)");
+  },
+};
+
 /** 构造 harness compaction/budget 四字段。 */
 export function createCompactionConfig(opts: CreateCompactionConfigOpts): {
   compactor: ReturnType<typeof createCompactor>;
@@ -64,7 +81,9 @@ export function createCompactionConfig(opts: CreateCompactionConfigOpts): {
   const generateSummary = createSummaryGenerator(model, opts.getApiKey, opts.provider);
   const compactorDeps: CompactDeps = { generateSummary };
   return {
-    compactor: createCompactor({ stageMarkers: opts.stageMarkers ?? [] }),
+    compactor: isCompactionDisabled()
+      ? DISABLED_COMPACTOR
+      : createCompactor({ stageMarkers: opts.stageMarkers ?? [] }),
     compactorDeps,
     modelContextWindow: model.contextWindow,
     budgetThresholds: DEFAULT_THRESHOLDS,

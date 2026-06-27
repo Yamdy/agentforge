@@ -523,6 +523,18 @@ describe("rpc — JSONL persistence + --resume", () => {
 		const result = output.lines().map((l) => JSON.parse(l)).find((l) => l.id === 1 && l.result);
 		expect(result.result.messages.length).toBe(4); // seed(2) + follow user+assistant
 	});
+
+	it("--resume throws clear error when session file missing", async () => {
+		await expect(
+			runRpcMode(["--resume", "nonexistent-rpc"], {
+				streamFn: makeMockStreamFnLocal("x"),
+				getApiKey: () => "fake-key",
+				sessionDir: dir,
+				input: makeMockInput([]),
+				output: makeMockOutput(),
+			}),
+		).rejects.toThrow(/nonexistent-rpc|resume|session/i);
+	});
 });
 
 describe("rpc — parseArgs --rpc flag", () => {
