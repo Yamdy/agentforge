@@ -57,14 +57,20 @@ execute: (toolCallId: string, params: Static<TParameters>, signal?: AbortSignal,
 
 每个 `createXxxTool(cwd?: string)` 接收 cwd，默认回退 `process.cwd()`，使 REPL/print-mode 等现有无参调用行为不变。
 
-- **bash** (`tools/bash.ts`): `execAsync(command, { cwd: cwd ?? undefined, timeout: timeoutMs, maxBuffer })`。cwd 为 undefined 时 exec 用进程 cwd（与现状一致）。
-- **glob** (`tools/glob.ts:117`): `const baseDir = path ?? cwd`（cwd 默认 `process.cwd()`，保持原 fallback 语义）。
-- **grep** (`tools/grep.ts:71-73`): `execAsync(cmd.join(" "), { cwd: cwd ?? undefined, maxBuffer })`。rg 在 cwd 下搜索；`path` 参数仍可显式覆盖搜索范围。
-- **edit** (`tools/edit.ts`): `import { isAbsolute, resolve } from "node:path"`；`const resolved = isAbsolute(path) ? path : resolve(cwd, path)`；readFile/writeFile 用 `resolved`。schema 描述从"要编辑的文件绝对路径"改为"要编辑的文件路径（相对路径基于 cwd 解析）"。
-- **write** (`tools/write.ts`): 同 edit（isAbsolute/resolve）。
-- **read** (`tools/read.ts`): 同 edit（isAbsolute/resolve）。
+每个 `createXxxTool(cwd?: string)` 构造器内先规范化 `const c = cwd ?? process.cwd()`，各 tool 用 `c`。**红队 #6**：不能把 `undefined` 传给 `path.resolve`——`resolve(undefined, path)` 会 throw `TypeError: Path must be a string`，故 cwd 默认**必须在构造器内**完成，非调用处。
 
-**为何 edit/write/read 也要 cwd**：修复后 glob/grep/bash 在 worktree 探索 → 返回 worktree 相对路径 → agent 拿相对路径调 edit/write/read。若这三个不解析相对路径，agent 传的相对路径会被 readFile 当成相对 `process.cwd()`（主 repo）解析 → 仍改主 repo。故必须 `resolve(cwd, path)`。
+- **bash** (`tools/bash.ts`): `execAsync(command, { cwd: c, timeout: timeoutMs, maxBuffer })`。
+- **glob** (`tools/glob.ts:117`): `const baseDir = path ?? c`。
+- **grep** (`tools/grep.ts:71-73`): `execAsync(cmd.join(" "), { cwd: c, maxBuffer })`。rg 在 c 下搜索；`path` 参数仍可显式覆盖搜索范围。
+- **edit** (`tools/edit.ts`): `import { isAbsolute, resolve } from "node:path"`；`const resolved = isAbsolute(path) ? path : resolve(c, path)`；readFile/writeFile 用 `resolved`。schema 描述从"要编辑的文件绝对路径"改为"要编辑的文件路径（相对路径基于 cwd 解析）"。
+- **write** (`tools/write.ts`): 同 edit。
+- **read** (`tools/read.ts`): 同 edit。
+
+**无参调用兼容**（loop-mode/print-mode/repl）：`c = process.cwd()`。bash/glob/grep 本就用 process.cwd()，等价；edit/write/read 的 `resolve(process.cwd(), path)` 等价于现状 Node `readFile(path)` 按 process.cwd() 解析。
+
+**为何 edit/write/read 也要 cwd**：修复后 glob/grep/bash 在 worktree 探索 → 返回 worktree 相对路径 → agent 拿相对路径调 edit/write/read。若这三个不解析相对路径，agent 传的相对路径会被 readFile 当成相对 `process.cwd()`（主 repo）解析 → 仍改主 repo。故必须 `resolve(c, path)`。
+
+**containment 边界（红队 #2）**：`SafetyGuard.freeze()` 在 rfc-dag/loop 路径从不调用 → safety **不提供路径 containment**（`safety.ts:73` 的 `frozenAllowDir` 检查不生效），agent 理论上能 edit/write 任意绝对路径。本修复的 containment 靠**路径机制**而非 safety：修复后 glob/grep/bash 在 worktree 探索，glob 返回相对 baseDir 的路径（`glob.ts:114`），agent 是 fresh context（`initialMessages=[]`）拿不到主 repo 路径，自然用相对路径 → edit `resolve(c=worktree, rel)` 命中 worktree。**残留风险**：若 agent 凭训练习惯硬编绝对主 repo 路径，`isAbsolute ? path : resolve` 短路 → 写主 repo → 修复被绕过（症状同原 bug，更难诊断）。缓解：schema 描述改"相对路径基于 cwd"引导 + §6 验证加"主 repo 无改动"负向断言。若真对话验证确认 agent 仍用绝对路径，再加"绝对路径须在 c 内"的 containment fallback（YAGNI，暂不做）。
 
 ### 4.2 `createLoopAgentDeps(cwd?: string)` 透传 cwd
 
@@ -87,7 +93,7 @@ export function createLoopAgentDeps(cwd?: string): LoopAgentDeps {
 }
 ```
 
-无参调用（loop-mode `index.ts:55`）行为不变（各 tool cwd=undefined → 回退 `process.cwd()`）。
+无参调用（顶层 CLI `index.ts:55` 的 loop 子命令分支，非 loop-mode.ts——红队 #3 归因修正）行为不变（各 tool cwd=undefined → 构造器内回退 `process.cwd()`）。
 
 ### 4.3 toolsFactory 注入（核心）—— 让 tools 随 per-run cwd 重建
 
@@ -123,6 +129,8 @@ const agentRunner = new InProcessAgentRunner({
 - **decompose 阶段**（`dag-decomposer.ts:96` 传 `cwd: process.cwd()`）→ `toolsFactory(process.cwd())` → 主 repo tools（decompose 不改代码，合理）✓
 - **loop-mode / print-mode / repl** 仍用 `tools`（固定，cwd=主 repo 正确），不受影响 ✓
 
+**不变量（红队 #1）**：`toolCwd === harness.cwd` 必须始终成立。safety 用 `ctx.cwd`（=harness.cwd，`harness.ts:264`）做 containment，tools 用 `toolCwd` 做路径解析；二者分叉会导致 containment 检查与实际写目标静默不一致。`run()` 中 `resolveTools(runCwd)` 与 `cwd: runCwd` 同源，天然满足；future caller 不可让 `toolsFactory` 的 cwd 与 harness cwd 分叉。
+
 ### 4.4 问题 B 同批修：env-config.test.ts 隔离 process.env
 
 `packages/cli/src/env-config.test.ts` 的 "returns undefined when no env key set" 用例：`afterEach` 只 `vi.unstubAllEnvs`（清 stub），不清真实 env。`source .env` 后 `process.env.XIAOMI_TOKEN_PLAN_CN_API_KEY` 有真值 → 测试 expected undefined 收到真 key → fail → `pnpm -r test` fail → gate（`pnpm -r typecheck && pnpm -r test`）永失败 → unit 无法 merge。
@@ -131,7 +139,7 @@ const agentRunner = new InProcessAgentRunner({
 
 ### 4.5 问题 C 不修
 
-`worktree-pool.ts:52-58` removeWorktree 已 best-effort catch EBUSY（Windows node_modules 锁）。retry 时 `git worktree add` 报 already-exists 是非阻塞稳定性问题，不影响 merge 正确性。本批不修，留待后续 Windows 稳定性专项。
+`worktree-pool.ts:52-58` removeWorktree 用 generic `catch {}`（注释 "non-fatal"）吞掉所有 `git worktree remove --force` 失败（含 Windows node_modules 锁 EBUSY），**非 EBUSY 特定处理**（红队 #4 归因修正）。retry 时 `git worktree add` 报 already-exists 是非阻塞稳定性问题，不影响 merge 正确性。本批不修，留待后续 Windows 稳定性专项。
 
 ## 5. TDD 策略
 
@@ -144,10 +152,14 @@ const agentRunner = new InProcessAgentRunner({
 - **write**: 类似 edit，相对路径写入 tmpDir。
 - **read**: 在 tmpDir 建文件，`createReadTool(tmpDir)` 用相对路径读，断言读到 tmpDir 内容。
 - **默认 cwd 兼容**: `createBashTool()` 无参仍正常（回退 process.cwd()）。
+- **无参不 throw（红队 #6 回归）**: `createEditTool()` 无参 + 相对路径 `f.ts`，断言不 throw 且解析到 `process.cwd()/f.ts`（防 `resolve(undefined, path)` 回归）。
+- **绝对路径直用（红队 #2 by design）**: `createEditTool(tmpDir)` 用 tmpDir 下文件的**绝对路径**编辑，断言命中该绝对路径（验证 `isAbsolute` 短路——此为设计行为，非 bug；与 §6 负向断言配合确认 agent 实际用相对路径）。
 
 ### 5.2 toolsFactory 注入单测
 
 `InProcessAgentRunner.resolveTools(cwd)`: 构造 runner 传 `toolsFactory`，断言 `resolveTools(wt)` 返回 `toolsFactory(wt)` 的产物；构造 runner 传 `tools`（无 factory），断言 `resolveTools(any)` 返回 `this.opts.tools`。
+
+**一致性（红队 #1/#5）**: `resolveTools(runCwd)` 返回的 tools 与 `new AgentForgeHarness({ cwd: runCwd })` 的 cwd 同源（同一 `runCwd`），断言 `toolCwd === harness.cwd` 不变量在 run 路径成立。
 
 ### 5.3 集成/端到端
 
@@ -165,7 +177,9 @@ const agentRunner = new InProcessAgentRunner({
    ```
    - rfc.md 放 `.agentforge/`（untracked 不污染 runner `isClean` 断言）。
    - 内容：简单任务（shared 包加 `serializeEntries` 函数 + 测试，易过 gate）。
-   - 成功标准：gate pass → unit merged → final-verify PASS（**非 0/4 merged**）。验证 agent 产出在 worktree（grep worktree index.ts 有 serializeEntries）而非主 repo。
+   - 成功标准：gate pass → unit merged → final-verify PASS（**非 0/4 merged**）。
+   - **正向断言**：grep worktree index.ts 有 serializeEntries（agent 产出在 worktree）。
+   - **负向断言（红队 #2 必需）**：grep **主 repo index.ts 无 serializeEntries**。只验证 worktree 有改动不足以确认隔离——agent 可能传绝对路径写主 repo（`isAbsolute` 短路绕过修复），worktree 有 + 主 repo 无 = 隔离真生效。缺此断言会把"修复被绕过"误读为成功。
 
 ## 7. 安全 / 回滚
 
