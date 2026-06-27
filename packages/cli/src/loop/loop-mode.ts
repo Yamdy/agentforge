@@ -30,6 +30,7 @@ export interface LoopModeOptions {
 	tools?: any[];
 	safety?: any;
 	systemPrompt?: string;
+	baseBranch?: string;
 }
 
 export interface ParsedLoopArgs {
@@ -43,6 +44,7 @@ export interface ParsedLoopArgs {
 	gateCommands?: string[];
 	provider?: string;
 	model?: string;
+	baseBranch?: string;
 }
 
 export function parseLoopArgs(argv: string[]): ParsedLoopArgs {
@@ -59,6 +61,7 @@ export function parseLoopArgs(argv: string[]): ParsedLoopArgs {
 			case "--gate-commands": r.gateCommands = argv[++i]?.split(","); break;
 			case "--provider": r.provider = argv[++i]; break;
 			case "--model": r.model = argv[++i]; break;
+			case "--base-branch": r.baseBranch = argv[++i]; break;
 		}
 	}
 	return r;
@@ -122,6 +125,7 @@ export async function runLoopMode(argv: string[], opts: LoopModeOptions): Promis
 		review = { rubric: DEFAULT_REVIEW_RUBRIC, verifier };
 	}
 
-	const runner = new LoopRunner({ prompt, exit, review, cwd }, { gitOps, gate, agentRunner, notes });
+	const baseBranch = parsed.baseBranch ?? opts.baseBranch;
+	const runner = new LoopRunner({ prompt, exit, review, cwd, baseBranch }, { gitOps, gate, agentRunner, notes });
 	return runner.run();
 }

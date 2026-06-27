@@ -33,9 +33,9 @@ function makeMockStreamFn(text: string) {
 	};
 }
 
-function makeTempRepo(): string {
+function makeTempRepo(branch = "main"): string {
 	const dir = mkdtempSync(join(tmpdir(), "loopmode-"));
-	execSync("git init -b main", { cwd: dir });
+	execSync(`git init -b ${branch}`, { cwd: dir });
 	execSync('git config user.email "t@t"', { cwd: dir });
 	execSync('git config user.name "t"', { cwd: dir });
 	writeFileSync(join(dir, "README.md"), "init");
@@ -61,6 +61,11 @@ describe("parseLoopArgs", () => {
 		const r = parseLoopArgs(["--completion-signal", "DONE", "--completion-threshold", "2"]);
 		expect(r.completionSignal).toBe("DONE");
 		expect(r.completionThreshold).toBe(2);
+	});
+
+	it("--base-branch", () => {
+		const r = parseLoopArgs(["--base-branch", "pi"]);
+		expect(r.baseBranch).toBe("pi");
 	});
 });
 
@@ -113,5 +118,25 @@ describe("runLoopMode", () => {
 				cwd: dir,
 			}),
 		).rejects.toThrow("requires --prompt");
+	});
+
+	it("--base-branch pi:repo 在 pi 分支 → 跑通 1 轮 merge", async () => {
+		const piDir = makeTempRepo("pi");
+		try {
+			const result = await runLoopMode(
+				["--prompt", "do x", "--max-runs", "1", "--base-branch", "pi", "--gate-commands", 'node -e "process.exit(0)"'],
+				{
+					getApiKey: () => "k",
+					provider: "anthropic",
+					model: "claude-sonnet-4-5",
+					cwd: piDir,
+					streamFn: makeMockStreamFn("done"),
+				},
+			);
+			expect(result.totalRuns).toBe(1);
+			expect(result.iterations[0].merged).toBe(true);
+		} finally {
+			rmSync(piDir, { recursive: true, force: true });
+		}
 	});
 });

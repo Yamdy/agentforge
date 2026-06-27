@@ -175,4 +175,17 @@ describe("LoopRunner", () => {
 		expect(result.totalRuns).toBe(0);
 		expect(m.agentRunner.run).not.toHaveBeenCalled();
 	});
+
+	it("baseBranch 覆盖:currentBranch=pi + config.baseBranch=pi → 通过,checkout 用 pi 不用 main", async () => {
+		const m = makeMocks();
+		m.gitOps.currentBranch.mockResolvedValue("pi");
+		const runner = new LoopRunner(
+			{ prompt: "p", exit: { maxRuns: 1 }, cwd: process.cwd(), baseBranch: "pi" },
+			m as unknown as LoopDeps,
+		);
+		const result = await runner.run();
+		expect(result.totalRuns).toBe(1);
+		expect(m.gitOps.checkout).toHaveBeenCalledWith("pi");
+		expect(m.gitOps.checkout).not.toHaveBeenCalledWith("main");
+	});
 });

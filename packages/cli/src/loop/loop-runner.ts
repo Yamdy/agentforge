@@ -2,11 +2,11 @@
  * LoopRunner:continuous-PR 循环编排(spec §4.6 / §5)。
  *
  * 每迭代:checkExit → createBranch → checkout → notes.read → agentRunner.run →
- * (review?) → commit → gate → merge? → notes.write → checkout main。
+ * (review?) → commit → gate → merge? → notes.write → checkout 基准分支。
  * 迭代级 try/catch 兜底(spec D10),error 进 notes 喂下轮(anti-pattern 3)。
  * signal 透传 agentRunner(harness.prompt(signal)→agent.abort);abort 在循环顶部检。
  *
- * 开始前:assert isClean + currentBranch==="main" + tag 回滚点(spec 🔴1)。
+ * 开始前:assert isClean + currentBranch===baseBranch(默认 main) + tag 回滚点(spec 🔴1)。
  * 结束(任何 stopReason):输出回滚 tag + git reset --hard 恢复提示。
  */
 import { checkExit } from "./exit-condition.js";
@@ -28,6 +28,8 @@ export interface LoopConfig {
 	review?: ReviewGate;
 	/** 默认 "continuous-pr/iter"。 */
 	branchPrefix?: string;
+	/** 基准分支(iter 从其切出、merge 回其);默认 "main"。单分支 repo 可传 "pi" 等。 */
+	baseBranch?: string;
 	/** agentRunner.run 的 cwd(plan 补,spec §4.6 漏列)。 */
 	cwd: string;
 }
@@ -65,12 +67,13 @@ export class LoopRunner {
 	) {}
 
 	async run(signal?: AbortSignal): Promise<LoopResult> {
-		// 开始前断言(spec 🔴1:防污染 main + 记回滚点)。
+		const baseBranch = this.config.baseBranch ?? "main";
+		// 开始前断言(spec 🔴1:防污染基准分支 + 记回滚点)。
 		if (!(await this.deps.gitOps.isClean())) {
 			throw new Error("working tree not clean; commit or stash before loop");
 		}
-		if ((await this.deps.gitOps.currentBranch()) !== "main") {
-			throw new Error("loop must start on main branch");
+		if ((await this.deps.gitOps.currentBranch()) !== baseBranch) {
+			throw new Error(`loop must start on ${baseBranch} branch`);
 		}
 		// remote 同步断言 defer:GitOps 接口未提供方法,dry-run 无 remote 不触发;
 		// future GitHub adapter 加 isMainSyncedOrNoRemote() 后补(spec §5 🟡5e)。
@@ -161,7 +164,7 @@ export class LoopRunner {
 					iterResult.gatePassed = gateResult.passed;
 					if (gateResult.passed) {
 						state.consecutiveGateFailures = 0;
-						await this.deps.gitOps.checkout("main");
+						await this.deps.gitOps.checkout(baseBranch);
 						const mergeResult = await this.deps.gitOps.merge(branch);
 						if (mergeResult.ok) {
 							try {
@@ -208,11 +211,11 @@ export class LoopRunner {
 				});
 			}
 
-			// 回 main(为下轮 createBranch from main 准备;best-effort)。
+			// 回基准分支(为下轮 createBranch from base 准备;best-effort)。
 			try {
-				await this.deps.gitOps.checkout("main");
+				await this.deps.gitOps.checkout(baseBranch);
 			} catch {
-				// 可能已在 main 或 working tree 冲突;忽略,下轮 createBranch 会暴露。
+				// 可能在基准分支或 working tree 冲突;忽略,下轮 createBranch 会暴露。
 			}
 
 			state.runs++;
@@ -223,7 +226,7 @@ export class LoopRunner {
 
 		// 结束输出回滚提示(spec 🔴1)。
 		console.log(`循环结束(${stopReason})。回滚点 tag: ${rollbackTag}`);
-		console.log(`  如需恢复循环前 main 状态: git reset --hard ${rollbackTag}`);
+		console.log(`  如需恢复循环前 ${baseBranch} 状态: git reset --hard ${rollbackTag}`);
 
 		return {
 			iterations,
