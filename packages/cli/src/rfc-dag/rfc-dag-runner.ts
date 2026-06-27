@@ -150,6 +150,7 @@ export class RfcDagRunner {
 			result.attempts = attempts;
 			try {
 				await this.deps.worktreeOps.addWorktree(wt, branch);
+				await this.deps.worktreeOps.installDeps(wt);
 				if (signal?.aborted) break;
 				const notes = this.buildNotes(unit);
 				const mergedDeps = unit.dependsOn.map(id => `${id}: ${dag.units.find(u => u.id === id)?.scope ?? ""}`).join("; ");
@@ -231,6 +232,10 @@ rollbackPlan: ${unit.rollbackPlan}
 ${notes || "首次执行"}
 
 --- 要求 ---
-完成本 unit scope。完成后输出 DONE。`;
+完成本 unit scope。完成后输出 DONE。
+
+--- 边界约束(必须遵守)---
+- 只修改本 unit scope 相关的源文件;不要修改 docs/、ADR、README 或任何与本 unit 无关的文件。
+- 所有新增测试必须加到现有的 *.test.ts 文件中;不要新建测试文件。`;
 	}
 }

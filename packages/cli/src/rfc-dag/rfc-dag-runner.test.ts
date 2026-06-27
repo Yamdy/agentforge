@@ -49,7 +49,7 @@ function mkDeps(over: Partial<RfcDagDeps> & { dag?: Dag; existing?: RfcDagStateD
 	state.load = vi.fn(() => over.existing ?? null);
 	return {
 		gitOpsFactory: vi.fn(() => mockGitOps()),
-		worktreeOps: { addWorktree: vi.fn(async () => {}), removeWorktree: vi.fn(async () => {}) },
+		worktreeOps: { addWorktree: vi.fn(async () => {}), installDeps: vi.fn(async () => {}), removeWorktree: vi.fn(async () => {}) },
 		gateFactory: vi.fn(() => mockGate([true, true, true])),
 		agentRunner: { run: vi.fn(async () => ({ reply: "done DONE", cost: 0.05, tokensIn: 10, tokensOut: 20 })) },
 		decomposer: { decompose: vi.fn(async () => over.dag ?? dag) } as DagDecomposer,
@@ -172,5 +172,37 @@ describe("RfcDagRunner", () => {
 		const res = await new RfcDagRunner(mkConfig(), deps).run();
 		expect(res.units.find(u => u.unitId === "__final__")).toBeUndefined();
 		expect(res.stopReason).toBe("all-done");
+	});
+
+	// === worktree install:addWorktree 后调 installDeps(wt) 装依赖(worktree 无 node_modules → gate typecheck 会失败)===
+	it("runUnit: addWorktree 后调 installDeps(worktree path)", async () => {
+		const orderedCalls: string[] = [];
+		const worktreeOps: WorktreeOps = {
+			addWorktree: vi.fn(async () => { orderedCalls.push("addWorktree"); }),
+			installDeps: vi.fn(async () => { orderedCalls.push("installDeps"); }),
+			removeWorktree: vi.fn(async () => {}),
+		};
+		const deps = mkDeps({ worktreeOps });
+		await new RfcDagRunner(mkConfig(), deps).run();
+		expect(worktreeOps.installDeps).toHaveBeenCalled();
+		// addWorktree 在 installDeps 前(先建 worktree 再装依赖)
+		expect(orderedCalls.indexOf("addWorktree")).toBeLessThan(orderedCalls.indexOf("installDeps"));
+		// installDeps 参数是 worktree path(含 unitId)
+		const installPaths = (worktreeOps.installDeps as any).mock.calls.map((c: [string]) => c[0]);
+		expect(installPaths.some((p: string) => p.endsWith("u1"))).toBe(true);
+	});
+
+	// === ②③ buildPrompt 边界约束(prompt hardening:不改 docs/无关文件 + 测试加现有 *.test.ts)===
+	it("buildPrompt 含边界约束(②不改 docs/无关文件 + ③测试加现有 *.test.ts)", async () => {
+		const agentRun = vi.fn(async () => ({ reply: "DONE", cost: 0.01, tokensIn: 1, tokensOut: 1 }));
+		const deps = mkDeps({ agentRunner: { run: agentRun } as any });
+		await new RfcDagRunner(mkConfig(), deps).run();
+		const prompt = agentRun.mock.calls[0]![0] as string;
+		// ② 不改 docs/ADR/README/无关文件
+		expect(prompt).toMatch(/不要修改/);
+		expect(prompt).toMatch(/docs|ADR|README|无关/);
+		// ③ 测试加现有 *.test.ts,不新建
+		expect(prompt).toContain("*.test.ts");
+		expect(prompt).toMatch(/不要新建/);
 	});
 });

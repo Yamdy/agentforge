@@ -7,6 +7,8 @@ const execAsync = promisify(exec);
 export interface WorktreeOps {
 	/** git worktree add --force <path> -B <branch>(--force 清路径残留,-B 重建 branch 残留)。 */
 	addWorktree(path: string, branch: string): Promise<void>;
+	/** 在 worktree 跑 `pnpm install`(git worktree add 只 checkout 源文件,无 node_modules → gate typecheck/test 会因缺依赖失败)。 */
+	installDeps(path: string): Promise<void>;
 	/** git worktree remove --force <path>(失败 non-fatal)。 */
 	removeWorktree(path: string): Promise<void>;
 }
@@ -34,6 +36,16 @@ export class DryRunWorktreeOps implements WorktreeOps {
 			await execAsync(`git -C ${cwd} worktree remove --force ${shq(path)}`).catch(() => {});
 			await execAsync(`git -C ${cwd} worktree prune`).catch(() => {});
 			await execAsync(cmd);
+		}
+	}
+
+	async installDeps(path: string): Promise<void> {
+		try {
+			await execAsync("pnpm install", { cwd: path });
+			// build workspace 包 dist:tsc 走 dist(types condition),worktree 无 packages/*/dist(gitignore)→ typecheck 会因找不到 @agentforge/* 失败。
+			await execAsync("pnpm -r build", { cwd: path });
+		} catch {
+			// best-effort:install/build 失败(无 package.json/lockfile 等)不阻塞——gate 会因缺依赖/dist 失败驱动 retry。
 		}
 	}
 
