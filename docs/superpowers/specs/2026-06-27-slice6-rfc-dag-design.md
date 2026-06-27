@@ -2,7 +2,7 @@
 
 - **Date**: 2026-06-27
 - **Slice**: 6(ARCH §8 Slice 6 循环模式——continuous-PR 已完成,RFC-DAG 本 slice)
-- **Status**: Design v1(待 red-team Oracle 审 + plan)
+- **Status**: Design v2(red-team Oracle 审已吸收 2🔴Blocking + 4🟡Important + 2⚪Advisory + 1 smell,待 plan)
 - **依据**: ARCH §8 Slice 6 / §6 映射表(`ralphinho-rfc-pipeline` → cli 工作流 RFC-DAG);compendium `ralphinho-rfc-pipeline` skill(7 stage pipeline + unit spec + complexity tiers + merge queue rules + recovery + outputs,`research/ecc-agent-architecture-compendium.md` 循环模式谱系模式 6)
 - **前置**: Slice 0-5/7 + Slice 6 continuous-PR 完成(395+ loop 测试绿,4 包 typecheck+build 过)。continuous-PR 已建可复用抽象(见 `docs/superpowers/specs/2026-06-26-slice6-continuous-pr-design.md`):`GitOps`/`DryRunGitOps`、`Gate`/`LocalBuildGate`、`AgentRunner`/`InProcessAgentRunner`、`SharedTaskNotes`、`ExitCondition`、`LoopRunner`、`LoopMode`、`--review`(`SantaVerifier`)、`createLoopAgentDeps`(6 工具)、`--base-branch`
 - **决策来源**: brainstorming 2026-06-27(范围=DAG 骨架 MVP / DAG 分解=AI 全自动 / approach=新 RfcDagRunner 复用子组件 / 失败策略=retry with context / resumable=文件 defer SQLite / merge=fast-forward defer rebase)
@@ -24,6 +24,8 @@ RFC-DAG(compendium `ralphinho-rfc-pipeline`):RFC → AI 分解依赖 DAG → 拓
 **两个根因局限**(诚实标注,类比 continuous-PR):
 - **自举验证的是 DAG 编排骨架,非 RFC-DAG 完整模式**:dry-run 不覆盖真并行多 unit / 远程 merge queue eviction / SQLite resumable 完整语义 / rebase 冲突。本 slice 验证「decompose→拓扑调度→worktree→agent→gate→merge→final verify」编排骨架 + 文件 resumable + 轻量 retry;真 RFC-DAG 模式(并行/recovery/SQLite/rebase)留后续。
 - **gate 独立性**:`LocalBuildGate` 跑 agent 改过的 test(agent 运动员兼裁判),dry-run 非独立验证;`--review` santa 独立 reviewer 部分弥补。
+- **DAG 分解质量未校验**:graph-validity(无环/依赖存在)只抓 malformed,不抓 missing dependency/wrong granularity/semantic-wrong。MVP 无分解质量信号,valid-but-wrong DAG 跑完产 broken units(retry 烧 budget);人工确认 DAG defer,max-units 是唯一护栏。
+- **resumable 是 partial**:文件 `state.json` 只帮 crash 恢复(跳过已 merged),不帮 logical 恢复(failed unit 无 regenerate narrowed scope——recovery defer);single failed unit 终止 RFC 价值,下游 skipped。
 
 ## 2. 范围
 
@@ -89,7 +91,8 @@ export interface DagDecomposer {
 }
 ```
 - 用 `InProcessAgentRunner`(复用)读 RFC,产 JSON unit list;`parse` 剥 markdown 围栏 + brace-fallback(类比 instinct `parseInstinctsJson`,防 LLM 包 ```json)。
-- 拓扑校验:无环(DFS)+ 依赖 id 存在 + ≥1 unit。校验失败 throw(decompose 失败)。
+- 拓扑校验:无环(DFS)+ 依赖 id 存在 + ≥1 unit + max-units guardrail(默认 ≤20,防 mega-decomposition)。校验失败 throw(decompose 失败)。
+- **语义校验限制**(诚实标注):graph-validity 只抓 malformed graph,不抓 missing dependency(单 unit 静默假设他 unit 输出)/wrong granularity/semantic-wrong scope。MVP 无分解质量信号,valid-but-wrong DAG 跑完产 broken units(retry 烧 budget);人工确认 DAG defer,max-units 是唯一质量护栏。
 - 构造注入 `{ agentRunner, decomposePrompt? }`。
 
 ### 4.2 DagScheduler(`packages/cli/src/rfc-dag/dag-scheduler.ts`)
@@ -114,9 +117,9 @@ export interface DagScheduler {
 
 ```ts
 export interface WorktreeOps {
-  /** git worktree add <path> -b <branch>(残留 -B 重建,类比 createBranch -B 问题④)。 */
+  /** git worktree add --force <path> -B <branch>(--force 清路径残留[崩溃后 worktree 目录已注册],-B 重建 branch 残留)。注意:worktree 路径残留用 --force,≠ checkout -B branch 残留——两者不同 git 机制。 */
   addWorktree(path: string, branch: string): Promise<void>;
-  /** git worktree remove <path>(失败 non-fatal 记 warning)。 */
+  /** git worktree remove --force <path>(失败 non-fatal 记 warning;残留下次 addWorktree --force 清)。 */
   removeWorktree(path: string): Promise<void>;
 }
 ```
@@ -153,7 +156,7 @@ export interface RfcDagConfig {
   exit: ExitConditionConfig;        // 复用 continuous-PR
   review?: ReviewGate;              // --review(复用 continuous-PR ReviewGate)
   maxUnitRetries?: number;          // 默认 2
-  baseBranch?: string;              // 默认 pi
+  baseBranch?: string;              // 默认 main(与 LoopConfig 一致;自举 pi repo 用 --base-branch pi 显式传)
   branchPrefix?: string;            // 默认 "rfc-dag"
 }
 export interface RfcDagDeps {
@@ -185,7 +188,7 @@ export class RfcDagRunner {
 ### 4.6 review gate(复用 SantaVerifier)
 
 `--review` 时 `RfcDagConfig.review = { rubric, verifier }`。每 unit agent 产出后:
-- `output` = agent reply 为主 + `wtGitOps.diff()` 辅助(未 commit 改动,超长截断;空退化 reply-only,类比 continuous-PR)。
+- `output` = agent reply 为主 + `wtGitOps.diff()` 辅助(未 commit 改动,超长截断;空退化 reply-only,类比 continuous-PR)。**reviewer 不在 worktree cwd 跑**(continuous-PR `createDefaultReviewerRun` 构造 Agent 不传 cwd,reviewer 在主 repo cwd)——靠 diff text 看 worktree 改动(intentional design,非 latent bug);`createSantaVerifier` 的 cwd 对 default reviewerRun 不生效,RFC-DAG 继承。
 - `verdict==="nice"` → commit→gate→merge;`naughty` → 记 `issues` 到 `state`(`lastReviewIssues`),retry(带 issues 上下文),达 `maxUnitRetries` 标 failed。
 
 默认 rubric(可配):「unit 改动符合 scope/acceptanceTests;不破坏现有测试/类型;无明显 slop」。
@@ -232,7 +235,7 @@ RfcDagRunner.run:
     state.save()
   scheduler = new DagScheduler(dag, state)   // 恢复:state 已 merged 的跳过
   // ExitCondition(state2)是 cost/duration 保险;主退出 = scheduler.next()===null(allDone)
-  state2 = { runs:0, cost:0, durationMs:0 }  // 复用 continuous-PR LoopState 语义(runs=unit 执行次数含 retry)
+  state2 = { runs:0, cost:0, durationMs:0, consecutiveCompletionSignals:0, consecutiveGateFailures:0 }  // 复用 LoopState 全 5 字段(后 2 counter per-unit 模型未用,但 checkExit 要求存在;runs=unit 执行次数含 retry)
   loop:
     while unit = scheduler.next():            // 主退出:null = allDone
       exit = checkExit(state2, config.exit)   // 保险:cost/duration/maxRuns 超限停
@@ -263,7 +266,7 @@ RfcDagRunner.run:
         gateResult = await gate.run()
         if gateResult.passed:
           await repoGitOps.checkout(config.baseBranch)
-          mergeResult = await repoGitOps.merge(branch)   // fast-forward(串行免冲突)
+          mergeResult = await repoGitOps.merge(branch)   // DryRunGitOps.merge 非 --ff-only;baseBranch 前进时可能 merge commit/冲突 → 冲突 retryable
           if mergeResult.ok:
             scheduler.mark(unit.id, "merged")
           else:   // 冲突(罕见,外部竞态)
@@ -295,12 +298,12 @@ RfcDagRunner.run:
 | unit agent 崩溃 | try/catch 记 notes,retry(attempts++),达 `maxUnitRetries`(默认 2)标 failed |
 | unit gate 失败 | 记 gate 输出 notes,retry,达上限标 failed |
 | review naughty | 记 issues notes,retry(带 issues 上下文),达上限标 failed(与 gate 统一) |
-| merge 冲突(罕见,外部竞态) | 记 conflict notes,retry,达上限标 failed;分支保留 |
+| merge 冲突/非 fast-forward(baseBranch 前进) | `DryRunGitOps.merge` 非 --ff-only;冲突时 `git merge --abort` 回 baseBranch + 记 conflict → retry;retry `addWorktree --force -B` 重建 branch 重置到最新 base(discard 旧 attempt commits,context 靠 last*),达上限标 failed |
 | 依赖 unit failed | scheduler 下游 unit 标 `skipped`(依赖未满足,不跑) |
 | cost/duration/maxRuns 超限 | `checkExit` 停,stopReason 对应 |
 | Ctrl-C / abort | signal 透传 agentRunner→harness.prompt(signal)→agent.abort,stopReason="aborted" |
 | working tree 不干净 | 开始前 `isClean()` assert 失败 throw,不开始 |
-| worktree 残留(上次中断) | `addWorktree` 用 `-B`/`-f` 重建(类比 createBranch -B 问题④) |
+| worktree 残留(上次中断/崩溃) | `addWorktree` 用 `git worktree add --force -B`(--force 清路径残留,-B 重建 branch);worktree 路径残留机制 ≠ checkout -B branch 残留 |
 | removeWorktree 失败 | non-fatal 记 warning;worktree 残留下次 `-B` 重建 |
 | 无任何退出条件 | RFC-DAG 主退出 = `scheduler.allDone()`(所有 unit done/failed/skipped),`maxUnitRetries` 限 retry 防单 unit 无限;`ExitCondition`(cost/duration/maxRuns)是额外保险超限强制停,非主退出(与 continuous-PR 不同) |
 | 整体结束(任何 stopReason) | 输出回滚 tag + `git reset` 提示 + unit scorecards |
@@ -327,9 +330,10 @@ RfcDagRunner.run:
 - decompose agent 产 JSON:剥围栏 parse(类比 instinct `parseInstinctsJson`,防 LLM 包 ```json 致 parse 抛错静默返 [])
 - cost 累计:sum 所有 AssistantMessage usage(复用 InProcessAgentRunner,不只 last)
 - gate 独立性:同 continuous-PR(`LocalBuildGate` 跑 agent 改过的 test,agent 运动员兼裁判;`--review` santa 独立 reviewer 部分弥补)
-- 串行免冲突:每 unit 从最新 baseBranch 切 worktree → merge fast-forward;真并行需 rebase + 冲突处理(留后续)
+- 串行降低冲突概率但不保证:`DryRunGitOps.merge` 非 --ff-only,baseBranch 前进(并发编辑/前 unit merge)时可能 merge commit 或冲突(red-team 🔴2);冲突 retryable;真 GitHub adapter 需 --ff-only/rebase(non-quiescent baseBranch 的 correctness,非仅并行 feature)
 - 多 cwd factory:`gitOpsFactory`/`gateFactory` 多实例,主 repo + per-worktree;勿共享单 cwd 实例
-- worktree 残留:`addWorktree` `-B`/`-f` 重建(类比 createBranch -B 问题④);`removeWorktree` non-fatal
+- ExitCondition 复用:state2 须全 5 字段(`LoopState` 要求 `consecutiveCompletionSignals`/`consecutiveGateFailures`,per-unit 模型未用但必填,red-team 🔴1)
+- worktree 残留:`addWorktree` 用 `git worktree add --force -B`(--force 清路径残留 ≠ checkout -B branch 残留,red-team 🟡3);`removeWorktree --force` non-fatal;崩溃留 orphan worktree 需 --force 清
 - merge 到 baseBranch:需主 repo 在 baseBranch;循环开始前 `isClean()` + `currentBranch()===baseBranch` 检查
 - `runRfcDagMode` 须强制至少一个退出条件,防 anti-pattern 1(无退出条件无限循环)
 - Ctrl-C:process SIGINT→`AbortController`→signal 透传 `harness.prompt(signal)`+RfcDagRunner 停
@@ -338,3 +342,19 @@ RfcDagRunner.run:
 ## 9. 范围边界汇总
 
 本 slice = RFC-DAG MVP(AI 分解 + 拓扑串行 + worktree 隔离 + merge queue 骨架 + 文件 resumable + 轻量 retry + 自举 dry-run + 可选 santa review)。**不做**:真并行、SQLite resumable、recovery eviction、rebase、真 GitHub PR/CI、子进程隔离、人工确认 DAG、循环事件 emit。harness/shared/eval/loop 零改动,全落 `cli/src/rfc-dag/`。
+
+## 10. red-team Oracle 变更记录(v1 → v2)
+
+| red-team finding | 级别 | v2 处理 |
+|---|---|---|
+| `state2` 3 字段不匹配 `LoopState` 5 字段(`consecutiveCompletionSignals`/`consecutiveGateFailures` 非可选),`checkExit(state2,…)` 不 typecheck | 🔴 Blocking | §5 state2 全 5 字段(后 2 counter per-unit 未用但 LoopState 要求);§8 加陷阱 |
+| "fast-forward 串行免冲突"是文档谎言:`DryRunGitOps.merge` 用 `--no-edit` 非 `--ff-only`,baseBranch 前进(并发/前 unit merge)时非 FF | 🔴 Blocking | 删"免冲突"绝对语言;merge 非 ff 当 retryable conflict;§5/§6/§8 诚实标注;escalation:真 GitHub 需 --ff-only/rebase(correctness for non-quiescent baseBranch,非仅并行 feature) |
+| worktree 残留 `-B` 是 branch flag(checkout -B)非 worktree flag;`git worktree add` 路径已注册(崩溃后)需 `--force`,spec 混淆两机制 | 🟡 Important | §4.3 `addWorktree` 用 `git worktree add --force -B`(--force 清路径残留,-B 重建 branch);删错误 checkout -B 类比;§6/§8 修正;崩溃 orphan worktree 靠 --force 清 |
+| DAG 校验结构对但语义未校验(missing dep/granularity/semantic-wrong),MVP 核心是 AI 分解却无质量信号 | 🟡 Important | §4.1 加 max-units guardrail(≤20)+ §1 诚实标注语义校验限制(valid-but-wrong DAG 烧 budget) |
+| `--review` reviewer 不在 worktree cwd(`createDefaultReviewerRun` 构造 Agent 不传 cwd),靠 diff text 是 intentional 但未声明 | 🟡 Important | §4.6 明确 reviewer 靠 diff text 看 worktree 改动(intentional design);`createSantaVerifier` cwd 对 default reviewerRun 不生效,RFC-DAG 继承 |
+| defer recovery+rebase 留 failed unit 故事缺失(resumable 只帮 crash 恢复,不帮 logical 恢复;single failed unit 终止 RFC) | 🟡 Important | §1 诚实标注 resumable partial(failed unit 无 regenerate,下游 skipped) |
+| `git merge --abort` 隐藏状态突变 + retry discard 旧 attempt commits 未声明 | ⚪ Advisory | §6 merge 行明确:冲突 `--abort` 回 baseBranch,retry `--force -B` 重建 discard 旧 commits,context 靠 last* |
+| `baseBranch` 默认 "pi"(repo-specific 硬编码)vs `LoopConfig` "main" | ⚪ Advisory | §4.5 默认改 "main"(与 LoopConfig 一致),自举用 `--base-branch pi` 显式传 |
+| factory 模式(D13)justified,非 over-engineering(DryRunGitOps/LocalBuildGate 已有 {cwd},factory 是最低复杂度选择) | ⚪ Advisory | 不改(确认合理) |
+
+**claim-verification 全通过**(red-team 独立验证):continuous-PR 抽象签名——`GitOps`(createBranch/checkout/commit/merge/currentBranch/hasChanges/deleteBranch/diff/tag/isClean)+ `DryRunGitOps{cwd}`(多实例)+ `Gate.run()`(无参)+ `LocalBuildGate{cwd,commands?}` + `AgentRunner.run(prompt,{cwd,signal})` + `ExitConditionConfig`(maxRuns/maxCost/maxDurationMs/completionSignal/completionThreshold/maxConsecutiveGateFailures)+ `ReviewGate{rubric,verifier}` + `checkExit(state,config)` + `createLoopAgentDeps`(6 工具)+ `SantaVerifier.review(output,rubric)→{verdict,issues}`——均存在且匹配。continuous-PR 引用(D13 不注入 instinct/auditor/verifier/compactor / --base-branch / notes reset / createBranch -B 问题④)全对。**load-bearing 复用声明成立**。
