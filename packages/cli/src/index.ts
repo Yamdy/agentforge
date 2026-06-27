@@ -34,10 +34,17 @@ async function main(): Promise<void> {
 	const hasLoopSubcommand = argv[0] === "loop";
 	if (hasLoopSubcommand) {
 		const { runLoopMode } = await import("./loop/loop-mode.js");
+		const { createLoopAgentDeps } = await import("./loop/agent-deps.js");
+		// Step 5:注入 tools/systemPrompt/safety(复用 print-mode 同源构造),
+		// 让 loop agent 真改文件(覆盖 reply-only 默认 [])。
+		const { tools, systemPrompt, safety } = createLoopAgentDeps();
 		await runLoopMode(argv.slice(1), {
 			getApiKey: async (p: string) => getApiKeyFromEnv(p),
 			provider: "deepseek",
 			model: "deepseek-chat",
+			tools,
+			systemPrompt,
+			safety,
 		});
 		return;
 	}
