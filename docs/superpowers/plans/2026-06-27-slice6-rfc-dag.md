@@ -1316,7 +1316,7 @@ export async function runRfcDagMode(argv: string[], opts: RfcDagModeOptions) {
 	const parsed = parseRfcDagArgs(argv);
 	const cwd = opts.cwd ?? process.cwd();
 	const rfc = readRfc(parsed.rfc, cwd);
-	const { tools, systemPrompt, safety } = createLoopAgentDeps({ cwd });
+	const { tools, systemPrompt, safety } = createLoopAgentDeps();   // 探针确认:无参,返 LoopAgentDeps{tools,systemPrompt,safety}
 	const agentRunner = new InProcessAgentRunner({
 		provider: opts.provider, model: opts.model, getApiKey: opts.getApiKey,
 		tools, systemPrompt, safety, streamFn: opts.streamFn,
