@@ -29,8 +29,23 @@ async function main(): Promise<void> {
 	// 须按 pi-ai 映射读 XIAOMI_TOKEN_PLAN_CN_API_KEY（非非法的 XIAOMI-TOKEN-PLAN-CN_API_KEY）。
 	const getApiKey = getApiKeyFromEnv;
 
+	// rfc-dag 子命令(优先于 -p/--rpc flag,与 loop 并列):agentforge rfc-dag --rfc rfc.md ...
+	// spec D5:子命令清晰。provider/model 从 argv(--provider/--model)取,真命令见 plan Task 8。
+	const hasRfcDagSubcommand = argv[0] === "rfc-dag";
+	if (hasRfcDagSubcommand) {
+		const { runRfcDagMode } = await import("./rfc-dag/rfc-dag-mode.js");
+		// provider/model 占位默认:真值从 argv(--provider/--model)取(parsed 优先)。
+		// 类比 loop 路由传 deepseek/deepseek-chat。
+		await runRfcDagMode(argv.slice(1), {
+			getApiKey: async (p: string) => getApiKeyFromEnv(p),
+			provider: "deepseek",
+			model: "deepseek-chat",
+		});
+		return;
+	}
+
 	// loop 子命令(优先于 -p/--rpc flag):agentforge loop --prompt ... --max-runs ...
-	// spec D5:子命令清晰,未来 agentforge rfc-dag 同构。
+	// spec D5:子命令清晰。
 	const hasLoopSubcommand = argv[0] === "loop";
 	if (hasLoopSubcommand) {
 		const { runLoopMode } = await import("./loop/loop-mode.js");
