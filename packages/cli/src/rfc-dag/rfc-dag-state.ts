@@ -34,7 +34,14 @@ export class FileRfcDagState implements RfcDagState {
 
 	load(): RfcDagStateData | null {
 		if (!existsSync(this.path)) return null;
-		this.data = JSON.parse(readFileSync(this.path, "utf-8"));
+		// corrupt state.json(手改坏/中断写)→ 不抛 opaque 错,warn + 视作新 run(返 null)。
+		// 比让整条 rfc-dag run 崩在 load 处更安全;旧进度丢失但可重跑。
+		try {
+			this.data = JSON.parse(readFileSync(this.path, "utf-8"));
+		} catch (err) {
+			console.warn(`rfc-dag-state: state.json 解析失败,视作新 run(旧进度丢弃): ${(err as Error).message}`);
+			return null;
+		}
 		return this.data;
 	}
 

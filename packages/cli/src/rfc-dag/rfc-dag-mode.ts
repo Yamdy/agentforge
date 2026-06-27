@@ -111,8 +111,11 @@ export async function runRfcDagMode(argv: string[], opts: RfcDagModeOptions): Pr
 		safety,
 		streamFn: opts.streamFn,
 	});
+	// 退出条件兜底:用户省略所有 --max-* 时 checkExit 永不 stop → runaway。
+	// 注入默认 maxRuns(防无界烧预算)。任一 max-* 显式给出则不覆盖(尊重用户意图)。
+	const DEFAULT_RFC_DAG_MAX_RUNS = 50;
 	const exit: ExitConditionConfig = {
-		maxRuns: parsed.maxRuns,
+		maxRuns: parsed.maxRuns ?? (parsed.maxCost == null && parsed.maxDurationMs == null ? DEFAULT_RFC_DAG_MAX_RUNS : undefined),
 		maxCost: parsed.maxCost,
 		maxDurationMs: parsed.maxDurationMs,
 	};
@@ -150,8 +153,11 @@ export async function runRfcDagMode(argv: string[], opts: RfcDagModeOptions): Pr
 	};
 	const runner = new RfcDagRunner(config, deps);
 	const result = await runner.run();
+	const finalVerifyLine = result.finalVerify
+		? `,final-verify ${result.finalVerify.passed ? "PASS" : "FAIL"}`
+		: "";
 	console.log(
-		`RFC-DAG 完成:${result.units.filter(u => u.status === "merged").length}/${result.units.length} unit merged,cost ${result.totalCost},stop ${result.stopReason}`,
+		`RFC-DAG 完成:${result.units.filter(u => u.status === "merged").length}/${result.units.length} unit merged,cost ${result.totalCost},stop ${result.stopReason}${finalVerifyLine}`,
 	);
 	return result;
 }

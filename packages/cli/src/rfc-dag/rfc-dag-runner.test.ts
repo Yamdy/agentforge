@@ -121,4 +121,56 @@ describe("RfcDagRunner", () => {
 		expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("git reset --hard"));
 		logSpy.mockRestore();
 	});
+
+	// === Important #1: merge 成功后 deleteBranch 被调用(类比 loop-runner.ts:173)===
+	it("merge 成功后 deleteBranch 被调用(分支清理)", async () => {
+		const gitOps = mockGitOps({ mergeOk: true });
+		const deps = mkDeps({ gitOpsFactory: vi.fn(() => gitOps) });
+		const res = await new RfcDagRunner(mkConfig(), deps).run();
+		expect(res.units.filter(u => u.status === "merged")).toHaveLength(2);
+		expect(gitOps.deleteBranch).toHaveBeenCalled();
+		// 删的是 rfc-dag/<unitId> 分支
+		const deletedBranches = (gitOps.deleteBranch as any).mock.calls.map((c: string[]) => c[0]);
+		expect(deletedBranches.some((b: string) => b.startsWith("rfc-dag/"))).toBe(true);
+	});
+
+	// === Important #2: durationMs 在 loop 中更新 → --max-duration 生效 ===
+	it("max-duration 命中 → stopReason 为 max-duration(至少跑 1 unit 后停)", async () => {
+		// 让每个 unit 跗 50ms(保证 durationMs 累积超过 1ms,触发 max-duration:1)
+		const slowAgent = { run: vi.fn(async () => {
+			await new Promise(r => setTimeout(r, 50));
+			return { reply: "DONE", cost: 0.01, tokensIn: 1, tokensOut: 1 };
+		})};
+		const deps = mkDeps({ agentRunner: slowAgent as any });
+		const res = await new RfcDagRunner(mkConfig({ exit: { maxDurationMs: 1 } }), deps).run();
+		expect(res.stopReason).toBe("max-duration");
+	});
+
+	// === Important #4 + #5: final-verify 失败 → finalVerify.passed=false + stopReason=final-verify-failed + 不污染 units ===
+	it("final-verify 失败 → finalVerify.passed=false + stopReason=final-verify-failed + 无 __final__ unit", async () => {
+		// gateFactory 被调多次:每个 unit worktree 一次 + final gate 一次。
+		// mockGate 每次新建实例(各自 i=0),故让 final(第 3 次)返 false。
+		let gateCall = 0;
+		const gateFactory = vi.fn((): Gate => {
+			gateCall++;
+			// final gate(主 repo 全量集成)是最后一次 gateFactory 调用 → 返失败
+			return gateCall === 3 ? mockGate([false]) : mockGate([true]);
+		});
+		const deps = mkDeps({ gateFactory });
+		const res = await new RfcDagRunner(mkConfig(), deps).run();
+		expect(res.stopReason).toBe("final-verify-failed");
+		expect(res.finalVerify).toBeDefined();
+		expect(res.finalVerify?.passed).toBe(false);
+		expect(res.finalVerify?.output).toBe("FAIL");
+		// 不存在 __final__ unit(unitId 都应对应真实 WorkUnit.id)
+		expect(res.units.find(u => u.unitId === "__final__")).toBeUndefined();
+	});
+
+	// === Important #4 反向:final-verify 通过 → 无 finalVerify 或 finalVerify.passed=true ===
+	it("final-verify 通过 → 无 __final__ unit(原行为保持)", async () => {
+		const deps = mkDeps({ gateFactory: vi.fn(() => mockGate([true, true, true])) });
+		const res = await new RfcDagRunner(mkConfig(), deps).run();
+		expect(res.units.find(u => u.unitId === "__final__")).toBeUndefined();
+		expect(res.stopReason).toBe("all-done");
+	});
 });

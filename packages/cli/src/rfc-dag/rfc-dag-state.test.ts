@@ -1,6 +1,6 @@
 // packages/cli/src/rfc-dag/rfc-dag-state.test.ts
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FileRfcDagState } from "./rfc-dag-state.js";
@@ -66,5 +66,16 @@ describe("FileRfcDagState", () => {
 		const s = new FileRfcDagState({ dir });
 		s.data = { dag, units: {}, rollbackTag: "t" };
 		expect(() => s.markUnit("nope", "failed")).not.toThrow();
+	});
+
+	// === Minor #9: corrupt state.json → load 不 throw,返 null(视作新 run)===
+	it("load corrupt JSON → 不 throw,返 null,warn 输出", () => {
+		writeFileSync(join(dir, "state.json"), "{ not valid json <<<");
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		const s = new FileRfcDagState({ dir });
+		expect(() => s.load()).not.toThrow();
+		expect(s.load()).toBeNull();
+		expect(warnSpy).toHaveBeenCalled();
+		warnSpy.mockRestore();
 	});
 });

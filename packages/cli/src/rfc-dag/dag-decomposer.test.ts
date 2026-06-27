@@ -72,4 +72,30 @@ describe("DagDecomposer", () => {
 		const d = new DagDecomposer({ agentRunner: mockRunner("not json at all") });
 		await expect(d.decompose("RFC")).rejects.toThrow(/parse|JSON/i);
 	});
+
+	// === Minor #7: unitId 字符集校验(防 shell 注入 via shq)===
+	it("unitId 含非法字符(如 $()) → throw(charset)", async () => {
+		const bad = JSON.stringify([
+			{ id: "u1$(rm -rf x)", dependsOn: [], scope: "s", acceptanceTests: [], riskLevel: 1, rollbackPlan: "r" },
+		]);
+		const d = new DagDecomposer({ agentRunner: mockRunner(bad) });
+		await expect(d.decompose("RFC")).rejects.toThrow(/charset|字符集|id.*非法|invalid.*id/i);
+	});
+
+	it("unitId 含空格/特殊字符 → throw(charset)", async () => {
+		const bad = JSON.stringify([
+			{ id: "u 1", dependsOn: [], scope: "s", acceptanceTests: [], riskLevel: 1, rollbackPlan: "r" },
+		]);
+		const d = new DagDecomposer({ agentRunner: mockRunner(bad) });
+		await expect(d.decompose("RFC")).rejects.toThrow(/charset|字符集|id.*非法|invalid.*id/i);
+	});
+
+	it("unitId 合法字符(a-zA-Z0-9_-)→ 通过", async () => {
+		const ok = JSON.stringify([
+			{ id: "u_1-OK", dependsOn: [], scope: "s", acceptanceTests: [], riskLevel: 1, rollbackPlan: "r" },
+		]);
+		const d = new DagDecomposer({ agentRunner: mockRunner(ok) });
+		const dag = await d.decompose("RFC");
+		expect(dag.units[0].id).toBe("u_1-OK");
+	});
 });

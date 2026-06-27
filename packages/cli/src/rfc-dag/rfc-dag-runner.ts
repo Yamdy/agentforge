@@ -35,6 +35,10 @@ export interface UnitResult {
 }
 export interface RfcDagResult {
 	units: UnitResult[]; totalCost: number; stopReason: string; rollbackTag: string;
+	/** final-verify(主 repo 全量集成 gate)结果。仅 final-verify 跑过时存在;
+	 *  失败时 passed=false + output,成功时 passed=true。与 units 分离——
+	 *  __final__ 不是真实 WorkUnit,不应污染 units(unitId 不对应 dag unit)。 */
+	finalVerify?: { passed: boolean; output: string };
 }
 
 const DEFAULT_MAX_UNIT_RETRIES = 2;
@@ -86,9 +90,13 @@ export class RfcDagRunner {
 		const results: UnitResult[] = [];
 		let stopReason = "all-done";
 		let exit: ExitDecision = { stop: false, reason: "" };
+		// durationMs 在 loop 内更新——初始化为 0 会让 --max-duration 永不命中(checkExit 测
+		// state.durationMs >= maxDurationMs)。此处取 startedAt,每轮循环顶部刷新。
+		const startedAt = Date.now();
 
 		while (true) {
 			if (signal?.aborted) { stopReason = "aborted"; break; }
+			state2.durationMs = Date.now() - startedAt;
 			exit = checkExit(state2, this.config.exit);
 			if (exit.stop) { stopReason = exit.reason; break; }
 			const unit = scheduler.next();
@@ -115,13 +123,17 @@ export class RfcDagRunner {
 		await repoGitOps.checkout(baseBranch);
 		const finalGate = this.deps.gateFactory(this.config.cwd ?? process.cwd());
 		const finalRes = await finalGate.run();
+		let finalVerify: { passed: boolean; output: string } | undefined;
 		if (!finalRes.passed) {
-			results.push({ unitId: "__final__", status: "failed", attempts: 1, cost: 0, gatePassed: false, error: finalRes.output });
+			// 不再把 __final__ 推进 results.units——它不是真实 WorkUnit,会破坏
+			// "每个 unitId 对应 dag unit" 不变量。改用独立 finalVerify 字段 + stopReason。
+			finalVerify = { passed: false, output: finalRes.output };
+			stopReason = "final-verify-failed";
 		}
 
 		console.log(`RFC-DAG 结束(${stopReason})。回滚 tag: ${rollbackTag}`);
 		console.log(`  git reset --hard ${rollbackTag}`);
-		return { units: results, totalCost: state2.cost, stopReason, rollbackTag };
+		return { units: results, totalCost: state2.cost, stopReason, rollbackTag, finalVerify };
 	}
 
 	private async runUnit(unit: WorkUnit, dag: Dag, repoGitOps: GitOps, worktreesDir: string, prefix: string, baseBranch: string, maxRetries: number, signal?: AbortSignal): Promise<UnitResult> {
@@ -170,6 +182,9 @@ export class RfcDagRunner {
 						this.deps.state.markUnit(unit.id, "merged", attempts);
 						this.deps.state.save();
 						await this.deps.worktreeOps.removeWorktree(wt);
+						// 清理已合并的 rfc-dag/<unitId> 分支(类比 loop-runner.ts:173)。
+						// 非 fatal:删除失败(分支保护/残留)不影响 run 结果,匹配 removeWorktree 的宽松度。
+						await repoGitOps.deleteBranch(branch).catch(() => {});
 						return result;
 					}
 					attempts++;

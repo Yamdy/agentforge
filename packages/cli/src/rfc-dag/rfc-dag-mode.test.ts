@@ -138,4 +138,23 @@ describe("runRfcDagMode wiring", () => {
 		expect(result.units.filter(u => u.status === "merged").length).toBe(1);
 		expect(result.units.length).toBeGreaterThanOrEqual(1);
 	});
+
+	// === Important #3: 用户省略所有 --max-* → 默认 maxRuns(防 runaway)===
+	it("省略所有 --max-* → 默认 maxRuns 兜底(不 runaway)", async () => {
+		// 不传 --max-runs/--max-cost/--max-duration;runRfcDagMode 应注入默认 maxRuns
+		const result = await runRfcDagMode(
+			["--rfc", "rfc.md", "--base-branch", "main", "--gate-commands", 'node -e "process.exit(0)"'],
+			{
+				getApiKey: async () => "k",
+				provider: "anthropic",
+				model: "claude-sonnet-4-5",
+				cwd: dir,
+				streamFn: makeDiscriminatingStreamFn() as any,
+			},
+		);
+		// 默认 maxRuns ≥1,1 unit 正常 merge → all-done(默认兜底不误伤正常 run,仅防无界)
+		expect(result.units.filter(u => u.status === "merged").length).toBe(1);
+		// 不应因无退出条件而失控(stopReason 是正常 all-done,不是 hang)
+		expect(result.stopReason).toBe("all-done");
+	});
 });

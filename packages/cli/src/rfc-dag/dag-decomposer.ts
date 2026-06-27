@@ -50,6 +50,12 @@ function validateDag(units: WorkUnit[], maxUnits: number): void {
 	if (units.length > maxUnits) throw new Error(`DAG 校验失败:超 max-units(≤${maxUnits}),实际 ${units.length}`);
 	const ids = new Set(units.map(u => u.id));
 	if (ids.size !== units.length) throw new Error("DAG 校验失败:id 重复");
+	// unitId 字符集校验:unitId 来自 AI decompose,会经 shq shell-quoting 进入 git worktree -B <branch>
+	// (worktree-pool.ts:28)。仅引号转义不足以防注入——限制为 [a-zA-Z0-9_-] 后,shq 输出恒定安全。
+	const ID_CHARSET = /^[a-zA-Z0-9_-]+$/;
+	for (const u of units) {
+		if (!ID_CHARSET.test(u.id)) throw new Error(`DAG 校验失败:unitId "${u.id}" 含非法字符(仅允许 a-zA-Z0-9_-)`);
+	}
 	for (const u of units) {
 		for (const dep of u.dependsOn) {
 			if (!ids.has(dep)) throw new Error(`DAG 校验失败:dependsOn "${dep}" 不存在(unit ${u.id})`);
