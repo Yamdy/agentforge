@@ -25,6 +25,7 @@ function makeMocks() {
 	const notes = {
 		read: vi.fn().mockReturnValue(""),
 		write: vi.fn(),
+		reset: vi.fn(),
 	};
 	return { gitOps, gate, agentRunner, notes };
 }
@@ -187,5 +188,25 @@ describe("LoopRunner", () => {
 		expect(result.totalRuns).toBe(1);
 		expect(m.gitOps.checkout).toHaveBeenCalledWith("pi");
 		expect(m.gitOps.checkout).not.toHaveBeenCalledWith("main");
+	});
+
+	it("run 开始重置 notes(新 loop 不带旧运行历史)", async () => {
+		const m = makeMocks();
+		const runner = new LoopRunner(
+			{ prompt: "p", exit: { maxRuns: 1 }, cwd: process.cwd() },
+			m as unknown as LoopDeps,
+		);
+		await runner.run();
+		expect(m.notes.reset).toHaveBeenCalledTimes(1);
+	});
+
+	it("reset 只在 run 开始调一次:多轮 loop 不重置(保护跨迭代记忆)", async () => {
+		const m = makeMocks();
+		const runner = new LoopRunner(
+			{ prompt: "p", exit: { maxRuns: 2 }, cwd: process.cwd() },
+			m as unknown as LoopDeps,
+		);
+		await runner.run();
+		expect(m.notes.reset).toHaveBeenCalledTimes(1);
 	});
 });

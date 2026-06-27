@@ -79,6 +79,8 @@ export class LoopRunner {
 		// future GitHub adapter 加 isMainSyncedOrNoRemote() 后补(spec §5 🟡5e)。
 		const rollbackTag = `loop-rollback-${Date.now()}`;
 		await this.deps.gitOps.tag(rollbackTag);
+		// 新 loop 重置 notes(spec §4.4:notes 是本次 loop 跨迭代桥,跨运行不记忆)。
+		this.deps.notes.reset();
 
 		const state: LoopState = {
 			runs: 0,

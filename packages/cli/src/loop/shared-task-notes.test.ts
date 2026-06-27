@@ -84,4 +84,19 @@ describe("FileSharedTaskNotes", () => {
 		notes.write({ iteration: 1, replySummary: "a", gatePassed: true, merged: true });
 		expect(notes.read()).toContain("Iteration 1");
 	});
+
+	it("reset:write 后清空 → read 返空串且文件删除", () => {
+		const notes = new FileSharedTaskNotes({ dir });
+		notes.write({ iteration: 1, replySummary: "a", gatePassed: true, merged: true });
+		expect(notes.read()).toContain("Iteration 1");
+		notes.reset();
+		expect(notes.read()).toBe("");
+		expect(existsSync(join(dir, "SHARED_TASK_NOTES.md"))).toBe(false);
+	});
+
+	it("reset:文件不存在时不抛", () => {
+		const notes = new FileSharedTaskNotes({ dir });
+		expect(() => notes.reset()).not.toThrow();
+		expect(notes.read()).toBe("");
+	});
 });

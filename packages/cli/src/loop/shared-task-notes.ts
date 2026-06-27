@@ -6,7 +6,7 @@
  * 文件落在传入 dir(调用方用 .agentforge/loop/,spec D12,不污染 repo、不被 git 追踪)。
  * maxEntries 截断轮转:red-team 🟡5b,防 notes 无界增长撑爆 agent prompt。
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 export interface IterationProgress {
@@ -26,6 +26,8 @@ export interface SharedTaskNotes {
 	read(): string;
 	/** 追加一条 Progress 段;超 maxEntries 保留最近 N 条。 */
 	write(progress: IterationProgress): void;
+	/** 清空 notes:删除文件,下次 read 返 ""。每次 loop 运行开始重置(spec §4.4)。 */
+	reset(): void;
 }
 
 export interface FileSharedTaskNotesOptions {
@@ -56,6 +58,12 @@ export class FileSharedTaskNotes implements SharedTaskNotes {
 		const updated = existing + formatProgress(progress);
 		const trimmed = trimToMaxEntries(updated, this.maxEntries);
 		writeFileSync(this.filePath, trimmed, "utf8");
+	}
+
+	reset(): void {
+		if (existsSync(this.filePath)) {
+			unlinkSync(this.filePath);
+		}
 	}
 }
 

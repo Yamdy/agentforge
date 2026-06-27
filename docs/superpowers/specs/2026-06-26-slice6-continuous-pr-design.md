@@ -182,14 +182,21 @@ export interface SharedTaskNotes {
   read(): string;
   /** 追加一条 Progress + Next Steps 段(anti-pattern 2:跨迭代 context 桥)。 */
   write(progress: IterationProgress): void;
+  /** 清空 notes(删文件,下次 read → "")。LoopRunner.run 开始调一次。 */
+  reset(): void;
 }
 
 /**
  * FileSharedTaskNotes:读写 .agentforge/loop/SHARED_TASK_NOTES.md。
  * 构造注入 { dir }(默认 <cwd>/.agentforge/loop),{ maxEntries? }(默认 20)。
- * read 注入 agent prompt;write 编排器在迭代末尾调。
+ * read 注入 agent prompt;write 编排器在迭代末尾调;reset 编排器在 run 开始调。
  * **截断轮转**(red-team 🟡5b):write 追加后若 Progress 段超 maxEntries,
  * 保留最近 maxEntries 条(删最旧),防 notes 无界增长撑爆 agent prompt。
+ *
+ * **跨运行重置**(问题②决策):notes 是「本次 loop 的跨迭代桥」——同次 loop 内
+ * 跨迭代记忆(第 N 轮读前 N-1 轮 Progress),但跨多次 `agentforge loop` 运行不
+ * 记忆。每次 LoopRunner.run 开始 reset(),避免无关历史/reply-only 空 entry 污染
+ * 新 loop 第 1 轮;跨运行延续应靠 git history/commit,非临时 notes。
  */
 export class FileSharedTaskNotes implements SharedTaskNotes { /* ... */ }
 ```
@@ -330,6 +337,7 @@ LoopRunner.run:
     assert main 与 origin/main 一致或无 remote(red-team 🟡5e:防未 push commit 卷入 iter 分支)
     rollbackTag = `loop-rollback-${Date.now()}`
     await gitOps.tag(rollbackTag)   // red-team 🔴1:记回滚点
+    notes.reset()   // 问题②:新 loop 重置 notes(跨迭代记忆,跨运行不记忆)
   state = { runs:0, cost:0, durationMs:0, consecutiveCompletionSignals:0, consecutiveGateFailures:0 }
   for iteration = 1; ; iteration++:
     exit = checkExit(state, config.exit)
