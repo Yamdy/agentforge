@@ -75,7 +75,8 @@ describe("runLoopMode", () => {
 		dir = makeTempRepo();
 	});
 	afterEach(() => {
-		rmSync(dir, { recursive: true, force: true });
+		// Windows EBUSY: git/fs 句柄偶发持锁 temp repo,rmSync fail;temp repo 在 tmpdir,OS 清,吞错不 fail test。
+		try { rmSync(dir, { recursive: true, force: true }); } catch { /* EBUSY: OS cleans tmpdir */ }
 	});
 
 	it("集成:临时 repo + mock streamFn + --max-runs 1 → 1 轮 merge,stopReason max-runs", async () => {
