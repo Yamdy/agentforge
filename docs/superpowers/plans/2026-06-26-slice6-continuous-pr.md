@@ -1935,6 +1935,8 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 
 在 agentforge repo(pi 分支,working tree 干净)跑:
 
+> 注:`pnpm --filter @agentforge/cli exec agentforge` 曾因全局 `agentforge@0.1.0`(code/agentforge,commander)shadow + pnpm 顶包 bin 不 link 跑错 bin(问题①)。已修:根 package.json 加 `@agentforge/cli: workspace:*` 让 bin link 根 .bin。deepseek key 不在 .env 时,可改用 MiMo(`set -a; source .env; set +a` + `--provider xiaomi-token-plan-cn --model mimo-v2.5-pro`)。
+
 ```bash
 # 先验骨架(reply-only,tools=[]):agent 不改文件,但走完整 branch→commit→gate→merge→notes
 DEEPSEEK_API_KEY=<key> pnpm --filter @agentforge/cli exec agentforge loop \
@@ -1973,13 +1975,31 @@ DEEPSEEK_API_KEY=<key> pnpm --filter @agentforge/cli exec agentforge loop \
 
 Expected:每轮 `gatePassed=false`,`gitOps.merge` 未调用(检查 `git log` 无 iter commit 进 main),`SHARED_TASK_NOTES.md` 含 `Gate: failed` + gateOutput。
 
-- [ ] **Step 5: (可选)带 tools 的真改动验证**
+- [x] **Step 5: 带 tools 的真改动验证**(2026-06-27 完成)
 
-若 Step 1 的 reply-only 骨架通过,后续可加 tools(复用 `print-mode.ts` 的 tools 构造,传入 `runLoopMode` 的 opts.tools 或 index.ts 路由),prompt 改为「给 `packages/harness/src/adr.ts` 补一个边界测试」,`--gate-commands "pnpm --filter @agentforge/harness test"`,验 agent 真改文件 → commit → gate(test pass)→ merge → main 上见新测试。**此步需先补 tools 注入,留作后续完善**(本 plan 范围:骨架验证)。
+已补 tools 注入:新 `packages/cli/src/loop/agent-deps.ts` `createLoopAgentDeps()`(6 工具 read/bash/edit/write/grep/glob + skills systemPrompt + safety guard,print-mode 同源),`index.ts` loop 路由注入 opts(覆盖 reply-only 默认 [])。TDD:agent-deps 3 测试。
 
-- [ ] **Step 6: 记录自举结果**
+验证(MiMo,`.env` 的 `XIAOMI_TOKEN_PLAN_CN_API_KEY`,替代 deepseek——.env 无 deepseek key):
 
-在 commit message 或 PR 描述记自举验证结果(通过/失败 + SHARED_TASK_NOTES 截图摘录)。无需 commit 代码(本 task 无代码变更)。
+```bash
+set -a; source .env; set +a; pnpm --filter @agentforge/cli exec agentforge loop \
+  --prompt "给 packages/harness/src/adr.ts 补一个边界测试" \
+  --base-branch pi --provider xiaomi-token-plan-cn --model mimo-v2.5-pro \
+  --max-runs 2 --gate-commands "pnpm --filter @agentforge/harness test"
+```
+
+结果:第 1 轮 createBranch iter-1 遇上轮残留同名分支冲突(问题④,已修:`git-ops.ts` createBranch `-b`→`-B` 重建)→ 第 2 轮 agent 真用 write 创建 `adr.test.ts`(24 边界测试)+ `docs/adr/0002-test-decision.md` → commit → gate(harness test)pass → merge pi(`0f6e749`);harness 220 测试绿。**tools 注入链路验证通过**(reply-only DSML 假调用问题③ 随之消失)。
+
+- [x] **Step 6: 记录自举结果**(2026-06-27)
+
+**自举验证总结**(pi 分支,本地 dry-run,无 remote):
+- Step 1-4(reply-only 骨架):2026-06-27 通过(handoff Task 8)——branch→agent→commit→gate→merge→notes 跑通;completion-signal 退出;max-runs 2 跨迭代桥;gate 失败保护;rollback tag + working tree 干净。
+- Step 5(带 tools 真改):2026-06-27 通过(见上)——agent 真用 tools 创建 adr.test.ts → gate pass → merge pi。
+- 暴露并修复的问题:
+  - ① `pnpm exec agentforge` 跑错 bin(全局 `agentforge@0.1.0` shadow + pnpm 顶包 bin 不 link)→ 根 package.json 加 `@agentforge/cli: workspace:*` 让 bin link 根 .bin,修复。
+  - ② notes 跨 loop 运行累积 → `SharedTaskNotes.reset()` + `LoopRunner.run` 开始重置,跨运行不记忆(同次 loop 内跨迭代记忆不变)。
+  - ③ reply-only DSML 假调用 → Step 5 带 tools 后消失(无需单独修)。
+  - ④ iter 分支残留致第 1 轮 createBranch 冲突 → `createBranch` `-b`→`-B` 重建。
 
 ---
 

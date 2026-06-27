@@ -7,6 +7,10 @@ settings:
 importers:
 
   .:
+    dependencies:
+      '@agentforge/cli':
+        specifier: workspace:*
+        version: link:packages/cli
     devDependencies:
       '@types/node':
         specifier: 24.12.4
