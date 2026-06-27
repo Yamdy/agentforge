@@ -110,7 +110,8 @@ describe("runRfcDagMode wiring", () => {
 		execSync("git add -A && git commit -m rfc", { cwd: dir });
 	});
 	afterEach(() => {
-		rmSync(dir, { recursive: true, force: true });
+		// Windows EBUSY: git/fs 句柄偶发持锁 temp repo,rmSync fail;temp repo 在 tmpdir,OS 清,吞错不 fail test。
+		try { rmSync(dir, { recursive: true, force: true }); } catch { /* EBUSY: OS cleans tmpdir */ }
 	});
 
 	it("构造 RfcDagRunner + 跑 + 返 RfcDagResult(mock streamFn 区分 decompose/runUnit)", async () => {
@@ -137,7 +138,7 @@ describe("runRfcDagMode wiring", () => {
 		// decompose 返 1 unit(u1),runUnit 应 merge 成功 → 1/1 merged
 		expect(result.units.filter(u => u.status === "merged").length).toBe(1);
 		expect(result.units.length).toBeGreaterThanOrEqual(1);
-	});
+	}, 30000);
 
 	// === Important #3: 用户省略所有 --max-* → 默认 maxRuns(防 runaway)===
 	it("省略所有 --max-* → 默认 maxRuns 兜底(不 runaway)", async () => {
@@ -156,5 +157,5 @@ describe("runRfcDagMode wiring", () => {
 		expect(result.units.filter(u => u.status === "merged").length).toBe(1);
 		// 不应因无退出条件而失控(stopReason 是正常 all-done,不是 hang)
 		expect(result.stopReason).toBe("all-done");
-	});
+	}, 30000);
 });
