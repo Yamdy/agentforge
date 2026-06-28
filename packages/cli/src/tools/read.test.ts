@@ -51,4 +51,18 @@ describe("read tool", () => {
     expect(tool.label).toBe("Read");
     expect(tool.parameters).toBeDefined();
   });
+
+  it("resolves relative path against cwd", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "read-rel-"));
+    writeFileSync(join(tmp, "f.ts"), "hello");
+    const tool = createReadTool(tmp);
+    const result = await tool.execute("call-rel", { path: "f.ts" });
+    expect((result.content[0] as { text: string }).text).toBe("hello");
+  });
+
+  it("no-arg does not throw TypeError on relative path (red-team #6)", async () => {
+    const tool = createReadTool();
+    // 无参 → c=process.cwd()。相对路径 resolve 不 throw；文件不存在 → ENOENT(非 TypeError)。
+    await expect(tool.execute("call-noarg", { path: "nonexistent-xyz.xyz" })).rejects.toThrow(/ENOENT/);
+  });
 });

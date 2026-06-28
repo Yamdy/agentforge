@@ -1,10 +1,11 @@
 import { readFile, writeFile } from "node:fs/promises";
+import { isAbsolute, resolve } from "node:path";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type, type Static } from "typebox";
 
 /** edit 工具参数 schema。见 ARCHITECTURE.md §5, §9。 */
 const editSchema = Type.Object({
-  path: Type.String({ description: "要编辑的文件绝对路径" }),
+  path: Type.String({ description: "要编辑的文件路径（相对路径基于 cwd 解析）" }),
   old_string: Type.String({ description: "要替换的精确文本（必须唯一，除非 replace_all）" }),
   new_string: Type.String({ description: "替换后的文本" }),
   replace_all: Type.Optional(
@@ -25,15 +26,19 @@ export interface EditToolDetails {
  * content 进 LLM；details 供 UI/audit。文件不存在 / old_string 不唯一 / 不存在时 throw
  * （loop 转成 isError tool result）。
  */
-export function createEditTool(): AgentTool<typeof editSchema, EditToolDetails> {
+export function createEditTool(cwd?: string): AgentTool<typeof editSchema, EditToolDetails> {
+  // 红队 #6: cwd 默认必须在构造器内确定（防 resolve(undefined) throw）。
+  const c = cwd ?? process.cwd();
   return {
     name: "edit",
     label: "Edit",
     description: "精确字符串替换编辑文件。old_string 默认必须唯一，replace_all=true 时全部替换。",
     parameters: editSchema,
     async execute(_toolCallId, { path, old_string, new_string, replace_all }) {
+      // 红队 #2: 绝对路径直用（isAbsolute 短路）是 by design，containment 靠 worktree 探索路径机制。
+      const resolved = isAbsolute(path) ? path : resolve(c, path);
       // 读文件；不存在→throw（loop 转 isError）。
-      const content = await readFile(path, "utf-8");
+      const content = await readFile(resolved, "utf-8");
 
       // 统计 old_string 出现次数。
       const occurrences = content.split(old_string).length - 1;
@@ -43,7 +48,7 @@ export function createEditTool(): AgentTool<typeof editSchema, EditToolDetails> 
 
       if (replace_all === true) {
         if (occurrences === 0) {
-          throw new Error(`old_string not found in ${path}`);
+          throw new Error(`old_string not found in ${resolved}`);
         }
         newContent = content.split(old_string).join(new_string);
         replacements = occurrences;
@@ -58,16 +63,16 @@ export function createEditTool(): AgentTool<typeof editSchema, EditToolDetails> 
         replacements = 1;
       }
 
-      await writeFile(path, newContent, "utf-8");
+      await writeFile(resolved, newContent, "utf-8");
 
       return {
         content: [
           {
             type: "text",
-            text: `Edited ${path} (${replacements} replacement${replacements === 1 ? "" : "s"})`,
+            text: `Edited ${resolved} (${replacements} replacement${replacements === 1 ? "" : "s"})`,
           },
         ],
-        details: { path, replacements },
+        details: { path: resolved, replacements },
       };
     },
   };

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { writeFileSync, mkdtempSync, rmSync } from "node:fs";
+import { writeFileSync, mkdtempSync, rmSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -119,5 +119,39 @@ describe("edit tool", () => {
         new_string: "bar",
       }),
     ).rejects.toThrow();
+  });
+
+  it("resolves relative path against cwd (worktree isolation)", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "edit-rel-"));
+    try {
+      writeFileSync(join(tmp, "f.ts"), "old");
+      const tool = createEditTool(tmp);
+      await tool.execute("call-rel", { path: "f.ts", old_string: "old", new_string: "new" });
+      expect(readFileSync(join(tmp, "f.ts"), "utf-8")).toBe("new");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("uses absolute path as-is (isAbsolute short-circuit, by design)", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "edit-abs-"));
+    try {
+      const abs = join(tmp, "f.ts");
+      writeFileSync(abs, "old");
+      const tool = createEditTool(tmp);
+      await tool.execute("call-abs", { path: abs, old_string: "old", new_string: "new" });
+      expect(readFileSync(abs, "utf-8")).toBe("new");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("no-arg does not throw TypeError on relative path (red-team #6 regression)", async () => {
+    const tool = createEditTool();
+    // 无参 → c=process.cwd()。相对路径 resolve(process.cwd(), path) 不 throw;
+    // 文件不存在 → readFile ENOENT(非 TypeError)。
+    await expect(
+      tool.execute("call-noarg", { path: "nonexistent-xyz.xyz", old_string: "x", new_string: "y" }),
+    ).rejects.toThrow(/ENOENT/);
   });
 });

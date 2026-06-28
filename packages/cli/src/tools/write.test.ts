@@ -53,4 +53,18 @@ describe("write tool", () => {
     expect(existsSync(filePath)).toBe(true);
     expect(readFileSync(filePath, "utf-8")).toBe(content);
   });
+
+  it("resolves relative path against cwd", async () => {
+    dir = mkdtempSync(join(tmpdir(), "write-rel-"));
+    const tool = createWriteTool(dir);
+    await tool.execute("call-rel", { path: "f.ts", content: "hi" });
+    expect(readFileSync(join(dir, "f.ts"), "utf-8")).toBe("hi");
+  });
+
+  it("no-arg does not throw TypeError on relative path (red-team #6)", async () => {
+    dir = mkdtempSync(join(tmpdir(), "write-noarg-"));
+    const tool = createWriteTool();
+    await tool.execute("call-noarg", { path: join(dir, "f.ts"), content: "x" }); // 绝对路径,无参不 throw
+    expect(readFileSync(join(dir, "f.ts"), "utf-8")).toBe("x");
+  });
 });
