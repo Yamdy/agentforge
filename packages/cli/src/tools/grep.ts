@@ -41,7 +41,8 @@ export interface GrepToolDetails {
  * agentforge 需自装 ripgrep（cargo install ripgrep / scoop install ripgrep）。glob 工具无此依赖。
  * 详见 ARCHITECTURE.md §5。
  */
-export function createGrepTool(): AgentTool<typeof grepSchema, GrepToolDetails> {
+export function createGrepTool(cwd?: string): AgentTool<typeof grepSchema, GrepToolDetails> {
+  const c = cwd ?? process.cwd();
   return {
     name: "grep",
     label: "Grep",
@@ -69,6 +70,7 @@ export function createGrepTool(): AgentTool<typeof grepSchema, GrepToolDetails> 
 
       try {
         const { stdout } = await execAsync(cmd.join(" "), {
+          cwd: c,
           maxBuffer: 10 * 1024 * 1024,
         });
         return {

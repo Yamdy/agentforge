@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 // Mock exec from node:child_process. grep.ts 用 promisify(exec) → execAsync，
 // 我们直接 mock exec 的 (error, {stdout, stderr}) 回调契约。
@@ -34,6 +37,23 @@ function mockExecFailure(code: number | undefined, stdout: string, stderr: strin
 function getCmd(): string {
   const call = execMock.mock.calls[0];
   return call ? (call[0] as string) : "";
+}
+
+// 从 execMock 的调用记录里提取 opts（第二参数）
+function getOpts(): Record<string, unknown> {
+  const call = execMock.mock.calls[0];
+  return call ? (call[1] as Record<string, unknown>) : {};
+}
+
+// 探测本环境是否有真实 rg 可执行（node exec 可调）。
+// Claude Code 会话内 bash 的 rg 是 shell function，node exec 不可调。
+function hasRealRg(): boolean {
+  try {
+    require("child_process").execSync("rg --version", { stdio: "pipe" });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 describe("grep tool", () => {
@@ -163,5 +183,31 @@ describe("grep tool", () => {
     await expect(
       tool.execute("call-10", { pattern: "(", path: "/tmp/dir" }),
     ).rejects.toThrow(/regex error/);
+  });
+
+  it("passes the provided cwd to execAsync (worktree isolation)", async () => {
+    // 验证 red-team #6：cwd 在构造器内捕获，execAsync opts.cwd 传给 rg。
+    mockExecSuccess("f.ts:markerXYZ\n");
+    const tmp = "/tmp/grep-cwd-isolated";
+    const tool = createGrepTool(tmp);
+    await tool.execute("call-cwd", { pattern: "markerXYZ" });
+    expect(getOpts().cwd).toBe(tmp);
+  });
+
+  it("no-arg defaults to process.cwd() (backward compat)", async () => {
+    mockExecSuccess("f.ts:marker\n");
+    const tool = createGrepTool();
+    await tool.execute("call-default", { pattern: "marker" });
+    expect(getOpts().cwd).toBe(process.cwd());
+  });
+
+  // 真 rg 集成测试：仅当本环境有真实 rg 可执行时跑。
+  // Claude Code 会话内 rg 是 shell function（node exec 不可调）→ skip。
+  (hasRealRg() ? it : it.skip)("searches in the provided cwd (real rg)", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "grep-cwd-"));
+    writeFileSync(join(tmp, "f.ts"), "markerXYZ");
+    const tool = createGrepTool(tmp);
+    const result = await tool.execute("call-cwd-real", { pattern: "markerXYZ" });
+    expect((result.content[0] as { text: string }).text).toContain("f.ts");
   });
 });
