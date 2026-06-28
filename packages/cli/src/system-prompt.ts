@@ -1,8 +1,8 @@
 /**
  * cli systemPrompt 与 skills 注入。见 ARCHITECTURE.md §4.4 / §5。
  *
- * 职责：在构造 AgentForgeHarness 前，从默认 skills 目录（~/.agentforge/skills +
- * <cwd>/.agentforge/skills）加载 skills，分类（daily/library），把 daily skills
+ * 职责：在构造 AgentForgeHarness 前，从默认 skills 目录（~/.agents/skills +
+ * ~/.agentforge/skills + <cwd>/.agentforge/skills）加载 skills，分类（daily/library），把 daily skills
  * 格式化为 <available_skills> 块并拼到 base systemPrompt 之后。
  *
  * 抽成可测函数 createSystemPromptWithSkills(basePrompt, dirs)：便于单测注入临时目录。
@@ -18,11 +18,17 @@ import {
 } from "@agentforge/harness";
 
 /**
- * 默认 skills 发现目录：~/.agentforge/skills + <cwd>/.agentforge/skills。
- * 见 ARCHITECTURE.md §4.4（skill-stocktake 改造为 .agentforge 路径）。
+ * 默认 skills 发现目录：~/.agents/skills + ~/.agentforge/skills + <cwd>/.agentforge/skills。
+ * 见 ARCHITECTURE.md §4.4。
+ *
+ * 优先级（loadSkills 按数组顺序扫描，同名 skill 后出现的覆盖先前的）：
+ *  1. ~/.agents/skills      ← 用户全局 skill（兼容旧路径）
+ *  2. ~/.agentforge/skills   ← 用户全局 skill（agentforge 原生路径）
+ *  3. <cwd>/.agentforge/skills ← 当前项目 skill（项目特定）
  */
 export function defaultSkillDirs(): string[] {
 	return [
+		`${homedir()}/.agents/skills`,
 		`${homedir()}/.agentforge/skills`,
 		`${process.cwd()}/.agentforge/skills`,
 	];
