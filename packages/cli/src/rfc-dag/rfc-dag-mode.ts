@@ -100,13 +100,14 @@ export async function runRfcDagMode(argv: string[], opts: RfcDagModeOptions): Pr
 	const provider = parsed.provider ?? opts.provider;
 	const model = parsed.model ?? opts.model;
 	const rfc = readRfc(parsed.rfc, cwd);
-	// 探针确认:createLoopAgentDeps() 无参,返 LoopAgentDeps{tools,systemPrompt,safety}。
-	const { tools, systemPrompt, safety } = createLoopAgentDeps();
+	// tools 改由 toolsFactory 按 per-run cwd 重建(rfc-dag unit 执行传 cwd=worktree →
+	// worktree tools;decompose 传 cwd=process.cwd() → 主 repo tools)。systemPrompt/safety 不依赖 cwd。
+	const { systemPrompt, safety } = createLoopAgentDeps();
 	const agentRunner = new InProcessAgentRunner({
 		provider,
 		model,
 		getApiKey: opts.getApiKey,
-		tools,
+		toolsFactory: (cwd: string) => createLoopAgentDeps(cwd).tools,
 		systemPrompt,
 		safety,
 		streamFn: opts.streamFn,
