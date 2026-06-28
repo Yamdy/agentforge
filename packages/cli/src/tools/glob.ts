@@ -107,14 +107,15 @@ function join(a: string, b: string): string {
  * 内置 glob 工具：按 glob 模式匹配文件路径。
  * content 进 LLM；details 供 UI/audit。匹配数上限 1000，超出 truncated=true。
  */
-export function createGlobTool(): AgentTool<typeof globSchema, GlobToolDetails> {
+export function createGlobTool(cwd?: string): AgentTool<typeof globSchema, GlobToolDetails> {
+  const c = cwd ?? process.cwd();
   return {
     name: "glob",
     label: "Glob",
     description: "按 glob 模式匹配文件路径（支持 ** * ? {a,b}）。返回相对 baseDir 的路径列表。",
     parameters: globSchema,
     async execute(_toolCallId, { pattern, path }) {
-      const baseDir = path ?? process.cwd();
+      const baseDir = path ?? c;
       const all = collectFiles(baseDir);
       const rx = globToRegExp(pattern);
       const matched = all.filter((p) => rx.test(p)).sort();

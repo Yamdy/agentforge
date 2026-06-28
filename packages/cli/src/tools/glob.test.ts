@@ -162,4 +162,13 @@ describe("glob tool", () => {
     expect(tool.label).toBe("Glob");
     expect(tool.parameters).toBeDefined();
   });
+
+  it("searches in the provided cwd", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "glob-cwd-"));
+    dirs.push(tmp);
+    writeFileSync(join(tmp, "a.ts"), "x");
+    const tool = createGlobTool(tmp);
+    const result = await tool.execute("call-cwd", { pattern: "*.ts" });
+    expect((result.content[0] as { text: string }).text).toContain("a.ts");
+  });
 });
