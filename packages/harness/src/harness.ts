@@ -71,7 +71,7 @@ export interface HarnessOptions {
 	compactor?: Compactor;
 	/** compact 的依赖（generateSummary 注入；真对话用 pi-ai streamSimple/agent）。 */
 	compactorDeps?: CompactDeps;
-	/** shouldCompact 的 token 阈值。默认 100000。 */
+	/** shouldCompact 的 token 阈值。默认 modelContextWindow * 0.75；无 modelContextWindow 时回退 200000。 */
 	compactionTokenThreshold?: number;
 	/**
 	 * 可选模型上下文窗口（issue #12）。注入后，prompt 每 turn 完成、maybeCompact 之后，
@@ -150,8 +150,8 @@ export class AgentForgeHarness {
 		this.events = opts.events;
 		this.compactor = opts.compactor;
 		this.compactorDeps = opts.compactorDeps;
-		this.compactionTokenThreshold = opts.compactionTokenThreshold ?? 100000;
 		this.modelContextWindow = opts.modelContextWindow;
+		this.compactionTokenThreshold = opts.compactionTokenThreshold ?? (this.modelContextWindow ? Math.floor(this.modelContextWindow * 0.75) : 200000);
 		this.budgetThresholds = opts.budgetThresholds;
 		this.safety = opts.safety;
 		this.safetyAskHandler = opts.safetyAskHandler;
