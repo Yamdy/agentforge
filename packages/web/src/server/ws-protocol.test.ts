@@ -3,21 +3,14 @@ import { serializeWebEvent } from "./ws-protocol.js";
 import type { HarnessEvent } from "@agentforge/shared";
 
 describe("serializeWebEvent", () => {
-  it("保留 message_update 的 text_delta，返回 {type, delta}", () => {
+  it("保留 message_update，转发累积态 message（丢 assistantMessageEvent）", () => {
+    const msg = { role: "assistant", content: [{ type: "text", text: "hello" }] };
     const e = {
       type: "message_update",
-      message: {},
-      assistantMessageEvent: { type: "text_delta", delta: "hello" },
+      message: msg,
+      assistantMessageEvent: { type: "text_delta", delta: "hel" },
     } as unknown as HarnessEvent;
-    expect(serializeWebEvent(e)).toEqual({ type: "message_update", delta: "hello" });
-  });
-  it("message_update 非 text_delta 变体跳过", () => {
-    const e = {
-      type: "message_update",
-      message: {},
-      assistantMessageEvent: { type: "thinking_delta", delta: "th" },
-    } as unknown as HarnessEvent;
-    expect(serializeWebEvent(e)).toBeUndefined();
+    expect(serializeWebEvent(e)).toEqual({ type: "message_update", message: msg });
   });
   it("补 audit_finding", () => {
     const e = {

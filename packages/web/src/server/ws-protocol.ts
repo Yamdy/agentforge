@@ -2,7 +2,7 @@ import type { HarnessEvent } from "@agentforge/shared";
 
 /**
  * web 版事件序列化。与 rpc.serializeEvent 差异：
- *  1. 保留 message_update（rpc 排除）—— server 端 narrow text_delta 取 delta，发 {type,delta}；非 text_delta 跳过。
+ *  1. 保留 message_update（rpc 排除）—— 转发累积态 message，丢 assistantMessageEvent，server 不 narrow 不批量。
  *  2. 补 audit_finding（rpc 有）。
  *  3. 不含全 message（背压；完整消息在 message_end）。
  */
@@ -16,19 +16,10 @@ export function serializeWebEvent(
     case "agent_end":
       return { type };
     case "message_update": {
-      const inner = (
-        event as {
-          assistantMessageEvent?: { type?: string; delta?: string };
-        }
-      ).assistantMessageEvent;
-      if (
-        !inner ||
-        inner.type !== "text_delta" ||
-        typeof inner.delta !== "string"
-      ) {
-        return undefined;
-      }
-      return { type: "message_update", delta: inner.delta };
+      return {
+        type: "message_update",
+        message: (event as { message: unknown }).message,
+      };
     }
     case "message_end": {
       const e = event as { message: unknown };
