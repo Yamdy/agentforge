@@ -8,7 +8,7 @@ import type {
 	AssistantMessageEvent,
 } from "@earendil-works/pi-agent-core";
 
-import { createSystemPromptWithSkills } from "./system-prompt.js";
+import { createSystemPromptWithSkills, loadAgentsMd } from "./system-prompt.js";
 import { DEFAULT_SYSTEM_PROMPT } from "./print-mode.js";
 import { AgentForgeHarness, createEventBus, createMemorySession } from "@agentforge/harness";
 
@@ -104,7 +104,7 @@ describe("createSystemPromptWithSkills", () => {
 
 	it("returns the base prompt unchanged when no skills are found", () => {
 		const dir = makeTmpDir();
-		const prompt = createSystemPromptWithSkills(DEFAULT_SYSTEM_PROMPT, [dir]);
+		const prompt = createSystemPromptWithSkills(DEFAULT_SYSTEM_PROMPT, [dir], join(dir, "no-AGENTS.md"));
 		expect(prompt).toBe(DEFAULT_SYSTEM_PROMPT);
 	});
 
@@ -144,10 +144,70 @@ describe("createSystemPromptWithSkills", () => {
 	});
 
 	it("handles a non-existent directory gracefully (base prompt unchanged)", () => {
+		const dir = makeTmpDir();
 		const prompt = createSystemPromptWithSkills(DEFAULT_SYSTEM_PROMPT, [
-			join(makeTmpDir(), "missing"),
-		]);
+			join(dir, "missing"),
+		], join(dir, "no-AGENTS.md"));
 		expect(prompt).toBe(DEFAULT_SYSTEM_PROMPT);
+	});
+
+	it("injects AGENTS.md content when the file exists", () => {
+		const dir = makeTmpDir();
+		const agentsPath = join(dir, "AGENTS.md");
+		writeFileSync(agentsPath, "# Project Rules\nAlways use TDD.", "utf-8");
+
+		const prompt = createSystemPromptWithSkills(DEFAULT_SYSTEM_PROMPT, [dir], agentsPath);
+
+		expect(prompt).toContain(DEFAULT_SYSTEM_PROMPT);
+		expect(prompt).toContain("# Project Rules");
+		expect(prompt).toContain("Always use TDD.");
+	});
+
+	it("injects AGENTS.md before skills block", () => {
+		const dir = makeTmpDir();
+		const agentsPath = join(dir, "AGENTS.md");
+		writeFileSync(agentsPath, "# Project Rules", "utf-8");
+		writeSkill(
+			dir,
+			[
+				"---",
+				"name: daily-review",
+				"description: A daily skill.",
+				"classification: daily",
+				"---",
+				"",
+				"body",
+			].join("\n"),
+		);
+
+		const prompt = createSystemPromptWithSkills(DEFAULT_SYSTEM_PROMPT, [dir], agentsPath);
+
+		expect(prompt.indexOf("# Project Rules")).toBeLessThan(
+			prompt.indexOf("<available_skills>"),
+		);
+	});
+
+	it("skips AGENTS.md when the file does not exist", () => {
+		const dir = makeTmpDir();
+		const prompt = createSystemPromptWithSkills(
+			DEFAULT_SYSTEM_PROMPT,
+			[dir],
+			join(dir, "nonexistent-AGENTS.md"),
+		);
+		expect(prompt).toBe(DEFAULT_SYSTEM_PROMPT);
+	});
+});
+
+describe("loadAgentsMd", () => {
+	it("returns file content when the file exists", () => {
+		const dir = makeTmpDir();
+		const filePath = join(dir, "AGENTS.md");
+		writeFileSync(filePath, "# Dev rules\nUse ESM.", "utf-8");
+		expect(loadAgentsMd(filePath)).toBe("# Dev rules\nUse ESM.");
+	});
+
+	it("returns empty string when the file does not exist", () => {
+		expect(loadAgentsMd("/nonexistent/AGENTS.md")).toBe("");
 	});
 });
 
@@ -198,7 +258,7 @@ describe("integration — skills block reaches harness systemPrompt", () => {
 	it("harness without skills dir keeps systemPrompt as the base prompt", () => {
 		// 无 daily skills → createSystemPromptWithSkills 返回 basePrompt 原值。
 		const dir = makeTmpDir(); // 空目录
-		const systemPrompt = createSystemPromptWithSkills(DEFAULT_SYSTEM_PROMPT, [dir]);
+		const systemPrompt = createSystemPromptWithSkills(DEFAULT_SYSTEM_PROMPT, [dir], join(dir, "no-AGENTS.md"));
 
 		const harness = new AgentForgeHarness({
 			session: createMemorySession(),
