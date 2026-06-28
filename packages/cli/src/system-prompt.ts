@@ -83,7 +83,12 @@ export function createSystemPromptWithSkills(
 	}
 
 	// 注入 daily skills 块。
-	const skills = loadSkills(dirs);
+	// ~/.agents/skills 下的 skill 默认算 daily（用户显式安装的 skill 不需要逐个标记）。
+	const agentsSkillsDir = `${homedir()}/.agents/skills`;
+	const defaultClassifications: Record<string, "daily" | "library"> = {
+		[agentsSkillsDir]: "daily",
+	};
+	const skills = loadSkills(dirs, defaultClassifications);
 	const daily = skills.filter((s) => classifySkill(s) === "daily");
 	const block = formatSkillsForSystemPrompt(daily);
 	if (block !== "") {

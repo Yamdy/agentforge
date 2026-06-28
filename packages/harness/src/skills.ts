@@ -123,11 +123,33 @@ function basename(path: string): string {
  * - 空目录/不存在目录：返回空数组，不抛。
  * - 递归进入子目录。
  * - 跳过无 frontmatter 的 SKILL.md。
+ *
+ * @param dirs 扫描目录列表。
+ * @param defaultClassifications 可选的目录→默认分类映射。当 skill 的 frontmatter
+ *   没有显式 classification 字段时，若其所在目录命中此映射，则使用对应的默认分类。
+ *   目录匹配用前缀（skill.sourceDir 以 dir 开头）。未命中时走 classifySkill 启发式。
  */
-export function loadSkills(dirs: string[]): Skill[] {
+export function loadSkills(
+	dirs: string[],
+	defaultClassifications?: Record<string, SkillClassification>,
+): Skill[] {
 	const skills: Skill[] = [];
 	for (const dir of dirs) {
 		collectSkillsFromDir(dir, skills);
+	}
+	if (defaultClassifications) {
+		const normalize = (p: string) => p.replace(/[\\/]+$/, "").replace(/\\/g, "/");
+		for (const skill of skills) {
+			if (skill.frontmatter.classification) continue; // 显式指定不覆盖
+			const normSource = normalize(skill.sourceDir);
+			for (const [dir, cls] of Object.entries(defaultClassifications)) {
+				const normDir = normalize(dir);
+				if (normSource === normDir || normSource.startsWith(normDir + "/")) {
+					skill.frontmatter.classification = cls;
+					break;
+				}
+			}
+		}
 	}
 	return skills;
 }
