@@ -26,15 +26,15 @@ export interface LoopAgentDeps {
 	safety: any;
 }
 
-export function createLoopAgentDeps(): LoopAgentDeps {
+export function createLoopAgentDeps(cwd?: string): LoopAgentDeps {
 	return {
 		tools: [
-			createReadTool(),
-			createBashTool(),
-			createEditTool(),
-			createWriteTool(),
-			createGrepTool(),
-			createGlobTool(),
+			createReadTool(cwd),
+			createBashTool(cwd),
+			createEditTool(cwd),
+			createWriteTool(cwd),
+			createGrepTool(cwd),
+			createGlobTool(cwd),
 		],
 		systemPrompt: createSystemPromptWithSkills(
 			DEFAULT_SYSTEM_PROMPT,
