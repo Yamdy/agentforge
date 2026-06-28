@@ -1,4 +1,7 @@
 import { describe, it, expect } from "vitest";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createBashTool } from "./bash.js";
 
 describe("bash tool", () => {
@@ -36,5 +39,22 @@ describe("bash tool", () => {
     const result = await tool.execute("call-4", { command: "echo done" });
     expect(typeof result.details.durationMs).toBe("number");
     expect(result.details.durationMs as number).toBeGreaterThanOrEqual(0);
+  });
+
+  it("executes in the provided cwd (worktree isolation)", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "bash-cwd-"));
+    const tool = createBashTool(tmp);
+    const result = await tool.execute("call-cwd", {
+      command: 'node -e "process.stdout.write(process.cwd())"',
+    });
+    expect((result.content[0] as { text: string }).text).toBe(tmp);
+  });
+
+  it("no-arg defaults to process.cwd() (backward compat)", async () => {
+    const tool = createBashTool();
+    const result = await tool.execute("call-default", {
+      command: 'node -e "process.stdout.write(process.cwd())"',
+    });
+    expect((result.content[0] as { text: string }).text).toBe(process.cwd());
   });
 });

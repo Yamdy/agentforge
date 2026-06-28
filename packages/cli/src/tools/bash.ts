@@ -24,7 +24,8 @@ export interface BashToolDetails {
  * 内置 bash 工具：执行 shell 命令，返回 stdout+stderr。
  * content 进 LLM；details 供 UI/audit。非零退出码 throw（loop 转成 isError tool result）。
  */
-export function createBashTool(): AgentTool<typeof bashSchema, BashToolDetails> {
+export function createBashTool(cwd?: string): AgentTool<typeof bashSchema, BashToolDetails> {
+  const c = cwd ?? process.cwd();
   return {
     name: "bash",
     label: "Bash",
@@ -36,6 +37,7 @@ export function createBashTool(): AgentTool<typeof bashSchema, BashToolDetails> 
 
       try {
         const { stdout, stderr } = await execAsync(command, {
+          cwd: c,
           timeout: timeoutMs,
           maxBuffer: 10 * 1024 * 1024,
         });
