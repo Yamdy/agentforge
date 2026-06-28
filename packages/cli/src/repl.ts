@@ -359,8 +359,44 @@ export interface ReadlineLike {
 }
 
 /**
+ * 格式化 SafetyContext.args 为人类可读摘要，供 ask 提示显示。
+ * 用户看到具体文件路径/命令内容才能做出知情决策。
+ *
+ * - write: 显示 file path
+ * - edit: 显示 file path
+ * - bash: 显示 command
+ * - read: 显示 path
+ * - grep: 显示 pattern + path
+ * - glob: 显示 pattern
+ * - 其他: 截断 JSON.stringify（200 字符）
+ */
+export function formatAskArgs(toolName: string, args: unknown): string {
+	if (!args || typeof args !== "object") return "";
+	const a = args as Record<string, unknown>;
+	switch (toolName) {
+		case "write":
+			return a.path ? `path: ${a.path}` : "";
+		case "edit":
+			return a.path ? `path: ${a.path}` : "";
+		case "bash":
+			return a.command ? `cmd: ${a.command}` : "";
+		case "read":
+			return a.path ? `path: ${a.path}` : "";
+		case "grep":
+			return a.pattern ? `pattern: "${a.pattern}"${a.path ? ` in ${a.path}` : ""}` : "";
+		case "glob":
+			return a.pattern ? `pattern: ${a.pattern}` : "";
+		default: {
+			const s = JSON.stringify(a);
+			return s.length > 200 ? s.slice(0, 200) + "…" : s;
+		}
+	}
+}
+
+/**
  * 构造 SafetyGuard.ask 处理器（T8 §4.6）。用 readline.Interface 的 question 提示用户
- * "Allow ${toolName}? (y/n) "，答案 trim 低压小写 === "y" 放行，其余阻断。
+ * "Allow ${toolName} (args detail)? (y/n) "，答案 trim 低压小写 === "y" 放行，其余阻断。
+ * 显示具体 args（文件路径/命令内容）让用户做出知情决策。
  *
  * @param rl readline.Interface（bin 入口 createInterface 返回值）。
  * @returns safetyAskHandler，传给 runReplMode 的 deps.safetyAskHandler。
@@ -370,7 +406,11 @@ export function makeReadlineAskHandler(
 ): (ctx: SafetyContext) => Promise<boolean> {
 	return (ctx: SafetyContext): Promise<boolean> => {
 		return new Promise<boolean>((resolve) => {
-			rl.question(`Allow ${ctx.toolName}? (y/n) `, (answer: string) => {
+			const detail = formatAskArgs(ctx.toolName, ctx.args);
+			const prompt = detail
+				? `Allow ${ctx.toolName} (${detail})? (y/n) `
+				: `Allow ${ctx.toolName}? (y/n) `;
+			rl.question(prompt, (answer: string) => {
 				resolve(answer.trim().toLowerCase() === "y");
 			});
 		});
