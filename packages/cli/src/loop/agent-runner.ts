@@ -47,7 +47,6 @@ export interface InProcessAgentRunnerOptions {
 	systemPrompt: string;
 	streamFn?: any;
 	safety?: any;
-	cwd?: string;
 }
 
 export class InProcessAgentRunner implements AgentRunner {

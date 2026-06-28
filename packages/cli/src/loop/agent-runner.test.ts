@@ -127,4 +127,32 @@ describe("InProcessAgentRunner", () => {
 		const tools = (runner as unknown as { resolveTools(cwd: string): unknown[] }).resolveTools("/any");
 		expect(tools).toEqual([mockTool]);
 	});
+
+	/** 回归:constructor cwd 不再驱动 run();run() 用 runOpts.cwd(问题 A 后 opts.cwd 是死配置,
+	 *  已删)。若有人重新让 run() 读 this.opts.cwd,此测试会 fail。 */
+	it("run() 用 runOpts.cwd 驱动 toolsFactory,不受 constructor cwd 影响", async () => {
+		const factoryCwds: string[] = [];
+		const mockTool = {
+			name: "mock",
+			label: "M",
+			description: "",
+			parameters: undefined as any,
+			execute: vi.fn(),
+		};
+		// 传一个与 runOpts.cwd 不同的 constructor cwd 诱饵;若 run() 误读 opts.cwd,
+		// toolsFactory 会收到诱饵值而非 runOpts.cwd。
+		const runner = new InProcessAgentRunner({
+			provider: "anthropic",
+			model: "claude-sonnet-4-5",
+			getApiKey: () => "k",
+			toolsFactory: (cwd: string) => {
+				factoryCwds.push(cwd);
+				return [mockTool];
+			},
+			systemPrompt: "",
+			streamFn: makeMockStreamFn("ok", { input: 1, output: 1, costTotal: 0 }),
+		});
+		await runner.run("p", { cwd: "/worktree/T1" });
+		expect(factoryCwds).toEqual(["/worktree/T1"]);
+	});
 });

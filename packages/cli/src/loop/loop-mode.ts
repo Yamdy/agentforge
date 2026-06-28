@@ -109,7 +109,6 @@ export async function runLoopMode(argv: string[], opts: LoopModeOptions): Promis
 		systemPrompt: opts.systemPrompt ?? "",
 		streamFn: opts.streamFn,
 		safety: opts.safety,
-		cwd,
 	});
 	const notes = new FileSharedTaskNotes({ dir: join(cwd, ".agentforge", "loop") });
 
