@@ -1,0 +1,31 @@
+{
+  "name": "@agentforge/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/server/index.js",
+  "types": "./dist/server/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc && esbuild src/client/main.ts --bundle --outfile=dist/client/bundle.js --format=esm",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest --run"
+  },
+  "dependencies": {
+    "@agentforge/harness": "workspace:*",
+    "@agentforge/shared": "workspace:*",
+    "@agentforge/cli": "workspace:*",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.13",
+    "esbuild": "^0.24.0",
+    "marked": "^15.0.0",
+    "@types/marked": "^5.0.0"
+  }
+}
