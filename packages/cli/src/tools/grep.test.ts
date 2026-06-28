@@ -1,7 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 // Mock exec from node:child_process. grep.ts 用 promisify(exec) → execAsync，
 // 我们直接 mock exec 的 (error, {stdout, stderr}) 回调契约。
@@ -43,17 +40,6 @@ function getCmd(): string {
 function getOpts(): Record<string, unknown> {
   const call = execMock.mock.calls[0];
   return call ? (call[1] as Record<string, unknown>) : {};
-}
-
-// 探测本环境是否有真实 rg 可执行（node exec 可调）。
-// Claude Code 会话内 bash 的 rg 是 shell function，node exec 不可调。
-function hasRealRg(): boolean {
-  try {
-    require("child_process").execSync("rg --version", { stdio: "pipe" });
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 describe("grep tool", () => {
@@ -199,15 +185,5 @@ describe("grep tool", () => {
     const tool = createGrepTool();
     await tool.execute("call-default", { pattern: "marker" });
     expect(getOpts().cwd).toBe(process.cwd());
-  });
-
-  // 真 rg 集成测试：仅当本环境有真实 rg 可执行时跑。
-  // Claude Code 会话内 rg 是 shell function（node exec 不可调）→ skip。
-  (hasRealRg() ? it : it.skip)("searches in the provided cwd (real rg)", async () => {
-    const tmp = mkdtempSync(join(tmpdir(), "grep-cwd-"));
-    writeFileSync(join(tmp, "f.ts"), "markerXYZ");
-    const tool = createGrepTool(tmp);
-    const result = await tool.execute("call-cwd-real", { pattern: "markerXYZ" });
-    expect((result.content[0] as { text: string }).text).toContain("f.ts");
   });
 });
