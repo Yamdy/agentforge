@@ -42,7 +42,8 @@ export interface InProcessAgentRunnerOptions {
 	provider: string;
 	model: string;
 	getApiKey?: (provider: string) => string | Promise<string | undefined>;
-	tools: any[];
+	tools?: any[];
+	toolsFactory?: (cwd: string) => any[];
 	systemPrompt: string;
 	streamFn?: any;
 	safety?: any;
@@ -56,19 +57,28 @@ export class InProcessAgentRunner implements AgentRunner {
 		this.opts = opts;
 	}
 
+	/** 按 per-run cwd 解析 tools:有 toolsFactory 则重建(绑定 cwd),否则用固定 tools。
+	 *  红队 #1:调用方须保证 toolsFactory(cwd) 的 cwd === 传给 harness 的 cwd(runCwd)。 */
+	private resolveTools(cwd: string): any[] {
+		if (this.opts.toolsFactory) return this.opts.toolsFactory(cwd);
+		return this.opts.tools ?? [];
+	}
+
 	async run(prompt: string, runOpts: AgentRunOptions): Promise<AgentRunResult> {
+		const runCwd = runOpts.cwd;
+		const tools = this.resolveTools(runCwd);
 		// fresh harness per run(D13:不注入 instinct/auditor/verifier/compactor)。
 		const harness = new AgentForgeHarness({
 			session: createMemorySession(),
 			events: createEventBus(),
-			tools: this.opts.tools,
+			tools,
 			provider: this.opts.provider,
 			model: this.opts.model,
 			systemPrompt: this.opts.systemPrompt,
 			getApiKey: this.opts.getApiKey,
 			streamFn: this.opts.streamFn,
 			safety: this.opts.safety,
-			cwd: runOpts.cwd ?? this.opts.cwd,
+			cwd: runCwd,
 			initialMessages: [],
 		});
 

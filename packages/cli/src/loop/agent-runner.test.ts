@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { AssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type {
 	AssistantMessage,
@@ -95,5 +95,36 @@ describe("InProcessAgentRunner", () => {
 		const r2 = await runner.run("p2", { cwd: process.cwd() });
 		expect(r1.reply).toBe("reply-1");
 		expect(r2.reply).toBe("reply-2");
+	});
+
+	it("resolveTools uses toolsFactory(cwd) when provided", () => {
+		let receivedCwd: string | undefined;
+		const mockTool = { name: "mock", label: "M", description: "", parameters: undefined as any, execute: vi.fn() };
+		const runner = new InProcessAgentRunner({
+			provider: "anthropic",
+			model: "claude-sonnet-4-5",
+			getApiKey: () => "k",
+			toolsFactory: (cwd: string) => {
+				receivedCwd = cwd;
+				return [mockTool];
+			},
+			systemPrompt: "",
+		});
+		const tools = (runner as unknown as { resolveTools(cwd: string): unknown[] }).resolveTools("/worktree/T1");
+		expect(receivedCwd).toBe("/worktree/T1");
+		expect(tools).toContain(mockTool);
+	});
+
+	it("resolveTools falls back to opts.tools when no factory", () => {
+		const mockTool = { name: "mock" } as any;
+		const runner = new InProcessAgentRunner({
+			provider: "anthropic",
+			model: "claude-sonnet-4-5",
+			getApiKey: () => "k",
+			tools: [mockTool],
+			systemPrompt: "",
+		});
+		const tools = (runner as unknown as { resolveTools(cwd: string): unknown[] }).resolveTools("/any");
+		expect(tools).toEqual([mockTool]);
 	});
 });
