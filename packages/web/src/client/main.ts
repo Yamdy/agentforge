@@ -5,12 +5,12 @@
  *  - WS 断线自动重连 + resume（sessionId）
  */
 import { marked } from "marked";
-import { reducer, initState, type State } from "./reducer.js";
+import { reducer, initState, derivePending, type State } from "./reducer.js";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const stream = $("stream"), input = $("input") as HTMLTextAreaElement, form = $("composer") as HTMLFormElement;
 const abortBtn = $("abort") as HTMLButtonElement, sendBtn = $("send") as HTMLButtonElement;
-const budgetEl = $("budget"), usageEl = $("usage"), errorEl = $("error"), countEl = $("count");
+const budgetEl = $("budget"), usageEl = $("usage"), errorEl = $("error"), countEl = $("count"), toolsEl = $("tools");
 
 let state: State = initState();
 let sessionId: string | null = null;
@@ -24,13 +24,30 @@ function streamingText(): string {
   return c?.text ?? "";
 }
 
+/** 工具 args 简短摘要（try/catch 兜底循环/BigInt，red-team F4）。 */
+function formatArgs(args: unknown): string {
+  try {
+    const s = JSON.stringify(args) ?? "";
+    return s.length > 80 ? s.slice(0, 80) + "…" : s;
+  } catch {
+    return "[unserializable]";
+  }
+}
+
 function render() {
   rafScheduled = false;
   stream.innerHTML = "";
   for (const m of state.messages) {
     const div = document.createElement("div");
-    div.className = "msg " + (m.role === "user" ? "user" : "assistant");
-    div.innerHTML = marked.parse(m.text) as string;
+    if (m.role === "tool") {
+      const cls = m.status === "error" || m.isError ? "error" : "done";
+      div.className = `msg tool ${cls}`;
+      const icon = m.status === "error" ? "⚠" : m.isError ? "✗" : "✓";
+      div.textContent = `${icon} ${m.toolName} ${formatArgs(m.args)}`;
+    } else {
+      div.className = `msg ${m.role === "user" ? "user" : "assistant"}`;
+      div.innerHTML = marked.parse(m.text) as string;
+    }
     stream.appendChild(div);
   }
   if (state.streaming) {
@@ -39,11 +56,22 @@ function render() {
     div.innerHTML = marked.parse(streamingText()) as string;
     stream.appendChild(div);
   }
+  // pending 占位（streaming 的 toolCall / 定稿未执行 toolCall），渲染在 streaming 之后（F6：assistant 先说话再调工具）
+  const pending = derivePending(state.messages, state.streaming);
+  for (const p of pending) {
+    const div = document.createElement("div");
+    div.className = "msg tool pending";
+    div.textContent = `⏳ ${p.toolName} ${formatArgs(p.args)}`;
+    stream.appendChild(div);
+  }
   stream.scrollTop = stream.scrollHeight;
   sendBtn.hidden = state.busy;
   abortBtn.hidden = !state.busy;
   budgetEl.textContent = state.budget ? `token: ${state.budget.total} / headroom ${state.budget.headroom}` : "—";
   countEl.textContent = state.messageCount != null ? `msgs: ${state.messageCount}` : "";
+  const done = state.messages.filter((m) => m.role === "tool" && !m.isError).length;
+  const err = state.messages.filter((m) => m.role === "tool" && m.isError).length;
+  toolsEl.textContent = `tools: ✓${done} ⚠${err} ⏳${pending.length}`;
   usageEl.textContent = state.lastUsage ? `in ${state.lastUsage.input ?? 0} / out ${state.lastUsage.output ?? 0}` : "";
   errorEl.textContent = state.error ?? "";
 }
