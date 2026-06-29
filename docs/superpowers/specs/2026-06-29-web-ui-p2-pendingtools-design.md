@@ -131,23 +131,17 @@ export interface AssistantMessage {
 }
 ```
 
-### 4.3 RenderedMessage 扩展（tool 条目 + assistant 保留 toolCalls）
+### 4.3 RenderedMessage 扩展（discriminated union，red-team F3 吸收）
 
 ```ts
-export interface RenderedMessage {
-  role: "user" | "assistant" | "tool";
-  text: string;                // user/assistant 渲染文本；tool 条目为 ""
-  stopReason?: string;
-  // assistant 定稿时保留 toolCall blocks（derivePending 用）
-  toolCalls?: ToolCallContent[];
-  // tool 条目字段（role === "tool"）
-  toolCallId?: string;
-  toolName?: string;
-  args?: unknown;
-  status?: "done" | "error";   // done=正常完成, error=终态未执行完
-  isError?: boolean;
-}
+export type RenderedMessage =
+  | { role: "user"; text: string }
+  | { role: "assistant"; text: string; stopReason?: string; toolCalls?: ToolCallContent[] }
+  | { role: "tool"; text: ""; toolCallId: string; toolName: string; args: unknown;
+      status: "done" | "error"; isError: boolean };
 ```
+
+`status`：`"done"`=执行成功；`"error"`=执行失败（`tool_execution_end.isError:true`，red-team F2 吸收）或终态未执行完（aborted/LLM error）。侧栏 `⚠err` 按 `isError` 合并二者。union 替代可选字段，消除"assistant 带 toolCallId"等 nonsense 混合态（编译期防）。
 
 ### 4.4 ServerEvent tool_execution_end 加 toolCallId
 
@@ -214,12 +208,14 @@ case "message_end": {
   const toolCalls = msg?.content?.filter((c) => c.type === "toolCall") as ToolCallContent[] | undefined;
   const failError = (msg?.stopReason === "error" || msg?.errorMessage)
     ? (msg?.errorMessage ?? "LLM error") : undefined;
-  const messages = [...state.messages, {
-    role: msg?.role ?? "assistant", text, stopReason: msg?.stopReason, toolCalls,
+  const messages: RenderedMessage[] = [...state.messages, {
+    role: "assistant", text, stopReason: msg?.stopReason, toolCalls,
   }];
   // 终态：pending toolCall 标 error push（进 executed → derivePending 自清）
   if (msg?.stopReason === "aborted" || msg?.stopReason === "error") {
-    const pending = derivePending(messages, undefined);  // streaming 已 undefined
+    // streaming 已 undefined；message_end.message 含全部 toolCall blocks（pi agent-loop.ts:353/366
+    // finalMessage 在 executeToolCalls 前 emit，red-team 核实——传 streaming:undefined 不漏）
+    const pending = derivePending(messages, undefined);
     for (const p of pending) {
       messages.push({ role: "tool", text: "", toolCallId: p.toolCallId, toolName: p.toolName, args: p.args, status: "error", isError: true });
     }
@@ -236,9 +232,10 @@ case "tool_execution_end":
     ...state,
     messages: [...state.messages, {
       role: "tool", text: "", toolCallId: event.toolCallId, toolName: event.toolName,
-      args: event.args, status: "done", isError: event.isError,
+      args: event.args, status: event.isError ? "error" : "done", isError: event.isError,
     }],
   };
+// red-team F2：执行失败的工具（isError:true）status:"error" 非 "done"（"done"=成功）。
 ```
 
 ### 5.3 agent_end 分支（兜底清残留 pending）
@@ -254,7 +251,24 @@ case "agent_end": {
 }
 ```
 
-### 5.4 message_update / 其他分支
+### 5.4 error 分支（red-team Failure mode 吸收）
+
+```ts
+case "error": {
+  // server 合成 error 兜底（harness.prompt throw 未走 message_end，spec §8）：
+  // 同 agent_end 兜底——derivePending 取残留 pending（含 streaming toolCall）push error + 清 streaming。
+  // 不加则 pending toolCall 静默丢失（UI 悬挂 streaming + 永不标记 error 的 pending）。
+  const pending = derivePending(state.messages, state.streaming);
+  const errorEntries = pending.map((p) => ({
+    role: "tool" as const, text: "" as const, toolCallId: p.toolCallId, toolName: p.toolName,
+    args: p.args, status: "error" as const, isError: true,
+  }));
+  return { ...state, busy: false, streaming: undefined, error: event.message,
+    messages: [...state.messages, ...errorEntries] };
+}
+```
+
+### 5.5 message_update / 其他分支
 
 不变。`message_update` 的 `streaming = event.message` 让 derivePending 经 main.ts render 计入 streaming 的 toolCall block。
 
@@ -288,7 +302,16 @@ for (const p of pending) {
 }
 ```
 
-`formatArgs(args)`：简短摘要（JSON.stringify 截断到 ~80 字符），避免长 args 撑爆 UI。
+`formatArgs(args)`：简短摘要（JSON.stringify 截断到 ~80 字符），避免长 args 撑爆 UI。**try/catch 兜底**（red-team F4：循环引用/BigInt 致 `JSON.stringify` throw，不兜底则一个坏 tool args 炸整个 render）：
+
+```ts
+function formatArgs(args: unknown): string {
+  try {
+    const s = JSON.stringify(args) ?? "";
+    return s.length > 80 ? s.slice(0, 80) + "…" : s;
+  } catch { return "[unserializable]"; }
+}
+```
 
 ### 6.2 侧栏概览
 
@@ -332,17 +355,20 @@ toolsEl.textContent = `tools: ✓${done} ⚠${err} ⏳${pending.length}`;
 - 定稿 + streaming 混合，去重（同 id 不重复）
 
 ### 8.2 reducer 行为单测
-- `tool_execution_end` → messages 末尾 push done tool 条目（toolCallId/status:"done"/isError 透传）
+- `tool_execution_end` → messages 末尾 push tool 条目（toolCallId/status: `isError?"error":"done"`/isError 透传，red-team F2）
+- `tool_execution_end`(isError:true) → status:"error"（非 "done"）
 - `message_end`(assistant 含 toolCall) → push assistant 条目含 toolCalls；derivePending 含该 toolCall（pending）
 - `message_end`(stopReason:"aborted") → pending toolCall 标 error push（status:"error"/isError:true）；之后 derivePending 归空
 - `message_end`(stopReason:"error") → 同 aborted
 - `message_end`(stopReason:"stop") → 不标 error（正常完成，pending 待 execution_end 自消）
-- `agent_end` → 残留 pending push error（兜底）+ busy=false + streaming 清
+- `message_end`(stopReason:"error") → `agent_end`：**无重复 error 条目**（同 toolCallId 不双推，red-team F1——message_end push 进 executed，agent_end derivePending 返回空）
+- `agent_end`（无 message_end 终态）→ 残留 pending push error（兜底）+ busy=false + streaming 清
+- `error`（server 合成，streaming 含 toolCall）→ derivePending push error + 清 streaming + busy=false（red-team Failure mode 吸收，§5.4）
 - 正常 turn 全流程：message_end(assistant 含 toolCall) → derivePending=[toolCall] → tool_execution_end → derivePending=[]（不残留）
 - 现有回归：message_end failError 提取 / agent_end 清 streaming / state 事件 / initState 不含 tools
 
 ### 8.3 兼容回归
-- 删 State.tools 后，现有 reducer 测试中引用 `state.tools` 的断言更新（P1 test 若有）
+- 删 State.tools 安全：grep 确认 `reducer.test.ts` 零覆盖 tool_execution_end（P1 gap——tool_execution_end 分支从未测试，Oracle 核实），main.ts 不读 state.tools。P2-2 补 tool_execution_end 测试（§8.2）。
 - main.ts render 不破坏现有 messages/streaming/budget/count/usage/error 渲染
 
 ## 9. 关键决策记录
@@ -353,6 +379,7 @@ toolsEl.textContent = `tools: ✓${done} ⚠${err} ⏳${pending.length}`;
 4. **isError 终态 push error 条目**：spec §5.3"标 error + 清空"语义=标 error（push error tool 条目历史可见）+ 清空（进 executed → derivePending 自清）。非"直接丢弃不显示"。
 5. **协议零改动**：server 已转发 toolCallId（ws-protocol.ts:37），P2-2 仅 reducer 补收。
 6. **AssistantMessage.content 扩展 ToolCallContent**：当前 `{type?,text?}` 太宽松扫不到 toolCall；扩展后 derivePending 可从 streaming.content 取 toolCall block。
+7. **red-team Oracle 全吸收**（2026-06-29）：error 分支漏 pending（最关键，§5.4 补）/ tool_execution_end status 语义（§5.2）/ union（§4.3）/ formatArgs try/catch（§6.1）/ 双推测试 pin（§8.2）/ 删 tools 安全确认（§8.3）。详见 §11。
 
 ## 10. pi 借鉴 + 不引入
 
@@ -360,10 +387,15 @@ toolsEl.textContent = `tools: ✓${done} ⚠${err} ⏳${pending.length}`;
 - **不引入**：pi AgentSession 层的 queue_update / tool_execution_start 事件（agentforge spec §3.2 YAGNI 无此层）。pending 推断靠 assistant message toolCall block + tool_execution_end 匹配，无需 tool_execution_start（白名单本就排除 tool_execution_start，spec §4.1）。
 - **不引入**：tool args 详细 diff 展示 / tool result content 渲染（P1 §12 defer thinking/toolcall delta 分轨展示，P2-2 只显示 toolName + args 摘要 + 状态）。
 
-## 11. 红队预留（待 Oracle 审查关注点）
+## 11. red-team Oracle 审查结果（2026-06-29，全吸收）
 
-- derivePending 在 message_end 终态分支调用时传 `streaming: undefined`（streaming 已清）——是否漏掉 streaming 的 toolCall？（时序：message_end 先清 streaming 再 derive，streaming 的 toolCall 应已在定稿 message 里——核实 message_end 的 message 含全部 toolCall blocks）
-- agent_end 兜底与 message_end 终态是否会双重 push error 条目（同 toolCallId 两次进 messages）？（message_end 已 push error 进 executed，agent_end derivePending 应返回空——核实不双推）
-- 删 State.tools 是否有其他消费者（main.ts / 测试）？
-- RenderedMessage 用可选字段（非 union）——tool 条目字段 toolCallId? 等可选，是否类型安全不足？（reducer 纯函数 + vitest 验证，可选字段 pragmatic；red-team 评估是否需 union）
-- formatArgs 截断长度 / 大 args 性能。
+独立 subagent 审核（隔离本会话，实读 pi agent-loop.ts 核实时序）。所有代码引用验证准确。findings：
+
+- 🔴(最关键) **error 分支漏 pending**（Failure mode）：harness.prompt throw 未走 message_end 时，streaming 含 toolCall，reducer error 分支只设 busy=false → pending 静默丢失。**吸收**：§5.4 error 分支 derivePending push error + 清 streaming（同 agent_end 兜底）。
+- 🟡 F1 **agent_end 双推**：safe by sequencing（message_end 先 push error 进 executed，agent_end derivePending 返回空）。**吸收**：§8.2 加显式测试 pin（message_end(error)→agent_end 无双推）。
+- 🟡 F2 **tool_execution_end status 语义**：isError:true 工具设 status:"done" 错（"执行失败"≠"成功"）。**吸收**：§5.2 `status: event.isError ? "error" : "done"`。
+- ⚪ F3 **RenderedMessage union**：可选字段有 nonsense 混合态风险。**吸收**：§4.3 改 discriminated union。
+- ⚪ F4 **formatArgs throw**：循环/BigInt 致 JSON.stringify throw 炸 render。**吸收**：§6.1 try/catch 兜底。
+- ⚪ F5 **删 State.tools 安全 + P1 测试 gap**：grep 确认 reducer.test.ts 零覆盖 tool_execution_end（P1 shipped untested），main.ts 不读 state.tools。**吸收**：§8.3 记录，P2-2 补测试。
+- ⚪ F6 **渲染顺序**：messages→streaming→pending 匹配 pi 时序（message_update 累积→message_end 定稿→executeToolCalls→tool_execution_end）。**sound，无需改**。
+- **关键假设验证**：message_end.message 含全部 toolCall blocks（pi agent-loop.ts:353/366 finalMessage 在 executeToolCalls 前 emit）——derivePending 传 streaming:undefined 不漏。toolCall.id === tool_execution_end.toolCallId（pi-ai ToolCall.id vs ToolResult.toolCallId，executeToolCalls 同源）。agent_end 在 message_end 后（正常 settle 路径，reducer 顺序处理）。
