@@ -236,6 +236,11 @@ export class AgentForgeHarness {
 		return this._agent;
 	}
 
+	/** 当前 transcript（pi session.messages 对应物）。get_state 快照读其 length 作 messageCount。 */
+	get messages(): AgentMessage[] {
+		return this._agent.state.messages;
+	}
+
 	/**
 	 * 订阅所有 harness 事件（RPC 等外部消费者用）。返回 unsubscribe。
 	 * 委托给 EventBus 的通配符 handler（type "*"）。非 breaking：未调用则无副作用。

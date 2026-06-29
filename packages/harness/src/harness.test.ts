@@ -134,6 +134,18 @@ describe("AgentForgeHarness", () => {
 		});
 	});
 
+	describe("messages getter", () => {
+		it("messages getter 返回当前 transcript（prompt 后增长，含 user+assistant）", async () => {
+			const { harness } = buildHarness();
+			expect(harness.messages.length).toBe(0);
+			await harness.prompt("hi");
+			// user prompt + assistant 回复
+			expect(harness.messages.length).toBe(2);
+			expect(harness.messages[0].role).toBe("user");
+			expect(harness.messages[1].role).toBe("assistant");
+		});
+	});
+
 	describe("event forwarding", () => {
 		it("forwards pi Agent events to the EventBus via subscribe", async () => {
 			const { harness, events } = buildHarness();
