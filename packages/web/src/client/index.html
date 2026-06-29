@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>agentforge</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <main>
+    <section id="stream"></section>
+    <form id="composer">
+      <textarea id="input" placeholder="发送消息…" rows="2"></textarea>
+      <button id="send" type="submit">发送</button>
+      <button id="abort" type="button" hidden>中止</button>
+    </form>
+  </main>
+  <aside id="sidebar">
+    <div id="budget">—</div>
+    <div id="usage"></div>
+    <div id="error"></div>
+  </aside>
+  <script type="module" src="/bundle.js"></script>
+</body>
+</html>

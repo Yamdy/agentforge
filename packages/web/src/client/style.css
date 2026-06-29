@@ -1,0 +1,10 @@
+body { margin: 0; font-family: system-ui, sans-serif; display: flex; height: 100vh; }
+main { flex: 1; display: flex; flex-direction: column; }
+#stream { flex: 1; overflow: auto; padding: 1rem; }
+#stream .msg { margin-bottom: 1rem; }
+#stream .msg.user { color: #555; }
+#stream .msg pre { background: #f4f4f4; padding: .5rem; overflow: auto; }
+#composer { display: flex; gap: .5rem; padding: 1rem; border-top: 1px solid #ddd; }
+#composer textarea { flex: 1; }
+#sidebar { width: 220px; padding: 1rem; border-left: 1px solid #ddd; background: #fafafa; font-size: .85rem; }
+#error { color: #c00; }

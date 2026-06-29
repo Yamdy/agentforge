@@ -12,7 +12,7 @@
     }
   },
   "scripts": {
-    "build": "tsc && esbuild src/client/main.ts --bundle --outfile=dist/client/bundle.js --format=esm",
+    "build": "tsc && esbuild src/client/main.ts --bundle --outfile=dist/client/bundle.js --format=esm && node -e \"require('fs').copyFileSync('src/client/index.html','dist/client/index.html');require('fs').copyFileSync('src/client/style.css','dist/client/style.css')\"",
     "typecheck": "tsc --noEmit",
     "test": "vitest --run"
   },
