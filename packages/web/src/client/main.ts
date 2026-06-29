@@ -10,12 +10,13 @@ import { reducer, initState, type State } from "./reducer.js";
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const stream = $("stream"), input = $("input") as HTMLTextAreaElement, form = $("composer") as HTMLFormElement;
 const abortBtn = $("abort") as HTMLButtonElement, sendBtn = $("send") as HTMLButtonElement;
-const budgetEl = $("budget"), usageEl = $("usage"), errorEl = $("error");
+const budgetEl = $("budget"), usageEl = $("usage"), errorEl = $("error"), countEl = $("count");
 
 let state: State = initState();
 let sessionId: string | null = null;
 let ws: WebSocket | null = null;
 let rafScheduled = false;
+let stateSeq = 0;
 
 /** streaming 是 AssistantMessage（pi 借鉴，整条累积态），取首个 text content 渲染。 */
 function streamingText(): string {
@@ -42,6 +43,7 @@ function render() {
   sendBtn.hidden = state.busy;
   abortBtn.hidden = !state.busy;
   budgetEl.textContent = state.budget ? `token: ${state.budget.total} / headroom ${state.budget.headroom}` : "—";
+  countEl.textContent = state.messageCount != null ? `msgs: ${state.messageCount}` : "";
   usageEl.textContent = state.lastUsage ? `in ${state.lastUsage.input ?? 0} / out ${state.lastUsage.output ?? 0}` : "";
   errorEl.textContent = state.error ?? "";
 }
@@ -57,7 +59,10 @@ function connect() {
     state = reducer(state, e);
     scheduleRender();
   };
-  ws.onopen = () => { if (sessionId) ws!.send(JSON.stringify({ method: "resume", sessionId })); };
+  ws.onopen = () => {
+    ws!.send(JSON.stringify({ method: "get_state", id: String(++stateSeq) }));
+    if (sessionId) ws!.send(JSON.stringify({ method: "resume", sessionId }));
+  };
   ws.onclose = () => { setTimeout(connect, 1000); };
 }
 
