@@ -1,4 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { startUiServer } from "./index.js";
 
 /**
@@ -127,6 +130,108 @@ describe("startUiServer", () => {
       });
       ws.send(JSON.stringify({ method: "prompt", input: "y" }));
       expect(await second).toBe(true);
+      ws.close();
+    } finally {
+      await server.close();
+    }
+  }, 15000);
+
+  it("get_state 返回 5 字段快照 + id 透传 + messageCount=transcript 长度", async () => {
+    const hello = msg("hello");
+    const streamFn = vi.fn(() => makeStream([
+      { type: "start", partial: hello },
+      { type: "done", reason: "stop", message: hello },
+    ]));
+    const server = await startUiServer([], { streamFn, getApiKey: () => "k", port: 0 });
+    try {
+      const WebSocket = (await import("ws")).WebSocket;
+      const ws = new WebSocket(`ws://127.0.0.1:${server.port}`);
+      await new Promise<void>((r) => ws.on("open", () => r()));
+      const state1 = await new Promise<any>((resolve) => {
+        ws.on("message", (d) => { const m = JSON.parse(d.toString()); if (m.type === "state") resolve(m); });
+        ws.send(JSON.stringify({ method: "get_state", id: "q1" }));
+      });
+      expect(state1.id).toBe("q1");
+      expect(state1.isStreaming).toBe(false);
+      expect(state1.isCompacting).toBe(false);
+      expect(state1.pendingMessageCount).toBe(0);
+      expect(state1.messageCount).toBe(0);
+      expect(typeof state1.sessionId).toBe("string");
+      // prompt 后 messageCount 增长（user + assistant = 2）
+      await new Promise<void>((resolve) => {
+        ws.on("message", (d) => { if (JSON.parse(d.toString()).type === "agent_end") resolve(); });
+        ws.send(JSON.stringify({ method: "prompt", input: "hi" }));
+      });
+      const state2 = await new Promise<any>((resolve) => {
+        ws.on("message", (d) => { const m = JSON.parse(d.toString()); if (m.type === "state") resolve(m); });
+        ws.send(JSON.stringify({ method: "get_state" }));
+      });
+      expect(state2.messageCount).toBe(2);
+      ws.close();
+    } finally {
+      await server.close();
+    }
+  }, 15000);
+
+  it("resume 后 get_state 返回新 sessionId（修 handleResume 未更新 bug）", async () => {
+    const sessionDir = mkdtempSync(join(tmpdir(), "af-resume-"));
+    // 预置一个 session 文件（createJsonlSession + appendEntry，entry 格式对照 @agentforge/shared MessageEntry）
+    const { createJsonlSession } = await import("@agentforge/harness");
+    const sess = createJsonlSession(join(sessionDir, "preexist.jsonl"));
+    sess.appendEntry({
+      entryId: "e1", parentId: null, timestamp: 1, type: "message",
+      role: "user", content: [{ type: "text", text: "hi" }],
+    } as any);
+    const hello = msg("ok");
+    const streamFn = vi.fn(() => makeStream([
+      { type: "start", partial: hello },
+      { type: "done", reason: "stop", message: hello },
+    ]));
+    const server = await startUiServer([], { streamFn, getApiKey: () => "k", port: 0, sessionDir });
+    try {
+      const WebSocket = (await import("ws")).WebSocket;
+      const ws = new WebSocket(`ws://127.0.0.1:${server.port}`);
+      await new Promise<void>((r) => ws.on("open", () => r()));
+      await new Promise<void>((resolve) => {
+        ws.on("message", (d) => { if (JSON.parse(d.toString()).type === "resumed") resolve(); });
+        ws.send(JSON.stringify({ method: "resume", sessionId: "preexist" }));
+      });
+      const state = await new Promise<any>((resolve) => {
+        ws.on("message", (d) => { const m = JSON.parse(d.toString()); if (m.type === "state") resolve(m); });
+        ws.send(JSON.stringify({ method: "get_state" }));
+      });
+      expect(state.sessionId).toBe("preexist");
+      expect(state.messageCount).toBe(1); // rebuildMessages 重建 1 条历史
+      ws.close();
+    } finally {
+      await server.close();
+    }
+  }, 15000);
+
+  it("get_state 只读：busy 期间调不打断 turn（isStreaming=true）", async () => {
+    const hello = msg("hello");
+    const streamFn = vi.fn(() => makeStream([
+      { type: "start", partial: hello },
+      { type: "done", reason: "stop", message: hello },
+    ]));
+    const server = await startUiServer([], { streamFn, getApiKey: () => "k", port: 0 });
+    try {
+      const WebSocket = (await import("ws")).WebSocket;
+      const ws = new WebSocket(`ws://127.0.0.1:${server.port}`);
+      await new Promise<void>((r) => ws.on("open", () => r()));
+      // 先挂 agent_end 监听（同步 mock turn 极快，晚挂会错过事件）
+      const ended = new Promise<boolean>((resolve) => {
+        ws.on("message", (d) => { if (JSON.parse(d.toString()).type === "agent_end") resolve(true); });
+      });
+      // 发 prompt 后立即 get_state（turn 进行中）
+      ws.send(JSON.stringify({ method: "prompt", input: "hi" }));
+      const state = await new Promise<any>((resolve) => {
+        ws.on("message", (d) => { const m = JSON.parse(d.toString()); if (m.type === "state") resolve(m); });
+        ws.send(JSON.stringify({ method: "get_state" }));
+      });
+      expect(state.isStreaming).toBe(true);
+      // turn 仍正常完成
+      expect(await ended).toBe(true);
       ws.close();
     } finally {
       await server.close();

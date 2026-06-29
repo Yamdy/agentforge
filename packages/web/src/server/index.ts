@@ -23,7 +23,7 @@ export interface UiServer { port: number; sessionId: string; close: () => Promis
 export async function startUiServer(argv: string[], deps: UiServerDeps): Promise<UiServer> {
   const args = parseArgs(argv);
   const sessionDir = deps.sessionDir ?? defaultSessionDir();
-  const sessionId = args.session ?? args.resume ?? randomUUID();
+  let sessionId = args.session ?? args.resume ?? randomUUID();
   const session = createJsonlSession(`${sessionDir}/${sessionId}.jsonl`);
 
   let initialMessages: AgentMessage[] = [];
@@ -73,8 +73,21 @@ export async function startUiServer(argv: string[], deps: UiServerDeps): Promise
     if (!leafId) { send({ type: "error", message: `resume: no session ${sid}` }); return; }
     const msgs = rebuildMessages(newSession.getPathToRoot(leafId));
     harness = buildHarness({ args, session: newSession, initialMessages: msgs, streamFn: deps.streamFn, getApiKey: deps.getApiKey });
+    sessionId = sid; // 修 bug：更新 server sessionId 变量（get_state 依赖）
     subscribe();
     send({ type: "resumed", sessionId: sid });
+  };
+
+  const handleGetState = (id?: string) => {
+    send({
+      type: "state",
+      ...(id !== undefined ? { id } : {}),
+      sessionId,
+      isStreaming: busy,
+      isCompacting: false, // agentforge 同步压缩无可观测窗口（spec §2.3）
+      messageCount: harness.messages.length,
+      pendingMessageCount: 0, // P1 无消息队列（spec §2.3）
+    });
   };
 
   const clientDir = deps.clientDir ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "client");
@@ -101,6 +114,7 @@ export async function startUiServer(argv: string[], deps: UiServerDeps): Promise
       if (msg.method === "prompt") void handlePrompt(msg.input);
       else if (msg.method === "abort") abortCtl?.abort();
       else if (msg.method === "resume") void handleResume(msg.sessionId);
+      else if (msg.method === "get_state") handleGetState(msg.id);
     });
     ws.on("close", () => { conn = null; });
   });
