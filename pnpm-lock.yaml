@@ -87,6 +87,9 @@ importers:
       '@agentforge/shared':
         specifier: workspace:*
         version: link:../shared
+      '@earendil-works/pi-agent-core':
+        specifier: ^0.79.9
+        version: 0.79.9(ws@8.21.0)(zod@4.4.3)
       ws:
         specifier: ^8.18.0
         version: 8.21.0

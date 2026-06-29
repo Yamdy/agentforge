@@ -6,39 +6,9 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { createJsonlSession, rebuildMessages } from "@agentforge/harness";
 import { buildHarness, defaultSessionDir } from "@agentforge/cli/repl";
+import { parseArgs } from "@agentforge/cli/print-mode";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { serializeWebEvent, parseClientMessage } from "./ws-protocol.js";
-
-/**
- * parseArgs 等价的极简 argv 解析（仅取 startUiServer 实际使用的字段：
- * provider/model/session/resume）。@agentforge/cli 的 parseArgs 位于
- * print-mode.ts 且未从包根 re-export（受 Task 6 文件约束，不改 cli 包），
- * 故在此内联等价实现。与 cli parseArgs 语义一致：--provider/--model/--session/--resume。
- */
-function parseServerArgs(argv: string[]): {
-  print: boolean;
-  rpc: boolean;
-  provider: string;
-  model: string;
-  session?: string;
-  resume?: string;
-} {
-  const out: { provider?: string; model?: string; session?: string; resume?: string } = {};
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    if (a === "--provider") out.provider = argv[++i];
-    else if (a === "--model") out.model = argv[++i];
-    else if (a === "--session") out.session = argv[++i];
-    else if (a === "--resume") out.resume = argv[++i];
-  }
-  return {
-    print: false,
-    rpc: false,
-    provider: out.provider ?? "xiaomi-token-plan-cn",
-    model: out.model ?? "mimo-v2.5-pro",
-    session: out.session,
-    resume: out.resume,
-  };
-}
 
 export interface UiServerDeps {
   getApiKey: (provider: string) => string | undefined | Promise<string | undefined>;
@@ -51,12 +21,12 @@ export interface UiServerDeps {
 export interface UiServer { port: number; sessionId: string; close: () => Promise<void>; }
 
 export async function startUiServer(argv: string[], deps: UiServerDeps): Promise<UiServer> {
-  const args = parseServerArgs(argv);
+  const args = parseArgs(argv);
   const sessionDir = deps.sessionDir ?? defaultSessionDir();
   const sessionId = args.session ?? args.resume ?? randomUUID();
   const session = createJsonlSession(`${sessionDir}/${sessionId}.jsonl`);
 
-  let initialMessages: ReturnType<typeof rebuildMessages> = [];
+  let initialMessages: AgentMessage[] = [];
   if (args.resume) {
     const leafId = session.getLeafId();
     if (!leafId) throw new Error(`--resume ${args.resume}: no existing session`);

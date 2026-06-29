@@ -17,6 +17,10 @@
       "types": "./dist/repl.d.ts",
       "import": "./dist/repl.js"
     },
+    "./print-mode": {
+      "types": "./dist/print-mode.d.ts",
+      "import": "./dist/print-mode.js"
+    },
     "./rpc": {
       "types": "./dist/rpc.d.ts",
       "import": "./dist/rpc.js"

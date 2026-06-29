@@ -20,6 +20,7 @@
     "@agentforge/harness": "workspace:*",
     "@agentforge/shared": "workspace:*",
     "@agentforge/cli": "workspace:*",
+    "@earendil-works/pi-agent-core": "^0.79.9",
     "ws": "^8.18.0"
   },
   "devDependencies": {
