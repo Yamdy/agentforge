@@ -4,7 +4,7 @@ import type { HarnessEvent } from "@agentforge/shared";
  * web 版事件序列化。与 rpc.serializeEvent 差异：
  *  1. 保留 message_update（rpc 排除）—— 转发累积态 message，丢 assistantMessageEvent，server 不 narrow 不批量。
  *  2. 补 audit_finding（rpc 有）。
- *  3. 不含全 message（背压；完整消息在 message_end）。
+ *  3. message_update 与 message_end 都转发完整累积态 message（pi 借鉴整条替换；背压由前端 rAF 合帧吸收，server 不批量）。
  */
 export function serializeWebEvent(
   event: HarnessEvent,

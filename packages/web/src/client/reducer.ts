@@ -6,7 +6,7 @@
  */
 export interface Usage { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; }
 export interface BudgetInfo { components: unknown; total: number; suggestions: unknown[]; headroom: number; }
-export interface AssistantMessage { role: string; content: Array<{ type?: string; text?: string }>; stopReason?: string; usage?: Usage; }
+export interface AssistantMessage { role: string; content: Array<{ type?: string; text?: string }>; stopReason?: string; usage?: Usage; errorMessage?: string; }
 export interface RenderedMessage { role: string; text: string; stopReason?: string; }
 export interface ToolEvent { toolName: string; args: unknown; isError: boolean; }
 export interface State {
@@ -42,11 +42,19 @@ export function reducer(state: State, event: ServerEvent): State {
       return { ...state, streaming: event.message }; // 整条替换（pi 借鉴，内核已累积）
     case "message_end": {
       const text = event.message?.content?.find((c) => c.type === "text")?.text ?? "";
+      // pi runWithLifecycle 失败不抛冒泡到 harness.prompt（server catch 不触发），而是发
+      // stopReason:"error" + errorMessage 的 message_end 正常结束（agent.ts handleRunFailure）。
+      // aborted 是用户主动中止（非失败），不在此设 error —— 仅 stopReason==="error" 或带 errorMessage 视为失败。
+      const failError =
+        event.message?.stopReason === "error" || event.message?.errorMessage
+          ? (event.message?.errorMessage ?? "LLM error")
+          : undefined;
       return {
         ...state,
         messages: [...state.messages, { role: event.message?.role ?? "assistant", text, stopReason: event.message?.stopReason }],
         streaming: undefined,
         lastUsage: event.message?.usage,
+        error: failError ?? state.error,
       };
     }
     case "agent_end":
