@@ -59,21 +59,23 @@ export function reducer(state: State, event: ServerEvent): State {
     case "message_update":
       return { ...state, streaming: event.message }; // 整条替换（pi 借鉴，内核已累积）
     case "message_end": {
-      const text = event.message?.content?.find((c) => c.type === "text")?.text ?? "";
-      // pi runWithLifecycle 失败不抛冒泡到 harness.prompt（server catch 不触发），而是发
-      // stopReason:"error" + errorMessage 的 message_end 正常结束（agent.ts handleRunFailure）。
-      // aborted 是用户主动中止（非失败），不在此设 error —— 仅 stopReason==="error" 或带 errorMessage 视为失败。
-      const failError =
-        event.message?.stopReason === "error" || event.message?.errorMessage
-          ? (event.message?.errorMessage ?? "LLM error")
-          : undefined;
-      return {
-        ...state,
-        messages: [...state.messages, { role: event.message?.role ?? "assistant", text, stopReason: event.message?.stopReason }],
-        streaming: undefined,
-        lastUsage: event.message?.usage,
-        error: failError ?? state.error,
-      };
+      const msg = event.message;
+      const text = msg?.content?.find((c) => c.type === "text")?.text ?? "";
+      const toolCalls = msg?.content?.filter((c) => c.type === "toolCall") as ToolCallContent[] | undefined;
+      const failError = (msg?.stopReason === "error" || msg?.errorMessage)
+        ? (msg?.errorMessage ?? "LLM error") : undefined;
+      const messages: RenderedMessage[] = [...state.messages, msg?.role === "user"
+        ? { role: "user", text }
+        : { role: "assistant", text, stopReason: msg?.stopReason, toolCalls }];
+      // 终态：pending toolCall 标 error push（进 executed → derivePending 自清）。
+      // message_end.message 含全部 toolCall（pi agent-loop.ts:353/366 finalMessage 在 executeToolCalls 前 emit，red-team 核实）。
+      if (msg?.stopReason === "aborted" || msg?.stopReason === "error") {
+        const pending = derivePending(messages, undefined);
+        for (const p of pending) {
+          messages.push({ role: "tool", text: "", toolCallId: p.toolCallId, toolName: p.toolName, args: p.args, status: "error", isError: true });
+        }
+      }
+      return { ...state, messages, streaming: undefined, lastUsage: msg?.usage, error: failError ?? state.error };
     }
     case "agent_end":
       return { ...state, busy: false, streaming: undefined }; // 兜底清 streaming（双保险）

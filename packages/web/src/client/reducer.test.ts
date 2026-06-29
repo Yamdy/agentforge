@@ -157,6 +157,54 @@ describe("reducer tool_execution_end", () => {
   });
 });
 
+describe("reducer message_end", () => {
+  it("assistant 含 toolCall → push assistant 含 toolCalls + pending", () => {
+    const state = reducer(initState(), {
+      type: "message_end",
+      message: { role: "assistant", content: [
+        { type: "text", text: "hi" },
+        { type: "toolCall", id: "tc1", name: "read", arguments: { path: "a" } },
+      ] },
+    });
+    const last = state.messages[state.messages.length - 1];
+    expect(last).toMatchObject({ role: "assistant", text: "hi" });
+    expect((last as { toolCalls?: unknown }).toolCalls).toEqual([
+      { type: "toolCall", id: "tc1", name: "read", arguments: { path: "a" } },
+    ]);
+    expect(derivePending(state.messages, state.streaming)).toEqual([
+      { toolCallId: "tc1", toolName: "read", args: { path: "a" } },
+    ]);
+  });
+
+  it("stopReason:'aborted' → pending 标 error push + 自清", () => {
+    let state = reducer(initState(), { type: "message_update", message: {
+      role: "assistant", content: [{ type: "toolCall", id: "tc1", name: "read", arguments: {} }],
+    } });
+    state = reducer(state, { type: "message_end", message: {
+      role: "assistant", content: [{ type: "toolCall", id: "tc1", name: "read", arguments: {} }],
+      stopReason: "aborted",
+    } });
+    expect(state.messages.some((m) => m.role === "tool" && m.toolCallId === "tc1" && m.status === "error" && m.isError)).toBe(true);
+    expect(derivePending(state.messages, state.streaming)).toEqual([]);
+  });
+
+  it("stopReason:'error' → 同 aborted 标 error", () => {
+    const state = reducer(initState(), { type: "message_end", message: {
+      role: "assistant", content: [{ type: "toolCall", id: "tc1", name: "read", arguments: {} }],
+      stopReason: "error", errorMessage: "boom",
+    } });
+    expect(state.messages.some((m) => m.role === "tool" && m.toolCallId === "tc1" && m.status === "error")).toBe(true);
+    expect(state.error).toBe("boom");
+  });
+
+  it("stopReason:'stop' → 不标 error（pending 待 execution_end 自消）", () => {
+    const state = reducer(initState(), { type: "message_end", message: {
+      role: "assistant", content: [{ type: "text", text: "done" }], stopReason: "stop",
+    } });
+    expect(state.messages.some((m) => m.role === "tool")).toBe(false);
+  });
+});
+
 describe("initState", () => {
   it("无 tools 字段（P2-2 删冗余）", () => {
     const s = initState();
