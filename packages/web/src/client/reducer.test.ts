@@ -69,4 +69,20 @@ describe("reducer", () => {
     const s = reducer(initState(), { type: "context_budget", components: {}, total: 5000, suggestions: [], headroom: 60000 });
     expect(s.budget?.total).toBe(5000);
   });
+  it("state 事件设显示 sessionId/busy/messageCount（不动 main.ts resume 控制）", () => {
+    const s = reducer(initState(), {
+      type: "state", sessionId: "s-1", isStreaming: true,
+      isCompacting: false, messageCount: 5, pendingMessageCount: 0,
+    });
+    expect(s.sessionId).toBe("s-1");
+    expect(s.busy).toBe(true);
+    expect(s.messageCount).toBe(5);
+  });
+  it("state 事件 isStreaming=false 设 busy 基线", () => {
+    const s = reducer(initState(), {
+      type: "state", sessionId: "s-2", isStreaming: false,
+      isCompacting: false, messageCount: 0, pendingMessageCount: 0,
+    });
+    expect(s.busy).toBe(false);
+  });
 });

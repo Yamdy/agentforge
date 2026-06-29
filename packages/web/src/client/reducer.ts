@@ -17,6 +17,8 @@ export interface State {
   error?: string;
   lastUsage?: Usage;
   tools: ToolEvent[];
+  sessionId?: string;
+  messageCount?: number;
 }
 export type ServerEvent =
   | { type: "agent_start" }
@@ -28,6 +30,7 @@ export type ServerEvent =
   | { type: "tool_execution_end"; toolName: string; args: unknown; isError: boolean }
   | { type: "compaction"; summary: string }
   | { type: "audit_finding"; severity: string; finding: unknown }
+  | { type: "state"; id?: string; sessionId: string; isStreaming: boolean; isCompacting: boolean; messageCount: number; pendingMessageCount: number }
   | { type: "resumed"; sessionId: string };
 
 export function initState(): State {
@@ -65,6 +68,8 @@ export function reducer(state: State, event: ServerEvent): State {
       return { ...state, budget: { components: event.components, total: event.total, suggestions: event.suggestions, headroom: event.headroom } };
     case "tool_execution_end":
       return { ...state, tools: [...state.tools, { toolName: event.toolName, args: event.args, isError: event.isError }] };
+    case "state":
+      return { ...state, sessionId: event.sessionId, busy: event.isStreaming, messageCount: event.messageCount };
     default:
       return state;
   }
