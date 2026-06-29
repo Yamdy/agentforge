@@ -65,10 +65,20 @@ form.addEventListener("submit", (e) => {
   e.preventDefault();
   const text = input.value.trim();
   if (!text || !ws || state.busy) return;
-  state = { ...state, messages: [...state.messages, { role: "user", text }], busy: true };
+  // 不乐观 push user 消息：pi runAgentLoop 对每个 user prompt 同步发 message_end(user)（agent-loop.ts:113，LLM 调用前），
+  // server 转发 → reducer 定稿。server 事件流是消息唯一来源（spec §5.3）；乐观 push 会与 message_end(user) 重复显示。
+  state = { ...state, busy: true };
   scheduleRender();
   ws.send(JSON.stringify({ method: "prompt", input: text }));
   input.value = "";
+});
+
+// Ctrl/Cmd+Enter 提交（textarea 内 Enter 默认换行不提交，spec §5.2 Composer）。
+input.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+    e.preventDefault();
+    form.requestSubmit();
+  }
 });
 
 abortBtn.addEventListener("click", () => ws?.send(JSON.stringify({ method: "abort" })));

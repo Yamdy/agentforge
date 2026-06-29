@@ -24,6 +24,13 @@ describe("reducer", () => {
     s = reducer(s, { type: "message_end", message: { role: "assistant", content: [], stopReason: "aborted" } });
     expect(s.messages[s.messages.length - 1].stopReason).toBe("aborted");
   });
+  it("message_end(user) 定稿 user 消息——server 是 user 消息唯一来源（spec §5.3，防 client 乐观 push 回归）", () => {
+    let s = reducer(initState(), { type: "agent_start" });
+    s = reducer(s, { type: "message_end", message: { role: "user", content: [{ type: "text", text: "hi" }] } });
+    expect(s.messages.length).toBe(1);
+    expect(s.messages[0].role).toBe("user");
+    expect(s.messages[0].text).toBe("hi");
+  });
   it("agent_end 清 busy + 兜底清 streaming", () => {
     let s = reducer(initState(), { type: "agent_start" });
     s = reducer(s, { type: "message_update", message: { role: "assistant", content: [] } });
