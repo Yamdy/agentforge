@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { reducer, initState } from "./reducer.js";
+import { reducer, initState, derivePending, type AssistantMessage, type RenderedMessage } from "./reducer.js";
 
 describe("reducer", () => {
   it("agent_start 设 busy", () => {
@@ -83,6 +83,57 @@ describe("reducer", () => {
       type: "state", sessionId: "s-2", isStreaming: false,
       isCompacting: false, messageCount: 0, pendingMessageCount: 0,
     });
+    expect(s.busy).toBe(false);
+  });
+});
+
+describe("derivePending", () => {
+  it("空消息返回空", () => {
+    expect(derivePending([])).toEqual([]);
+  });
+
+  it("streaming 含 toolCall block → pending", () => {
+    const streaming: AssistantMessage = {
+      role: "assistant",
+      content: [{ type: "toolCall", id: "tc1", name: "read", arguments: { path: "a.ts" } }],
+    };
+    expect(derivePending([], streaming)).toEqual([
+      { toolCallId: "tc1", toolName: "read", args: { path: "a.ts" } },
+    ]);
+  });
+
+  it("定稿 assistant.toolCalls 未 execution_end → pending", () => {
+    const messages: RenderedMessage[] = [
+      { role: "assistant", text: "", toolCalls: [{ type: "toolCall", id: "tc1", name: "read", arguments: {} }] },
+    ];
+    expect(derivePending(messages)).toEqual([{ toolCallId: "tc1", toolName: "read", args: {} }]);
+  });
+
+  it("toolCall.id 匹配 tool 条目 toolCallId → 不在 pending（已 executed）", () => {
+    const messages: RenderedMessage[] = [
+      { role: "assistant", text: "", toolCalls: [{ type: "toolCall", id: "tc1", name: "read", arguments: {} }] },
+      { role: "tool", text: "", toolCallId: "tc1", toolName: "read", args: {}, status: "done", isError: false },
+    ];
+    expect(derivePending(messages)).toEqual([]);
+  });
+
+  it("定稿 + streaming 同 id 不重复", () => {
+    const messages: RenderedMessage[] = [
+      { role: "assistant", text: "", toolCalls: [{ type: "toolCall", id: "tc1", name: "read", arguments: {} }] },
+    ];
+    const streaming: AssistantMessage = {
+      role: "assistant",
+      content: [{ type: "toolCall", id: "tc1", name: "read", arguments: {} }],
+    };
+    expect(derivePending(messages, streaming)).toEqual([{ toolCallId: "tc1", toolName: "read", args: {} }]);
+  });
+});
+
+describe("initState", () => {
+  it("无 tools 字段（P2-2 删冗余）", () => {
+    const s = initState();
+    expect((s as { tools?: unknown }).tools).toBeUndefined();
+    expect(s.messages).toEqual([]);
     expect(s.busy).toBe(false);
   });
 });

@@ -6,8 +6,24 @@
  */
 export interface Usage { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; }
 export interface BudgetInfo { components: unknown; total: number; suggestions: unknown[]; headroom: number; }
-export interface AssistantMessage { role: string; content: Array<{ type?: string; text?: string }>; stopReason?: string; usage?: Usage; errorMessage?: string; }
-export interface RenderedMessage { role: string; text: string; stopReason?: string; }
+export interface ToolCallContent {
+  type: "toolCall";
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+}
+export interface AssistantMessage {
+  role: string;
+  content: Array<{ type?: string; text?: string } | ToolCallContent>;
+  stopReason?: string;
+  usage?: Usage;
+  errorMessage?: string;
+}
+export type RenderedMessage =
+  | { role: "user"; text: string }
+  | { role: "assistant"; text: string; stopReason?: string; toolCalls?: ToolCallContent[] }
+  | { role: "tool"; text: ""; toolCallId: string; toolName: string; args: unknown;
+      status: "done" | "error"; isError: boolean };
 export interface ToolEvent { toolName: string; args: unknown; isError: boolean; }
 export interface State {
   messages: RenderedMessage[];
@@ -16,7 +32,6 @@ export interface State {
   busy: boolean;
   error?: string;
   lastUsage?: Usage;
-  tools: ToolEvent[];
   sessionId?: string;
   messageCount?: number;
 }
@@ -27,14 +42,14 @@ export type ServerEvent =
   | { type: "agent_end" }
   | { type: "error"; message: string }
   | { type: "context_budget"; components: unknown; total: number; suggestions: unknown[]; headroom: number }
-  | { type: "tool_execution_end"; toolName: string; args: unknown; isError: boolean }
+  | { type: "tool_execution_end"; toolCallId: string; toolName: string; args: unknown; isError: boolean }
   | { type: "compaction"; summary: string }
   | { type: "audit_finding"; severity: string; finding: unknown }
   | { type: "state"; id?: string; sessionId: string; isStreaming: boolean; isCompacting: boolean; messageCount: number; pendingMessageCount: number }
   | { type: "resumed"; sessionId: string };
 
 export function initState(): State {
-  return { messages: [], busy: false, tools: [] };
+  return { messages: [], busy: false };
 }
 
 export function reducer(state: State, event: ServerEvent): State {
@@ -67,10 +82,51 @@ export function reducer(state: State, event: ServerEvent): State {
     case "context_budget":
       return { ...state, budget: { components: event.components, total: event.total, suggestions: event.suggestions, headroom: event.headroom } };
     case "tool_execution_end":
-      return { ...state, tools: [...state.tools, { toolName: event.toolName, args: event.args, isError: event.isError }] };
+      return {
+        ...state,
+        messages: [...state.messages, {
+          role: "tool", text: "", toolCallId: event.toolCallId, toolName: event.toolName,
+          args: event.args, status: event.isError ? "error" : "done", isError: event.isError,
+        }],
+      };
     case "state":
       return { ...state, sessionId: event.sessionId, busy: event.isStreaming, messageCount: event.messageCount };
     default:
       return state;
   }
+}
+
+export interface PendingTool { toolCallId: string; toolName: string; args: unknown; }
+
+/**
+ * 推断 in-flight pending 工具调用（未匹配 tool_execution_end 的 toolCall block）。
+ * 纯函数 derive，不存 State：tool 条目进 messages 即进 executed → pending 自清。
+ * pi 借鉴：ToolCall.id（types.d.ts:184）=== tool_execution_end.toolCallId（types.d.ts:227）。
+ */
+export function derivePending(messages: RenderedMessage[], streaming?: AssistantMessage): PendingTool[] {
+  const executed = new Set(
+    messages.filter((m): m is Extract<RenderedMessage, { role: "tool" }> => m.role === "tool")
+      .map((m) => m.toolCallId)
+  );
+  const calls: PendingTool[] = [];
+  const seen = new Set<string>();
+  for (const m of messages) {
+    if (m.role === "assistant" && m.toolCalls) {
+      for (const tc of m.toolCalls) {
+        if (!executed.has(tc.id) && !seen.has(tc.id)) {
+          seen.add(tc.id);
+          calls.push({ toolCallId: tc.id, toolName: tc.name, args: tc.arguments });
+        }
+      }
+    }
+  }
+  if (streaming) {
+    for (const b of streaming.content) {
+      if (b.type === "toolCall" && !executed.has(b.id) && !seen.has(b.id)) {
+        seen.add(b.id);
+        calls.push({ toolCallId: b.id, toolName: b.name, args: b.arguments });
+      }
+    }
+  }
+  return calls;
 }
