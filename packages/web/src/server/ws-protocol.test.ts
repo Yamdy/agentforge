@@ -81,4 +81,22 @@ describe("parseClientMessage", () => {
   it("未知 method 报错", () => {
     expect(parseClientMessage(JSON.stringify({ method: "foo" }))).toEqual({ ok: false, error: "unknown method: foo" });
   });
+  it("解析 get_state", () => {
+    expect(parseClientMessage(JSON.stringify({ method: "get_state" })))
+      .toEqual({ ok: true, method: "get_state" });
+  });
+  it("各命令可选 id 透传", () => {
+    expect(parseClientMessage(JSON.stringify({ method: "get_state", id: "1" })))
+      .toEqual({ ok: true, method: "get_state", id: "1" });
+    expect(parseClientMessage(JSON.stringify({ method: "prompt", input: "hi", id: "2" })))
+      .toEqual({ ok: true, method: "prompt", input: "hi", id: "2" });
+    expect(parseClientMessage(JSON.stringify({ method: "abort", id: "3" })))
+      .toEqual({ ok: true, method: "abort", id: "3" });
+    expect(parseClientMessage(JSON.stringify({ method: "resume", sessionId: "s", id: "4" })))
+      .toEqual({ ok: true, method: "resume", sessionId: "s", id: "4" });
+  });
+  it("id 非字符串忽略（undefined）", () => {
+    expect(parseClientMessage(JSON.stringify({ method: "get_state", id: 123 })))
+      .toEqual({ ok: true, method: "get_state" });
+  });
 });
