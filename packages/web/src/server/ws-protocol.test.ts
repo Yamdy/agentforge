@@ -57,3 +57,28 @@ describe("serializeWebEvent", () => {
     ).toEqual({ type: "agent_end" });
   });
 });
+
+import { parseClientMessage } from "./ws-protocol.js";
+
+describe("parseClientMessage", () => {
+  it("解析 prompt", () => {
+    expect(parseClientMessage(JSON.stringify({ method: "prompt", input: "hi" })))
+      .toEqual({ ok: true, method: "prompt", input: "hi" });
+  });
+  it("解析 abort", () => {
+    expect(parseClientMessage(JSON.stringify({ method: "abort" }))).toEqual({ ok: true, method: "abort" });
+  });
+  it("解析 resume", () => {
+    expect(parseClientMessage(JSON.stringify({ method: "resume", sessionId: "s-1" })))
+      .toEqual({ ok: true, method: "resume", sessionId: "s-1" });
+  });
+  it("prompt 缺 input 报错", () => {
+    expect(parseClientMessage(JSON.stringify({ method: "prompt" }))).toEqual({ ok: false, error: "prompt requires input: string" });
+  });
+  it("非法 JSON 报错", () => {
+    expect(parseClientMessage("{bad")).toEqual({ ok: false, error: "invalid json" });
+  });
+  it("未知 method 报错", () => {
+    expect(parseClientMessage(JSON.stringify({ method: "foo" }))).toEqual({ ok: false, error: "unknown method: foo" });
+  });
+});
