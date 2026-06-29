@@ -30,6 +30,9 @@ importers:
       '@agentforge/shared':
         specifier: workspace:*
         version: link:../shared
+      '@agentforge/web':
+        specifier: workspace:*
+        version: link:../web
       '@earendil-works/pi-agent-core':
         specifier: ^0.79.9
         version: 0.79.9(ws@8.21.0)(zod@4.4.3)

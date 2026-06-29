@@ -38,6 +38,7 @@
   "dependencies": {
     "@agentforge/harness": "workspace:*",
     "@agentforge/shared": "workspace:*",
+    "@agentforge/web": "workspace:*",
     "@earendil-works/pi-agent-core": "^0.79.9",
     "@earendil-works/pi-ai": "^0.79.9",
     "typebox": "1.1.38"

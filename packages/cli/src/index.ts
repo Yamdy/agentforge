@@ -29,6 +29,31 @@ async function main(): Promise<void> {
 	// 须按 pi-ai 映射读 XIAOMI_TOKEN_PLAN_CN_API_KEY（非非法的 XIAOMI-TOKEN-PLAN-CN_API_KEY）。
 	const getApiKey = getApiKeyFromEnv;
 
+	// ui 子命令(优先于 -p/--rpc flag,与 rfc-dag/loop 并列):agentforge ui [args]。
+	// spec D5:子命令清晰。dynamic import @agentforge/web 打破循环依赖
+	// (@agentforge/web 依赖 @agentforge/cli/repl、/print-mode;static import 会让 cli 启动即加载 web)。
+	// 仅 ui 子命令分支内 dynamic import,cli 启动时不加载 web。
+	const hasUiSubcommand = argv[0] === "ui";
+	if (hasUiSubcommand) {
+		const { startUiServer } = await import("@agentforge/web");
+		// ui 专属 flag(--port/--host)不进 startUiServer 的 parseArgs(strict 模式会拒),
+		// 改由 deps 传给 httpServer.listen。其余 argv(--provider/--model/--session 等)转发。
+		const uiArgs = argv.slice(1);
+		const portIdx = uiArgs.indexOf("--port");
+		const port = portIdx >= 0 ? Number(uiArgs[portIdx + 1]) : undefined;
+		const hostIdx = uiArgs.indexOf("--host");
+		const host = hostIdx >= 0 ? uiArgs[hostIdx + 1] : undefined;
+		const forwarded = uiArgs.filter((_, i) => i !== portIdx && i !== portIdx + 1 && i !== hostIdx && i !== hostIdx + 1);
+		const { port: bound, sessionId } = await startUiServer(forwarded, {
+			getApiKey: async (p: string) => getApiKeyFromEnv(p),
+			port,
+			host,
+		});
+		console.error(`agentforge ui — session ${sessionId}`);
+		console.error(`  open: http://127.0.0.1:${bound}`);
+		return; // 不进 REPL
+	}
+
 	// rfc-dag 子命令(优先于 -p/--rpc flag,与 loop 并列):agentforge rfc-dag --rfc rfc.md ...
 	// spec D5:子命令清晰。provider/model 从 argv(--provider/--model)取,真命令见 plan Task 8。
 	const hasRfcDagSubcommand = argv[0] === "rfc-dag";
