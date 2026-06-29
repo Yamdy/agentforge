@@ -129,6 +129,34 @@ describe("derivePending", () => {
   });
 });
 
+describe("reducer tool_execution_end", () => {
+  it("push done tool 条目（toolCallId/status/isError 透传）", () => {
+    const state = reducer(initState(), {
+      type: "tool_execution_end", toolCallId: "tc1", toolName: "read", args: { path: "a" }, isError: false,
+    });
+    expect(state.messages).toEqual([
+      { role: "tool", text: "", toolCallId: "tc1", toolName: "read", args: { path: "a" }, status: "done", isError: false },
+    ]);
+  });
+
+  it("isError:true → status:'error'（red-team F2：执行失败≠成功）", () => {
+    const state = reducer(initState(), {
+      type: "tool_execution_end", toolCallId: "tc1", toolName: "bash", args: {}, isError: true,
+    });
+    expect(state.messages[0]).toMatchObject({ status: "error", isError: true });
+  });
+
+  it("进 executed → derivePending 排除", () => {
+    const streaming: AssistantMessage = {
+      role: "assistant",
+      content: [{ type: "toolCall", id: "tc1", name: "read", arguments: {} }],
+    };
+    let state = reducer(initState(), { type: "message_update", message: streaming });
+    state = reducer(state, { type: "tool_execution_end", toolCallId: "tc1", toolName: "read", args: {}, isError: false });
+    expect(derivePending(state.messages, state.streaming)).toEqual([]);
+  });
+});
+
 describe("initState", () => {
   it("无 tools 字段（P2-2 删冗余）", () => {
     const s = initState();
