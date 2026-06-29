@@ -205,6 +205,41 @@ describe("reducer message_end", () => {
   });
 });
 
+describe("reducer agent_end / error 兜底", () => {
+  it("agent_end(残留 pending) → push error + 清 streaming + busy false", () => {
+    let state = reducer(initState(), { type: "message_end", message: {
+      role: "assistant", content: [{ type: "toolCall", id: "tc1", name: "read", arguments: {} }],
+    } });
+    state = reducer(state, { type: "agent_end" });
+    expect(state.busy).toBe(false);
+    expect(state.streaming).toBeUndefined();
+    expect(state.messages.some((m) => m.role === "tool" && m.toolCallId === "tc1" && m.status === "error")).toBe(true);
+    expect(derivePending(state.messages, state.streaming)).toEqual([]);
+  });
+
+  it("message_end(error) → agent_end：无重复 error 条目（双推 pin，red-team F1）", () => {
+    let state = reducer(initState(), { type: "message_end", message: {
+      role: "assistant", content: [{ type: "toolCall", id: "tc1", name: "read", arguments: {} }],
+      stopReason: "error",
+    } });
+    const countAfterMessageEnd = state.messages.filter((m) => m.role === "tool" && m.toolCallId === "tc1").length;
+    state = reducer(state, { type: "agent_end" });
+    const countAfterAgentEnd = state.messages.filter((m) => m.role === "tool" && m.toolCallId === "tc1").length;
+    expect(countAfterAgentEnd).toBe(countAfterMessageEnd);  // 不双推
+  });
+
+  it("error(server 合成, streaming 含 toolCall) → push error + 清 streaming（Failure mode 吸收）", () => {
+    let state = reducer(initState(), { type: "message_update", message: {
+      role: "assistant", content: [{ type: "toolCall", id: "tc1", name: "read", arguments: {} }],
+    } });
+    state = reducer(state, { type: "error", message: "boom" });
+    expect(state.busy).toBe(false);
+    expect(state.streaming).toBeUndefined();
+    expect(state.error).toBe("boom");
+    expect(state.messages.some((m) => m.role === "tool" && m.toolCallId === "tc1" && m.status === "error")).toBe(true);
+  });
+});
+
 describe("initState", () => {
   it("无 tools 字段（P2-2 删冗余）", () => {
     const s = initState();

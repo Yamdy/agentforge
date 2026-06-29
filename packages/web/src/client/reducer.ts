@@ -77,10 +77,27 @@ export function reducer(state: State, event: ServerEvent): State {
       }
       return { ...state, messages, streaming: undefined, lastUsage: msg?.usage, error: failError ?? state.error };
     }
-    case "agent_end":
-      return { ...state, busy: false, streaming: undefined }; // 兜底清 streaming（双保险）
-    case "error":
-      return { ...state, busy: false, error: event.message }; // 终态：必须清 busy
+    case "agent_end": {
+      // 兜底：残留 pending push error（双保险，防 message_end 未清干净锁死）。
+      const pending = derivePending(state.messages, state.streaming);
+      const errorEntries = pending.map((p) => ({
+        role: "tool" as const, text: "" as const, toolCallId: p.toolCallId, toolName: p.toolName,
+        args: p.args, status: "error" as const, isError: true,
+      }));
+      return { ...state, busy: false, streaming: undefined, messages: [...state.messages, ...errorEntries] };
+    }
+    case "error": {
+      // server 合成 error 兜底（harness.prompt throw 未走 message_end，spec §8）：
+      // 同 agent_end——derivePending 取残留 pending（含 streaming toolCall）push error + 清 streaming。
+      // red-team Failure mode：不加则 pending 静默丢失（UI 悬挂）。
+      const pending = derivePending(state.messages, state.streaming);
+      const errorEntries = pending.map((p) => ({
+        role: "tool" as const, text: "" as const, toolCallId: p.toolCallId, toolName: p.toolName,
+        args: p.args, status: "error" as const, isError: true,
+      }));
+      return { ...state, busy: false, streaming: undefined, error: event.message,
+        messages: [...state.messages, ...errorEntries] };
+    }
     case "context_budget":
       return { ...state, budget: { components: event.components, total: event.total, suggestions: event.suggestions, headroom: event.headroom } };
     case "tool_execution_end":
