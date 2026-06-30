@@ -12,3 +12,8 @@ coverage/
 .agentforge/skills/*
 !.agentforge/skills/council/
 .claude/settings.local.json
+
+# 运行时产物 / 冒烟截图（不入库）
+.playwright-mcp/
+packages/web/.agentforge/
+web-ui-smoke.png
