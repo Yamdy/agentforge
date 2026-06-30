@@ -17,3 +17,4 @@ coverage/
 .playwright-mcp/
 packages/web/.agentforge/
 web-ui-smoke.png
+packages/web/smoke/*.png
