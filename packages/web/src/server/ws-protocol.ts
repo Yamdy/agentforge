@@ -1,75 +1,19 @@
-import type { HarnessEvent } from "@agentforge/shared";
+import { serializeEvent } from "@agentforge/shared";
+import type { HarnessEvent, SerializedEvent } from "@agentforge/shared";
 
 /**
- * web 版事件序列化。与 rpc.serializeEvent 差异：
- *  1. 保留 message_update（rpc 排除）—— 转发累积态 message，丢 assistantMessageEvent，server 不 narrow 不批量。
- *  2. 补 audit_finding（rpc 有）。
- *  3. message_update 与 message_end 都转发完整累积态 message（pi 借鉴整条替换；背压由前端 rAF 合帧吸收，server 不批量）。
+ * web 版事件序列化：shared.serializeEvent 的薄包装。
+ * web opts：includeMessageUpdate（转发累积态 message，丢 assistantMessageEvent，server 不 narrow 不批量）
+ *  + includeToolArgs（tool_execution_end 带 args）。白名单与窄化逻辑由 shared 统一维护，本处零 `as`。
+ * message_update 与 message_end 都转发完整累积态 message（pi 借鉴整条替换；背压由前端 rAF 合帧吸收）。
  */
 export function serializeWebEvent(
   event: HarnessEvent,
-): Record<string, unknown> | undefined {
-  const type = (event as { type?: string }).type;
-  switch (type) {
-    case "agent_start":
-      return { type };
-    case "agent_end":
-      return { type };
-    case "message_update": {
-      return {
-        type: "message_update",
-        message: (event as { message: unknown }).message,
-      };
-    }
-    case "message_end": {
-      const e = event as { message: unknown };
-      return { type, message: e.message };
-    }
-    case "tool_execution_end": {
-      const e = event as {
-        toolCallId: string;
-        toolName: string;
-        args: unknown;
-        isError: boolean;
-      };
-      return {
-        type,
-        toolCallId: e.toolCallId,
-        toolName: e.toolName,
-        args: e.args,
-        isError: e.isError,
-      };
-    }
-    case "context_budget": {
-      const e = event as {
-        components: unknown;
-        total: number;
-        suggestions: unknown[];
-        headroom: number;
-      };
-      return {
-        type,
-        components: e.components,
-        total: e.total,
-        suggestions: e.suggestions,
-        headroom: e.headroom,
-      };
-    }
-    case "compaction": {
-      const e = event as { summary: string; firstKeptEntryId: string };
-      return { type, summary: e.summary, firstKeptEntryId: e.firstKeptEntryId };
-    }
-    case "compaction_error": {
-      const e = event as { error: string };
-      return { type, error: e.error };
-    }
-    case "audit_finding": {
-      const e = event as { severity: string; finding: unknown };
-      return { type, severity: e.severity, finding: e.finding };
-    }
-    default:
-      return undefined;
-  }
+): SerializedEvent | undefined {
+  return serializeEvent(event, {
+    includeMessageUpdate: true,
+    includeToolArgs: true,
+  });
 }
 
 export type ClientMessage =

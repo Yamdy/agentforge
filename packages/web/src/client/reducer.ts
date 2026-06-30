@@ -1,9 +1,11 @@
 /**
  * client reducer（纯函数）。pi 借鉴（spec §4.1.1/§5.3）：
  *  - message_update 整条替换 streaming（内核 message 已累积态，不拼 delta）
- *  - message_end 定稿 + 提取 usage + 记 stopReason；agent_end 兜底清 streaming（双保险）
+ *  - message_end 定稿 + 提取 usage + 记 stopReason；agent_end 兜底清 streaming（harness 转发，server 不再合成双发）
  *  - error 终态清 busy（防 UI 锁死）
  */
+import type { SerializedEvent } from "@agentforge/shared";
+
 export interface Usage { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; }
 export interface BudgetInfo { components: unknown; total: number; suggestions: unknown[]; headroom: number; }
 export interface ToolCallContent {
@@ -35,18 +37,22 @@ export interface State {
   sessionId?: string;
   messageCount?: number;
 }
-export type ServerEvent =
-  | { type: "agent_start" }
-  | { type: "message_update"; message: AssistantMessage }
-  | { type: "message_end"; message: AssistantMessage }
-  | { type: "agent_end" }
-  | { type: "error"; message: string }
-  | { type: "context_budget"; components: unknown; total: number; suggestions: unknown[]; headroom: number }
-  | { type: "tool_execution_end"; toolCallId: string; toolName: string; args: unknown; isError: boolean }
-  | { type: "compaction"; summary: string }
-  | { type: "audit_finding"; severity: string; finding: unknown }
+/**
+ * server 合成控制事件联合（synthesized，来源 server 非 harness）。
+ * 见 CONTEXT.md：state/resumed/error 三者形状。
+ */
+export type ServerControlEvent =
   | { type: "state"; id?: string; sessionId: string; isStreaming: boolean; isCompacting: boolean; messageCount: number; pendingMessageCount: number }
-  | { type: "resumed"; sessionId: string };
+  | { type: "resumed"; sessionId: string }
+  | { type: "error"; message: string };
+
+/**
+ * client reducer 消费的 wire 事件联合 = forwarded(SerializedEvent, shared 单一来源) | synthesized(ServerControlEvent)。
+ * 从 shared 派生，非手写：消除与 shared SerializedEvent 的平行漂移
+ * （旧手写 compaction 无 firstKeptEntryId，现已随 shared 契约一致；reducer 走 default 不读，类型一致即消除漂移）。
+ * 见 CONTEXT.md。
+ */
+export type ServerEvent = SerializedEvent | ServerControlEvent;
 
 export function initState(): State {
   return { messages: [], busy: false };

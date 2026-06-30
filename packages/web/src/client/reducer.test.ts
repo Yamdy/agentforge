@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { reducer, initState, derivePending, type AssistantMessage, type RenderedMessage } from "./reducer.js";
+import type { SerializedEvent } from "@agentforge/shared";
+import { reducer, initState, derivePending, type AssistantMessage, type RenderedMessage, type ServerEvent, type ServerControlEvent } from "./reducer.js";
 
 describe("reducer", () => {
   it("agent_start 设 busy", () => {
@@ -217,7 +218,7 @@ describe("reducer agent_end / error 兜底", () => {
     expect(derivePending(state.messages, state.streaming)).toEqual([]);
   });
 
-  it("message_end(error) → agent_end：无重复 error 条目（双推 pin，red-team F1）", () => {
+  it("message_end(error) → agent_end：无重复 error 条目（单发幂等，red-team F1；server 已不合成双发，reducer 对 harness 转发的合法 message_end→agent_end 序列保持幂等）", () => {
     let state = reducer(initState(), { type: "message_end", message: {
       role: "assistant", content: [{ type: "toolCall", id: "tc1", name: "read", arguments: {} }],
       stopReason: "error",
@@ -225,7 +226,7 @@ describe("reducer agent_end / error 兜底", () => {
     const countAfterMessageEnd = state.messages.filter((m) => m.role === "tool" && m.toolCallId === "tc1").length;
     state = reducer(state, { type: "agent_end" });
     const countAfterAgentEnd = state.messages.filter((m) => m.role === "tool" && m.toolCallId === "tc1").length;
-    expect(countAfterAgentEnd).toBe(countAfterMessageEnd);  // 不双推
+    expect(countAfterAgentEnd).toBe(countAfterMessageEnd);  // message_end 已 push，agent_end 不重复 push
   });
 
   it("error(server 合成, streaming 含 toolCall) → push error + 清 streaming（Failure mode 吸收）", () => {
@@ -246,5 +247,55 @@ describe("initState", () => {
     expect((s as { tools?: unknown }).tools).toBeUndefined();
     expect(s.messages).toEqual([]);
     expect(s.busy).toBe(false);
+  });
+});
+
+describe("ServerEvent 派生（Task 5：从 shared SerializedEvent 派生，消除手写漂移）", () => {
+  it("ServerEvent 接受 forwarded SerializedEvent 成员（含 compaction.firstKeptEntryId 锁漂移点）", () => {
+    // 类型断言：每个 SerializedEvent 成员都是合法 ServerEvent（forwarded 子集派生）。
+    const forwarded: SerializedEvent[] = [
+      { type: "agent_start" },
+      { type: "agent_end" },
+      { type: "message_update", message: { role: "assistant", content: [] } },
+      { type: "message_end", message: { role: "assistant", content: [] } },
+      { type: "tool_execution_end", toolCallId: "tc1", toolName: "read", isError: false },
+      { type: "tool_execution_end", toolCallId: "tc1", toolName: "read", args: {}, isError: false },
+      { type: "context_budget", components: {}, total: 0, suggestions: [], headroom: 0 },
+      // compaction 现含 firstKeptEntryId（与 shared 契约一致，消除 reducer 旧手写无该字段的漂移）。
+      { type: "compaction", summary: "s", firstKeptEntryId: "e1" },
+      { type: "compaction_error", error: "boom" },
+      { type: "audit_finding", severity: "low", finding: {} },
+    ];
+    for (const e of forwarded) {
+      const _: ServerEvent = e; // 编译期：SerializedEvent ⊆ ServerEvent
+      void _;
+    }
+    expect(forwarded.length).toBe(10);
+  });
+
+  it("ServerControlEvent = state | resumed | error 三者形状（synthesized 控制子集）", () => {
+    const controls: ServerControlEvent[] = [
+      { type: "state", sessionId: "s1", isStreaming: false, isCompacting: false, messageCount: 0, pendingMessageCount: 0 },
+      { type: "resumed", sessionId: "s1" },
+      { type: "error", message: "boom" },
+    ];
+    for (const e of controls) {
+      const _: ServerEvent = e; // 编译期：ServerControlEvent ⊆ ServerEvent
+      void _;
+    }
+    expect(controls.length).toBe(3);
+  });
+
+  it("reducer 对 compaction(含 firstKeptEntryId)走 default 不变（类型一致即消除漂移，行为不变）", () => {
+    const before = initState();
+    // compaction 现携带 firstKeptEntryId；reducer 不读它（default 返回 state 不变）。
+    const after = reducer(before, { type: "compaction", summary: "s", firstKeptEntryId: "e1" });
+    expect(after).toBe(before); // default 分支：原样返回
+  });
+
+  it("reducer 对 compaction_error / audit_finding 走 default 不变（forwarded 但 reducer 无 case）", () => {
+    const before = initState();
+    expect(reducer(before, { type: "compaction_error", error: "x" })).toBe(before);
+    expect(reducer(before, { type: "audit_finding", severity: "low", finding: {} })).toBe(before);
   });
 });

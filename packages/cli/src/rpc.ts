@@ -14,7 +14,7 @@ import {
 } from "@agentforge/harness";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { SantaVerifier, Rubric } from "@agentforge/harness";
-import type { HarnessEvent } from "@agentforge/shared";
+import { serializeEvent } from "@agentforge/shared";
 import { parseArgs, type ParsedArgs } from "./print-mode.js";
 import {
 	createReadTool,
@@ -27,82 +27,6 @@ import {
 import { createSystemPromptWithSkills, defaultSkillDirs } from "./system-prompt.js";
 import { defaultSessionDir, buildHarness } from "./repl.js";
 import { createInstinctConfig } from "./instinct-config.js";
-
-/**
- * 把 harness EventBus 事件序列化为 JSON-RPC notification params。
- * 白名单：只推可序列化、客户端关心的事件。非白名单 → undefined（跳过）。
- * 不推逐 token 流（A 约束，message_update 排除）。tool_execution_end 推精简字段
- * （result 大，默认不推全量；safety deny 时 isError=true 仍可推）。
- *
- * pi AgentEvent 成员（@earendil-works/pi-agent-core types.d.ts:359）：
- *   agent_start | agent_end | turn_start | turn_end |
- *   message_start | message_update | message_end |
- *   tool_execution_start | tool_execution_update | tool_execution_end
- * harness 自定义（@agentforge/shared）：
- *   compaction | compaction_error | instinct_observed | audit_finding | adr_recorded | context_budget
- */
-export function serializeEvent(
-	event: HarnessEvent,
-): Record<string, unknown> | undefined {
-	const type = (event as { type?: string }).type;
-	switch (type) {
-		case "agent_start":
-			return { type };
-		case "agent_end":
-			// agent_end 含 messages（大），只推 type；messages 在 prompt result 里给。
-			return { type };
-		case "message_end": {
-			const e = event as { message: unknown };
-			return { type, message: e.message };
-		}
-		case "tool_execution_end": {
-			const e = event as {
-				toolCallId: string;
-				toolName: string;
-				isError: boolean;
-			};
-			return {
-				type,
-				toolCallId: e.toolCallId,
-				toolName: e.toolName,
-				isError: e.isError,
-			};
-		}
-		case "compaction": {
-			const e = event as { summary: string; firstKeptEntryId: string };
-			return { type, summary: e.summary, firstKeptEntryId: e.firstKeptEntryId };
-		}
-		case "compaction_error": {
-			const e = event as { error: string };
-			return { type, error: e.error };
-		}
-		case "context_budget": {
-			const e = event as {
-				components: unknown;
-				total: number;
-				suggestions: unknown[];
-				headroom: number;
-			};
-			return {
-				type,
-				components: e.components,
-				total: e.total,
-				suggestions: e.suggestions,
-				headroom: e.headroom,
-			};
-		}
-		case "audit_finding": {
-			// Slice 5 Task 8：推 audit_finding（severity + finding 全量）。
-			// Finding schema 见 harness/audit.ts；此处 cast 读字段（union 无 narrowing）。
-			const e = event as { severity: string; finding: unknown };
-			return { type, severity: e.severity, finding: e.finding };
-		}
-		default:
-			// 非白名单（turn_*、message_start、message_update 逐 token 流、
-			// tool_execution_start/update、instinct_observed、adr_recorded、未知）
-			return undefined;
-	}
-}
 
 /** JSON-RPC 2.0 标准错误码。 */
 export const PARSE_ERROR = -32700;
@@ -176,7 +100,9 @@ async function dispatch(
 			return;
 		}
 		const unsubscribe = harness.onEvent((e) => {
-			const serialized = serializeEvent(e);
+			// rpc adapter：丢逐 token message_update + tool_execution_end 不带 args（shared 默认 false）。
+			// opts 显式传递以表明 rpc adapter 契约（与 web adapter 的 true 对齐对照）。
+			const serialized = serializeEvent(e, { includeMessageUpdate: false, includeToolArgs: false });
 			if (serialized) output.write(makeNotification("event", serialized) + "\n");
 		});
 		const ac = new AbortController();

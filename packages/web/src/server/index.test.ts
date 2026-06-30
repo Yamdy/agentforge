@@ -136,6 +136,41 @@ describe("startUiServer", () => {
     }
   }, 15000);
 
+  it("prompt 经 harness subscribe 转发 agent_start + agent_end 到 wire（不靠 server 合成）", async () => {
+    const hello = msg("hello");
+    const streamFn = vi.fn(() => makeStream([
+      { type: "start", partial: hello },
+      { type: "done", reason: "stop", message: hello },
+    ]));
+    const server = await startUiServer([], { streamFn, getApiKey: () => "test-key", port: 0 });
+    try {
+      const WebSocket = (await import("ws")).WebSocket;
+      const ws = new WebSocket(`ws://127.0.0.1:${server.port}`);
+      const received: any[] = await new Promise((resolve) => {
+        const buf: any[] = [];
+        ws.on("open", () => ws.send(JSON.stringify({ method: "prompt", input: "hi" })));
+        ws.on("message", (d) => {
+          const m = JSON.parse(d.toString());
+          buf.push(m);
+          if (buf.some((mm) => mm.type === "agent_end")) resolve(buf);
+        });
+      });
+      // agent_start / agent_end 均由 harness 经 subscribe 转发上 wire
+      expect(received.some((m) => m.type === "agent_start")).toBe(true);
+      expect(received.some((m) => m.type === "agent_end")).toBe(true);
+      // 顺序：agent_start 先于 agent_end（harness 生命周期 start→...→end）
+      const startIdx = received.findIndex((m) => m.type === "agent_start");
+      const endIdx = received.findIndex((m) => m.type === "agent_end");
+      expect(startIdx).toBeLessThan(endIdx);
+      // 删除合成后每个生命周期事件恰一条（删除前双发，此断言红 → 驱动删 L56/L60）
+      expect(received.filter((m) => m.type === "agent_start").length).toBe(1);
+      expect(received.filter((m) => m.type === "agent_end").length).toBe(1);
+      ws.close();
+    } finally {
+      await server.close();
+    }
+  }, 15000);
+
   it("get_state 返回 5 字段快照 + id 透传 + messageCount=transcript 长度", async () => {
     const hello = msg("hello");
     const streamFn = vi.fn(() => makeStream([

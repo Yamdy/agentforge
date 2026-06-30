@@ -53,11 +53,10 @@ export async function startUiServer(argv: string[], deps: UiServerDeps): Promise
   const handlePrompt = async (input: string) => {
     if (busy) { send({ type: "error", message: "busy" }); return; }
     busy = true;
-    send({ type: "agent_start" });
     abortCtl = new AbortController();
     try {
+      // agent_start / agent_end 由 harness 经 subscribe 转发（pi 生命周期事件），server 不再合成
       await harness.prompt(input, abortCtl.signal);
-      send({ type: "agent_end" });
     } catch (err) {
       send({ type: "error", message: err instanceof Error ? err.message : String(err) });
     } finally {

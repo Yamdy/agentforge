@@ -11,12 +11,10 @@ import type {
 
 // 探针：确认 rpc 模块存在（RED 阶段 ./rpc.js 不存在 → 导入失败）。
 import "./rpc.js";
-import { serializeEvent } from "./rpc.js";
 import { parseRequest, makeResult, makeError, makeNotification,
 	PARSE_ERROR, INVALID_REQUEST, METHOD_NOT_FOUND, INVALID_PARAMS, INTERNAL_ERROR } from "./rpc.js";
 import { runRpcMode } from "./rpc.js";
 import { parseArgs } from "./print-mode.js";
-import type { HarnessEvent } from "@agentforge/shared";
 import type { AgentForgeHarness, SantaVerifier } from "@agentforge/harness";
 
 function makeAssistantMessage(text: string): AssistantMessage {
@@ -60,75 +58,11 @@ describe("rpc — AgentMessage serialization round-trip", () => {
 	});
 });
 
-describe("rpc — serializeEvent whitelist", () => {
-	it("serializes tool_execution_end event (slim, no result payload)", () => {
-		const event = {
-			type: "tool_execution_end", toolCallId: "tc-1", toolName: "read",
-			result: { content: [{ type: "text", text: "file contents" }] }, isError: false,
-		} as unknown as HarnessEvent;
-		expect(serializeEvent(event)).toEqual({
-			type: "tool_execution_end", toolCallId: "tc-1", toolName: "read", isError: false,
-		});
-	});
-
-	it("serializes context_budget event", () => {
-		const event = { type: "context_budget", components: {}, total: 5000, suggestions: [], headroom: 60000 } as unknown as HarnessEvent;
-		expect(serializeEvent(event)).toMatchObject({ type: "context_budget", total: 5000 });
-	});
-
-	it("serializes compaction event", () => {
-		const event = { type: "compaction", summary: "SUMMARY", firstKeptEntryId: "e-1" } as unknown as HarnessEvent;
-		expect(serializeEvent(event)).toMatchObject({ type: "compaction", summary: "SUMMARY" });
-	});
-
-	it("serializes compaction_error event", () => {
-		const event = { type: "compaction_error", error: "LLM down" } as unknown as HarnessEvent;
-		expect(serializeEvent(event)).toEqual({ type: "compaction_error", error: "LLM down" });
-	});
-
-	it("serializes agent_start event", () => {
-		const event = { type: "agent_start" } as unknown as HarnessEvent;
-		expect(serializeEvent(event)).toEqual({ type: "agent_start" });
-	});
-
-	it("serializes agent_end event as type-only (messages omitted, given in prompt result)", () => {
-		const event = { type: "agent_end", messages: [{ role: "assistant" }] } as unknown as HarnessEvent;
-		expect(serializeEvent(event)).toEqual({ type: "agent_end" });
-	});
-
-	it("serializes message_end event with message", () => {
-		const event = { type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "hi" }] } } as unknown as HarnessEvent;
-		expect(serializeEvent(event)).toMatchObject({ type: "message_end", message: { role: "assistant" } });
-	});
-
-	it("returns undefined for non-whitelisted events", () => {
-		const event = { type: "some_unknown_internal_event" } as unknown as HarnessEvent;
-		expect(serializeEvent(event)).toBeUndefined();
-	});
-
-	it("returns undefined for token-stream message_update event", () => {
-		const event = { type: "message_update", message: {}, assistantMessageEvent: { delta: "tok" } } as unknown as HarnessEvent;
-		expect(serializeEvent(event)).toBeUndefined();
-	});
-
-	it("serializes audit_finding event (type + severity + finding)", () => {
-		const finding = {
-			severity: "critical",
-			title: "hallucinated tool execution",
-			mechanism: "assistant emitted toolCall with no matching tool_execution_end",
-			sourceLayer: "tool-execution",
-			rootCause: "tool-call id missing from events",
-			evidenceRefs: ["call-42"],
-			confidence: 0.9,
-			recommendedFix: "ensure harness afterToolCall emits execution_end",
-		};
-		const event = {
-			type: "audit_finding", severity: "critical", finding,
-		} as unknown as HarnessEvent;
-		expect(serializeEvent(event)).toEqual({
-			type: "audit_finding", severity: "critical", finding,
-		});
-	});
+describe("rpc — serializeEvent (shared, migrated to Task 1)", () => {
+	// serializeEvent 白名单单测已迁移至 packages/shared/src/serialize-event.test.ts（Task 1）。
+	// rpc.ts 不再本地实现 serializeEvent，改为 value import @agentforge/shared（Task 6）。
+	// dispatch 集成测试（下方 prompt method）覆盖 rpc 转发路径，足以回归。
+	it.todo("serializeEvent whitelist unit tests live in @agentforge/shared");
 });
 
 describe("rpc — JSON-RPC protocol helpers", () => {
