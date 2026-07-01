@@ -1,6 +1,18 @@
 import { describe, it, expect } from "vitest";
 import type { SerializedEvent } from "@agentforge/shared";
-import { reducer, initState, derivePending, type AssistantMessage, type RenderedMessage, type ServerEvent, type ServerControlEvent } from "./reducer.js";
+import { reducer, initState, derivePending, type AssistantMessage, type UserMessage, type Usage, type RenderedMessage, type ServerEvent, type ServerControlEvent } from "./reducer.js";
+
+type Api = AssistantMessage["api"];
+type Provider = AssistantMessage["provider"];
+const mkUsage = (o: Partial<Usage> = {}): Usage => ({
+  input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, ...o,
+});
+const mkAssistant = (o: Partial<AssistantMessage> = {}): AssistantMessage => ({
+  role: "assistant", content: [], api: "" as Api, provider: "" as Provider,
+  model: "m", usage: mkUsage(), stopReason: "stop", timestamp: 0, ...o,
+});
+const mkUser = (o: Partial<UserMessage> = {}): UserMessage => ({ role: "user", content: [], timestamp: 0, ...o });
 
 describe("reducer", () => {
   it("agent_start 设 busy", () => {
@@ -8,39 +20,39 @@ describe("reducer", () => {
   });
   it("message_update 整条替换 streaming（不拼 delta）", () => {
     let s = reducer(initState(), { type: "agent_start" });
-    s = reducer(s, { type: "message_update", message: { role: "assistant", content: [{ type: "text", text: "hel" }] } });
-    s = reducer(s, { type: "message_update", message: { role: "assistant", content: [{ type: "text", text: "hello" }] } });
-    expect((s.streaming as any).content[0].text).toBe("hello");
+    s = reducer(s, { type: "message_update", message: mkAssistant({ content: [{ type: "text", text: "hel" }] }) });
+    s = reducer(s, { type: "message_update", message: mkAssistant({ content: [{ type: "text", text: "hello" }] }) });
+    expect((s.streaming as AssistantMessage).content[0].text).toBe("hello");
   });
   it("message_end 定稿 + 提取 usage + 清 streaming", () => {
     let s = reducer(initState(), { type: "agent_start" });
-    s = reducer(s, { type: "message_update", message: { role: "assistant", content: [{ type: "text", text: "hi" }] } });
-    s = reducer(s, { type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "hi" }], usage: { input: 10, output: 5 } } });
+    s = reducer(s, { type: "message_update", message: mkAssistant({ content: [{ type: "text", text: "hi" }] }) });
+    s = reducer(s, { type: "message_end", message: mkAssistant({ content: [{ type: "text", text: "hi" }], usage: mkUsage({ input: 10, output: 5 }) }) });
     expect(s.messages.length).toBe(1);
     expect(s.streaming).toBeUndefined();
-    expect(s.lastUsage).toEqual({ input: 10, output: 5 });
+    expect(s.lastUsage).toMatchObject({ input: 10, output: 5 });
   });
   it("message_end stopReason=aborted 记终态（用户主动中止，非失败，不设 state.error）", () => {
     let s = reducer(initState(), { type: "agent_start" });
-    s = reducer(s, { type: "message_end", message: { role: "assistant", content: [], stopReason: "aborted" } });
+    s = reducer(s, { type: "message_end", message: mkAssistant({ content: [], stopReason: "aborted" }) });
     expect(s.messages[s.messages.length - 1].stopReason).toBe("aborted");
     expect(s.error).toBeUndefined();
   });
   it("message_end stopReason=error 设 state.error 显示失败信号（pi runWithLifecycle 不抛冒泡，靠 message_end 兜底）", () => {
     let s = reducer(initState(), { type: "agent_start" });
-    s = reducer(s, { type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "" }], stopReason: "error", errorMessage: "boom" } as any });
+    s = reducer(s, { type: "message_end", message: mkAssistant({ content: [{ type: "text", text: "" }], stopReason: "error", errorMessage: "boom" }) });
     expect(s.messages.length).toBe(1);
     expect(s.streaming).toBeUndefined();
     expect(s.error).toBe("boom");
   });
   it("message_end errorMessage 无 stopReason 也兜底设 state.error", () => {
     let s = reducer(initState(), { type: "agent_start" });
-    s = reducer(s, { type: "message_end", message: { role: "assistant", content: [], errorMessage: "kaput" } as any });
+    s = reducer(s, { type: "message_end", message: mkAssistant({ content: [], errorMessage: "kaput" }) });
     expect(s.error).toBe("kaput");
   });
   it("agent_end 兜底不设 error（pi agent_end 不带 errorMessage 字段，仅 messages[].errorMessage；reducer agent_end 不接收 messages）", () => {
     let s = reducer(initState(), { type: "agent_start" });
-    s = reducer(s, { type: "message_update", message: { role: "assistant", content: [] } });
+    s = reducer(s, { type: "message_update", message: mkAssistant({ content: [] }) });
     s = reducer(s, { type: "agent_end" });
     expect(s.busy).toBe(false);
     expect(s.streaming).toBeUndefined();
@@ -48,14 +60,14 @@ describe("reducer", () => {
   });
   it("message_end(user) 定稿 user 消息——server 是 user 消息唯一来源（spec §5.3，防 client 乐观 push 回归）", () => {
     let s = reducer(initState(), { type: "agent_start" });
-    s = reducer(s, { type: "message_end", message: { role: "user", content: [{ type: "text", text: "hi" }] } });
+    s = reducer(s, { type: "message_end", message: mkUser({ content: [{ type: "text", text: "hi" }] }) });
     expect(s.messages.length).toBe(1);
     expect(s.messages[0].role).toBe("user");
     expect(s.messages[0].text).toBe("hi");
   });
   it("agent_end 清 busy + 兜底清 streaming", () => {
     let s = reducer(initState(), { type: "agent_start" });
-    s = reducer(s, { type: "message_update", message: { role: "assistant", content: [] } });
+    s = reducer(s, { type: "message_update", message: mkAssistant({ content: [] }) });
     s = reducer(s, { type: "agent_end" });
     expect(s.busy).toBe(false);
     expect(s.streaming).toBeUndefined();
@@ -86,6 +98,23 @@ describe("reducer", () => {
     });
     expect(s.busy).toBe(false);
   });
+  it("message_end(toolResult) → state 不变（修空 assistant 气泡 bug，pi emitToolResultMessage agent-loop.js:506-508）", () => {
+    const before = initState();
+    const after = reducer(before, { type: "message_end", message: { role: "toolResult", toolCallId: "tc1", toolName: "read", content: [], isError: false, timestamp: 0 } });
+    expect(after).toBe(before);
+  });
+  it("message_end(bashExecution) → state 不变（防御，pi 不 emit 但 union 允许）", () => {
+    const before = initState();
+    const after = reducer(before, { type: "message_end", message: { role: "bashExecution", command: "ls", output: "", exitCode: 0, cancelled: false, truncated: false, timestamp: 0 } });
+    expect(after).toBe(before);
+  });
+  it("message_update(非 assistant) → streaming 不变（防御，user 不流式）", () => {
+    let s = reducer(initState(), { type: "agent_start" });
+    s = reducer(s, { type: "message_update", message: mkAssistant({ content: [{ type: "text", text: "hel" }] }) });
+    expect(s.streaming).toBeDefined();
+    s = reducer(s, { type: "message_update", message: mkUser({ content: [{ type: "text", text: "u" }] }) });
+    expect(s.streaming?.content.find((c) => c.type === "text")?.text).toBe("hel");
+  });
 });
 
 describe("derivePending", () => {
@@ -94,10 +123,7 @@ describe("derivePending", () => {
   });
 
   it("streaming 含 toolCall block → pending", () => {
-    const streaming: AssistantMessage = {
-      role: "assistant",
-      content: [{ type: "toolCall", id: "tc1", name: "read", arguments: { path: "a.ts" } }],
-    };
+    const streaming: AssistantMessage = mkAssistant({ content: [{ type: "toolCall", id: "tc1", name: "read", arguments: { path: "a.ts" } }] });
     expect(derivePending([], streaming)).toEqual([
       { toolCallId: "tc1", toolName: "read", args: { path: "a.ts" } },
     ]);
@@ -122,10 +148,7 @@ describe("derivePending", () => {
     const messages: RenderedMessage[] = [
       { role: "assistant", text: "", toolCalls: [{ type: "toolCall", id: "tc1", name: "read", arguments: {} }] },
     ];
-    const streaming: AssistantMessage = {
-      role: "assistant",
-      content: [{ type: "toolCall", id: "tc1", name: "read", arguments: {} }],
-    };
+    const streaming: AssistantMessage = mkAssistant({ content: [{ type: "toolCall", id: "tc1", name: "read", arguments: {} }] });
     expect(derivePending(messages, streaming)).toEqual([{ toolCallId: "tc1", toolName: "read", args: {} }]);
   });
 });
@@ -148,10 +171,7 @@ describe("reducer tool_execution_end", () => {
   });
 
   it("进 executed → derivePending 排除", () => {
-    const streaming: AssistantMessage = {
-      role: "assistant",
-      content: [{ type: "toolCall", id: "tc1", name: "read", arguments: {} }],
-    };
+    const streaming: AssistantMessage = mkAssistant({ content: [{ type: "toolCall", id: "tc1", name: "read", arguments: {} }] });
     let state = reducer(initState(), { type: "message_update", message: streaming });
     state = reducer(state, { type: "tool_execution_end", toolCallId: "tc1", toolName: "read", args: {}, isError: false });
     expect(derivePending(state.messages, state.streaming)).toEqual([]);
@@ -162,10 +182,10 @@ describe("reducer message_end", () => {
   it("assistant 含 toolCall → push assistant 含 toolCalls + pending", () => {
     const state = reducer(initState(), {
       type: "message_end",
-      message: { role: "assistant", content: [
+      message: mkAssistant({ content: [
         { type: "text", text: "hi" },
         { type: "toolCall", id: "tc1", name: "read", arguments: { path: "a" } },
-      ] },
+      ] }),
     });
     const last = state.messages[state.messages.length - 1];
     expect(last).toMatchObject({ role: "assistant", text: "hi" });
@@ -178,39 +198,27 @@ describe("reducer message_end", () => {
   });
 
   it("stopReason:'aborted' → pending 标 error push + 自清", () => {
-    let state = reducer(initState(), { type: "message_update", message: {
-      role: "assistant", content: [{ type: "toolCall", id: "tc1", name: "read", arguments: {} }],
-    } });
-    state = reducer(state, { type: "message_end", message: {
-      role: "assistant", content: [{ type: "toolCall", id: "tc1", name: "read", arguments: {} }],
-      stopReason: "aborted",
-    } });
+    let state = reducer(initState(), { type: "message_update", message: mkAssistant({ content: [{ type: "toolCall", id: "tc1", name: "read", arguments: {} }] }) });
+    state = reducer(state, { type: "message_end", message: mkAssistant({ content: [{ type: "toolCall", id: "tc1", name: "read", arguments: {} }], stopReason: "aborted" }) });
     expect(state.messages.some((m) => m.role === "tool" && m.toolCallId === "tc1" && m.status === "error" && m.isError)).toBe(true);
     expect(derivePending(state.messages, state.streaming)).toEqual([]);
   });
 
   it("stopReason:'error' → 同 aborted 标 error", () => {
-    const state = reducer(initState(), { type: "message_end", message: {
-      role: "assistant", content: [{ type: "toolCall", id: "tc1", name: "read", arguments: {} }],
-      stopReason: "error", errorMessage: "boom",
-    } });
+    const state = reducer(initState(), { type: "message_end", message: mkAssistant({ content: [{ type: "toolCall", id: "tc1", name: "read", arguments: {} }], stopReason: "error", errorMessage: "boom" }) });
     expect(state.messages.some((m) => m.role === "tool" && m.toolCallId === "tc1" && m.status === "error")).toBe(true);
     expect(state.error).toBe("boom");
   });
 
   it("stopReason:'stop' → 不标 error（pending 待 execution_end 自消）", () => {
-    const state = reducer(initState(), { type: "message_end", message: {
-      role: "assistant", content: [{ type: "text", text: "done" }], stopReason: "stop",
-    } });
+    const state = reducer(initState(), { type: "message_end", message: mkAssistant({ content: [{ type: "text", text: "done" }], stopReason: "stop" }) });
     expect(state.messages.some((m) => m.role === "tool")).toBe(false);
   });
 });
 
 describe("reducer agent_end / error 兜底", () => {
   it("agent_end(残留 pending) → push error + 清 streaming + busy false", () => {
-    let state = reducer(initState(), { type: "message_end", message: {
-      role: "assistant", content: [{ type: "toolCall", id: "tc1", name: "read", arguments: {} }],
-    } });
+    let state = reducer(initState(), { type: "message_end", message: mkAssistant({ content: [{ type: "toolCall", id: "tc1", name: "read", arguments: {} }] }) });
     state = reducer(state, { type: "agent_end" });
     expect(state.busy).toBe(false);
     expect(state.streaming).toBeUndefined();
@@ -219,10 +227,7 @@ describe("reducer agent_end / error 兜底", () => {
   });
 
   it("message_end(error) → agent_end：无重复 error 条目（单发幂等，red-team F1；server 已不合成双发，reducer 对 harness 转发的合法 message_end→agent_end 序列保持幂等）", () => {
-    let state = reducer(initState(), { type: "message_end", message: {
-      role: "assistant", content: [{ type: "toolCall", id: "tc1", name: "read", arguments: {} }],
-      stopReason: "error",
-    } });
+    let state = reducer(initState(), { type: "message_end", message: mkAssistant({ content: [{ type: "toolCall", id: "tc1", name: "read", arguments: {} }], stopReason: "error" }) });
     const countAfterMessageEnd = state.messages.filter((m) => m.role === "tool" && m.toolCallId === "tc1").length;
     state = reducer(state, { type: "agent_end" });
     const countAfterAgentEnd = state.messages.filter((m) => m.role === "tool" && m.toolCallId === "tc1").length;
@@ -230,9 +235,7 @@ describe("reducer agent_end / error 兜底", () => {
   });
 
   it("error(server 合成, streaming 含 toolCall) → push error + 清 streaming（Failure mode 吸收）", () => {
-    let state = reducer(initState(), { type: "message_update", message: {
-      role: "assistant", content: [{ type: "toolCall", id: "tc1", name: "read", arguments: {} }],
-    } });
+    let state = reducer(initState(), { type: "message_update", message: mkAssistant({ content: [{ type: "toolCall", id: "tc1", name: "read", arguments: {} }] }) });
     state = reducer(state, { type: "error", message: "boom" });
     expect(state.busy).toBe(false);
     expect(state.streaming).toBeUndefined();
@@ -256,8 +259,8 @@ describe("ServerEvent 派生（Task 5：从 shared SerializedEvent 派生，消�
     const forwarded: SerializedEvent[] = [
       { type: "agent_start" },
       { type: "agent_end" },
-      { type: "message_update", message: { role: "assistant", content: [] } },
-      { type: "message_end", message: { role: "assistant", content: [] } },
+      { type: "message_update", message: mkAssistant({ content: [] }) },
+      { type: "message_end", message: mkAssistant({ content: [] }) },
       { type: "tool_execution_end", toolCallId: "tc1", toolName: "read", isError: false },
       { type: "tool_execution_end", toolCallId: "tc1", toolName: "read", args: {}, isError: false },
       { type: "context_budget", components: {}, total: 0, suggestions: [], headroom: 0 },

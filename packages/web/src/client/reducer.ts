@@ -1,29 +1,23 @@
 /**
  * client reducer（纯函数）。pi 借鉴（spec §4.1.1/§5.3）：
- *  - message_update 整条替换 streaming（内核 message 已累积态，不拼 delta）
+ *  - message_update 整条替换 streaming（内核 message 已累积态，不拼 delta）；仅 assistant 流式（防御性 narrow）
  *  - message_end 定稿 + 提取 usage + 记 stopReason；agent_end 兜底清 streaming（harness 转发，server 不再合成双发）
+ *  - 非 user/assistant（toolResult/bashExecution/custom/...）走 default 不渲染（修 toolResult 空气泡 bug，pi emitToolResultMessage）
  *  - error 终态清 busy（防 UI 锁死）
  */
-import type { SerializedEvent } from "@agentforge/shared";
+import type { AgentMessage, SerializedEvent } from "@agentforge/shared";
 
-export interface Usage { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; }
+/** 从 pi AgentMessage 派生子类型（单一来源，消除本地副本漂移）。agentforge 不扩展 CustomAgentMessages，
+ *  但 pi-agent-core 自扩展（bashExecution/custom/branchSummary/compactionSummary），故 AgentMessage 实为 7 成员 union。 */
+export type AssistantMessage = Extract<AgentMessage, { role: "assistant" }>;
+export type UserMessage = Extract<AgentMessage, { role: "user" }>;
+export type ToolCall = Extract<AssistantMessage["content"][number], { type: "toolCall" }>;
+export type Usage = AssistantMessage["usage"];
+
 export interface BudgetInfo { components: unknown; total: number; suggestions: unknown[]; headroom: number; }
-export interface ToolCallContent {
-  type: "toolCall";
-  id: string;
-  name: string;
-  arguments: Record<string, unknown>;
-}
-export interface AssistantMessage {
-  role: string;
-  content: Array<{ type?: string; text?: string } | ToolCallContent>;
-  stopReason?: string;
-  usage?: Usage;
-  errorMessage?: string;
-}
 export type RenderedMessage =
   | { role: "user"; text: string }
-  | { role: "assistant"; text: string; stopReason?: string; toolCalls?: ToolCallContent[] }
+  | { role: "assistant"; text: string; stopReason?: string; toolCalls?: ToolCall[] }
   | { role: "tool"; text: ""; toolCallId: string; toolName: string; args: unknown;
       status: "done" | "error"; isError: boolean };
 export interface ToolEvent { toolName: string; args: unknown; isError: boolean; }
@@ -54,6 +48,9 @@ export type ServerControlEvent =
  */
 export type ServerEvent = SerializedEvent | ServerControlEvent;
 
+const isAssistant = (m: AgentMessage): m is AssistantMessage => m.role === "assistant";
+const isUser = (m: AgentMessage): m is UserMessage => m.role === "user";
+
 export function initState(): State {
   return { messages: [], busy: false };
 }
@@ -63,25 +60,29 @@ export function reducer(state: State, event: ServerEvent): State {
     case "agent_start":
       return { ...state, busy: true, error: undefined };
     case "message_update":
-      return { ...state, streaming: event.message }; // 整条替换（pi 借鉴，内核已累积）
+      // 仅 assistant 流式累积（pi 语义）；非 assistant 不覆盖 streaming（防御）。
+      return isAssistant(event.message) ? { ...state, streaming: event.message } : state;
     case "message_end": {
       const msg = event.message;
-      const text = msg?.content?.find((c) => c.type === "text")?.text ?? "";
-      const toolCalls = msg?.content?.filter((c) => c.type === "toolCall") as ToolCallContent[] | undefined;
-      const failError = (msg?.stopReason === "error" || msg?.errorMessage)
-        ? (msg?.errorMessage ?? "LLM error") : undefined;
-      const messages: RenderedMessage[] = [...state.messages, msg?.role === "user"
-        ? { role: "user", text }
-        : { role: "assistant", text, stopReason: msg?.stopReason, toolCalls }];
+      if (isUser(msg)) {
+        const text = typeof msg.content === "string" ? msg.content : msg.content.find((c) => c.type === "text")?.text ?? "";
+        return { ...state, messages: [...state.messages, { role: "user", text }] };
+      }
+      if (!isAssistant(msg)) return state;  // toolResult/bashExecution/custom/branchSummary/compactionSummary → 不渲染
+      const text = msg.content.find((c) => c.type === "text")?.text ?? "";
+      const toolCalls = msg.content.filter((c): c is ToolCall => c.type === "toolCall");
+      const failError = (msg.stopReason === "error" || msg.errorMessage)
+        ? (msg.errorMessage ?? "LLM error") : undefined;
+      const messages: RenderedMessage[] = [...state.messages, { role: "assistant", text, stopReason: msg.stopReason, toolCalls }];
       // 终态：pending toolCall 标 error push（进 executed → derivePending 自清）。
-      // message_end.message 含全部 toolCall（pi agent-loop.ts:353/366 finalMessage 在 executeToolCalls 前 emit，red-team 核实）。
-      if (msg?.stopReason === "aborted" || msg?.stopReason === "error") {
+      // message_end.message 含全部 toolCall（pi agent-loop finalMessage 在 executeToolCalls 前 emit，red-team 核实）。
+      if (msg.stopReason === "aborted" || msg.stopReason === "error") {
         const pending = derivePending(messages, undefined);
         for (const p of pending) {
           messages.push({ role: "tool", text: "", toolCallId: p.toolCallId, toolName: p.toolName, args: p.args, status: "error", isError: true });
         }
       }
-      return { ...state, messages, streaming: undefined, lastUsage: msg?.usage, error: failError ?? state.error };
+      return { ...state, messages, streaming: undefined, lastUsage: msg.usage, error: failError ?? state.error };
     }
     case "agent_end": {
       // 兜底：残留 pending push error（双保险，防 message_end 未清干净锁死）。
@@ -126,7 +127,7 @@ export interface PendingTool { toolCallId: string; toolName: string; args: unkno
 /**
  * 推断 in-flight pending 工具调用（未匹配 tool_execution_end 的 toolCall block）。
  * 纯函数 derive，不存 State：tool 条目进 messages 即进 executed → pending 自清。
- * pi 借鉴：ToolCall.id（types.d.ts:184）=== tool_execution_end.toolCallId（types.d.ts:227）。
+ * pi 借鉴：ToolCall.id === tool_execution_end.toolCallId。
  */
 export function derivePending(messages: RenderedMessage[], streaming?: AssistantMessage): PendingTool[] {
   const executed = new Set(
