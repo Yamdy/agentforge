@@ -260,3 +260,6 @@ export function serializeEvent(
       return undefined;
   }
 }
+
+/** pi AgentMessage 单一来源 re-export：供 web/reducer 派生子类型，消除本地副本漂移。 */
+export type { AgentMessage } from "@earendil-works/pi-agent-core";
