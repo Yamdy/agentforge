@@ -272,4 +272,113 @@ describe("startUiServer", () => {
       await server.close();
     }
   }, 15000);
+
+  const providerConfig = {
+    default: "xiaomi-token-plan-cn",
+    providers: {
+      "xiaomi-token-plan-cn": { apiKey: "tp-test1234567890abcdef", model: "mimo-v2.5-pro" },
+      deepseek: { apiKey: "sk-test1234567890abcdef", model: "deepseek-v4-pro" },
+    },
+  };
+
+  it("list_providers 返回脱敏列表 + active", async () => {
+    const server = await startUiServer([], {
+      streamFn: vi.fn(() => makeStream([])), getApiKey: () => "k", port: 0, providerConfig,
+    });
+    try {
+      const WebSocket = (await import("ws")).WebSocket;
+      const ws = new WebSocket(`ws://127.0.0.1:${server.port}`);
+      const got = await new Promise<any>((resolve) => {
+        ws.on("open", () => ws.send(JSON.stringify({ method: "list_providers" })));
+        ws.on("message", (d) => { const m = JSON.parse(d.toString()); if (m.type === "providers") resolve(m); });
+      });
+      expect(got.active).toBe("xiaomi-token-plan-cn");
+      expect(got.providers).toHaveLength(2);
+      const xiaomi = got.providers.find((p: any) => p.provider === "xiaomi-token-plan-cn");
+      expect(xiaomi.model).toBe("mimo-v2.5-pro");
+      expect(xiaomi.apiKey).toBe("tp-t…cdef"); // 脱敏：前4…后4
+      expect(xiaomi.apiKey).not.toContain("1234567"); // 不回显完整 key
+      ws.close();
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("set_provider 切换后 prompt 用新 model（保留历史 messages）", async () => {
+    const hello = msg("ok");
+    const seenModels: any[] = [];
+    const streamFn = vi.fn((model: any) => {
+      seenModels.push(model);
+      return makeStream([{ type: "start", partial: hello }, { type: "done", reason: "stop", message: hello }]);
+    });
+    const server = await startUiServer([], { streamFn, getApiKey: () => "k", port: 0, providerConfig });
+    try {
+      const WebSocket = (await import("ws")).WebSocket;
+      const ws = new WebSocket(`ws://127.0.0.1:${server.port}`);
+      await new Promise<void>((r) => ws.on("open", () => r()));
+      // 第 1 次 prompt：default xiaomi → model mimo-v2.5-pro
+      await new Promise<void>((resolve) => {
+        ws.on("message", (d) => { if (JSON.parse(d.toString()).type === "agent_end") resolve(); });
+        ws.send(JSON.stringify({ method: "prompt", input: "hi" }));
+      });
+      expect(seenModels[0].id).toBe("mimo-v2.5-pro");
+      // 切换到 deepseek
+      await new Promise<void>((resolve) => {
+        ws.on("message", (d) => { if (JSON.parse(d.toString()).type === "providers") resolve(); });
+        ws.send(JSON.stringify({ method: "set_provider", provider: "deepseek" }));
+      });
+      // 第 2 次 prompt：deepseek → model deepseek-v4-pro（历史保留，新 harness 继续）
+      await new Promise<void>((resolve) => {
+        ws.on("message", (d) => { if (JSON.parse(d.toString()).type === "agent_end") resolve(); });
+        ws.send(JSON.stringify({ method: "prompt", input: "again" }));
+      });
+      expect(seenModels[1].id).toBe("deepseek-v4-pro");
+      // 历史保留：2 次 prompt 至少 4 条 messages
+      const state = await new Promise<any>((resolve) => {
+        ws.on("message", (d) => { const m = JSON.parse(d.toString()); if (m.type === "state") resolve(m); });
+        ws.send(JSON.stringify({ method: "get_state" }));
+      });
+      expect(state.messageCount).toBeGreaterThanOrEqual(4);
+      ws.close();
+    } finally {
+      await server.close();
+    }
+  }, 15000);
+
+  it("set_provider unknown provider 发 error", async () => {
+    const server = await startUiServer([], {
+      streamFn: vi.fn(() => makeStream([])), getApiKey: () => "k", port: 0, providerConfig,
+    });
+    try {
+      const WebSocket = (await import("ws")).WebSocket;
+      const ws = new WebSocket(`ws://127.0.0.1:${server.port}`);
+      await new Promise<void>((r) => ws.on("open", () => r()));
+      const got = await new Promise<any>((resolve) => {
+        ws.on("message", (d) => { const m = JSON.parse(d.toString()); if (m.type === "error") resolve(m); });
+        ws.send(JSON.stringify({ method: "set_provider", provider: "nope" }));
+      });
+      expect(got.message).toMatch(/unknown provider/);
+      ws.close();
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("无 config 时 list_providers 返回空 providers", async () => {
+    const server = await startUiServer([], {
+      streamFn: vi.fn(() => makeStream([])), getApiKey: () => "k", port: 0, providerConfig: null,
+    });
+    try {
+      const WebSocket = (await import("ws")).WebSocket;
+      const ws = new WebSocket(`ws://127.0.0.1:${server.port}`);
+      const got = await new Promise<any>((resolve) => {
+        ws.on("open", () => ws.send(JSON.stringify({ method: "list_providers" })));
+        ws.on("message", (d) => { const m = JSON.parse(d.toString()); if (m.type === "providers") resolve(m); });
+      });
+      expect(got.providers).toEqual([]);
+      ws.close();
+    } finally {
+      await server.close();
+    }
+  });
 });

@@ -3,6 +3,7 @@
  *  - message_update 整条替换 streaming（reducer 已处理），render 取 streaming.content text
  *  - rAF 合帧（scheduleRender）吸收高频 message_update 刷新（spec §4.1.2，server 不批量）
  *  - WS 断线自动重连 + resume（sessionId）
+ *  - provider 下拉：onopen 拉 list_providers，change 发 set_provider（切换重建 harness，保留历史）
  */
 import { marked } from "marked";
 import { reducer, initState, derivePending, type State } from "./reducer.js";
@@ -11,6 +12,7 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 const stream = $("stream"), input = $("input") as HTMLTextAreaElement, form = $("composer") as HTMLFormElement;
 const abortBtn = $("abort") as HTMLButtonElement, sendBtn = $("send") as HTMLButtonElement;
 const budgetEl = $("budget"), usageEl = $("usage"), errorEl = $("error"), countEl = $("count"), toolsEl = $("tools");
+const providerSel = $("provider") as HTMLSelectElement;
 
 let state: State = initState();
 let sessionId: string | null = null;
@@ -74,6 +76,23 @@ function render() {
   toolsEl.textContent = `tools: ✓${done} ⚠${err} ⏳${pending.length}`;
   usageEl.textContent = state.lastUsage ? `in ${state.lastUsage.input ?? 0} / out ${state.lastUsage.output ?? 0}` : "";
   errorEl.textContent = state.error ?? "";
+  // provider 下拉：sig 变化才重建 options（active 或列表变了）。无 providers 隐藏 select。
+  if (state.providers && state.providers.length > 0) {
+    providerSel.hidden = false;
+    const sig = `${state.activeProvider ?? ""}|${state.providers.map((p) => p.provider).join(",")}`;
+    if (providerSel.dataset.sig !== sig) {
+      providerSel.replaceChildren(...state.providers.map((p) => {
+        const opt = document.createElement("option");
+        opt.value = p.provider;
+        opt.textContent = `${p.provider} · ${p.model}`;
+        if (p.provider === state.activeProvider) opt.selected = true;
+        return opt;
+      }));
+      providerSel.dataset.sig = sig;
+    }
+  } else {
+    providerSel.hidden = true;
+  }
 }
 
 function scheduleRender() { if (!rafScheduled) { rafScheduled = true; requestAnimationFrame(render); } }
@@ -89,6 +108,7 @@ function connect() {
   };
   ws.onopen = () => {
     ws!.send(JSON.stringify({ method: "get_state", id: String(++stateSeq) }));
+    ws!.send(JSON.stringify({ method: "list_providers" }));
     if (sessionId) ws!.send(JSON.stringify({ method: "resume", sessionId }));
   };
   ws.onclose = () => { setTimeout(connect, 1000); };
@@ -115,4 +135,8 @@ input.addEventListener("keydown", (e) => {
 });
 
 abortBtn.addEventListener("click", () => ws?.send(JSON.stringify({ method: "abort" })));
+providerSel.addEventListener("change", () => {
+  if (!ws || !providerSel.value) return;
+  ws.send(JSON.stringify({ method: "set_provider", provider: providerSel.value }));
+});
 connect();

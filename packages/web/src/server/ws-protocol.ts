@@ -21,13 +21,15 @@ export type ClientMessage =
   | { ok: true; method: "abort"; id?: string }
   | { ok: true; method: "resume"; sessionId: string; id?: string }
   | { ok: true; method: "get_state"; id?: string }
+  | { ok: true; method: "list_providers"; id?: string }
+  | { ok: true; method: "set_provider"; provider: string; id?: string }
   | { ok: false; error: string };
 
 export function parseClientMessage(data: string): ClientMessage {
   let obj: unknown;
   try { obj = JSON.parse(data); } catch { return { ok: false, error: "invalid json" }; }
   if (typeof obj !== "object" || obj === null) return { ok: false, error: "invalid request" };
-  const o = obj as { method?: unknown; input?: unknown; sessionId?: unknown; id?: unknown };
+  const o = obj as { method?: unknown; input?: unknown; sessionId?: unknown; provider?: unknown; id?: unknown };
   const id = typeof o.id === "string" ? o.id : undefined;
   if (o.method === "prompt") {
     if (typeof o.input !== "string") return { ok: false, error: "prompt requires input: string" };
@@ -39,5 +41,10 @@ export function parseClientMessage(data: string): ClientMessage {
     return { ok: true, method: "resume", sessionId: o.sessionId, ...(id !== undefined ? { id } : {}) };
   }
   if (o.method === "get_state") return { ok: true, method: "get_state", ...(id !== undefined ? { id } : {}) };
+  if (o.method === "list_providers") return { ok: true, method: "list_providers", ...(id !== undefined ? { id } : {}) };
+  if (o.method === "set_provider") {
+    if (typeof o.provider !== "string") return { ok: false, error: "set_provider requires provider: string" };
+    return { ok: true, method: "set_provider", provider: o.provider, ...(id !== undefined ? { id } : {}) };
+  }
   return { ok: false, error: `unknown method: ${String(o.method)}` };
 }

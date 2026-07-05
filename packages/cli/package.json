@@ -21,6 +21,10 @@
       "types": "./dist/print-mode.d.ts",
       "import": "./dist/print-mode.js"
     },
+    "./provider-config": {
+      "types": "./dist/provider-config.d.ts",
+      "import": "./dist/provider-config.js"
+    },
     "./rpc": {
       "types": "./dist/rpc.d.ts",
       "import": "./dist/rpc.js"

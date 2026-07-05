@@ -85,6 +85,18 @@ describe("parseClientMessage", () => {
     expect(parseClientMessage(JSON.stringify({ method: "get_state" })))
       .toEqual({ ok: true, method: "get_state" });
   });
+  it("解析 list_providers", () => {
+    expect(parseClientMessage(JSON.stringify({ method: "list_providers" })))
+      .toEqual({ ok: true, method: "list_providers" });
+  });
+  it("解析 set_provider", () => {
+    expect(parseClientMessage(JSON.stringify({ method: "set_provider", provider: "deepseek" })))
+      .toEqual({ ok: true, method: "set_provider", provider: "deepseek" });
+  });
+  it("set_provider 缺 provider 报错", () => {
+    expect(parseClientMessage(JSON.stringify({ method: "set_provider" })))
+      .toEqual({ ok: false, error: "set_provider requires provider: string" });
+  });
   it("各命令可选 id 透传", () => {
     expect(parseClientMessage(JSON.stringify({ method: "get_state", id: "1" })))
       .toEqual({ ok: true, method: "get_state", id: "1" });

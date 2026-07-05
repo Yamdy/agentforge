@@ -30,6 +30,8 @@ export interface State {
   lastUsage?: Usage;
   sessionId?: string;
   messageCount?: number;
+  providers?: { provider: string; model: string; apiKey: string }[];
+  activeProvider?: string;
 }
 /**
  * server 合成控制事件联合（synthesized，来源 server 非 harness）。
@@ -38,7 +40,8 @@ export interface State {
 export type ServerControlEvent =
   | { type: "state"; id?: string; sessionId: string; isStreaming: boolean; isCompacting: boolean; messageCount: number; pendingMessageCount: number }
   | { type: "resumed"; sessionId: string }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  | { type: "providers"; providers: { provider: string; model: string; apiKey: string }[]; active?: string };
 
 /**
  * client reducer 消费的 wire 事件联合 = forwarded(SerializedEvent, shared 单一来源) | synthesized(ServerControlEvent)。
@@ -117,6 +120,8 @@ export function reducer(state: State, event: ServerEvent): State {
       };
     case "state":
       return { ...state, sessionId: event.sessionId, busy: event.isStreaming, messageCount: event.messageCount };
+    case "providers":
+      return { ...state, providers: event.providers, activeProvider: event.active };
     default:
       return state;
   }

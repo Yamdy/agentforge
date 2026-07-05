@@ -18,6 +18,19 @@ describe("reducer", () => {
   it("agent_start 设 busy", () => {
     expect(reducer(initState(), { type: "agent_start" }).busy).toBe(true);
   });
+  it("providers 事件填充 state.providers + activeProvider", () => {
+    const s = reducer(initState(), { type: "providers", providers: [
+      { provider: "xiaomi-token-plan-cn", model: "mimo-v2.5-pro", apiKey: "tp-c…b4vf" },
+      { provider: "deepseek", model: "deepseek-v4-pro", apiKey: "sk-2…0f9a" },
+    ], active: "xiaomi-token-plan-cn" });
+    expect(s.providers).toHaveLength(2);
+    expect(s.activeProvider).toBe("xiaomi-token-plan-cn");
+  });
+  it("providers 事件 active 可省（无 config 空列表）", () => {
+    const s = reducer(initState(), { type: "providers", providers: [] });
+    expect(s.providers).toEqual([]);
+    expect(s.activeProvider).toBeUndefined();
+  });
   it("message_update 整条替换 streaming（不拼 delta）", () => {
     let s = reducer(initState(), { type: "agent_start" });
     s = reducer(s, { type: "message_update", message: mkAssistant({ content: [{ type: "text", text: "hel" }] }) });
