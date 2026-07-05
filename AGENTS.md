@@ -29,5 +29,5 @@ agentforge 是基于 pi 核心（`@earendil-works/pi-agent-core` + `@earendil-wo
 
 ## 提交
 
-- 分支 `pi`。commit message 末尾加 `Co-Authored-By: Claude <noreply@anthropic.com>`。
+- 分支 `pi`。
 - 仅在用户要求时 commit/push。

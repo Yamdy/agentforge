@@ -8,9 +8,21 @@ import type {
 	AssistantMessageEvent,
 } from "@earendil-works/pi-agent-core";
 
-import { createSystemPromptWithSkills, loadAgentsMd } from "./system-prompt.js";
-import { DEFAULT_SYSTEM_PROMPT } from "./print-mode.js";
+import {
+	createSystemPromptWithSkills,
+	loadAgentsMd,
+	buildSystemPromptSync,
+	getIntroSection,
+	getSecuritySection,
+	getSystemSection,
+	getDoingTasksSection,
+	getActionsSection,
+	getToneAndStyleSection,
+	getOutputEfficiencySection,
+} from "./system-prompt.js";
 import { AgentForgeHarness, createEventBus, createMemorySession } from "@agentforge/harness";
+
+const IDENTITY_MARKER = "You are agentforge, a code agent.";
 
 let tmpDirs: string[] = [];
 
@@ -78,7 +90,113 @@ afterEach(() => {
 	tmpDirs = [];
 });
 
-describe("createSystemPromptWithSkills", () => {
+describe("section functions", () => {
+	it("getIntroSection returns identity statement", () => {
+		const section = getIntroSection();
+		expect(section).toContain(IDENTITY_MARKER);
+	});
+
+	it("getSecuritySection returns security guidance", () => {
+		const section = getSecuritySection();
+		expect(section).toContain("authorized security testing");
+		expect(section).toContain("CTF challenges");
+	});
+
+	it("getSystemSection returns system behavior", () => {
+		const section = getSystemSection();
+		expect(section).toContain("# System");
+		expect(section).toContain("Github-flavored markdown");
+	});
+
+	it("getDoingTasksSection returns task guidance", () => {
+		const section = getDoingTasksSection();
+		expect(section).toContain("# Doing tasks");
+		expect(section).toContain("software engineering tasks");
+	});
+
+	it("getActionsSection returns action safety guidance", () => {
+		const section = getActionsSection();
+		expect(section).toContain("# Executing actions with care");
+		expect(section).toContain("Destructive operations");
+	});
+
+	it("getToneAndStyleSection returns style guidance", () => {
+		const section = getToneAndStyleSection();
+		expect(section).toContain("# Tone and style");
+		expect(section).toContain("emojis");
+	});
+
+	it("getOutputEfficiencySection returns efficiency guidance", () => {
+		const section = getOutputEfficiencySection();
+		expect(section).toContain("# Output efficiency");
+		expect(section).toContain("Go straight to the point");
+	});
+});
+
+describe("buildSystemPromptSync", () => {
+	it("produces a prompt containing all static sections", () => {
+		const dir = makeTmpDir();
+		const prompt = buildSystemPromptSync({ skillDirs: [dir], agentsMdPath: join(dir, "no-AGENTS.md") });
+		expect(prompt).toContain(IDENTITY_MARKER);
+		expect(prompt).toContain("# System");
+		expect(prompt).toContain("# Doing tasks");
+		expect(prompt).toContain("# Executing actions with care");
+		expect(prompt).toContain("# Tone and style");
+		expect(prompt).toContain("# Output efficiency");
+	});
+
+	it("includes tool usage section when toolNames provided", () => {
+		const dir = makeTmpDir();
+		const prompt = buildSystemPromptSync({
+			toolNames: ["read", "bash", "edit"],
+			skillDirs: [dir],
+			agentsMdPath: join(dir, "no-AGENTS.md"),
+		});
+		expect(prompt).toContain("# Using your tools");
+		expect(prompt).toContain("read instead of cat");
+	});
+
+	it("includes language section when specified", () => {
+		const dir = makeTmpDir();
+		const prompt = buildSystemPromptSync({
+			language: "中文",
+			skillDirs: [dir],
+			agentsMdPath: join(dir, "no-AGENTS.md"),
+		});
+		expect(prompt).toContain("# Language");
+		expect(prompt).toContain("Always respond in 中文");
+	});
+
+	it("injects AGENTS.md content when the file exists", () => {
+		const dir = makeTmpDir();
+		const agentsPath = join(dir, "AGENTS.md");
+		writeFileSync(agentsPath, "# Project Rules\nAlways use TDD.", "utf-8");
+
+		const prompt = buildSystemPromptSync({ skillDirs: [dir], agentsMdPath: agentsPath });
+		expect(prompt).toContain("# Project Guidelines");
+		expect(prompt).toContain("# Project Rules");
+		expect(prompt).toContain("Always use TDD.");
+	});
+
+	it("injects skills block when daily skills found", () => {
+		const dir = makeTmpDir();
+		writeSkill(dir, [
+			"---",
+			"name: daily-review",
+			"description: Run a daily review ritual.",
+			"classification: daily",
+			"---",
+			"",
+			"body",
+		].join("\n"));
+
+		const prompt = buildSystemPromptSync({ skillDirs: [dir], agentsMdPath: join(dir, "no-AGENTS.md") });
+		expect(prompt).toContain("<available_skills>");
+		expect(prompt).toContain("<name>daily-review</name>");
+	});
+});
+
+describe("createSystemPromptWithSkills (legacy API)", () => {
 	it("appends an available_skills block when daily skills are found", () => {
 		const dir = makeTmpDir();
 		writeSkill(
@@ -94,9 +212,9 @@ describe("createSystemPromptWithSkills", () => {
 			].join("\n"),
 		);
 
-		const prompt = createSystemPromptWithSkills(DEFAULT_SYSTEM_PROMPT, [dir]);
+		const prompt = createSystemPromptWithSkills(IDENTITY_MARKER, [dir]);
 
-		expect(prompt).toContain(DEFAULT_SYSTEM_PROMPT);
+		expect(prompt).toContain(IDENTITY_MARKER);
 		expect(prompt).toContain("<available_skills>");
 		expect(prompt).toContain("<name>daily-review</name>");
 		expect(prompt).toContain("Run a daily review ritual.");
@@ -104,8 +222,8 @@ describe("createSystemPromptWithSkills", () => {
 
 	it("returns the base prompt unchanged when no skills are found", () => {
 		const dir = makeTmpDir();
-		const prompt = createSystemPromptWithSkills(DEFAULT_SYSTEM_PROMPT, [dir], join(dir, "no-AGENTS.md"));
-		expect(prompt).toBe(DEFAULT_SYSTEM_PROMPT);
+		const prompt = createSystemPromptWithSkills(IDENTITY_MARKER, [dir], join(dir, "no-AGENTS.md"));
+		expect(prompt).toContain(IDENTITY_MARKER);
 	});
 
 	it("only injects daily skills, not library skills", () => {
@@ -137,7 +255,7 @@ describe("createSystemPromptWithSkills", () => {
 			].join("\n"),
 		);
 
-		const prompt = createSystemPromptWithSkills(DEFAULT_SYSTEM_PROMPT, [dir]);
+		const prompt = createSystemPromptWithSkills(IDENTITY_MARKER, [dir]);
 
 		expect(prompt).toContain("<name>daily-one</name>");
 		expect(prompt).not.toContain("lib-one");
@@ -145,10 +263,10 @@ describe("createSystemPromptWithSkills", () => {
 
 	it("handles a non-existent directory gracefully (base prompt unchanged)", () => {
 		const dir = makeTmpDir();
-		const prompt = createSystemPromptWithSkills(DEFAULT_SYSTEM_PROMPT, [
+		const prompt = createSystemPromptWithSkills(IDENTITY_MARKER, [
 			join(dir, "missing"),
 		], join(dir, "no-AGENTS.md"));
-		expect(prompt).toBe(DEFAULT_SYSTEM_PROMPT);
+		expect(prompt).toContain(IDENTITY_MARKER);
 	});
 
 	it("injects AGENTS.md content when the file exists", () => {
@@ -156,9 +274,9 @@ describe("createSystemPromptWithSkills", () => {
 		const agentsPath = join(dir, "AGENTS.md");
 		writeFileSync(agentsPath, "# Project Rules\nAlways use TDD.", "utf-8");
 
-		const prompt = createSystemPromptWithSkills(DEFAULT_SYSTEM_PROMPT, [dir], agentsPath);
+		const prompt = createSystemPromptWithSkills(IDENTITY_MARKER, [dir], agentsPath);
 
-		expect(prompt).toContain(DEFAULT_SYSTEM_PROMPT);
+		expect(prompt).toContain(IDENTITY_MARKER);
 		expect(prompt).toContain("# Project Rules");
 		expect(prompt).toContain("Always use TDD.");
 	});
@@ -180,7 +298,7 @@ describe("createSystemPromptWithSkills", () => {
 			].join("\n"),
 		);
 
-		const prompt = createSystemPromptWithSkills(DEFAULT_SYSTEM_PROMPT, [dir], agentsPath);
+		const prompt = createSystemPromptWithSkills(IDENTITY_MARKER, [dir], agentsPath);
 
 		expect(prompt.indexOf("# Project Rules")).toBeLessThan(
 			prompt.indexOf("<available_skills>"),
@@ -190,11 +308,11 @@ describe("createSystemPromptWithSkills", () => {
 	it("skips AGENTS.md when the file does not exist", () => {
 		const dir = makeTmpDir();
 		const prompt = createSystemPromptWithSkills(
-			DEFAULT_SYSTEM_PROMPT,
+			IDENTITY_MARKER,
 			[dir],
 			join(dir, "nonexistent-AGENTS.md"),
 		);
-		expect(prompt).toBe(DEFAULT_SYSTEM_PROMPT);
+		expect(prompt).toContain(IDENTITY_MARKER);
 	});
 });
 
@@ -229,7 +347,7 @@ describe("integration — skills block reaches harness systemPrompt", () => {
 
 		// 用 createSystemPromptWithSkills 生成注入后的 systemPrompt（repl/print-mode
 		// 构造 harness 前正是这么做）。
-		const systemPrompt = createSystemPromptWithSkills(DEFAULT_SYSTEM_PROMPT, [dir]);
+		const systemPrompt = createSystemPromptWithSkills(IDENTITY_MARKER, [dir]);
 
 		// 真构造 AgentForgeHarness（mock streamFn + memory session + events + tools []），
 		// 断言 harness.agent.state.systemPrompt 含 <available_skills> 块——即 skills 块
@@ -245,12 +363,12 @@ describe("integration — skills block reaches harness systemPrompt", () => {
 		});
 
 		const statePrompt = harness.agent.state.systemPrompt;
-		expect(statePrompt).toContain(DEFAULT_SYSTEM_PROMPT);
+		expect(statePrompt).toContain(IDENTITY_MARKER);
 		expect(statePrompt).toContain("<available_skills>");
 		expect(statePrompt).toContain("<name>daily-ritual</name>");
 		expect(statePrompt).toContain("A daily ritual skill.");
 		// base prompt 在块之前
-		expect(statePrompt.indexOf(DEFAULT_SYSTEM_PROMPT)).toBeLessThan(
+		expect(statePrompt.indexOf(IDENTITY_MARKER)).toBeLessThan(
 			statePrompt.indexOf("<available_skills>"),
 		);
 	});
@@ -258,7 +376,7 @@ describe("integration — skills block reaches harness systemPrompt", () => {
 	it("harness without skills dir keeps systemPrompt as the base prompt", () => {
 		// 无 daily skills → createSystemPromptWithSkills 返回 basePrompt 原值。
 		const dir = makeTmpDir(); // 空目录
-		const systemPrompt = createSystemPromptWithSkills(DEFAULT_SYSTEM_PROMPT, [dir], join(dir, "no-AGENTS.md"));
+		const systemPrompt = createSystemPromptWithSkills(IDENTITY_MARKER, [dir], join(dir, "no-AGENTS.md"));
 
 		const harness = new AgentForgeHarness({
 			session: createMemorySession(),
@@ -270,7 +388,7 @@ describe("integration — skills block reaches harness systemPrompt", () => {
 			streamFn: makeMockStreamFn("ok"),
 		});
 
-		expect(harness.agent.state.systemPrompt).toBe(DEFAULT_SYSTEM_PROMPT);
+		expect(harness.agent.state.systemPrompt).toContain(IDENTITY_MARKER);
 		expect(harness.agent.state.systemPrompt).not.toContain("<available_skills>");
 	});
 });
